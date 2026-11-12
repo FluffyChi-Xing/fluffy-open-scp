@@ -3,10 +3,14 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
+import FSelect from "@/components/ui/FSelect.vue";
+import { useModProjectsStore } from "@/stores/modProjects";
+import { useToast } from "@/composables/useToast";
 import type { ModProjectGroup, ModProjectView } from "@/api/tauri";
 
 /**
- * Settings tab：内联编辑项目元数据 + 删除记录（原列表「编辑/删除」迁移至此）。
+ * Settings tab：内联编辑项目元数据 + 删除记录。
+ * 状态使用 FSelect（禁止原生 select / radio group）。
  */
 const props = defineProps<{
   project: ModProjectView;
@@ -14,19 +18,12 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  update: [
-    id: number,
-    fields: {
-      name: string;
-      groupId?: number;
-      description?: string;
-      status: string;
-    },
-  ];
   remove: [project: ModProjectView];
 }>();
 
 const { t } = useI18n();
+const store = useModProjectsStore();
+const toast = useToast();
 const name = ref("");
 const groupId = ref<number | undefined>();
 const description = ref("");
@@ -35,7 +32,12 @@ const groupMenuOpen = ref(false);
 const busy = ref(false);
 const error = ref("");
 
-const statuses = ["active", "released", "archived"] as const;
+const statusOptions = computed(() =>
+  (["active", "released", "archived"] as const).map((value) => ({
+    value,
+    label: t(`studio.dashboard.status.${value}`),
+  })),
+);
 
 const selectedGroupName = computed(
   () =>
@@ -57,6 +59,17 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () =>
+    [
+      props.project.name,
+      props.project.groupId,
+      props.project.description,
+      props.project.status,
+    ] as const,
+  () => syncFromProject(),
+);
+
 function chooseGroup(id: number | undefined) {
   groupId.value = id;
   groupMenuOpen.value = false;
@@ -67,12 +80,13 @@ async function save() {
   busy.value = true;
   error.value = "";
   try {
-    await emit("update", props.project.id, {
+    await store.updateProject(props.project.id, {
       name: name.value.trim(),
       groupId: groupId.value,
       description: description.value.trim() || undefined,
       status: status.value,
     });
+    toast.success(t("studio.repo.settingsSaved"));
   } catch (cause) {
     error.value =
       cause && typeof cause === "object" && "message" in cause
@@ -91,68 +105,82 @@ function confirmDelete() {
 
 <template>
   <article class="settings-card">
-    <header>
+    <header class="settings-head">
       <h2>{{ $t("studio.repo.settingsTitle") }}</h2>
       <p>{{ $t("studio.repo.settingsHint") }}</p>
     </header>
 
-    <label class="field">
-      <span>{{ $t("studio.projects.form.nameLabel") }}</span>
-      <input v-model="name" type="text" autocomplete="off" />
-      <small>{{ $t("studio.projects.form.nameHint") }}</small>
-    </label>
+    <div class="settings-form">
+      <label class="field">
+        <span>{{ $t("studio.projects.form.nameLabel") }}</span>
+        <input v-model="name" type="text" autocomplete="off" />
+        <small>{{ $t("studio.projects.form.nameHint") }}</small>
+      </label>
 
-    <div class="field">
-      <span>{{ $t("studio.projects.form.groupLabel") }}</span>
-      <FDropdown v-model:open="groupMenuOpen">
-        <template #trigger>
-          <button class="group-trigger" type="button">
-            {{ selectedGroupName }}
-            <FIcon name="ChevronDown" :size="13" aria-label="" />
+      <div class="field">
+        <span>{{ $t("studio.projects.form.groupLabel") }}</span>
+        <FDropdown v-model:open="groupMenuOpen" :width="260">
+          <template #trigger>
+            <button class="select-trigger" type="button">
+              <span>{{ selectedGroupName }}</span>
+              <FIcon name="ChevronDown" :size="13" aria-label="" />
+            </button>
+          </template>
+          <button type="button" class="menu-item" @click="chooseGroup(undefined)">
+            <FIcon
+              :name="groupId === undefined ? 'Check' : 'Minus'"
+              :size="14"
+              aria-label=""
+            />
+            {{ $t("studio.projects.form.groupNone") }}
           </button>
-        </template>
-        <button type="button" class="menu-item" @click="chooseGroup(undefined)">
-          {{ $t("studio.projects.form.groupNone") }}
+          <button
+            v-for="group in groups"
+            :key="group.id"
+            type="button"
+            class="menu-item"
+            @click="chooseGroup(group.id)"
+          >
+            <FIcon
+              :name="groupId === group.id ? 'Check' : 'Tag'"
+              :size="14"
+              aria-label=""
+            />
+            {{ group.name }}
+          </button>
+        </FDropdown>
+      </div>
+
+      <label class="field">
+        <span>{{ $t("studio.projects.form.statusLabel") }}</span>
+        <FSelect v-model="status" :options="statusOptions" />
+      </label>
+
+      <label class="field">
+        <span>{{ $t("studio.projects.form.descLabel") }}</span>
+        <textarea
+          v-model="description"
+          rows="4"
+          :placeholder="$t('studio.projects.form.descPlaceholder')"
+        ></textarea>
+      </label>
+
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
+
+      <div class="actions">
+        <button class="primary" type="button" :disabled="busy" @click="save">
+          {{ $t("studio.projects.form.save") }}
         </button>
         <button
-          v-for="group in groups"
-          :key="group.id"
+          class="danger"
           type="button"
-          class="menu-item"
-          @click="chooseGroup(group.id)"
+          :disabled="busy"
+          @click="confirmDelete"
         >
-          {{ group.name }}
+          <FIcon name="Trash2" :size="13" aria-label="" />
+          {{ $t("studio.projects.delete") }}
         </button>
-      </FDropdown>
-    </div>
-
-    <fieldset class="field status-field">
-      <legend>{{ $t("studio.projects.form.statusLabel") }}</legend>
-      <label v-for="item in statuses" :key="item" class="status-option">
-        <input v-model="status" type="radio" :value="item" />
-        {{ $t(`studio.dashboard.status.${item}`) }}
-      </label>
-    </fieldset>
-
-    <label class="field">
-      <span>{{ $t("studio.projects.form.descLabel") }}</span>
-      <textarea
-        v-model="description"
-        rows="4"
-        :placeholder="$t('studio.projects.form.descPlaceholder')"
-      ></textarea>
-    </label>
-
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-
-    <div class="actions">
-      <button class="primary" type="button" :disabled="busy" @click="save">
-        {{ $t("studio.projects.form.save") }}
-      </button>
-      <button class="danger" type="button" :disabled="busy" @click="confirmDelete">
-        <FIcon name="Trash2" :size="13" aria-label="" />
-        {{ $t("studio.projects.delete") }}
-      </button>
+      </div>
     </div>
   </article>
 </template>
@@ -163,25 +191,43 @@ function confirmDelete() {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   display: grid;
-  gap: 14px;
+  gap: 0;
   max-width: 560px;
-  padding: 18px;
+  overflow: hidden;
 }
-.settings-card header h2 {
+.settings-head {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+}
+.settings-head h2 {
   font-size: 15px;
-  margin: 0 0 4px;
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 0;
 }
-.settings-card header p {
+.settings-head p {
   color: var(--muted-foreground);
   font-size: 12.5px;
+  line-height: 1.45;
   margin: 0;
+}
+.settings-form {
+  display: grid;
+  gap: 16px;
+  padding: 16px 18px 18px;
 }
 .field {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
-.field > span,
-.field legend {
+.field :deep(.f-dropdown-anchor),
+.field :deep(.f-select) {
+  width: 100%;
+}
+.field > span {
   color: var(--muted-foreground);
   font-size: 11.5px;
   letter-spacing: 0.04em;
@@ -189,52 +235,49 @@ function confirmDelete() {
 }
 .field input,
 .field textarea,
-.group-trigger {
+.select-trigger {
   background: var(--background);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--foreground);
   font: inherit;
   font-size: 13px;
+  min-height: 36px;
   padding: 8px 10px;
+  width: 100%;
+}
+.field textarea {
+  line-height: 1.45;
+  min-height: 96px;
+  resize: vertical;
 }
 .field small {
   color: var(--subtle-foreground);
   font-size: 11px;
 }
-.group-trigger {
+.select-trigger {
   align-items: center;
   cursor: pointer;
   display: inline-flex;
   gap: 8px;
   justify-content: space-between;
-  width: 100%;
+  text-align: start;
 }
 .menu-item {
+  align-items: center;
   background: transparent;
   border: 0;
   color: var(--foreground);
   cursor: pointer;
-  display: block;
+  display: flex;
   font: inherit;
+  gap: 8px;
   padding: 8px 10px;
   text-align: start;
   width: 100%;
 }
 .menu-item:hover {
   background: var(--surface-hover);
-}
-.status-field {
-  border: 0;
-  margin: 0;
-  padding: 0;
-}
-.status-option {
-  align-items: center;
-  display: inline-flex;
-  font-size: 13px;
-  gap: 6px;
-  margin-right: 14px;
 }
 .actions {
   display: flex;
@@ -262,6 +305,10 @@ function confirmDelete() {
 .actions .danger {
   background: transparent;
   color: var(--destructive, #f87171);
+}
+.actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .error {
   color: var(--destructive, #f87171);

@@ -35,7 +35,7 @@
     "targets": "all",
     "resources": [
       "resources/database_main.s3db",
-      "resources/blender/**/*"
+      "resources/blend-atlas/**/*"
     ],
     "icon": ["icons/icon.png", "icons/icon.ico"]
   }

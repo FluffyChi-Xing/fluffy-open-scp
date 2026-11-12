@@ -575,7 +575,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
               :lot-border-widths="lot.borderWidths"
               :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
               :meters-per-pixel="isLot ? sampling.metersPerPixel : null"
-              :display="ground.display.value"
+              :paint-preview="ground.paintPreview.value"
               :backdrop="ground.backdrop.value"
               :erase-all-channels="isLot"
               @change="onCanvasChange"

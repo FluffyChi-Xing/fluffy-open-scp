@@ -349,8 +349,8 @@ fn params_table(pal_origin: [f64; 4], base_rect: [f64; 4], top_rect: [f64; 4]) -
     }
     out[12] = 0.0;
     out[13] = 0.0;
-    out[14] = 1.0 / base_rect[0].abs().max(1e-7) as f32;
-    out[15] = 1.0 / base_rect[1].abs().max(1e-7) as f32;
+    out[14] = (1.0 / base_rect[0].abs().max(1e-7)) as f32;
+    out[15] = (1.0 / base_rect[1].abs().max(1e-7)) as f32;
     out
 }
 
@@ -439,6 +439,9 @@ mod tests {
         assert_eq!(params[4], 0.5);
         assert!((params[14] - 2.0).abs() < 1e-6);
         assert!((params[15] - 4.0).abs() < 1e-6);
+        let params = params_table([0.0; 4], [0.145 * 0.5, 0.265, 0.0, 0.0], [0.0; 4]);
+        assert_eq!(params[14], 13.793103218078613_f32);
+        assert_eq!(params[15], 3.7735848426818848_f32);
     }
 
     #[test]

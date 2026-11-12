@@ -7,7 +7,6 @@ import {
   LOT_METERS_PER_PIXEL,
   LOT_SLOT_COUNT,
   clearSlotPixels,
-  groundDisplayPixels,
   lotColorsFromSlots,
   lotSizeForMask,
   slotCoverage,
@@ -17,6 +16,7 @@ import {
   type LotSlots,
 } from "@/lib/lot-ground/ground";
 import { atlasCellDataUrl, atlasCellImageData, useLotAtlas } from "./lotAtlas";
+import { createLotPaintPreview } from "./paintPreview";
 
 const DEFAULT_TILE_PERIOD: [number, number] = [8, 8];
 const ALL_USED = Array.from({ length: LOT_SLOT_COUNT }, () => true);
@@ -100,18 +100,15 @@ export function useLotGround(options: LotGroundOptions) {
     return [period[0] / mpp, period[1] / mpp];
   });
 
-  const display = computed(() => {
+  const paintPreview = computed(() => {
     if (!enabled.value) return null;
-    const current = slots.value;
-    const widths = lot.value.borderWidths ?? [];
-    const borders = lot.value.borderColors ?? [];
-    const cells = patternCells.value;
-    const tile = tilePx.value;
-    const image = doc.value;
-    return (pixels: Uint8ClampedArray) =>
-      groundDisplayPixels(pixels, current, widths, borders, image
-        ? { width: image.width, height: image.height, tilePx: tile, cells }
-        : undefined);
+    return createLotPaintPreview(
+      slots.value,
+      lot.value.borderWidths ?? [],
+      lot.value.borderColors ?? [],
+      tilePx.value,
+      patternCells.value,
+    );
   });
 
   const baseCell = ref<string | null>(null);
@@ -187,7 +184,7 @@ export function useLotGround(options: LotGroundOptions) {
     slots,
     brush,
     canvasLayer,
-    display,
+    paintPreview,
     backdrop,
     size,
     setSlots,

@@ -1244,6 +1244,55 @@ pub async fn code_read_text(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+/// 在系统文件管理器中打开项目根目录（Windows Explorer / macOS Finder / xdg-open）。
+#[command]
+pub async fn code_open_in_explorer(
+    state: State<'_, AppState>,
+    request: CodeProjectRequest,
+) -> Result<(), CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        open_path_in_file_manager(&root).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+fn open_path_in_file_manager(path: &Path) -> Result<(), WorkspaceError> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
+    {
+        let _ = path;
+        Err(WorkspaceError::Io(io::Error::other(
+            "open in file manager is not supported on this platform",
+        )))
+    }
+}
+
 #[command]
 pub async fn code_write_text(
     state: State<'_, AppState>,
@@ -1888,10 +1937,21 @@ pub async fn code_flow(
     request: FlowRequest,
 ) -> Result<serde_json::Value, CommandError> {
     let store = Arc::clone(&state.store);
+    let blend_atlas = state
+        .app
+        .path()
+        .resolve("resources/blend-atlas", tauri::path::BaseDirectory::Resource)
+        .ok();
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        crate::mod_flow::dispatch(&root, &request.project, &request.action, request.payload)
-            .map_err(|e| CommandError::new("flow_error", e))
+        crate::mod_flow::dispatch(
+            &root,
+            &request.project,
+            &request.action,
+            request.payload,
+            blend_atlas.as_deref(),
+        )
+        .map_err(|e| CommandError::new("flow_error", e))
     })
     .await
     .map_err(|e| CommandError::internal(e.to_string()))?

@@ -106,7 +106,7 @@ describe("overlays 构建器行为", () => {
   });
 
   it("真实光源：只让拾取代理命中射线，Proxy 体积受控", () => {
-    for (const lightType of ["Point", "Spot"]) {
+    for (const [lightType, distance] of [["Point", 80], ["Spot", 100]] as const) {
       const unit = prop({
         kind: "light",
         lightType,
@@ -122,8 +122,43 @@ describe("overlays 构建器行为", () => {
       expect(ray.intersectObject(object, true).length).toBeGreaterThan(0);
       const proxy = object.children.find((child) => child.userData.pickOnly) as THREE.Mesh;
       expect(new THREE.Box3().setFromObject(proxy).getSize(new THREE.Vector3()).length()).toBeLessThan(4);
-      expect((object.children[0] as THREE.PointLight).distance).toBe(160);
+      expect((object.children[0] as THREE.PointLight | THREE.SpotLight).distance).toBe(distance);
     }
+  });
+
+  it.each(["Point", "Spot"])("精细模式 %s 的 Kd 不再按米数额外衰减", (lightType) => {
+    const unit = prop({ kind: "light", lightType, diffuse: 0.8, length: 24 });
+    const object = buildRealLightUnit(THREE, unit as never);
+    const lights = object.children.filter(
+      (child): child is THREE.PointLight | THREE.SpotLight =>
+        child instanceof THREE.PointLight || child instanceof THREE.SpotLight,
+    );
+    expect(lights.length).toBeGreaterThan(0);
+    expect(lights.every((light) => light.decay === 0)).toBe(true);
+    expect(lights.reduce((sum, light) => sum + light.intensity, 0)).toBeCloseTo(0.8);
+  });
+
+  it.each(["Point", "Spot", "Line"])("精细模式 %s 不绘制灯具标记", (lightType) => {
+    const unit = prop({ kind: "light", lightType, length: 12, diffuse: 0, transform: null });
+    const group = buildRealLightUnit(THREE, unit as never);
+    expect(group.getObjectByName("__lineLightEmitter")).toBeUndefined();
+    expect(group.getObjectByName("__lightBulb")).toBeUndefined();
+    if (lightType === "Line") {
+      const defaultMarker = buildUnitObject(THREE, unit)!.getObjectByName("__lineLightEmitter") as THREE.Mesh;
+      expect(defaultMarker.material).toBeInstanceOf(THREE.MeshBasicMaterial);
+    }
+  });
+
+  it("线灯用一段圆柱光照，并独立保留 Kd 与 Ks", () => {
+    const unit = prop({
+      kind: "light", lightType: "Line", length: 24, outerRadius: 3,
+      innerRadius: 1, diffuse: 0.8, specular: 0.4, falloffStart: 2,
+    });
+    const group = buildRealLightUnit(THREE, unit as never);
+    expect(group.children.some((child) => child instanceof THREE.Light)).toBe(false);
+    expect(group.userData.lineLight).toMatchObject({
+      length: 24, radius: 3, innerRadius: 1, diffuse: 0.8, specular: 0.4,
+    });
   });
 
   it("放置的 Spot 灯：length 缺失时仍有可见体积光锥", () => {

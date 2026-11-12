@@ -5,21 +5,10 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import type { LotUnitDto } from "@/api/tauri";
 import {
   ANCHOR_KIND_LABEL,
-  CAMERA_ANCHOR_ID,
-  UI_ANCHOR_ID,
   describeSpawners,
   summarizeSpawners,
 } from "./spawnerAnchor";
 
-/**
- * 组件库「生成器」页签（重做版）。
- *
- * 旧版只有一个可拖动的占位卡片，用户既看不到本 Lot 有哪些锚点，也不知道
- * 锚点意味着什么。新版把三件事放在一起：
- *  ① 三种预设（标准 / UI 气泡 0x141EED53 / 镜头 0x9901C8F9）——拖入即放置；
- *  ② 本 Lot 锚点清单——点选即在视口选中（带语义徽章与重名提示）；
- *  ③ 统计行——未命名与重名数量直接暴露写入风险。
- */
 const props = withDefaults(
   defineProps<{
     units: readonly LotUnitDto[];
@@ -29,7 +18,7 @@ const props = withDefaults(
   { editEnabled: false, selectedUnitId: null },
 );
 const emit = defineEmits<{
-  place: [spawnerId: number | null];
+  place: [];
   select: [unitId: string];
 }>();
 
@@ -48,32 +37,8 @@ const filtered = computed(() => {
   );
 });
 
-const PRESETS: { id: number | null; icon: string; label: string; hint: string }[] =
-  [
-    {
-      id: null,
-      icon: "MapPin",
-      label: "spawnerPanel.presetStandard",
-      hint: "spawnerPanel.presetStandardHint",
-    },
-    {
-      id: UI_ANCHOR_ID,
-      icon: "Info",
-      label: "spawnerPanel.presetUi",
-      hint: "spawnerPanel.presetUiHint",
-    },
-    {
-      id: CAMERA_ANCHOR_ID,
-      icon: "Camera",
-      label: "spawnerPanel.presetCamera",
-      hint: "spawnerPanel.presetCameraHint",
-    },
-  ];
-
-function beginDrag(event: PointerEvent, spawnerId: number | null) {
-  if (!props.editEnabled) return;
-  event.preventDefault();
-  emit("place", spawnerId);
+function beginDrag() {
+  if (props.editEnabled) emit("place");
 }
 </script>
 
@@ -94,20 +59,16 @@ function beginDrag(event: PointerEvent, spawnerId: number | null) {
       </template>
     </p>
 
-    <div class="sl-presets">
-      <button
-        v-for="preset in PRESETS"
-        :key="String(preset.id)"
-        type="button"
-        class="sl-preset"
-        :title="t(preset.hint)"
-        :disabled="!editEnabled"
-        @pointerdown.stop.prevent="beginDrag($event, preset.id)"
-      >
-        <FIcon :name="preset.icon" :size="16" aria-label="" />
-        <span>{{ t(preset.label) }}</span>
-      </button>
-    </div>
+    <button
+      type="button"
+      class="sl-preset"
+      :title="t('spawnerPanel.presetStandardHint')"
+      :disabled="!editEnabled"
+      @pointerdown.stop.prevent="beginDrag"
+    >
+      <FIcon name="MapPin" :size="16" aria-label="" />
+      <span>{{ t("spawnerPanel.presetStandard") }}</span>
+    </button>
 
     <input
       v-model="search"
@@ -157,11 +118,6 @@ function beginDrag(event: PointerEvent, spawnerId: number | null) {
   color: var(--muted-foreground);
   font-size: 11px;
   margin: 0;
-}
-.sl-presets {
-  display: grid;
-  gap: 5px;
-  grid-template-columns: repeat(3, 1fr);
 }
 .sl-preset {
   align-items: center;

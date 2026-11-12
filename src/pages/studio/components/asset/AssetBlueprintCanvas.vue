@@ -3,11 +3,8 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   VueFlow,
-  Handle,
-  Position,
   useVueFlow,
   type Connection,
   type Edge,
@@ -30,6 +27,7 @@ import {
 } from "./menuBinding";
 import type { WorkbenchSourceKind } from "./useWorkbenchAsset";
 import LogicNodeCard from "./LogicNodeCard.vue";
+import BlueprintPortRow from "./BlueprintPortRow.vue";
 import { useBehaviorConflicts } from "./useBehaviorConflicts";
 import { useToast } from "@/composables/useToast";
 import {
@@ -65,7 +63,6 @@ const props = defineProps<{
   logic: LogicGraph;
   savedDirty: boolean;
   documentSaved: boolean;
-  /** 项目根绝对路径：菜单图标/背景图预览用（convertFileSrc 拼接）。 */
   projectRoot?: string;
   /** 项目（code_flow 导入用）。 */
   project?: string;
@@ -92,6 +89,32 @@ interface WbNodeData {
 interface WbEntryNodeData {
   entry: WorkbenchMenuEntry;
 }
+
+interface PipelinePort {
+  id?: string;
+  type: "source" | "target";
+  labelKey: string;
+}
+
+const pipelinePorts: Record<string, PipelinePort[]> = {
+  source: [{ type: "source", labelKey: "pipelineSource" }],
+  lot: [
+    { type: "source", labelKey: "pipelineLot" },
+    { type: "target", labelKey: "pipelineSource" },
+  ],
+  units: [
+    { type: "source", labelKey: "pipelineUnits" },
+    { id: "lot", type: "target", labelKey: "pipelineLot" },
+    { id: "info", type: "target", labelKey: "logicNode.buildingInfo" },
+    { id: "behavior", type: "target", labelKey: "portBaseBehavior" },
+  ],
+  menu: [
+    { id: "binding", type: "source", labelKey: "pipelineMenu" },
+    { id: "entries", type: "source", labelKey: "menuEntryTitle" },
+    { type: "target", labelKey: "pipelineUnits" },
+  ],
+  build: [{ type: "target", labelKey: "pipelineMenu" }],
+};
 
 const nodes = computed<Node[]>(() => {
   const sourceReady = props.sourceKind !== "none";
@@ -207,7 +230,7 @@ const nodes = computed<Node[]>(() => {
     ? props.menu.entries.map((entry, index) => ({
         id: `entry-${entry.id}`,
         type: "menu-entry",
-        position: { x: 750, y: 340 + index * 210 },
+        position: { x: 750, y: 420 + index * 210 },
         data: { entry },
       }))
     : [];
@@ -227,13 +250,14 @@ const nodes = computed<Node[]>(() => {
 
 const edges = computed<Edge[]>(() => [
   { id: "e-source-lot", source: "source", target: "lot", animated: !props.sourceKind || props.sourceKind === "none" },
-  { id: "e-lot-units", source: "lot", target: "units" },
+  { id: "e-lot-units", source: "lot", target: "units", targetHandle: "lot" },
   { id: "e-units-menu", source: "units", target: "menu" },
-  { id: "e-menu-build", source: "menu", target: "build" },
+  { id: "e-menu-build", source: "menu", sourceHandle: "binding", target: "build" },
   ...(props.menu.enabled
     ? props.menu.entries.map((entry) => ({
         id: `e-menu-${entry.id}`,
         source: "menu",
+        sourceHandle: "entries",
         target: `entry-${entry.id}`,
       }))
     : []),
@@ -540,28 +564,17 @@ function nodeTone(data: unknown): "warn" | "ok" {
       <Background :gap="20" pattern-color="#333333" />
       <template #node-wb="node">
         <div class="wb-node" :data-role="node.id" :data-tone="nodeTone(node.data)">
-          <Handle type="target" :position="Position.Left" />
-          <Handle type="source" :position="Position.Right" />
-          <template v-if="node.id === 'units'">
-            <Handle
-              id="info"
-              type="target"
-              :position="Position.Left"
-              :style="{ top: '78px', background: '#c9a227' }"
-            />
-            <Handle
-              id="behavior"
-              type="target"
-              :position="Position.Left"
-              :style="{ top: '104px', background: '#58a05e' }"
-            />
-            <span class="wb-port-hint" :style="{ top: '70px' }">info</span>
-            <span class="wb-port-hint" :style="{ top: '96px' }">behavior</span>
-          </template>
           <header class="wb-node-head">
             <FIcon :name="node.data.icon" :size="13" aria-label="" />
             <strong>{{ node.data.title }}</strong>
           </header>
+          <BlueprintPortRow
+            v-for="port in pipelinePorts[node.id]"
+            :key="port.id ?? port.type"
+            :id="port.id"
+            :type="port.type"
+            :label="t(`studio.assetWorkbench.${port.labelKey}`)"
+          />
           <div v-for="line in node.data.lines" :key="line.label" class="wb-line">
             <span>{{ line.label }}</span>
             <em :data-tone="line.tone ?? 'muted'">{{ line.value }}</em>
@@ -595,8 +608,8 @@ function nodeTone(data: unknown): "warn" | "ok" {
                 <button
                   type="button"
                   class="wb-menu-image nodrag"
-                  :class="{ filled: menu.iconPng }"
                   :title="t('studio.assetWorkbench.menuIconUpload')"
+                  :aria-label="t('studio.assetWorkbench.menuIconUpload')"
                   @click="uploadMenuImage('icon')"
                 >
                   <img
@@ -608,9 +621,9 @@ function nodeTone(data: unknown): "warn" | "ok" {
                 </button>
                 <button
                   type="button"
-                  class="wb-menu-image marquee nodrag"
-                  :class="{ filled: menu.marqueePng }"
+                  class="wb-menu-image nodrag"
                   :title="t('studio.assetWorkbench.menuMarqueeUpload')"
+                  :aria-label="t('studio.assetWorkbench.menuMarqueeUpload')"
                   @click="uploadMenuImage('marquee')"
                 >
                   <img
@@ -670,7 +683,6 @@ function nodeTone(data: unknown): "warn" | "ok" {
       </template>
       <template #node-menu-entry="node">
         <div class="wb-entry">
-          <Handle type="target" :position="Position.Left" />
           <header class="wb-entry-head">
             <FIcon name="Menu" :size="12" aria-label="" />
             <strong>{{ t("studio.assetWorkbench.menuEntryTitle") }}</strong>
@@ -683,6 +695,7 @@ function nodeTone(data: unknown): "warn" | "ok" {
               ×
             </button>
           </header>
+          <BlueprintPortRow type="target" :label="t('studio.assetWorkbench.pipelineMenu')" />
           <label class="wb-entry-field">
             <span>{{ t("studio.assetWorkbench.menuDimension") }}</span>
             <FDropdownSelect
@@ -767,6 +780,7 @@ function nodeTone(data: unknown): "warn" | "ok" {
   cursor: default;
 }
 .wb-node {
+  --blueprint-port-inset: 11px;
   background: var(--flow-node, #282828);
   border: 1px solid var(--flow-border, #141414);
   border-radius: 8px;
@@ -775,8 +789,8 @@ function nodeTone(data: unknown): "warn" | "ok" {
   display: grid;
   gap: 5px;
   font-size: 10.5px;
-  min-width: 190px;
   padding: 8px 11px;
+  width: 224px;
 }
 .wb-node[data-tone="warn"] {
   border-color: #8a6a2a;
@@ -818,6 +832,8 @@ function nodeTone(data: unknown): "warn" | "ok" {
 .wb-line em {
   font-style: normal;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-align: end;
   max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -838,21 +854,42 @@ function nodeTone(data: unknown): "warn" | "ok" {
   gap: 6px;
   padding-top: 7px;
 }
-.wb-menu-row {
-  align-items: center;
-  color: var(--flow-text-dim, #9b9b9b);
-  cursor: pointer;
-  display: flex;
-  font-size: 10.5px;
-  gap: 6px;
-}
 .wb-menu-input {
   border: 1px solid var(--flow-field-border, #3a3a3a);
   border-radius: 4px;
   font: inherit;
   font-size: 10.5px;
   min-height: 24px;
+  min-width: 0;
   padding: 0 7px;
+}
+.wb-menu-images {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.wb-menu-image {
+  align-items: center;
+  background: var(--flow-field, #1a1a1a);
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
+  cursor: pointer;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 80px;
+  justify-items: center;
+  min-width: 0;
+  padding: 4px;
+}
+.wb-menu-image:hover {
+  border-color: var(--flow-text-dim, #9b9b9b);
+}
+.wb-menu-image img {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  object-fit: contain;
+  width: 100%;
 }
 .wb-actions {
   border-top: 1px solid var(--flow-field-border, #3a3a3a);
@@ -901,6 +938,7 @@ function nodeTone(data: unknown): "warn" | "ok" {
 }
 /* 菜单编辑节点：每个目标菜单容器一个，只决定「放在哪儿」。 */
 .wb-entry {
+  --blueprint-port-inset: 11px;
   background: var(--flow-node, #282828);
   border: 1px solid var(--flow-border, #141414);
   border-radius: 8px;
@@ -968,18 +1006,10 @@ function nodeTone(data: unknown): "warn" | "ok" {
 .wb-entry :deep(.f-select-label.placeholder) {
   color: var(--flow-text-dim, #9b9b9b);
 }
-.wb-port-hint {
-  color: var(--flow-text-dim, #9b9b9b);
-  font-family: var(--font-mono, monospace);
-  font-size: 8px;
-  left: -38px;
-  position: absolute;
-  width: 34px;
-}
 .wb-menu-costs {
   display: grid;
   gap: 4px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .ctx-backdrop {
   inset: 0;

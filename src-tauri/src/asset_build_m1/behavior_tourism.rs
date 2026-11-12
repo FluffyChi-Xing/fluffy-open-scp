@@ -17,6 +17,7 @@ const ENABLE_ROWS: [u32; 4] = [0x0A02_09A2, 0x0A02_09A3, 0x0A02_09A4, 0x0A02_09A
 const EXCLUDE_ROW: u32 = 0x0A02_09B2;
 const PATH_ENTRIES: u32 = 0x0CC8_FE7A;
 const PATH_ROAD_CONNECT: u32 = 0x0D9A_A2BB;
+const PEDESTRIAN_ENTRY: u32 = 0x418A_18B1;
 const MAX_VALUE: f64 = 100_000.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -164,17 +165,28 @@ impl NativeTourism {
         let lot = read(lot_id)?;
         let entries = array(&lot, PATH_ENTRIES);
         let connects = array(&lot, PATH_ROAD_CONNECT);
-        if entries.len() != connects.len()
-            || !entries.iter().zip(connects).any(|(entry, connect)| {
-                matches!(entry, PropertyValue::Key(key) if key.group == 0x40E0_C400)
-                    && matches!(connect, PropertyValue::Key(key)
-                        if key.instance == super::native_profile::PATH_ROAD_CONNECT_FIRST)
-            })
-        {
+        if !has_visitor_access(entries, connects) {
             return Err(format!("TOURISM_ROAD_ACCESS: {lot_id}"));
         }
         Ok(())
     }
+}
+
+fn has_visitor_access(entries: &[PropertyValue], connects: &[PropertyValue]) -> bool {
+    use super::native_profile::{PATH_ROAD_CONNECT_FIRST, PATH_ROAD_CONNECT_NONE};
+
+    // Tokyo Tower's Asset (40E1C000:084DB48F) uses the pedestrian
+    // PathEntry with None on all six pedestrian paths.
+    entries.len() == connects.len()
+        && entries.iter().zip(connects).any(|(entry, connect)| {
+            let (PropertyValue::Key(entry), PropertyValue::Key(connect)) = (entry, connect) else {
+                return false;
+            };
+            entry.group == 0x40E0_C400
+                && (connect.instance == PATH_ROAD_CONNECT_FIRST
+                    || (entry.instance == PEDESTRIAN_ENTRY
+                        && connect.instance == PATH_ROAD_CONNECT_NONE))
+        })
 }
 
 fn array(file: &PropertyFile, hash: u32) -> &[PropertyValue] {
@@ -255,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn behavior_bind_writes_lodging_to_the_new_unit_and_requires_road_access() {
+    fn behavior_bind_writes_lodging_and_accepts_native_pedestrian_access() {
         let raw = json!({
             "$schema":"openscp.asset", "schema_version":2, "id":"native-tourism",
             "kind":"building-asset",
@@ -298,13 +310,13 @@ mod tests {
             &mut entrance,
             PATH_ENTRIES,
             PropType::Key,
-            vec![key(0x40E0_C400, 0x0310_6C2E)],
+            vec![key(0x40E0_C400, PEDESTRIAN_ENTRY)],
         );
         set_array(
             &mut entrance,
             PATH_ROAD_CONNECT,
             PropType::Key,
-            vec![key(0, native_profile::PATH_ROAD_CONNECT_FIRST)],
+            vec![key(0, native_profile::PATH_ROAD_CONNECT_NONE)],
         );
         entrance.claimed_count = entrance.values.len() as u32;
         ctx.resources.insert(lot, encode(&entrance).unwrap());

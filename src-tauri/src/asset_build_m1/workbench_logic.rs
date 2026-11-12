@@ -123,7 +123,6 @@ fn compile_menu(
         });
     values.insert("categoryInstances".into(), json!(categories));
     if has_park_behavior {
-        values.insert("categoryInstances".into(), json!(["0x07049250"]));
         values.insert("menuParentInstance".into(), json!("0xF970A822"));
         values.insert("buildingCategoryInstance".into(), json!("0xC710B6E9"));
     }
@@ -345,43 +344,53 @@ fn compile_logic(
                     .and_then(Value::as_i64)
                     .filter(|v| *v >= 0)
             };
-            match (field("w1"), field("w2"), field("w3"), field("minWorkers")) {
-                (Some(w1), Some(w2), Some(w3), Some(min_workers)) => {
-                    let mut labor_value = json!({
-                        "w1": w1,
-                        "w2": w2,
-                        "w3": w3,
-                        "minWorkers": min_workers,
-                    });
-                    // 可选排班表（8 个非负整数=8 班位规模，0=关班；缺省由后端自动补齐）
-                    if let Some(schedule) = node_params
-                        .get("schedule")
-                        .and_then(Value::as_array)
-                        .filter(|values| values.len() == 8)
-                    {
-                        let mut values = Vec::with_capacity(8);
-                        let mut valid = true;
-                        for value in schedule {
-                            match value.as_i64().filter(|v| (0..=999).contains(v)) {
-                                Some(item) => values.push(item as i32),
-                                None => {
-                                    errors.push(format!(
-                                        "logic node {id}: schedule values must be integers 0-999"
-                                    ));
-                                    valid = false;
-                                    break;
-                                }
+            // 主输入 = workers（这栋楼需要的劳工总数）；w1/w2/w3 是"按收入档
+            // 拆分"的高级覆盖，minWorkers 留空由后端按原版比例自动推导。
+            let workers = field("workers");
+            let tiers = (field("w1"), field("w2"), field("w3"));
+            let base = match (workers, tiers) {
+                (Some(total), (Some(a), Some(b), Some(c))) => {
+                    json!({ "workers": total, "w1": a, "w2": b, "w3": c })
+                }
+                (Some(total), _) => json!({ "workers": total }),
+                (None, (Some(a), Some(b), Some(c))) => json!({ "w1": a, "w2": b, "w3": c }),
+                _ => {
+                    errors.push(format!(
+                        "logic node {id}: workers (需要的劳工总数) must be a non-negative integer"
+                    ));
+                    Value::Null
+                }
+            };
+            if !base.is_null() {
+                let mut labor_value = base;
+                if let Some(min) = field("minWorkers") {
+                    labor_value["minWorkers"] = json!(min);
+                }
+                // 可选排班表（8 个非负整数=8 班位规模，0=关班；缺省由后端自动补齐）
+                if let Some(schedule) = node_params
+                    .get("schedule")
+                    .and_then(Value::as_array)
+                    .filter(|values| values.len() == 8)
+                {
+                    let mut values = Vec::with_capacity(8);
+                    let mut valid = true;
+                    for value in schedule {
+                        match value.as_i64().filter(|v| (0..=999).contains(v)) {
+                            Some(item) => values.push(item as i32),
+                            None => {
+                                errors.push(format!(
+                                    "logic node {id}: schedule values must be integers 0-999"
+                                ));
+                                valid = false;
+                                break;
                             }
                         }
-                        if valid {
-                            labor_value["schedule"] = json!(values);
-                        }
                     }
-                    labor = Some(labor_value);
+                    if valid {
+                        labor_value["schedule"] = json!(values);
+                    }
                 }
-                _ => errors.push(format!(
-                    "logic node {id}: w1/w2/w3/minWorkers must be non-negative integers"
-                )),
+                labor = Some(labor_value);
             }
         }
     }
@@ -500,6 +509,13 @@ fn sync_workbench_model(
         Some(Value::Object(workbench)) => workbench,
         _ => return Ok(()),
     };
+    if workbench.get("modelRemoved").and_then(Value::as_bool) == Some(true) {
+        if let Some(scene) = schema.get_mut("scene").and_then(Value::as_object_mut) {
+            scene.remove("model");
+            scene.remove("modelShape");
+        }
+        return Ok(());
+    }
     let model = workbench
         .get("assetPath")
         .or_else(|| workbench.get("nativeLotm"))
@@ -693,6 +709,22 @@ mod tests {
     }
 
     #[test]
+    fn park_behavior_with_labor_preserves_selected_menu_destinations() {
+        let workbench = json!({
+            "menu": menu(true),
+            "logic": {"params": {"park": {"type": "park"}, "labor": {"w1": 20}}}
+        });
+        let mut errors = Vec::new();
+        let values = compile_menu(Some(&workbench), &|_| true, &mut errors).unwrap();
+        assert!(errors.is_empty());
+        assert_eq!(
+            values["categoryInstances"],
+            json!(["0x899BEA70", "0x94E412ED"])
+        );
+        assert_eq!(values["menuParentInstance"], "0xF970A822");
+    }
+
+    #[test]
     fn absent_menu_leaves_the_base_schema_untouched() {
         let doc = json!({"editor": {"workbench": {"logic": empty_logic()}}});
         let compiled = compile(&doc, &|_| true).unwrap();
@@ -772,6 +804,31 @@ mod tests {
     }
 
     #[test]
+    fn building_info_accepts_the_single_intuitive_workers_field() {
+        // 2026-11-11 用户指令：前端的直觉输入只有「需要的劳工数」，
+        // 分档/工人槽/开工阈值由后端语义层推导。
+        let logic = json!({
+            "nodes": [{"id": "info-1", "kind": "building-info", "position": [0, 0]}],
+            "edges": [{"id": "e1", "source": "info-1", "target": "asset", "targetHandle": "info"}],
+            "params": {"info-1": {"workers": 30}}
+        });
+        let compiled = compile(&json!({"editor": {"workbench": {"logic": logic}}}), &|_| {
+            true
+        })
+        .unwrap();
+        let labor = compiled.labor.unwrap();
+        assert_eq!(labor["workers"], 30);
+        assert!(labor.get("w1").is_none(), "分档由 parse_labor 推导");
+        assert!(labor.get("minWorkers").is_none(), "阈值由 parse_labor 推导");
+
+        let spec = super::super::behavior_nodes::parse_labor(Some(&labor))
+            .unwrap()
+            .unwrap();
+        assert_eq!((spec.w1, spec.w2, spec.w3), (30, 0, 0));
+        assert_eq!(spec.min_workers, 5);
+    }
+
+    #[test]
     fn unattached_leaf_is_rejected() {
         let logic = json!({
             "nodes": [
@@ -835,6 +892,27 @@ mod tests {
         overlay_document_on_schema(&dir, &mut schema, "asset.lot.json").unwrap();
         assert_eq!(schema["scene"]["model"], model);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deleted_model_clears_stale_schema_binding() {
+        let mut schema = json!({
+            "scene": {
+                "document": "asset.lot.json",
+                "model": "assets/models/deleted.lotm",
+                "modelShape": "building40",
+                "writes": ["props:0", "lights"]
+            }
+        });
+        let document = json!({"editor": {"workbench": {
+            "source": "none",
+            "modelRemoved": true
+        }}});
+        sync_workbench_model(&mut schema, &document, Path::new(".")).unwrap();
+        assert_eq!(schema["scene"], json!({
+            "document": "asset.lot.json",
+            "writes": ["props:0", "lights"]
+        }));
     }
 
     #[test]

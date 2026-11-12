@@ -341,6 +341,51 @@ pub fn build_heightmap_overlay(
     dbpf::write_uncompressed_overlay(&entries).map_err(|e| e.to_string())
 }
 
+/// Apply edited-field deltas to the shipped mip payloads, preserving their
+/// existing coarse detail and omitting every byte-identical tile.
+pub fn build_local_heightmap_overlay(
+    package: &Package,
+    group: u32,
+    original: &[u16],
+    edited: &[u16],
+) -> Result<(Vec<u8>, usize), String> {
+    if [original.len(), edited.len()] != [REGION_FIELD_PX * REGION_FIELD_PX; 2] {
+        return Err("invalid terrain field size".into());
+    }
+    let baseline = level_fields(original);
+    let modified = level_fields(edited);
+    let pyramid = solve_f0_pyramid(package, group)?;
+    let mut entries = Vec::new();
+    for (level, x, y, instance) in pyramid.iter_tiles() {
+        let size = REGION_FIELD_PX >> (PYRAMID_LEVELS - 1 - level);
+        let before = tile_payload(&baseline[level], size, x, y);
+        let after = tile_payload(&modified[level], size, x, y);
+        if before == after {
+            continue;
+        }
+        let id = ResourceId { type_id: F0_TYPE_ID, group, instance };
+        let source = package.entries().iter().find(|entry| entry.id == id)
+            .ok_or_else(|| format!("missing terrain tile {id}"))?;
+        let mut data = package.read(source).map_err(|e| e.to_string())?;
+        let mut changed = false;
+        for ((bytes, before), after) in data[20..].chunks_exact_mut(2).zip(before).zip(after) {
+            let old = u16::from_le_bytes([bytes[0], bytes[1]]);
+            let new = (i32::from(old) + i32::from(after) - i32::from(before))
+                .clamp(0, i32::from(u16::MAX)) as u16;
+            changed |= new != old;
+            bytes.copy_from_slice(&new.to_le_bytes());
+        }
+        if changed {
+            entries.push(OverlayEntry::new(id, data));
+        }
+    }
+    let count = entries.len();
+    let bytes = if count == 0 { Vec::new() } else {
+        dbpf::write_uncompressed_overlay(&entries).map_err(|e| e.to_string())?
+    };
+    Ok((bytes, count))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import { isTauri, tauriApi } from "@/api";
+import { useToast } from "@/composables/useToast";
 import { extensionIconUrl } from "@/lib/resource-types";
 import {
   flattenCodeTree,
@@ -12,12 +14,15 @@ import type { CodeTreeResponse } from "@/api/tauri";
 
 /**
  * GitHub 风格文件树（只读）：首层展开，文件夹可折叠。
- * 详情 Code tab 中央区使用；完整编辑/预览在 Develop tab。
+ * 工具栏「在文件夹中打开」唤起系统资源管理器。
  */
 const props = defineProps<{ projectRelPath: string }>();
+const { t } = useI18n();
+const toast = useToast();
 
 const tree = shallowRef<CodeTreeResponse | null>(null);
 const loading = ref(false);
+const opening = ref(false);
 const error = ref("");
 const expanded = ref(new Set<string>());
 
@@ -45,6 +50,22 @@ async function loadTree() {
     tree.value = null;
   } finally {
     loading.value = false;
+  }
+}
+
+async function openInFolder() {
+  if (!isTauri() || !props.projectRelPath || opening.value) return;
+  opening.value = true;
+  try {
+    await tauriApi.workspace.codeOpenInExplorer(props.projectRelPath);
+  } catch (cause) {
+    toast.error(
+      cause && typeof cause === "object" && "message" in cause
+        ? String((cause as { message: unknown }).message)
+        : t("studio.repo.openFolderFailed"),
+    );
+  } finally {
+    opening.value = false;
   }
 }
 
@@ -89,6 +110,7 @@ watch(
         class="refresh"
         type="button"
         :disabled="loading"
+        :title="$t('studio.code.refresh')"
         @click="loadTree"
       >
         <FIcon
@@ -96,6 +118,19 @@ watch(
           :size="12"
           aria-label=""
         />
+      </button>
+      <button
+        class="open-folder"
+        type="button"
+        :disabled="opening"
+        @click="openInFolder"
+      >
+        <FIcon
+          :name="opening ? 'Loader2' : 'FolderOpen'"
+          :size="13"
+          aria-label=""
+        />
+        {{ $t("studio.repo.openInFolder") }}
       </button>
     </div>
 
@@ -174,6 +209,7 @@ watch(
   color: var(--muted-foreground);
   flex: 1;
   font-size: 11.5px;
+  min-width: 0;
 }
 .refresh {
   align-items: center;
@@ -186,6 +222,27 @@ watch(
 }
 .refresh:hover:not(:disabled) {
   color: var(--foreground);
+}
+.open-folder {
+  align-items: center;
+  background: var(--primary);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--primary-foreground, #fff);
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.open-folder:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 .tree-empty {
   color: var(--muted-foreground);

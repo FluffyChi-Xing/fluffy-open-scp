@@ -116,9 +116,9 @@ fn set_layout_key(layout: &mut LayoutValues, key: &str, value: f64) {
         "colpitch" => layout.col_pitch = value,
         "grouppitch" => layout.group_pitch = value,
         "rowpitch" => layout.row_pitch = value,
-        "nc" => layout.nc = value.round() as i32,
-        "ng" => layout.ng = value.round() as i32,
-        "nr" => layout.nr = value.round() as i32,
+        "nc" => layout.nc = value.round_ties_even() as i32,
+        "ng" => layout.ng = value.round_ties_even() as i32,
+        "nr" => layout.nr = value.round_ties_even() as i32,
         "startx" => layout.start_x = value,
         "starty" => layout.start_y = value,
         "xmin" => layout.x_min = value,
@@ -130,8 +130,8 @@ fn set_layout_key(layout: &mut LayoutValues, key: &str, value: f64) {
         "framex" => layout.frame_x = value,
         "framey" => layout.frame_y = value,
         "preserve" => layout.preserve = value.round() as i32,
-        "decorcols" => layout.decor_cols = value.round() as i32,
-        "decorrows" => layout.decor_rows = value.round() as i32,
+        "decorcols" => layout.decor_cols = value.round_ties_even() as i32,
+        "decorrows" => layout.decor_rows = value.round_ties_even() as i32,
         "decoinset" => layout.decor_inset = value.round() as i32,
         _ => {}
     }
@@ -449,7 +449,7 @@ pub fn recover(
         if let Some(node) = engine.node(&format!("NY_Appearance_{key}")) {
             if let Some(value) = node.output(0).and_then(|socket| socket.f64()) {
                 match key {
-                    "night_seed" => state.night_seed = value.round() as i32,
+                    "night_seed" => state.night_seed = value.round_ties_even() as i32,
                     "night_ratio" => state.night_ratio = value,
                     "night_variation" => state.night_variation = value,
                     _ => state.relief_strength = value,

@@ -41,6 +41,7 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
   const loadingPackage = shallowRef(false);
   const filter = shallowRef("");
   const selectedFolder = shallowRef("");
+  let pageRequest = 0;
   let previewRequest = 0;
   const demo = shallowRef(
     localDemoConfig() !== null || !("__TAURI_INTERNALS__" in window),
@@ -148,21 +149,27 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
   }
 
   async function loadPage(offset = 0) {
-    if (!activePackage.value) return;
+    const packageId = activePackage.value?.package.packageId;
+    if (packageId === undefined) return;
+    const request = ++pageRequest;
+    const isCurrent = () =>
+      request === pageRequest && packageId === activePackageId.value;
     loadingPackage.value = true;
     try {
-      activePage.value = await source.listResources(
-        activePackage.value.package.packageId,
+      const page = await source.listResources(
+        packageId,
         offset,
         PAGE_SIZE,
         filter.value || undefined,
         typeFilter.value ?? undefined,
       );
-      void loadNames(activePackage.value.package.packageId, activePage.value);
+      if (!isCurrent()) return;
+      activePage.value = page;
+      void loadNames(packageId, page);
     } catch {
-      toast.error("资源列表加载失败");
+      if (isCurrent()) toast.error("资源列表加载失败");
     } finally {
-      loadingPackage.value = false;
+      if (request === pageRequest) loadingPackage.value = false;
     }
   }
   async function chooseCategory(key: string) {

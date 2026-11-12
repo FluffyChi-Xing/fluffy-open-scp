@@ -26,6 +26,7 @@ describe('floating menu viewport bounds', () => {
     await flushPromises()
     expect(panel.value!.style.maxHeight).toBe('320px')
     expect(panel.value!.style.overflowY).toBe('auto')
+    expect(panel.value!.style.overflowX).toBe('hidden')
     expect(top === 700 ? panel.value!.style.bottom : panel.value!.style.top).not.toBe('')
     panel.value!.firstElementChild!.dispatchEvent(new Event('scroll'))
     expect(open.value).toBe(true)

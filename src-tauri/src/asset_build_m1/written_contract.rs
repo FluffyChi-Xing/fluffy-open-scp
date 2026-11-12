@@ -32,6 +32,7 @@ const PATH_CONNECTS: u32 = 0x0D9A_A2BB;
 
 pub(crate) struct WrittenContractSpec<'a> {
     pub menu_instance: Option<u32>,
+    pub selected_menu_categories: Option<&'a [u32]>,
     pub reference_lot: Option<ResourceId>,
     pub document: Option<&'a SceneDocument>,
     pub writes: &'a SceneWrites,
@@ -43,6 +44,7 @@ pub(crate) struct WrittenContractSpec<'a> {
     /// source mask (`native_profile::rotate_lot`). Required to compare the
     /// final raster against the same transform instead of raw pixels.
     pub rotation_degrees: u32,
+    pub native_spawner_rotation: Option<u32>,
     pub street_placement: Option<(u32, sc_properties::Transform)>,
 }
 
@@ -86,6 +88,14 @@ pub(crate) fn validate(
             spec.menu_instance.is_some(),
         )?
     };
+    if let Some(expected) = spec.selected_menu_categories {
+        if menu.categories != expected {
+            return Err(format!(
+                "written-contract: Menu2 {instance:08X} uiCategories expected {expected:08X?}, found {:08X?}",
+                menu.categories
+            ));
+        }
+    }
     let lot_id = ResourceId {
         type_id: PROPERTY_TYPE,
         group: lot_group,
@@ -111,7 +121,7 @@ pub(crate) fn validate(
                     [width, depth]
                 }
             });
-            Some(validate_scene(resources, &lot, document, spec.writes, size)?)
+            Some(validate_scene(resources, &lot, document, spec.writes, size, spec.native_spawner_rotation)?)
         }
         None => None,
     };
@@ -243,8 +253,9 @@ fn validate_scene(
     document: &SceneDocument,
     writes: &SceneWrites,
     expected_size: Option<[f32; 2]>,
+    native_spawner_rotation: Option<u32>,
 ) -> Result<serde_json::Value, String> {
-    super::scene::verify_units(lot, document, writes)
+    super::scene::verify_unit_counts(lot, document, writes, native_spawner_rotation.is_none())
         .map_err(|error| format!("written-contract: {error}"))?;
     if let Some(expected) = expected_size {
         let actual = match lot.get(LOT_SIZE_HASH).map(|property| &property.kind) {
@@ -275,6 +286,9 @@ fn validate_scene(
         "paths": paths,
         "props": props,
     });
+    if let Some(rotation) = native_spawner_rotation {
+        report["spawners"] = super::spawner::verify_authored_locations(lot, document, rotation)?;
+    }
     if writes.authoritative || writes.decals {
         super::decal::verify(lot, document)?;
         let sources = super::decal::validate_sources(document)?;
@@ -1142,7 +1156,7 @@ mod tests {
     fn final_scene_accepts_shared_global_point_pool() {
         let document = scene();
         let file = lot(&document, &writes());
-        let report = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size).unwrap();
+        let report = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size, None).unwrap();
         assert_eq!(report.pointer("/paths/points"), Some(&json!(3)));
         assert_eq!(report.pointer("/paths/paths"), Some(&json!(2)));
         assert_eq!(report.pointer("/props/1/count"), Some(&json!(1)));
@@ -1153,7 +1167,7 @@ mod tests {
         let document = scene();
         let mut file = lot(&document, &writes());
         file.values.retain(|property| property.hash != PATH_PAIRS);
-        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size).unwrap_err();
+        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size, None).unwrap_err();
         assert!(error.contains("pairs"), "{error}");
     }
 
@@ -1163,7 +1177,7 @@ mod tests {
         let mut file = lot(&document, &writes());
         file.values
             .retain(|property| property.hash != PROP_ID_BASE + 1);
-        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size).unwrap_err();
+        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size, None).unwrap_err();
         assert!(error.contains("prop bin 1"), "{error}");
     }
 
@@ -1173,7 +1187,7 @@ mod tests {
         document.paths[0].kind = Some("custom".into());
         document.paths[0].entry = Some("1234ABCD".into());
         let file = lot(&document, &writes());
-        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size).unwrap_err();
+        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size, None).unwrap_err();
         assert!(error.contains("custom PathEntry"), "{error}");
     }
 

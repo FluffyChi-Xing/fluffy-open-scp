@@ -3172,3 +3172,605 @@ build took {:?}",
     assert_eq!(file.sections_of_type(rw4::SectionType::TEXTURE).count(), 1);
     drop(output);
 }
+
+/// 大连希望大厦 mod 目录现源无头重建（2026-11-09 场景漂移消除）。
+///
+/// 上线包 d5fb84ab 的行人 path 仍是旧"背后绕行"几何（起点 y≈-50.7，背面），
+/// 与场景文档 19:14 修订后的"正门人行道"（起点 y≈+48.5，越过 lot 前缘 +40
+/// 接外部人行网络）不一致——游客路过不进门的场景侧根因。本驱动不做旧
+/// fixture 断言（见 README backlog），只构建 + 数据层验证：
+/// - 正门桩存在（存在 y > 40 的 PathPoint）
+/// - 背绕桩消失（不存在 y < -45 的 PathPoint）
+/// - pathEntries 按场景类型引用对应的原版资源
+/// 设 `SC_HOPE_PREVIOUS_PACKAGE` 可先转储旧包（如 SimCityData 里的上线包）
+/// 几何做对拍；设 `SC_HOPE_MOD_ROOT` 覆盖 mod 根目录。
+#[test]
+#[ignore = "real Dalian Hope Tower mod-dir rebuild (SC_HOPE_MOD_ROOT)"]
+fn real_hope_mod_dir_rebuild_verifies_front_door_paths() {
+    if let Some(previous) = std::env::var_os("SC_HOPE_PREVIOUS_PACKAGE") {
+        let previous = PathBuf::from(previous);
+        let package = Package::open(&previous).expect("open previous package");
+        let mut dumped = 0usize;
+        for e in package.entries() {
+            if e.id.type_id != 0x00B1_B104 {
+                continue;
+            }
+            let Ok(bytes) = package.read(e) else {
+                continue;
+            };
+            let Ok(pf) = PropertyFile::parse(&bytes) else {
+                continue;
+            };
+            let assembled = LotEditorDocument::from_property_file(pf).assemble_units();
+            let points: Vec<_> = assembled
+                .units
+                .iter()
+                .filter_map(|u| match u {
+                    sc_properties::LotUnit::PathPoint { point, .. } => *point,
+                    _ => None,
+                })
+                .collect();
+            if points.is_empty() {
+                continue;
+            }
+            dumped += 1;
+            println!(
+                "PREVIOUS {} (0x{:08X}) path_pairs {:?}",
+                previous.display(),
+                e.id.instance,
+                assembled.path_pairs
+            );
+            for p in &points {
+                println!("  previous pathPoint [{:.2}, {:.2}, {:.2}]", p[0], p[1], p[2]);
+            }
+        }
+        println!("PREVIOUS lot entries with path points: {dumped}");
+    }
+
+    let root = PathBuf::from(
+        std::env::var("SC_HOPE_MOD_ROOT")
+            .unwrap_or_else(|_| r"D:\openscp\mods\大连希望大厦".into()),
+    );
+    let raw = fs::read_to_string(root.join("schemas/assets/m1.hope-tower.json"))
+        .expect("hope tower schema in mod dir");
+    // 强制工作台覆盖：裸 schema 旁路曾丢掉 labor/地价，导致菜单乱码（/39–/40）。
+    let mut schema: serde_json::Value =
+        serde_json::from_str(&raw).expect("hope tower schema json");
+    let compiled = crate::asset_build_m1::workbench_logic::overlay_document_on_schema(
+        &root,
+        &mut schema,
+        "asset.lot.json",
+    )
+    .unwrap_or_else(|errors| panic!("hope tower workbench overlay failed: {}", errors.join("; ")))
+    .expect("hope tower asset.lot.json must exist");
+    assert!(
+        compiled.labor.is_some(),
+        "workbench labor must overlay into schema for menu job/hours rows"
+    );
+    assert!(
+        !compiled.behaviors.is_empty(),
+        "workbench behaviors must overlay into schema"
+    );
+    let raw = serde_json::to_string(&schema).expect("serialize overlaid schema");
+    let result = build_from_schema(&root, &raw)
+        .unwrap_or_else(|error| panic!("hope tower mod-dir build failed: {error}"));
+    println!("path       = {}", result.path.display());
+    println!("build_hash = {}", result.build_hash);
+    println!("sha256     = {}", result.sha256);
+    println!(
+        "menu_inst  = 0x{:08X}",
+        result.menu_instance.expect("menu identity")
+    );
+    println!("scope      = {} delta_mode = {}", result.scope, result.delta_mode);
+    println!(
+        "scene      = units {} paths {} pathEntries {} lowered {} materials {}",
+        result.scene.unit_count,
+        result.scene.path_count,
+        result.scene.path_entry_count,
+        result.scene.lowered_units,
+        result.scene.material_resources
+    );
+    assert!(!result.delta_mode, "mod dir build is a full package");
+
+    // 场景驱动验证：期望几何 = 场景文档 path 点的 180° 镜像
+    // （doc(-x,-y) → 包(x,y)，z 不变；2026-11-09 d5fb84ab 对拍实证）。
+    // 临街吸附边（streetFacingDegrees）只决定作者把路径画在哪一侧，
+    // lowering 镜像不变——断言跟随场景文档，不硬编码坐标。
+    let scene: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join("asset.lot.json")).expect("scene document"),
+    )
+    .expect("scene document json");
+    let workbench = &scene["editor"]["workbench"];
+    let doc_paths = workbench["paths"].as_array().expect("workbench paths");
+    let mut doc_points: std::collections::BTreeMap<String, [f32; 3]> = Default::default();
+    for unit in scene["units"].as_array().expect("scene units") {
+        if unit["kind"] == "pathPoint" {
+            let id = unit["id"].as_str().expect("point id").to_string();
+            let p = unit["point"].as_array().expect("point");
+            doc_points.insert(
+                id,
+                [
+                    p[0].as_f64().unwrap_or(0.0) as f32,
+                    p[1].as_f64().unwrap_or(0.0) as f32,
+                    p[2].as_f64().unwrap_or(0.0) as f32,
+                ],
+            );
+        }
+    }
+    let mut expected_points: Vec<[f32; 3]> = Vec::new();
+    let mut expected_pairs: Vec<i32> = Vec::new();
+    let mut expected_entries: Vec<u32> = Vec::new();
+    let mut expected_scope: Vec<u32> = Vec::new();
+    let mut expected_connect: Vec<u32> = Vec::new();
+    for path in doc_paths {
+        let ids = path["pointIds"].as_array().expect("pointIds");
+        let first = expected_points.len() as i32;
+        let last = first + ids.len() as i32 - 1;
+        expected_pairs.push(first);
+        expected_pairs.push(last);
+        for id in ids {
+            let point = doc_points[id.as_str().expect("point id ref")];
+            expected_points.push([-point[0], -point[1], point[2]]);
+        }
+        // reference-first 目录配方：类型 → 原版 entry + scope/connect 枚举。
+        match path["type"].as_str().unwrap_or("") {
+            "pedestrian" => {
+                expected_entries.push(0x418A_18B1);
+                expected_scope.push(0xF44F_784A);
+                expected_connect.push(0xC186_DA37);
+            }
+            "vehicle" => {
+                expected_entries.push(0x0310_6C2E);
+                expected_scope.push(0xF44F_784A);
+                expected_connect.push(0xC186_DA37);
+            }
+            "driveway" => {
+                expected_entries.push(0x7C9C_4FFF);
+                expected_scope.push(0x5757_2DAC);
+                expected_connect.push(0xF0F6_1CED);
+            }
+            other => panic!("scene path type '{other}' needs a driver expectation"),
+        }
+    }
+    assert_eq!(
+        result.scene.path_count, doc_paths.len(),
+        "path count must match the scene document"
+    );
+    assert_eq!(
+        result.scene.path_entry_count, doc_paths.len(),
+        "one path entry binding per authored path"
+    );
+
+    let output = Package::open(&result.path).unwrap();
+    let mut geometry: Option<LotPathSnapshot> = None;
+    for e in output.entries() {
+        if e.id.type_id != 0x00B1_B104 {
+            continue;
+        }
+        let bytes = output.read(e).unwrap();
+        let pf = PropertyFile::parse(&bytes).unwrap();
+        let entry_keys: Vec<(u32, u32, u32)> = pf
+            .get(PATH_ENTRIES_KEYS)
+            .and_then(|property| property.array())
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|value| match value {
+                        Value::Key(key) => Some((key.type_id, key.group, key.instance)),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let snapshot = LotPathSnapshot {
+            instance: e.id.instance,
+            points: path_points(&pf),
+            path_pairs: pf
+                .get(sc_properties::lot_unit::PATH_PAIRS)
+                .and_then(|property| property.array())
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(|value| match value {
+                            Value::Int32(v) => Some(*v),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            entry_keys,
+            scope_values: key_instances(&pf, 0x0D9A_4E54),
+            connect_values: key_instances(&pf, 0x0D9A_A2BB),
+        };
+        if snapshot.points.is_empty() {
+            continue;
+        }
+        println!(
+            "LOT 0x{:08X} path_pairs {:?} entry_keys {:?}",
+            snapshot.instance, snapshot.path_pairs, snapshot.entry_keys
+        );
+        for p in &snapshot.points {
+            println!("  pathPoint [{:.2}, {:.2}, {:.2}]", p[0], p[1], p[2]);
+        }
+        geometry = Some(snapshot);
+    }
+    let snapshot = geometry.expect("lot with authored path points in output");
+    assert_eq!(
+        snapshot.points.len(),
+        expected_points.len(),
+        "package path point count must match the scene document"
+    );
+    for (got, want) in snapshot.points.iter().zip(&expected_points) {
+        assert!(
+            (got[0] - want[0]).abs() < 0.05
+                && (got[1] - want[1]).abs() < 0.05
+                && (got[2] - want[2]).abs() < 0.05,
+            "lowered path point {got:?} must be the mirrored scene doc point {want:?}"
+        );
+    }
+    assert_eq!(
+        &snapshot.path_pairs, &expected_pairs,
+        "path pairs must follow the scene document path order"
+    );
+    // Reference-first：原版 entry 按 instance 引用（s14 教训——不新建、不入包）。
+    let key_instances: Vec<u32> = snapshot.entry_keys.iter().map(|(_, _, i)| *i).collect();
+    assert_eq!(
+        &key_instances, &expected_entries,
+        "path entry references must follow the catalog recipe per path type"
+    );
+    assert_eq!(
+        &snapshot.scope_values, &expected_scope,
+        "scope keys must follow the catalog recipe per path type"
+    );
+    assert_eq!(
+        &snapshot.connect_values, &expected_connect,
+        "road-connect keys must follow the catalog recipe per path type"
+    );
+
+    // 威利斯观光基线（构建器自动填充）必须落在 Unit 上：
+    // 收入 W1/2/3=11、游客容量=390、每日旅客量=51。
+    let menu_instance = result.menu_instance.expect("menu identity");
+    let unit_id = ResourceId {
+        type_id: 0x00B1_B104,
+        group: 0x40E0_C000,
+        instance: menu_instance,
+    };
+    let unit_pf = PropertyFile::parse(
+        &output
+            .read(output.entry(unit_id).expect("unit resource in output"))
+            .unwrap(),
+    )
+    .unwrap();
+    let scalar_f32 = |pf: &PropertyFile, hash: u32| -> Option<f32> {
+        pf.get(hash).and_then(|property| property.scalar()).and_then(
+            |value| match value {
+                Value::Float(value) => Some(*value),
+                _ => None,
+            },
+        )
+    };
+    for (hash, expected, name) in [
+        (0x0EE2_A50D, 11.0_f32, "income W1"),
+        (0x0EE2_A50E, 11.0, "income W2"),
+        (0x0EE2_A50F, 11.0, "income W3"),
+        (0x0AD6_A725, 390.0, "shoppers capacity"),
+        (0x0DA3_EE15, 51.0, "visitors per day"),
+    ] {
+        let got = scalar_f32(&unit_pf, hash)
+            .unwrap_or_else(|| panic!("tourism baseline column {name} missing from unit"));
+        assert!(
+            (got - expected).abs() < 0.01,
+            "{name} must be the Willis baseline {expected}, got {got}"
+        );
+    }
+
+    // 观光属性层抽检：parent 4E01E311 引用 + Visitors/day 0DA3EE15 列。
+    // 标量与数组两种编码都扫；Visitors 数值只打印不断言（attraction 500
+    // vs 旧 400 会联动）。
+    let mut visitors: Option<f32> = None;
+    let mut parent_found = false;
+    for e in output.entries() {
+        let Ok(bytes) = output.read(e) else {
+            continue;
+        };
+        let Ok(pf) = PropertyFile::parse(&bytes) else {
+            continue;
+        };
+        for property in &pf.values {
+            let scalars = property
+                .scalar()
+                .into_iter()
+                .chain(property.array().into_iter().flatten());
+            for value in scalars {
+                match value {
+                    Value::Float(v) if property.hash == 0x0DA3_EE15 => {
+                        visitors = Some(*v);
+                        println!("Visitors/day 0DA3EE15 in TGI {:?} = {visitors:?}", e.id);
+                    }
+                    Value::Int32(v) if property.hash == 0x0DA3_EE15 => {
+                        visitors = Some(*v as f32);
+                        println!("Visitors/day 0DA3EE15 in TGI {:?} = {visitors:?}", e.id);
+                    }
+                    Value::Key(key) if key.instance == 0x4E01_E311 => {
+                        parent_found = true;
+                        println!("parent 4E01E311 referenced by TGI {:?}", e.id);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    assert!(
+        parent_found,
+        "tourism parent template 4E01E311 must be referenced"
+    );
+    println!("Visitors/day 0DA3EE15 = {visitors:?}");
+}
+
+/// 包内 lot 的路径层快照（只读验证用）。
+struct LotPathSnapshot {
+    instance: u32,
+    points: Vec<[f32; 3]>,
+    path_pairs: Vec<i32>,
+    entry_keys: Vec<(u32, u32, u32)>,
+    /// 0x0D9A4E54（path scope）：instance 编码 Local/Global。
+    scope_values: Vec<u32>,
+    /// 0x0D9AA2BB（road connect）：instance 编码 First/None。
+    connect_values: Vec<u32>,
+}
+
+/// 0x0CC8FE7A（path entry keys）列哈希。
+const PATH_ENTRIES_KEYS: u32 = 0x0CC8_FE7A;
+
+fn path_points(pf: &PropertyFile) -> Vec<[f32; 3]> {
+    LotEditorDocument::from_property_file(pf.clone())
+        .assemble_units()
+        .units
+        .iter()
+        .filter_map(|unit| match unit {
+            sc_properties::LotUnit::PathPoint { point, .. } => *point,
+            _ => None,
+        })
+        .collect()
+}
+
+fn key_instances(pf: &PropertyFile, hash: u32) -> Vec<u32> {
+    pf.get(hash)
+        .and_then(|property| property.array())
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| match value {
+                    Value::Key(key) => Some(key.instance),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn dump_unit_hiring_fields(label: &str, pf: &PropertyFile) {
+    let hashes = [
+        0x0A02_09A2u32,
+        0x0A02_09A3,
+        0x0A02_09A4,
+        0x0A02_09A5,
+        0x0A02_09B2,
+        0x0A79_17C3,
+        0x0A79_17C5,
+        0x0A79_17C6,
+        0x0A79_17C7,
+        0x0A79_17C8,
+        0x0EE2_A50D,
+        0x0EE2_A50E,
+        0x0EE2_A50F,
+        0x0AD6_A725,
+        0x0DA3_EE15,
+        0x0DA6_9D6F,
+        0x00B2_CCCB,
+        0x0AFE_27B1,
+        0x0D00_853A,
+        0x0D00_853B,
+        0x0D00_853C,
+        0x0D00_853D,
+        0x0D00_853E,
+        0x0D00_853F,
+        0x0D00_8540,
+        0x0D00_8541,
+    ];
+    println!("{label} props={}", pf.values.len());
+    for h in hashes {
+        if let Some(p) = pf.values.iter().find(|p| p.hash == h) {
+            match &p.kind {
+                Kind::Array(values) => {
+                    let ids: Vec<String> = values
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::Key(k) => Some(format!("{:08X}", k.instance)),
+                            _ => None,
+                        })
+                        .collect();
+                    println!("  {h:08X} keys={ids:?}");
+                }
+                Kind::Scalar(Value::Float(v)) => println!("  {h:08X} float={v}"),
+                Kind::Scalar(Value::Int32(v)) => println!("  {h:08X} int32={v}"),
+                Kind::Scalar(Value::Key(k)) => println!("  {h:08X} key={:08X}", k.instance),
+                other => println!("  {h:08X} {other:?}"),
+            }
+        } else {
+            println!("  {h:08X} MISSING");
+        }
+    }
+}
+
+#[test]
+#[ignore = "diag Hope Tower hiring fields"]
+fn diag_hope_tower_hiring_unit_fields() {
+    let path = std::env::var("SC_HOPE_PACKAGE").unwrap_or_else(|_| {
+        r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\000_OpenSCP_HopeTower_tourism.package"
+            .into()
+    });
+    let package = Package::open(path).expect("open package");
+    for e in package.entries() {
+        if e.id.type_id != 0x00B1_B104 || e.id.group != 0x40E0_C000 {
+            continue;
+        }
+        let Ok(bytes) = package.read(e) else {
+            continue;
+        };
+        let Ok(pf) = PropertyFile::parse(&bytes) else {
+            continue;
+        };
+        dump_unit_hiring_fields(&format!("HOPE UNIT {:08X}", e.id.instance), &pf);
+    }
+    let donor = PropertyFile::parse(include_bytes!("../../resources/sc5/tested-unit.bin")).unwrap();
+    dump_unit_hiring_fields("DONOR tested-unit.bin", &donor);
+}
+
+#[test]
+#[ignore = "diff Hope vs s31 unit props for hiring gap"]
+fn diag_hope_vs_s31_hiring_diff() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let load = |path: &str| -> (u32, PropertyFile) {
+        let package = Package::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
+        for e in package.entries() {
+            if e.id.type_id != 0x00B1_B104 || e.id.group != 0x40E0_C000 {
+                continue;
+            }
+            let Ok(bytes) = package.read(e) else {
+                continue;
+            };
+            let Ok(pf) = PropertyFile::parse(&bytes) else {
+                continue;
+            };
+            if pf.values.len() > 50 {
+                return (e.id.instance, pf);
+            }
+        }
+        panic!("no fat unit in {path}");
+    };
+    let summarize = |pf: &PropertyFile| -> BTreeMap<u32, String> {
+        let mut out = BTreeMap::new();
+        for p in &pf.values {
+            let s = match &p.kind {
+                Kind::Scalar(Value::Float(v)) => format!("f:{v}"),
+                Kind::Scalar(Value::Int32(v)) => format!("i:{v}"),
+                Kind::Scalar(Value::UInt32(v)) => format!("u:{v}"),
+                Kind::Scalar(Value::Bool(v)) => format!("b:{v}"),
+                Kind::Scalar(Value::Key(k)) => format!("k:{:08X}", k.instance),
+                Kind::Array(values) => {
+                    let keys: Vec<_> = values
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::Key(k) => Some(format!("{:08X}", k.instance)),
+                            _ => None,
+                        })
+                        .collect();
+                    if keys.is_empty() {
+                        format!("arr:{}", values.len())
+                    } else {
+                        format!("keys:{}", keys.join(","))
+                    }
+                }
+                other => format!("{other:?}"),
+            };
+            out.insert(p.hash, s);
+        }
+        out
+    };
+    let hope_path = r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\000_OpenSCP_HopeTower_tourism.package";
+    let s31_path = r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\000_OpenSCP_University_s31.package";
+    let (hope_id, hope_pf) = load(hope_path);
+    let (s31_id, s31_pf) = load(s31_path);
+    let hope = summarize(&hope_pf);
+    let s31 = summarize(&s31_pf);
+    println!("HOPE unit={hope_id:08X} props={} | S31 unit={s31_id:08X} props={}", hope.len(), s31.len());
+    let focus = [
+        0x0A02_09A5u32,
+        0x0A02_09B2,
+        0x0A79_17C3,
+        0x0A79_17C5,
+        0x0A79_17C6,
+        0x0A79_17C7,
+        0x0A79_17C8,
+        0x0D00_853A,
+        0x0D00_853B,
+        0x0D00_853C,
+        0x0D00_853D,
+        0x0D00_853E,
+        0x0D00_853F,
+        0x0D00_8540,
+        0x0D00_8541,
+        0x00B2_CCCB,
+        0x0AFE_27B1,
+        0x0AD6_A725,
+        0x0DA3_EE15,
+        0x0EE2_A50D,
+        0x0DA6_9D6F,
+        0x0DC1_DB39,
+        0x0DC1_DB43,
+        0x0C0F_2290,
+        0x0E26_60C6,
+        0x0E3F_65A9,
+        0x0AD9_3A77,
+        0x0C3E_9F99,
+    ];
+    println!("=== FOCUS ===");
+    for h in focus {
+        let a = hope.get(&h).map(String::as_str).unwrap_or("MISSING");
+        let b = s31.get(&h).map(String::as_str).unwrap_or("MISSING");
+        let mark = if a == b { ' ' } else { '*' };
+        println!("{mark} {h:08X} hope={a} | s31={b}");
+    }
+    let only_s31: BTreeSet<_> = s31.keys().filter(|k| !hope.contains_key(k)).copied().collect();
+    let only_hope: BTreeSet<_> = hope.keys().filter(|k| !s31.contains_key(k)).copied().collect();
+    println!("=== only s31 ({}) ===", only_s31.len());
+    for k in &only_s31 {
+        println!("  {k:08X} {}", s31.get(k).unwrap());
+    }
+    println!("=== only hope ({}) ===", only_hope.len());
+    for k in &only_hope {
+        println!("  {k:08X} {}", hope.get(k).unwrap());
+    }
+    let parse_keys = |v: Option<&String>| -> BTreeSet<String> {
+        v.and_then(|s| s.strip_prefix("keys:"))
+            .map(|s| s.split(',').filter(|x| !x.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default()
+    };
+    let ha5 = parse_keys(hope.get(&0x0A02_09A5));
+    let sa5 = parse_keys(s31.get(&0x0A02_09A5));
+    println!(
+        "=== A5 only s31 === {:?}",
+        sa5.difference(&ha5).collect::<Vec<_>>()
+    );
+    println!(
+        "=== A5 only hope === {:?}",
+        ha5.difference(&sa5).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+#[ignore = "diag s31 university hiring fields"]
+fn diag_s31_university_hiring_unit_fields() {
+    let path = std::env::var("SC_S31_PACKAGE").unwrap_or_else(|_| {
+        r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\000_OpenSCP_University_s31.package"
+            .into()
+    });
+    let package = Package::open(path).expect("open s31 package");
+    for e in package.entries() {
+        if e.id.type_id != 0x00B1_B104 || e.id.group != 0x40E0_C000 {
+            continue;
+        }
+        let Ok(bytes) = package.read(e) else {
+            continue;
+        };
+        let Ok(pf) = PropertyFile::parse(&bytes) else {
+            continue;
+        };
+        dump_unit_hiring_fields(&format!("S31 UNIT {:08X}", e.id.instance), &pf);
+    }
+    let complete =
+        PropertyFile::parse(include_bytes!("../../resources/sc5/complete-building-unit.bin"))
+            .unwrap();
+    dump_unit_hiring_fields("DONOR complete-building-unit.bin", &complete);
+}

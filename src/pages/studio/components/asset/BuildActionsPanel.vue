@@ -186,8 +186,9 @@ function formatDuration(milliseconds: number | null): string {
   if (milliseconds === null) return "—";
   if (milliseconds < 1000) return `${milliseconds}ms`;
   if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(2)}s`;
-  const minutes = Math.floor(milliseconds / 60_000);
-  const seconds = ((milliseconds % 60_000) / 1000).toFixed(0);
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
   return `${minutes}m ${seconds}s`;
 }
 
@@ -289,19 +290,47 @@ async function enqueueSchema() {
 <template>
   <div class="actions-panel">
     <section class="hero">
-      <div class="hero-copy">
-        <span class="hero-kicker">{{
-          t("studio.assetWorkbench.actionsProductionKicker")
-        }}</span>
-        <p class="hero-note">
-          {{
-            projectSchema
-              ? t("studio.assetWorkbench.actionsBuildProjectSchema", {
-                  path: projectSchema,
-                })
-              : t("studio.assetWorkbench.actionsBuildProjectHint")
-          }}
-        </p>
+      <div class="hero-header">
+        <div class="hero-copy">
+          <span class="hero-kicker">{{
+            t("studio.assetWorkbench.actionsProductionKicker")
+          }}</span>
+          <p class="hero-note">
+            {{
+              projectSchema
+                ? t("studio.assetWorkbench.actionsBuildProjectSchema", {
+                    path: projectSchema,
+                  })
+                : t("studio.assetWorkbench.actionsBuildProjectHint")
+            }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="build-button"
+          :disabled="projectBuildBusy"
+          @click="enqueueProject"
+        >
+          <span class="build-icon" aria-hidden="true">
+            <FIcon
+              :name="projectBuildBusy ? 'LoaderCircle' : 'Hammer'"
+              :size="16"
+              aria-label=""
+            />
+          </span>
+          <span class="build-text">
+            <strong>{{
+              projectBuildBusy
+                ? t("studio.assetWorkbench.buildEnqueueing")
+                : t("studio.assetWorkbench.actionsBuildProject")
+            }}</strong>
+            <small>{{
+              t("studio.assetWorkbench.actionsBuildProjectCaption")
+            }}</small>
+          </span>
+        </button>
+      </div>
+      <div v-if="projectLogic || projectBuildError" class="hero-details">
         <p v-if="projectLogic" class="hero-logic">
           {{
             t("studio.assetWorkbench.actionsBuildLogic", {
@@ -322,30 +351,6 @@ async function enqueueSchema() {
           {{ buildError(projectBuildError) }}
         </p>
       </div>
-      <button
-        type="button"
-        class="build-button"
-        :disabled="projectBuildBusy"
-        @click="enqueueProject"
-      >
-        <span class="build-icon" aria-hidden="true">
-          <FIcon
-            :name="projectBuildBusy ? 'LoaderCircle' : 'Hammer'"
-            :size="16"
-            aria-label=""
-          />
-        </span>
-        <span class="build-text">
-          <strong>{{
-            projectBuildBusy
-              ? t("studio.assetWorkbench.buildEnqueueing")
-              : t("studio.assetWorkbench.actionsBuildProject")
-          }}</strong>
-          <small>{{
-            t("studio.assetWorkbench.actionsBuildProjectCaption")
-          }}</small>
-        </span>
-      </button>
     </section>
 
     <div class="runs-block">
@@ -477,7 +482,6 @@ async function enqueueSchema() {
   padding: 4px 2px 8px;
 }
 .hero {
-  align-items: stretch;
   background:
     radial-gradient(
       120% 80% at 100% 0%,
@@ -493,13 +497,26 @@ async function enqueueSchema() {
   border-radius: 12px;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(0, 1fr) auto;
   padding: 14px 16px;
 }
-@media (max-width: 720px) {
-  .hero {
-    grid-template-columns: 1fr;
-  }
+.hero-header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.hero-copy {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+}
+.hero-details {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: 8px 10px;
 }
 .hero-kicker {
   color: color-mix(in srgb, var(--primary, #60a5fa) 85%, white);
@@ -517,18 +534,13 @@ async function enqueueSchema() {
   font-size: 11px;
   line-height: 1.5;
   margin: 0;
-  word-break: break-word;
-}
-.hero-logic {
-  margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 .hero-warning {
   color: #fbbf24;
-  margin-top: 4px;
 }
 .build-button {
   align-items: center;
-  align-self: center;
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--primary, #3b82f6) 92%, white),
@@ -544,7 +556,9 @@ async function enqueueSchema() {
   display: inline-flex;
   gap: 10px;
   min-height: 48px;
-  min-width: 168px;
+  margin-inline-start: auto;
+  max-inline-size: 100%;
+  min-inline-size: min(168px, 100%);
   padding: 8px 14px;
   text-align: start;
 }
@@ -567,6 +581,8 @@ async function enqueueSchema() {
 }
 .build-text {
   display: flex;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
   flex-direction: column;
   gap: 1px;
   line-height: 1.2;
@@ -659,6 +675,7 @@ async function enqueueSchema() {
   grid-template-columns: 28px 1fr auto;
   min-height: 44px;
   padding: 8px 12px;
+  scale: none;
   text-align: start;
   transition:
     border-color 0.15s ease,

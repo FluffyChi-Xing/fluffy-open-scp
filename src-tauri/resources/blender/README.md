@@ -1,20 +1,16 @@
-# Bundled Blender asset service
+# Blend import resources
 
-OpenSCP ships the SC5 Asset Editor exporter here so end users do not install a
-Blender add-on manually.
+OpenSCP runs its own Blender reader in factory-startup mode and generates LOTM
+in Rust. Blender can be found on PATH or configured with `BLENDER_PATH`.
 
-Expected layout after staging:
+Before packaging from a checkout without the atlas, stage the data directory
+that contains `catalog.json` and the pack folders:
 
-```text
-resources/blender/ny_facade/__init__.py
-resources/blender/ny_facade/native_asset.py
-resources/blender/ny_facade/assets/...
+```powershell
+pwsh -File scripts/stage-blend-atlas.ps1 -Source 'D:/path/to/atlas/packs'
 ```
 
-`blender_service::addon_parent()` looks for `ny_facade` under this directory.
-For local development, set `OPENSCP_BLENDER_ADDON` to the add-on parent instead
-of staging it.
-
-Staging is an explicit build step (`scripts/stage-blender-addon.ps1`) because
-the exporter and its atlas library are third-party assets. Do not publish a
-build unless the exporter's redistribution terms are satisfied.
+The installer includes `resources/blend-atlas`, which contains the catalog and
+the five PNG slots for each pack. The optional `resources/blender/ny_facade`
+directory is for offline reference comparisons and is outside the installer
+resource list.

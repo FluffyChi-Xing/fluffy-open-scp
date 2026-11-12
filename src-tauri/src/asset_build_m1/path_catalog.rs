@@ -8,8 +8,7 @@
 //! - 原版已经存在的 entry 直接引用，零新资源、零索引预算风险
 //!   （C1/C2 的全部风险都来自"新建 entry"，本版不新建）；
 //! - 语义必须显式：pedestrian → Pedestrians；`driveway` → 校车引道
-//!   （Global+First，跨城接路网）；`vehicle` → 普通车辆引道（Local，
-//!   同 entry `7C9C4FFF` / filter `C37D661D` 通用车辆类，拆除随 unit 消失）。
+//!   （Global+First）；`vehicle` → 东京塔的本地引道（Local+None）。
 //!
 //! 纯函数模块：不读文件、不碰包，输入 PathSpec → 输出 PathRecipe，
 //! 可直接单测。构建器写回 lot 列与校验器共用同一份配方。
@@ -43,18 +42,15 @@ pub const PATH_TYPES: &[PathTypeSpec] = &[
     },
     PathTypeSpec {
         id: "vehicle",
-        // 普通车辆引道：与校车共用原版唯一车辆 entry（沥青挤出 + filter
-        // C37D661D——注册表名 School busses，但大量道路 PathEntry 同属此
-        // filter，普查定案为通用车辆类）。Local+None → 只进本 unit pathSet，
-        // 拆除随建筑消失（Hope Tower Global 残段对照）。
-        entry: 0x7C9C_4FFF,
+        // 原版东京塔 Lot 40E1C000:084DB48F 的本地引道。
+        entry: 0x0310_6C2E,
         scope_local: true,
         road_connect: false,
-        transports: &["Vehicles"],
+        transports: &["Cars And Crap"],
     },
     PathTypeSpec {
         id: "driveway",
-        // 校车引道：同 entry，但 Global+First 接全城/区域路网（小学实证，
+        // 校车引道：Global+First 接全城/区域路网（小学实证，
         // 可跨城）。非学校建筑请用 `vehicle`，避免拆除残留路网 stub。
         entry: 0x7C9C_4FFF,
         scope_local: false,
@@ -168,10 +164,11 @@ mod tests {
     }
 
     #[test]
-    fn vehicle_is_local_lot_driveway() {
-        // 普通车辆：同 entry，但 Local+None——作者即使写 global/true 也被覆盖。
-        let recipe = resolve(Some("vehicle"), None, false, true).unwrap();
-        assert_eq!(recipe.entry_instance, 0x7C9C_4FFF);
+    fn vehicle_uses_tokyo_tower_local_driveway() {
+        // 已保存场景的旧 entry/scope/connect 由类型配方覆盖。
+        let recipe = resolve(Some("vehicle"), Some("7C9C4FFF"), false, true).unwrap();
+        assert_eq!(recipe.entry_instance, 0x0310_6C2E);
+        assert_eq!(recipe.entry_group, 0x40E0_C400);
         assert!(recipe.scope_local, "vehicle is Local");
         assert!(!recipe.road_connect, "vehicle is None");
         assert!(recipe.from_catalog);

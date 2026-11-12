@@ -426,7 +426,8 @@ fn normalize_authored_ground_mask(width: u32, height: u32, rgba: &[u8]) -> image
     let source = rgba.as_chunks::<4>().0;
     image::RgbaImage::from_fn(out_width, out_height, |x, y| {
         let sx = ((2 * x + 1) * width) / (2 * out_width);
-        let sy = ((2 * y + 1) * height) / (2 * out_height);
+        // The workbench texture starts at -Y, while the game mask starts at +Y.
+        let sy = height - 1 - ((2 * y + 1) * height) / (2 * out_height);
         image::Rgba(source[(sy * width + sx) as usize])
     })
 }
@@ -628,7 +629,7 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         if let Some(document) = &ctx.scene_document {
             super::decal::validate_sources(document)?;
         }
-        ctx.plan.processor_version = "openscp.property.m1/52";
+        ctx.plan.processor_version = "openscp.property.m1/56";
     }
     // The scene document is an input to the built bytes (unit columns, menu
     // ground numerics, light/prop matrices) but the schema only references it
@@ -855,16 +856,33 @@ fn model_rotation(scene_rotation: u32, building40: bool) -> Result<u32, String> 
     }
 }
 
+/// 默认朝向：按**输入坐标约定**决定，而不是按管线类型拍死。
+///
+/// 基准 `backend_compile.py:28` 的缺省是 180°（正面 -Y 的 Blender 导出）；
+/// 本仓 `ny_facade/export_asset.py:278` 声明 `sourceFrontAxis='+Y'`，其 LOTM
+/// 需要 0°。两者算法相同、输入约定不同（缺口审计 M4）。
+fn default_scene_rotation(building40: bool, source_front_axis: Option<&str>) -> u32 {
+    match source_front_axis.map(str::trim) {
+        // 本仓导出器（ny_facade）声明 sourceFrontAxis='+Y'：模型已是游戏朝向。
+        Some("+Y") => 0,
+        // 显式 `-Y`（SC5 插件/打包器导出）→ 基准 `backend_compile.py:28` 的缺省 180°。
+        Some("-Y") => 180,
+        // 字段缺失：**保持既有行为**（如无必要勿增实体）。
+        // 本仓历史 LOTM 未写入该字段，而它们一直是 0° 构建并被验证正确；
+        // legacy 路线沿用 180°。等导出器统一写入该字段后再按它判定。
+        _ => {
+            if building40 { 0 } else { 180 }
+        }
+    }
+}
+
 /// 场景模型(LOTM/GLB)→ RW4 编译 + LOD id 分配(缺模型跳过)。
 fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
-    let scene_rotation = ctx
+    let explicit_scene_rotation = ctx
         .plan
         .menu
         .as_ref()
-        .and_then(|menu| menu.rotation_degrees)
-        // Author scene orientation (backend settings.rotationDegrees,
-        // default 180). native_profile applies this value to lot columns.
-        .unwrap_or(180);
+        .and_then(|menu| menu.rotation_degrees);
     // Capture the source contract in the stage event before lowering.  This
     // makes a material regression attributable to this processor from the
     // build report, without comparing entire DBPF files by hand.
@@ -884,9 +902,25 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     let route = document.as_ref().and_then(|doc| {
         super::geometry_route::derive(ctx.plan.intermediate.scene.model_shape.as_deref(), doc).ok()
     });
+    let building40 = route.as_ref().is_some_and(|route| route.name == "building40");
+    // Building40 workbench scenes are authored in the game lot frame. The
+    // historical 180° fallback belongs only to legacy routes; applying it to
+    // a Building40 scene flips both the model and its authored paths to -Y.
+    // 输入坐标约定（缺口审计 M4）：从 LOTM diagnostics 读 sourceFrontAxis。
+    // '+Y'（本仓导出器）→ 0°；'-Y'/缺失（SC5 插件导出）→ 180°（基准缺省）。
+    let source_front_axis = document
+        .as_ref()
+        .and_then(|doc| serde_json::from_str::<serde_json::Value>(&doc.diagnostics).ok())
+        .and_then(|diag| {
+            diag.get("sourceFrontAxis")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        });
+    let scene_rotation = explicit_scene_rotation
+        .unwrap_or_else(|| default_scene_rotation(building40, source_front_axis.as_deref()));
     let rotation = model_rotation(
         scene_rotation,
-        route.as_ref().is_some_and(|route| route.name == "building40"),
+        building40,
     )?;
     let material_contract = document
         .as_ref()
@@ -1192,6 +1226,7 @@ fn compute_identity(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         &serde_json::to_vec(&(
             ctx.plan.processor_version,
             super::build_cache::CACHE_VERSION,
+            super::build_cache::SCENE_OUTPUT_VERSION,
             &ctx.source_hash,
             &plan_bytes,
             &ctx.scene_document_bytes_hash,
@@ -1274,6 +1309,7 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
             &mut ctx.lowered_units,
         )?;
     }
+    let mut spawner_detail = serde_json::Value::Null;
     ctx.menu_instance = match &ctx.plan.menu {
         Some(menu) => {
             let authored_ground = ctx
@@ -1300,7 +1336,7 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                     None
                 }
             }).ok_or("menu registration requires reference.lot to clone the lot identity")?;
-            let generated = super::menu::generate(
+            let mut generated = super::menu::generate(
                 menu,
                 &ctx.resources,
                 lot_source,
@@ -1314,6 +1350,31 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                 &ctx.root,
                 ctx.author_building40,
             )?;
+            if let Some(program) = &ctx.plan.behavior_program
+                && super::spawner::has_recipes(program)?
+            {
+                let asset_group = if menu.parent_free || ctx.author_building40 {
+                    super::native_profile::ASSET_GROUP
+                } else {
+                    super::menu::lot_group()
+                };
+                let (_, asset) = generated.entries.iter_mut().find(|(id, _)| {
+                    id.type_id == super::menu::PROPERTY_TYPE
+                        && id.group == asset_group
+                        && id.instance == generated.instance
+                }).ok_or("[spawner] generated menu Asset is missing")?;
+                let rotation = menu.rotation_degrees.unwrap_or(if ctx.author_building40 { 0 } else { 180 });
+                if let Some(bindings) = super::spawner::bind(
+                    asset, program, ctx.scene_document.as_ref(), rotation,
+                )? {
+                    *asset = bindings.bytes;
+                    ctx.resources.strip_vanilla_shadows(
+                        &[super::spawner::VIGNETTE_GROUP],
+                        &bindings.native_definitions,
+                    );
+                    spawner_detail = bindings.report;
+                }
+            }
             for (id, bytes) in generated.entries {
                 ctx.resources.insert(id, bytes);
             }
@@ -1348,6 +1409,9 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
         "loweredUnits": ctx.lowered_units,
         "menu": menu_detail,
     });
+    if !spawner_detail.is_null() {
+        detail["spawner"] = spawner_detail;
+    }
     if let Some(instance) = ctx.menu_instance {
         let asset_id = dbpf::ResourceId {
             type_id: 0x00B1_B104,
@@ -1640,6 +1704,10 @@ fn golden_shape(ctx: &BuildContext) -> Result<serde_json::Value, String> {
     const RASTER: u32 = 0x2F4E_681C;
     let mut violations: Vec<String> = Vec::new();
     let mut property_files = 0usize;
+    let construction_bundle = ctx.plan.behavior_program.as_ref()
+        .filter(|program| program.author_tourism)
+        .map(|_| super::author_tourism::construction_id(ctx.resources.all(), instance))
+        .transpose()?;
     // A custom PathEntry is a declared scene dependency, not a foreign donor
     // property. Exempt only entries referenced by this document and only in
     // C400 groups; every other non-identity Property remains a hard failure.
@@ -1664,7 +1732,7 @@ fn golden_shape(ctx: &BuildContext) -> Result<serde_json::Value, String> {
             property_files += 1;
             let declared_path_entry =
                 (id.group & 0xFFFF) == 0xC400 && declared_path_entries.contains(&id.instance);
-            if id.instance != instance && !declared_path_entry {
+            if id.instance != instance && !declared_path_entry && construction_bundle != Some(*id) {
                 violations.push(format!(
                     "foreign property {:08X}:{:08X}:{:08X} (identity is {instance:08X})",
                     id.type_id, id.group, id.instance
@@ -1976,6 +2044,11 @@ fn delta_audit(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         // 标题链接必须指向新身份/新 locale，不能要求与 donor 字节一致。
         let mut identity_allowed = allowed.clone();
         identity_allowed.extend([0x0CA5_CF4A, 0x09FB_78CB]);
+        if let Some(program) = &ctx.plan.behavior_program
+            && super::spawner::has_recipes(program)?
+        {
+            identity_allowed.extend(super::spawner::LOT_COLUMNS);
+        }
         let report = super::delta_audit::audit(
             &donor_file,
             &identity_file,
@@ -2094,6 +2167,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         &final_resources,
         super::written_contract::WrittenContractSpec {
             menu_instance: ctx.menu_instance,
+            selected_menu_categories: ctx.plan.selected_menu_categories.as_deref(),
             reference_lot: ctx.reference_lot.as_ref().map(|(id, _)| *id),
             document: ctx.scene_document.as_ref(),
             writes: &ctx.plan.scene_writes,
@@ -2109,12 +2183,20 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
                     .menu
                     .as_ref()
                     .and_then(|menu| menu.rotation_degrees)
-                    .unwrap_or(180),
+                    .unwrap_or_else(|| default_scene_rotation(ctx.author_building40, None)),
                 placement_turn,
             ),
+            native_spawner_rotation: ctx.plan.menu.as_ref()
+                .filter(|menu| menu.parent_free || ctx.author_building40)
+                .map(|menu| menu.rotation_degrees.unwrap_or(if ctx.author_building40 { 0 } else { 180 })),
             street_placement,
         },
     )?;
+    if let Some(program) = ctx.plan.behavior_program.as_ref().filter(|p| p.author_tourism) {
+        let instance = ctx.menu_instance.ok_or("tourism contract: missing menu identity")?;
+        final_contract.detail["facilityOperation"] =
+            super::author_tourism::verify(&final_resources, instance, program)?;
+    }
     if let Some(program) = ctx.plan.behavior_program.as_ref().filter(|p| !p.templates.is_empty()) {
         let instance = ctx.menu_instance.or_else(|| ctx.reference_lot.as_ref().map(|(id, _)| id.instance))
             .ok_or("BEHAVIOR_TEMPLATE_RESOURCE: missing Unit identity")?;
@@ -2399,6 +2481,11 @@ mod stage_tests {
 
     #[test]
     fn building40_preserves_author_rotation_while_legacy_routes_keep_the_half_turn() {
+        // 显式约定优先；缺失时保持既有行为（building40=0，legacy=180）。
+        assert_eq!(default_scene_rotation(true, Some("+Y")), 0);
+        assert_eq!(default_scene_rotation(true, Some("-Y")), 180);
+        assert_eq!(default_scene_rotation(true, None), 0);
+        assert_eq!(default_scene_rotation(false, None), 180);
         for scene in [0, 90, 180, 270] {
             assert_eq!(model_rotation(scene, true).unwrap(), scene);
         }
@@ -2554,8 +2641,8 @@ mod stage_tests {
         }).expect("mask raster rides the snapshot")).unwrap();
         assert_eq!((raster.width, raster.height), (16, 16));
         let rgba = raster.decode_top_mip_rgba().unwrap();
-        assert_eq!(&rgba[..4], &pixels[..4]);
-        assert_eq!(&rgba[rgba.len() - 4..], &pixels[pixels.len() - 4..]);
+        assert_eq!(&rgba[..4], &pixels[48..52]);
+        assert_eq!(&rgba[rgba.len() - 4..], &pixels[12..16]);
         // 颜色列与 ground_values 编码一致（sRGB→linear + 图案索引）。
         for (hash, value) in scene_mod::ground_values(&document) {
             assert_eq!(

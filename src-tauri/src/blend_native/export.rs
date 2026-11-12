@@ -29,6 +29,7 @@ pub struct ExportReport {
     pub meshes: usize,
     pub materials: usize,
     pub windows: usize,
+    pub lit_windows: usize,
     pub decor_panels: usize,
     pub decals: usize,
     pub triangles: usize,
@@ -61,6 +62,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
     let mut groups: Vec<Group> = Vec::new();
     let mut by_key: HashMap<String, usize> = HashMap::new();
     let mut windows = 0usize;
+    let mut lit_windows = 0usize;
     let mut decor_panels = 0usize;
     let mut decals = 0usize;
     let mut source_faces = 0usize;
@@ -93,28 +95,15 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                     if let Some(cached) = rendered.get(&material_index) {
                         state = cached.clone();
                     } else {
-                        match material_state::recover(
+                        let (recovered, _) = material_state::recover(
                             input.bundle,
                             Some(input.catalog),
                             material,
                             &state,
-                        ) {
-                            Ok((recovered, _)) => {
-                                rendered.insert(material_index, recovered.clone());
-                                state = recovered;
-                            }
-                            Err(error) => {
-                                use std::fmt::Write as _;
-                                static FAILURES: std::sync::Mutex<
-                                    std::collections::BTreeMap<String, usize>,
-                                > = std::sync::Mutex::new(std::collections::BTreeMap::new());
-                                let mut log = FAILURES.lock().unwrap();
-                                *log.entry(format!("{error}")).or_insert(0) += 1;
-                                if log.len() <= 8 {
-                                    eprintln!("[recover-failed] {} -> {}", material.name, error);
-                                }
-                            }
-                        }
+                        )
+                        .map_err(|error| format!("{}: {error}", material.name))?;
+                        rendered.insert(material_index, recovered.clone());
+                        state = recovered;
                     }
                 }
             }
@@ -196,6 +185,8 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
             let mut body_uv = body_uv.unwrap();
             if let Some(entry) = entry {
                 apply_texture_transform(&mut body_uv, entry, &state);
+            } else {
+                body_uv.fill([0.5, 0.5]);
             }
             if matrix_determinant(&object.matrix) < 0.0 {
                 body_uv.reverse();
@@ -407,6 +398,9 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                 input.index.contains(&state.decor_style),
             );
             let layout = actual_layout(input.bundle, object, face_index, material, computed);
+            if i128::from(layout.ng) * i128::from(layout.nc) * i128::from(layout.nr) > 20_000 {
+                return Err("单面窗户超过 20000，请检查窗户尺寸或面 UV".into());
+            }
             let style_entry = style_entry(input.index, &state.style)
                 .ok_or_else(|| format!("unknown window style {}", state.style))?;
             let stored_seed = mesh
@@ -415,7 +409,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                 .and_then(|values| values.get(face_index))
                 .and_then(|value| value.as_f64());
             let window_seed = stored_seed
-                .map(|value| value.round() as i32)
+                        .map(|value| value.round_ties_even() as i32)
                 .unwrap_or_else(|| super::appearance::face_seed(&object.name, face_index as u32));
             let surface_triangles: Vec<Vec<([f64; 3], [f64; 2])>> = triangles
                 .iter()
@@ -525,6 +519,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                             unit,
                         ) {
                             windows += 1;
+                            lit_windows += usize::from(lit);
                         }
                         if layout.panel_height > 0.0 {
                             let legacy_panel = legacy_decor_entry(&state.decor_style);
@@ -619,6 +614,16 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
         if group.indices.is_empty() {
             continue;
         }
+        if let Some(triangle) = geometry::first_reversed_triangle(
+            &group.positions,
+            &group.normals,
+            &group.indices,
+        ) {
+            return Err(format!(
+                "{}: triangle {triangle} has winding opposite to its normal",
+                group.name
+            ));
+        }
         let glb = glb::encode(&GlbMesh {
             name: group.name.clone(),
             positions: group.positions.clone(),
@@ -652,6 +657,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
         meshes: meshes.len(),
         materials: materials.len(),
         windows,
+        lit_windows,
         decor_panels,
         decals,
         triangles: triangles_total,
@@ -662,8 +668,9 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
     // Interiors already place night emission in columns 1/5/9/13 via the Office
     // room sheet (`resources::office_room_sheet`).
     let diagnostics = format!(
-        "{{\"schema\":\"openscp.ny-native/1\",\"source\":\"OpenSCP native Rust\",\"nativeControlProfile\":\"native-room-states-transparent-top-v3\",\"windows\":{windows},\"decorPanels\":{decor_panels},\"sourceFaces\":{source_faces},\"nativeMaterials\":{},\"warnings\":[],\"decals\":{decals},\"triangles\":{triangles_total}}}",
-        materials.len()
+        "{{\"schema\":\"openscp.ny-native/1\",\"source\":\"OpenSCP native Rust\",\"nativeControlProfile\":\"native-room-states-transparent-top-v3\",\"windows\":{windows},\"litWindows\":{lit_windows},\"darkWindows\":{},\"decorPanels\":{decor_panels},\"sourceFaces\":{source_faces},\"nativeMaterials\":{},\"warnings\":[],\"decals\":{decals},\"triangles\":{triangles_total}}}",
+        windows - lit_windows,
+        materials.len(),
     );
     let document = LotmDocument {
         meshes,
@@ -679,6 +686,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
             "meshes": report.meshes,
             "materials": report.materials,
             "windows": report.windows,
+            "lit_windows": report.lit_windows,
             "decor_panels": report.decor_panels,
             "decals": report.decals,
             "triangles": report.triangles,
@@ -881,9 +889,6 @@ fn overlay(
                 };
                 let positions: Vec<[f64; 3]> =
                     clipped.iter().map(|(position, _)| *position).collect();
-                add_polygon(
-                    group, &positions, normal, &base, &coords, seed, 0, offset, origin, unit, false,
-                );
                 let mut reversed_positions = positions.clone();
                 reversed_positions.reverse();
                 let mut reversed_base = base.clone();
@@ -903,6 +908,9 @@ fn overlay(
                     origin,
                     unit,
                     false,
+                );
+                add_polygon(
+                    group, &positions, normal, &base, &coords, seed, 0, offset, origin, unit, false,
                 );
                 found = true;
             }

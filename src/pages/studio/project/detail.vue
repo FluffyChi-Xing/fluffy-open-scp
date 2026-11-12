@@ -96,18 +96,6 @@ function syncTabFromQuery() {
   tab.value = raw as RepoTab;
 }
 
-async function onUpdate(
-  id: number,
-  fields: {
-    name: string;
-    groupId?: number;
-    description?: string;
-    status: string;
-  },
-) {
-  await store.updateProject(id, fields);
-}
-
 async function onRemove(target: ModProjectView) {
   await store.deleteProject(target.id);
   await router.push({ name: "studio" });
@@ -193,15 +181,12 @@ watch(
           <CodeWorkbench
             :key="project.id"
             :project="project"
+            embedded
             @close="selectTab('code', false)"
           />
         </div>
 
         <section v-else-if="tab === 'actions'" class="actions-host">
-          <header class="section-head">
-            <h2>{{ $t("studio.repo.actionsTitle") }}</h2>
-            <p>{{ $t("studio.repo.actionsHint") }}</p>
-          </header>
           <BuildActionsPanel
             v-if="project.folderPath"
             :project="project.folderPath"
@@ -212,7 +197,6 @@ watch(
           v-else-if="tab === 'settings'"
           :project="project"
           :groups="store.groups"
-          @update="onUpdate"
           @remove="onRemove"
         />
       </div>
@@ -222,7 +206,10 @@ watch(
 
 <style scoped>
 .repo-page {
-  display: grid;
+  /* flex 而非默认 stretch 的 grid：否则 min-height 余量会均分拉高
+   * tabs 行，导致下划线/底边远离标签（Actions/Settings 像样式错乱）。 */
+  display: flex;
+  flex-direction: column;
   gap: 0;
   min-height: calc(100vh - 120px);
 }
@@ -244,6 +231,7 @@ watch(
 }
 .repo-header {
   display: grid;
+  flex: 0 0 auto;
   gap: 10px;
   padding-bottom: 4px;
 }
@@ -278,8 +266,10 @@ watch(
   color: var(--muted-foreground);
 }
 .repo-tabs {
+  align-items: stretch;
   border-bottom: 1px solid var(--border);
   display: flex;
+  flex: 0 0 auto;
   gap: 2px;
   margin-top: 14px;
   overflow-x: auto;
@@ -292,10 +282,11 @@ watch(
   color: var(--muted-foreground);
   cursor: pointer;
   display: inline-flex;
+  flex: 0 0 auto;
   font: inherit;
   font-size: 13px;
   gap: 6px;
-  min-height: 40px;
+  height: 40px;
   padding: 0 12px;
   white-space: nowrap;
 }
@@ -319,24 +310,29 @@ watch(
 .develop-host {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 220px);
+  /* 仅场景编辑器容器：固定 100vh，其它 tab / 页壳不动。 */
+  height: 100vh;
+  min-height: 0;
+  min-width: 0;
 }
 .develop-host :deep(.code-page) {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  height: 100%;
   min-height: 0;
 }
-.actions-host,
-.section-head {
-  display: grid;
-  gap: 8px;
+.develop-host :deep(.asset-workbench-host),
+.develop-host :deep(.maw) {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
 }
-.section-head h2 {
-  font-size: 15px;
-  margin: 0;
+.actions-host {
+  display: block;
+  min-width: 0;
 }
-.section-head p {
-  color: var(--muted-foreground);
-  font-size: 12.5px;
-  margin: 0 0 8px;
+.actions-host :deep(.actions-panel) {
+  gap: 14px;
 }
 </style>

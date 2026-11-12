@@ -16,6 +16,8 @@ import type {
 import { unitPlanId } from "../../plan/units";
 import { rowMajor12ToTrs } from "../../resolve/transform";
 import { createLightVolumeMesh, lightVolumeIntensity } from "./lightVolume";
+import { createLineLightMarker } from "./lightMarkers";
+import { setLineLight } from "./lineLightPass";
 
 type Three = typeof ThreeNamespace;
 
@@ -179,10 +181,7 @@ function buildLight(THREE: Three, unit: LightUnit): ThreeNamespace.Object3D {
     }
     group.add(buildLightBulb(THREE, rgb, radius));
   } else if (unit.lightType === "Line") {
-    const length = lightLength(unit);
-    const geometry = new THREE.BoxGeometry(1, length, 1);
-    geometry.translate(0, length / 2, 0);
-    group.add(new THREE.Mesh(geometry, standardMaterial(THREE, rgb.getHex())));
+    group.add(createLineLightMarker(THREE, rgb, lightLength(unit)));
   } else {
     group.add(buildLightBulb(THREE, rgb, lightRadius(unit)));
   }
@@ -270,11 +269,18 @@ export function buildRealLightUnit(
   // 编辑器此前用 `diffuse × 16` + `distance = radius*2` + `decay = 1`，
   // 与游戏的两套归一化分母不同源，这是"同一数值两边亮度不一致"的根因。
   const inner = Math.min(Math.max(unit.innerRadius ?? 0, 0), radius);
-  const intensity = Math.max(unit.diffuse ?? 1, 0.05);
-  // 锥体半角：游戏以「段长 + 外半径」定义锥体，而不是以半径当距离。
+  const intensity = Math.max(unit.diffuse ?? 1, 0);
+  // The shipped spot PF uses normalized axial falloff, and the point PF uses
+  // normalized squared-distance falloff. Three's cutoff window approximates
+  // the range in this forward preview. Decay 0 avoids dividing Kd by metres
+  // a second time (lights 20 m away previously lost another factor of 20).
+  const decay = 0;
+  // The editor stores cone radii in metres, while the shader receives cosines.
   const coneAngle = Math.min(Math.atan2(radius, Math.max(length, 0.001)), 1.45);
-  // 内外半径差 → 柔边：inner 越接近 radius，过渡越硬。
-  const penumbra = radius > 0.0001 ? Math.min(Math.max(1 - inner / radius, 0), 1) : 0;
+  const innerAngle = unit.innerRadius == null
+    ? coneAngle * 0.5
+    : Math.min(Math.atan2(inner, length), coneAngle);
+  const penumbra = 1 - innerAngle / coneAngle;
 
   if (unit.lightType === "Spot") {
     const spot = new THREE.SpotLight(
@@ -283,35 +289,30 @@ export function buildRealLightUnit(
       length,
       coneAngle,
       penumbra,
-      1,
+      decay,
     );
     spot.target.position.set(0, length, 0);
     group.add(spot, spot.target);
   } else if (unit.lightType === "Line") {
-    // 条形灯 = 沿段长均分的点光；每盏的覆盖半径用外半径（不是段长 × 1.2）。
-    const segments = Math.min(Math.max(Math.ceil(length / 8), 2), 4);
-    for (let index = 0; index < segments; index += 1) {
-      const light = new THREE.PointLight(
-        rgb.getHex(),
-        intensity / segments,
-        radius,
-        1,
-      );
-      light.position.set(0, (length * (index + 0.5)) / segments, 0);
-      group.add(light);
-    }
+    const lineRadius = lightRadius(unit);
+    setLineLight(group, {
+      length,
+      radius: lineRadius,
+      innerRadius: Math.min(Math.max(unit.innerRadius ?? 0, 0), lineRadius),
+      diffuse: intensity,
+      specular: Math.max(unit.specular ?? 0, 0),
+      color: [rgb.r, rgb.g, rgb.b],
+    });
   } else {
-    group.add(new THREE.PointLight(rgb.getHex(), intensity, radius, 1));
+    group.add(new THREE.PointLight(rgb.getHex(), intensity, radius, decay));
   }
   // 反射/高光（游戏 params.y = Ks）：three.js 没有「每盏灯独立 specular」，
   // 用同位置、半径收缩到 35% 的辅助点光近似高光瓣；强度 = Ks，与 Kd 同量纲。
   // 只在 Ks > 0 时创建，避免给没有反射的灯凭空加光。
   const specular = Math.max(unit.specular ?? 0, 0);
-  if (specular > 0) {
-    const gloss = new THREE.PointLight(rgb.getHex(), specular, radius * 0.35, 1);
-    if (unit.lightType === "Line") {
-      gloss.position.set(0, length / 2, 0);
-    } else if (unit.lightType === "Spot") {
+  if (specular > 0 && unit.lightType !== "Line") {
+    const gloss = new THREE.PointLight(rgb.getHex(), specular, radius * 0.35, decay);
+    if (unit.lightType === "Spot") {
       gloss.position.set(0, length, 0);
     }
     gloss.name = "__lightSpecular";
@@ -321,15 +322,14 @@ export function buildRealLightUnit(
   // three.js 的点/聚光灯只有单一衰减曲线，没有"平台区"。这里用一盏覆盖半径
   // = falloffStart 的辅助点光近似平台，强度取 Kd 的一半，避免叠加过曝。
   const falloffStart = Math.max(unit.falloffStart ?? 0, 0);
-  if (falloffStart > 0.01) {
+  if (falloffStart > 0.01 && unit.lightType !== "Line") {
     const plateau = new THREE.PointLight(
       rgb.getHex(),
       intensity * 0.5,
       Math.min(falloffStart, radius),
-      1,
+      decay,
     );
-    if (unit.lightType === "Line") plateau.position.set(0, length / 2, 0);
-    else if (unit.lightType === "Spot") plateau.position.set(0, length, 0);
+    if (unit.lightType === "Spot") plateau.position.set(0, length, 0);
     plateau.name = "__lightFalloffPlateau";
     group.add(plateau);
   }

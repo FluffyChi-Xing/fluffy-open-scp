@@ -5,7 +5,7 @@ use dbpf::ResourceId;
 use serde::Serialize;
 use std::collections::HashSet;
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct PropertyBuildPlan {
     pub processor_version: &'static str,
     pub scope: &'static str,
@@ -15,6 +15,8 @@ pub struct PropertyBuildPlan {
     /// `semantics.menu`: register the built building as a NEW menu entry
     /// (new property identity) instead of overriding the reference lot.
     pub menu: Option<super::menu::MenuRegistrationSpec>,
+    #[serde(skip)]
+    pub(crate) selected_menu_categories: Option<Vec<u32>>,
     /// `semantics.behavior`: legacy single-spec behavior (education-minimal).
     /// Kept for byte-compatible r7-r10 projects.
     pub behavior: Option<super::behavior::BehaviorSpec>,
@@ -55,6 +57,10 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
         Some(spec)
     };
+    let selected_menu_categories = menu
+        .as_ref()
+        .and_then(|spec| spec.ui_categories())
+        .map(<[u32]>::to_vec);
     let scene_writes = super::scene::SceneWrites::parse(&im.scene.writes);
     // 声明位拼写错误必须 fail-closed：`"path"` 会被 parse 静默忽略，构建
     // 看起来"成功"但什么都没写——这正是 r10 类事故的温床。
@@ -108,15 +114,28 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         )?)
     };
     let behavior_program = if has_composed {
-        let labor = super::behavior_nodes::parse_labor(im.semantics.labor.as_ref())?;
+        let mut labor = super::behavior_nodes::parse_labor(im.semantics.labor.as_ref())?;
         let nodes = super::behavior_nodes::parse_nodes(&im.semantics.behaviors)?;
-        Some(super::behavior_nodes::compile(labor, &nodes)?)
+        let author_tourism = menu.is_some() && super::author_tourism::selected(&nodes);
+        if author_tourism
+            && im.semantics.labor.as_ref().is_some_and(|value| value["minWorkers"].is_null())
+            && let Some(labor) = labor.as_mut()
+        {
+            labor.min_workers = 0;
+        }
+        Some(super::behavior_nodes::compile_with_profile(labor, &nodes, author_tourism)?)
     } else {
         None
     };
     // IR 叶子 → 家族适配器补齐 menu donor / Menu2 骨架（作者显式字段优先）。
     if let (Some(spec), Some(program)) = (menu.as_mut(), behavior_program.as_ref()) {
-        if let Some(semantics) = super::behavior_family::semantics_from_program(program) {
+        if let Some(mut semantics) = super::behavior_family::semantics_from_program(program) {
+            if program.author_tourism {
+                // The author Unit carries its own labor rules. Do not select
+                // education menu rows or inherit a Unit template for its jobs.
+                semantics.loops.retain(|kind| *kind != super::behavior_loops::BehaviorLoop::Labor);
+                semantics.simulation_template = None;
+            }
             super::behavior_family::enrich_menu(spec, &semantics);
         }
     }
@@ -187,6 +206,7 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
     }
     Ok(PropertyBuildPlan {
+        selected_menu_categories,
         // /25：新增 menu-contract 闸门（锚点/乱码/不加载/模型丢失四类前置校验），
         // 且菜单身份不再合成 0x0CA5CF4A 自映射。
         // /36：成本 f32 编码收口（i32 位型实机显示「免费」）+ 遗留共享 locale
@@ -204,15 +224,18 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         // /38：lot 身份文本列剔除（09FB78CB donor 名字边）+ 地块尺寸/遮罩以
         // 工作台文档为准（80×80 方地）+ BoundingBox=编译模型真实包围盒 +
         // 菜单统计行统一 s31 GOLDEN 三对 text↔param。
+        // /53–55: ordinary vehicle paths use Tokyo Tower's 03106C2E entry.
         // Bump whenever game-side lowering/geometry contracts change. The
         // run cache must never replay a package built by an older interpreter.
         processor_version: if behavior_program
             .as_ref()
             .is_some_and(|program| !program.templates.is_empty())
         {
-            "openscp.property.m1/50"
+            "openscp.property.m1/55"
+        } else if behavior_program.as_ref().is_some_and(|program| program.author_tourism) {
+            "openscp.property.m1/54"
         } else {
-            "openscp.property.m1/44"
+            "openscp.property.m1/53"
         },
         scope: "property+scene-model",
         intermediate: im,
@@ -259,7 +282,7 @@ mod tests {
             "semantics": {"menu": {"title": "T"}},
             "outputs": {"package": "000_legacy.package", "mode": "full"}
         });
-        let error = plan_from_schema(&schema.to_string()).err().expect("missing reference Lot");
+        let error = plan_from_schema(&schema.to_string()).unwrap_err();
         assert!(error.contains("reference.lot"), "{error}");
     }
 }

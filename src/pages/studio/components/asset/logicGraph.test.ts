@@ -33,10 +33,11 @@ describe("addLogicNode / ensureCoreNode", () => {
     const first = addLogicNode(emptyLogicGraph(), infoSpec, [10, 20]);
     expect(first.node.id).toBe("info-1");
     expect(first.graph.params["info-1"]).toEqual({
-      w1: 20,
-      w2: 5,
-      w3: 0,
-      minWorkers: 5,
+      workers: 25,
+      w1: null,
+      w2: null,
+      w3: null,
+      minWorkers: null,
       schedule: [6, 6, 7, 7, 6, 6, 7, 6],
     });
     const second = addLogicNode(first.graph, infoSpec, [30, 40]);
@@ -163,10 +164,11 @@ describe("reactive proxies (DataCloneError regression)", () => {
     const result = duplicateLogicNode(graph, "info-1");
     expect(result.node?.id).toBe("info-1-copy-1");
     expect(result.graph.params["info-1-copy-1"]).toEqual({
-      w1: 20,
-      w2: 5,
-      w3: 0,
-      minWorkers: 5,
+      workers: 25,
+      w1: null,
+      w2: null,
+      w3: null,
+      minWorkers: null,
       schedule: [6, 6, 7, 7, 6, 6, 7, 6],
     });
   });

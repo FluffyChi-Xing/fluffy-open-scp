@@ -35,16 +35,24 @@ def append_manifest(lines):
 
 def cmd_archive(name, golden_note=None):
     src = os.path.join(GAME_DATA, name)
-    dst = os.path.join(ARCHIVE, name)
     digest = sha256(src)
-    os.replace(src, dst)
+    # 归档名恒带哈希前缀、永不覆盖：裸名曾被反复 os.replace 覆盖（丢失 58a11397）。
+    stem, ext = os.path.splitext(name)
+    dst = os.path.join(ARCHIVE, f"{stem}-{digest[:8]}{ext}")
+    if os.path.exists(dst):
+        if sha256(dst) != digest:
+            raise SystemExit(f"refuse to overwrite {dst}: different content")
+        os.remove(src)
+    else:
+        os.replace(src, dst)
+    archived_name = os.path.basename(dst)
     today = datetime.date.today().isoformat()
     status = f"**GOLDEN-known-working**（{golden_note}）" if golden_note else "archived"
     append_manifest([
         "",
-        f"| {name} | `{digest[:16]}` | {os.path.getsize(dst):,} | {status} | {today} |",
+        f"| {archived_name} | `{digest[:16]}` | {os.path.getsize(dst):,} | {status} | {today} |",
     ])
-    print(f"archived {name} sha256={digest[:16]} status={status}")
+    print(f"archived {archived_name} sha256={digest[:16]} status={status}")
 
 
 def cmd_deploy(path):

@@ -4,6 +4,7 @@ import { createDepthOfFieldController } from "./viewerDepthOfField";
 import { DeferredDisposalQueue } from "./deferred-disposal";
 import { framePerf } from "./framePerf";
 import { buildOutlineHull } from "./viewerOutline";
+import { installLineLightPass } from "@/render/exec/three/lineLightPass";
 import {
   primeAllTextures,
   primeTexturesInBackground as primeTexturesBatched,
@@ -386,6 +387,7 @@ export class ThreeViewer {
       alpha: true,
       powerPreference: "high-performance",
     });
+    installLineLightPass(THREE, this.scene, this.renderer, () => this.groups.get("lights"));
     // 默认限制高 DPR 屏的片元成本；精细编辑器可显式提高上限。
     this.renderer.setPixelRatio(
       Math.min(window.devicePixelRatio, options.maxPixelRatio ?? 1.5),

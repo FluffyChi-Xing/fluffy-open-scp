@@ -57,8 +57,11 @@ __pycache__/
 # 0.8.0 反汇编工作区（PYZ 解包 + .dis 转储）
 /tmp_re/
 
-# SC5 Asset Editor 导出器（第三方资源，stage 后本地打包用；发布前确认再分发条款）
+# SC5 Asset Editor 源码（离线对拍）
 /src-tauri/resources/blender/ny_facade/
+
+# Rust Blend 导入使用的本地图集数据（打包资源）
+/src-tauri/resources/blend-atlas/
 
 # tools/ 是本地临时工作区（迁移工具运行时、流水线脚本等），不入库 2026-11-08
 tools/
@@ -73,3 +76,6 @@ tools/
 
 # Local SC5 Packager references
 /reference/
+
+# build staging temp (hope/material/mask intermediates)
+.tmp-build/

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { motion } from "motion-v";
@@ -147,6 +147,11 @@ function contextMenuCopyTgi() {
 // TGI 搜索（0x 前缀 / t:g:i 分段 / 十进制均可，服务端匹配）
 const searchText = shallowRef("");
 let searchTimer: number | undefined;
+function clearSearch() {
+  window.clearTimeout(searchTimer);
+  searchText.value = "";
+  void explorer.applyFilter("");
+}
 function onSearchInput(event: Event) {
   const value = (event.target as HTMLInputElement).value;
   searchText.value = value;
@@ -158,9 +163,11 @@ function onSearchInput(event: Event) {
 
 // 进入页面即按持久化的游戏目录设置初始化目录树（store 内部有幂等保护）
 onMounted(() => {
+  clearSearch();
   void explorer.initFromSettings();
   void refreshNotesCounts();
 });
+onBeforeUnmount(clearSearch);
 watch(activePage, () => void refreshNotesCounts());
 const detailMode = shallowRef<"hex" | "preview">("hex");
 const copied = shallowRef(false);
@@ -551,10 +558,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 class="resource-search-clear"
                 type="button"
                 :aria-label="$t('package.clearSearch')"
-                @click="
-                  searchText = '';
-                  explorer.applyFilter('');
-                "
+                @click="clearSearch"
               >
                 <FIcon name="X" :size="13" aria-label="" />
               </button>
@@ -781,6 +785,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
             </div>
             <ResourcePreview
               v-else
+              fill
               :preview="preview"
               :type-name="selected ? explorer.typeNameOf(selected) : ''"
               :loading="previewLoading"
@@ -990,6 +995,8 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .detail-column {
   /* 稳定滚动槽：选中 property 时内容高度变化会让滚动条出现/消失，
      没有 gutter 时整列宽度抖动，观感就是"闪一下"。 */
+  display: flex;
+  flex-direction: column;
   overflow: auto;
   padding: 14px;
   scrollbar-gutter: stable;
@@ -1390,11 +1397,13 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .detail-heading {
   align-items: flex-start;
   display: flex;
+  flex: none;
   justify-content: space-between;
 }
 .detail-tabs {
   border-bottom: 1px solid var(--border);
   display: flex;
+  flex: none;
   gap: 14px;
   margin-top: 20px;
 }
@@ -1412,21 +1421,11 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   color: var(--foreground);
   font-weight: 700;
 }
-.hex-view {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font:
-    11px/1.7 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  margin-top: 14px;
-  min-height: 180px;
-  overflow: auto;
-  padding: 12px;
-  white-space: pre-wrap;
+.detail-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 .work-empty {
   align-items: center;

@@ -49,7 +49,10 @@ function offsetLabel(value: number) {
 <style scoped>
 .hex-preview {
   display: grid;
+  flex: 1;
   gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
   min-width: 0;
 }
 .preview-meta {
@@ -62,8 +65,6 @@ function offsetLabel(value: number) {
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  max-height: 380px;
-  min-height: 260px;
   overflow: auto;
   padding: 12px;
 }

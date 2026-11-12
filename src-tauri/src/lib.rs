@@ -92,10 +92,10 @@ use settings::{game_directory_detect, settings_get, settings_set_game_directory}
 use stats::package_statistics;
 use tauri::{Manager, PhysicalPosition};
 use workspace::{
-    code_delete_file, code_manifest, code_package_entries, code_package_info, code_read_text,
-    code_resource_preview, code_tree, code_write_text, workspace_create_folder,
-    workspace_create_markdown, workspace_get, workspace_legacy_status, workspace_list,
-    workspace_move, workspace_read_markdown, workspace_rename, workspace_set_root,
+    code_delete_file, code_manifest, code_open_in_explorer, code_package_entries,
+    code_package_info, code_read_text, code_resource_preview, code_tree, code_write_text,
+    workspace_create_folder, workspace_create_markdown, workspace_get, workspace_legacy_status,
+    workspace_list, workspace_move, workspace_read_markdown, workspace_rename, workspace_set_root,
     workspace_sync_legacy, workspace_write_markdown,
 };
 
@@ -167,6 +167,7 @@ pub fn run() {
             map_panel::map_panel_list_regions,
             map_panel::map_panel_render_region,
             map_panel::map_panel_write_heightmap,
+            map_panel::map_panel_apply_terrain,
             map_panel::map_panel_region_3d,
             debug_tools::debug_tools_write_overlay,
             annotation_create,
@@ -276,6 +277,7 @@ pub fn run() {
             code_tree,
             code_read_text,
             code_write_text,
+            code_open_in_explorer,
             code_delete_file,
             code_package_info,
             code_package_entries,

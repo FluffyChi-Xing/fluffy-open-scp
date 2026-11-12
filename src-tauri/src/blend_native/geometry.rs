@@ -89,7 +89,27 @@ pub fn tessellate(points: &[Point3], normal: Point3) -> Vec<Tri> {
             triangles.push([0, index, index + 1]);
         }
     }
+    // native_asset.py triangulates the original world contour. The reversal
+    // above is local to the 2D ear test; output must keep the contour winding.
+    if area < 0.0 {
+        for triangle in &mut triangles {
+            triangle.swap(1, 2);
+        }
+    }
     triangles
+}
+
+pub fn first_reversed_triangle(
+    positions: &[[f32; 3]],
+    normals: &[[f32; 3]],
+    indices: &[u32],
+) -> Option<usize> {
+    indices.chunks_exact(3).position(|triangle| {
+        let [a, b, c] = [triangle[0], triangle[1], triangle[2]]
+            .map(|index| positions[index as usize].map(f64::from));
+        let normal = normals[triangle[0] as usize].map(f64::from);
+        dot(cross(sub(b, a), sub(c, a)), normal) < -1e-10
+    })
 }
 
 fn point_in_triangle(point: [f64; 2], a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> bool {
@@ -246,6 +266,23 @@ mod tests {
         ];
         let triangles = tessellate(&points, [0.0, 0.0, 1.0]);
         assert_eq!(triangles.len(), 2);
+    }
+
+    #[test]
+    fn clockwise_projected_facade_keeps_its_outward_winding() {
+        let points = [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0],
+            [0.0, 1.0, 0.0],
+        ];
+        let normal = [-1.0, 0.0, 0.0];
+        let triangles = tessellate(&points, normal);
+        assert_eq!(triangles.len(), 2);
+        for triangle in triangles {
+            let [a, b, c] = triangle.map(|index| points[index]);
+            assert!(dot(cross(sub(b, a), sub(c, a)), normal) > 0.0);
+        }
     }
 
     #[test]

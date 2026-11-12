@@ -51,7 +51,14 @@ import ModAssetWorkbench from './asset/ModAssetWorkbench.vue';
  * 元信息（含 DBPF 统计），笔记按钮打开模组笔记 sheet；打开时
  * package.json 缺失则自动扫描生成。
  */
-const props = defineProps<{ project: ModProjectView }>();
+const props = withDefaults(
+  defineProps<{
+    project: ModProjectView;
+    /** 嵌在项目详情 Develop tab：隐藏与 repo 标题重复的页眉。 */
+    embedded?: boolean;
+  }>(),
+  { embedded: false },
+);
 const emit = defineEmits<{ close: [] }>();
 
 const { t, locale } = useI18n();
@@ -378,8 +385,10 @@ function onEntrySearch(event: Event) {
 }
 
 onBeforeUnmount(() => {
+  window.clearTimeout(searchTimer);
   // 离开工作台时释放模组包句柄（保持全局包管理器干净）。
   if (workbenchPackageId.value !== null) {
+    void explorer.applyFilter("");
     void explorer.closePackage(workbenchPackageId.value);
   }
 });
@@ -456,9 +465,9 @@ watch(
 </script>
 
 <template>
-  <section class="code-page">
-    <header class="page-heading">
-      <div>
+  <section class="code-page" :class="{ embedded }">
+    <header class="page-heading" :class="{ compact: embedded }">
+      <div v-if="!embedded">
         <p class="eyebrow">{{ $t("studio.code.sheetTitle") }}</p>
         <FTypography :header="1" spacing="none">{{ project.name }}</FTypography>
         <p v-if="tree" class="root-path">{{ tree.rootPath }}</p>
@@ -499,6 +508,7 @@ watch(
           {{ $t("studio.code.refresh") }}
         </button>
         <button
+          v-if="!embedded"
           class="refresh-button close"
           type="button"
           :aria-label="$t('common.close')"
@@ -510,7 +520,7 @@ watch(
       </div>
     </header>
 
-    <p class="code-hint">{{ $t(engineEnabled ? 'flow.fileHint' : 'studio.code.hint') }}</p>
+    <p v-if="!embedded" class="code-hint">{{ $t(engineEnabled ? 'flow.fileHint' : 'studio.code.hint') }}</p>
     <FlowInitializeSheet v-if="initializeOpen" v-model:open="initializeOpen" :project="project.relPath" :manifest="projectManifest" @initialized="loadTree(true)" />
 
     <p v-if="!isTauri()" class="web-hint">{{ $t("studio.raster.webHint") }}</p>
@@ -894,10 +904,19 @@ watch(
   min-height: 0;
   padding: 16px 18px;
 }
+.code-page.embedded {
+  padding: 0;
+  gap: 8px;
+}
 .page-heading {
   align-items: flex-start;
   display: flex;
   justify-content: space-between;
+}
+.page-heading.compact {
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 36px;
 }
 .page-heading :deep(h1) {
   margin: 0;

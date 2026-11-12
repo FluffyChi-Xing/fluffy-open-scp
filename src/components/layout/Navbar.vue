@@ -31,7 +31,29 @@ watch(notificationsOpen, (open) => {
       <button v-if="props.headerActions.search" class="search-button" type="button" :aria-label="$t('shell.search')" @click="emit('openSearch')"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg><span>{{ $t('shell.search') }}</span><kbd>⌘ K</kbd></button>
       <button v-if="props.headerActions.language" class="text-button" type="button" :aria-label="$t('shell.language')" @click="emit('toggleLocale')">{{ localeLabel }}</button>
       <button v-if="props.headerActions.theme" class="icon-button" type="button" :aria-label="$t('shell.theme')" @click="emit('toggleTheme')"><svg v-if="props.dark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.1A8.5 8.5 0 0 1 9.9 3.5 8.5 8.5 0 1 0 20.5 14.1Z"/></svg></button>
-      <FPopover v-if="props.headerActions.notifications" v-model:open="notificationsOpen"><template #trigger><button class="icon-button notify-button" type="button" :aria-label="$t('shell.notifications')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span v-if="unreadCount" class="notify-badge" aria-hidden="true">{{ unreadCount > 9 ? '9+' : unreadCount }}</span></button></template><NotificationsPanel /></FPopover>
+      <FPopover
+        v-if="props.headerActions.notifications"
+        v-model:open="notificationsOpen"
+        :width="320"
+      >
+        <template #trigger>
+          <button
+            class="icon-button notify-button"
+            type="button"
+            :aria-label="$t('shell.notifications')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+            </svg>
+            <span
+              v-if="unreadCount"
+              class="notify-badge"
+              aria-hidden="true"
+            >{{ unreadCount > 9 ? "9+" : unreadCount }}</span>
+          </button>
+        </template>
+        <NotificationsPanel />
+      </FPopover>
       <FFullscreen v-if="props.headerActions.fullscreen" />
       <button v-if="props.headerActions.settings" class="icon-button" type="button" :aria-label="$t('shell.settings')" @click="emit('openSettings')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3 13h-.09a2 2 0 1 1 0-4H3a1.65 1.65 0 0 0 1.51-1A1.65 1.65 0 0 0 4.6 6.18l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9.25 3H9a1.65 1.65 0 0 0 1-1.51V1.4a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3h.25a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 6.18a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 12"/></svg></button>
     </nav>

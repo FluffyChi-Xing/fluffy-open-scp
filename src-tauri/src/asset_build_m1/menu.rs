@@ -275,13 +275,11 @@ where
 /// uiCategories Key 数组：`category_instances` 非空时整体展开（多容器挂载），
 /// 否则回退单 `category_instance`（再回退 `default_instance`）。
 fn ui_category_values(spec: &MenuRegistrationSpec, default_instance: u32) -> Vec<Value> {
-    let instances: Vec<u32> = if spec.category_instances.is_empty() {
-        vec![spec.category_instance.unwrap_or(default_instance)]
-    } else {
-        spec.category_instances.clone()
-    };
-    instances
-        .into_iter()
+    let default = [default_instance];
+    spec.ui_categories()
+        .unwrap_or(&default)
+        .iter()
+        .copied()
         .map(|instance| {
             Value::Key(sc_properties::Key {
                 type_id: 0,
@@ -293,18 +291,34 @@ fn ui_category_values(spec: &MenuRegistrationSpec, default_instance: u32) -> Vec
 }
 
 impl MenuRegistrationSpec {
+    pub(super) fn ui_categories(&self) -> Option<&[u32]> {
+        if self.category_instances.is_empty() {
+            self.category_instance.as_ref().map(std::slice::from_ref)
+        } else {
+            Some(&self.category_instances)
+        }
+    }
+
     /// 从 `SemanticsIr.menu`（字符串键 JSON 表）解析并校验。
     pub fn from_values(
         values: &std::collections::BTreeMap<String, serde_json::Value>,
     ) -> Result<Self, String> {
         let value =
             serde_json::Value::Object(values.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-        let spec: MenuRegistrationSpec = serde_json::from_value(value)
+        let mut spec: MenuRegistrationSpec = serde_json::from_value(value)
             .map_err(|error| format!("invalid menu registration: {error}"))?;
         if spec.title.trim().is_empty() {
             return Err("menu registration requires a non-empty title".into());
         }
         super::street_placement::compensation(spec.street_facing_degrees)?;
+        // The editor's Parks root resolves to Basic Parks in the Packager's menu_locations.py.
+        let canonical = |id| if id == 0x899B_EA70 { 0x0704_9250 } else { id };
+        spec.category_instance = spec.category_instance.map(canonical);
+        let mut seen = std::collections::HashSet::new();
+        for id in &mut spec.category_instances {
+            *id = canonical(*id);
+        }
+        spec.category_instances.retain(|id| seen.insert(*id));
         Ok(spec)
     }
 }
@@ -492,7 +506,12 @@ fn generate_parent_free(
     root: &std::path::Path,
     author_building40: bool,
 ) -> Result<MenuResources, String> {
-    let rotation = spec.rotation_degrees.unwrap_or(180);
+    // Building40 workbench scenes use the game lot frame directly. The old
+    // 180° fallback is retained for legacy routes only; applying it here
+    // flips authored paths and makes a +Y street face appear at -Y in game.
+    let rotation = spec
+        .rotation_degrees
+        .unwrap_or(if author_building40 { 0 } else { 180 });
     // 家族适配器优先；未声明时 Building40 旧默认仍为 complete-building。
     let skeleton = spec
         .menu_skeleton
@@ -567,13 +586,8 @@ fn generate_parent_free(
                 instance,
             }),
         );
-        if let Some((min, max)) = model_bounds(resources, model_ids) {
-            set_scalar(
-                &mut file,
-                0x00F9EFBA,
-                PropType::BoundingBox,
-                Value::BoundingBox { min, max },
-            );
+        if model_ids.is_some() {
+            write_graphics_bounds(&mut file, &native.asset)?;
         }
         for (offset, lod) in model_ids.iter().flatten().enumerate() {
             set_scalar(
@@ -602,6 +616,9 @@ fn generate_parent_free(
         // 缺失任一条 = 窗灯必黑（SC5 报告《第九阶段》0x0081D020/0x0081CD60），
         // 因此在这里直接 fail，而不是等进游戏肉眼发现。
         verify_interior_controller_contract(&encoded)?;
+        if model_ids.is_some() {
+            verify_graphics_bounds(&encoded, &native.asset)?;
+        }
         encoded
     };
     let mut entries = vec![
@@ -1022,6 +1039,47 @@ fn verify_interior_controller_contract(bytes: &[u8]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+const GRAPHICS_BOUNDS: u32 = 0x00F9_EFBA;
+
+fn write_graphics_bounds(graphics: &mut PropertyFile, asset: &PropertyFile) -> Result<(), String> {
+    let bounds = asset
+        .get(GRAPHICS_BOUNDS)
+        .and_then(|property| match &property.kind {
+            Kind::Array(values) => match values.as_slice() {
+                [value @ Value::BoundingBox { .. }] => Some(value.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .ok_or("graphics unit contract: Asset requires one BoundingBox in 00F9EFBA")?;
+    // Retail 42E1C000 uses the same array as the Asset dictionary
+    // (SC5 Packager build_candidate.py:112). EA::Variant selects separate
+    // storage branches for scalar and array bounding boxes.
+    set_array_with_flags(
+        graphics,
+        GRAPHICS_BOUNDS,
+        PropType::BoundingBox,
+        vec![bounds],
+        0x801C,
+    );
+    Ok(())
+}
+
+fn verify_graphics_bounds(bytes: &[u8], asset: &PropertyFile) -> Result<(), String> {
+    let graphics = PropertyFile::parse(bytes)
+        .map_err(|error| format!("graphics unit contract: parse: {error}"))?;
+    let expected = asset.get(GRAPHICS_BOUNDS).map(|property| &property.kind);
+    if graphics.get(GRAPHICS_BOUNDS).is_some_and(|property| {
+        property.prop_type == PropType::BoundingBox
+            && property.encoding.flags == 0x801C
+            && property.encoding.array_item_size == Some(24)
+            && Some(&property.kind) == expected
+    }) {
+        return Ok(());
+    }
+    Err("graphics unit contract: 00F9EFBA must match the Asset's native BoundingBox array".into())
 }
 
 fn model_bounds(
@@ -1850,6 +1908,27 @@ mod tests {
     }
 
     #[test]
+    fn graphics_bounds_use_the_native_asset_array_encoding() {
+        let bounds = Value::BoundingBox {
+            min: [-35.441772, -39.548546, -0.37917364],
+            max: [35.44178, 43.228867, 270.3182],
+        };
+        let mut asset = PropertyFile::default();
+        set_array_with_flags(
+            &mut asset,
+            GRAPHICS_BOUNDS,
+            PropType::BoundingBox,
+            vec![bounds.clone()],
+            0x801C,
+        );
+        let mut graphics = PropertyFile::default();
+        set_scalar(&mut graphics, GRAPHICS_BOUNDS, PropType::BoundingBox, bounds);
+        assert!(verify_graphics_bounds(&encode(&graphics).unwrap(), &asset).is_err());
+        write_graphics_bounds(&mut graphics, &asset).unwrap();
+        verify_graphics_bounds(&encode(&graphics).unwrap(), &asset).unwrap();
+    }
+
+    #[test]
     fn clone_lot_mask_allocates_a_new_raster_identity() {
         let old = 0x4E23_544D;
         let lot = PropertyFile {
@@ -2036,10 +2115,10 @@ mod tests {
         values.insert("title".into(), serde_json::json!("campus"));
         values.insert(
             "categoryInstances".into(),
-            serde_json::json!(["0x899BEA70", "94E412ED"]),
+            serde_json::json!(["0x899BEA70", "94E412ED", "07049250"]),
         );
         let spec = MenuRegistrationSpec::from_values(&values).unwrap();
-        assert_eq!(spec.category_instances, vec![0x899B_EA70, 0x94E4_12ED]);
+        assert_eq!(spec.category_instances, vec![0x0704_9250, 0x94E4_12ED]);
         let bytes = build_menu2(&spec, 0x1234_5678).unwrap();
         let file = PropertyFile::parse(&bytes).unwrap();
         let category = file
@@ -2056,7 +2135,7 @@ mod tests {
                         other => panic!("unexpected uiCategories value {other:?}"),
                     })
                     .collect();
-                assert_eq!(instances, vec![0x899B_EA70, 0x94E4_12ED]);
+                assert_eq!(instances, vec![0x0704_9250, 0x94E4_12ED]);
             }
             other => panic!("uiCategories must be an array, got {other:?}"),
         }
@@ -2098,21 +2177,24 @@ fn build_icon_png(
         let file = root.join(path);
         let bytes =
             std::fs::read(&file).map_err(|error| format!("menu.iconPng: {path}: {error}"))?;
-        if !bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-            // Asset Editor exports some icons with a `.png` label while the
-            // payload is JPEG. Decode and normalize in memory; never rewrite
-            // the authoring file, and keep the package contract as PNG.
-            let image = image::load_from_memory(&bytes)
-                .map_err(|_| format!("menu.iconPng: {path} is not a PNG file"))?;
-            let mut normalized = std::io::Cursor::new(Vec::new());
-            image
-                .write_to(&mut normalized, image::ImageFormat::Png)
-                .map_err(|error| {
-                    format!("menu.iconPng: {path} image conversion failed: {error}")
-                })?;
-            return Ok(normalized.into_inner());
-        }
-        return Ok(bytes);
+        // 图标契约（照抄 SC5 Packager `menu_icons.py:6-10` + `verify_package.py:46-49`）：
+        // 无论输入是 PNG 还是被误标成 `.png` 的 JPEG，一律解码 → RGBA →
+        // 等比 `fit` 到 128×128（Lanczos）→ 重编码 PNG。基准侧 verify 对
+        // 尺寸不符直接判失败；直通会把 240×160 之类的图打进包导致 UI 拉伸/裁切。
+        let image = image::load_from_memory(&bytes)
+            .map_err(|_| format!("menu.iconPng: {path} is not a decodable image"))?
+            .to_rgba8();
+        let fitted = image::imageops::resize(
+            &image,
+            128,
+            128,
+            image::imageops::FilterType::Lanczos3,
+        );
+        let mut normalized = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(fitted)
+            .write_to(&mut normalized, image::ImageFormat::Png)
+            .map_err(|error| format!("menu.iconPng: {path} image conversion failed: {error}"))?;
+        return Ok(normalized.into_inner());
     }
     let (a, b) = palette(instance);
     let mut rgba = Vec::with_capacity(128 * 128 * 4);

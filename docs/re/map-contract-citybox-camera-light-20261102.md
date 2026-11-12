@@ -104,6 +104,8 @@ mPlayCell.max.z = min.z + (max.z-min.z)
 
 ## 3. 相机：扩 citybox 不会解锁镜头，反而会缩短
 
+2026-11-12 样本更正。本节固定 `±1024/±1020` 公式描述的是开发版分支。当前离线零售 Glide 在已定位的输入路径上以 `0.996` 缩放传入 AABB，再夹取。扩大 AABB 会扩大该 helper 的有效范围，同时影响模拟。见[零售机器码与跨界样本](map-consumers-ui-bridge-camera.md#2026-11-12-零售-glide-对拍)。
+
 `cCameraControllerBase::Update`（RVA 0x395B90）`mRelativeMove != 0` 分支逐行：
 
 ```c

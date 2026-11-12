@@ -378,9 +378,8 @@ function beginEffectDrag(event: PointerEvent, entry: EffectCatalogEntry) {
   });
 }
 
-/** 生成器页签：预设拖入即放置（可带预设名字 id）。 */
-function onSpawnerPlace(spawnerId: number | null) {
-  emit("place", { kind: "spawner", spawnerId });
+function onSpawnerPlace() {
+  emit("place", { kind: "spawner" });
 }
 </script>
 

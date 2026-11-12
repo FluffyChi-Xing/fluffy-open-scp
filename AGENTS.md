@@ -83,8 +83,32 @@ entire investigation, and the mistake was only discovered by the user. Violation
    anything else.
 
 ## Menu-load oracle (user directive, 2026-11-06)
+Only the user may launch SimCity (user directive, 2026-11-12). After deployment,
+leave the game closed and let the user perform the cold-start check.
+
 A known-good package loads the main menu instantly. Any broken package makes
 the menu hang for a long time. Verification order for a rebuilt package is
 therefore: deploy → cold-start → measure menu load — a hanging menu means the
 package is broken; do NOT enter a city, do NOT place buildings, do NOT save.
 This is the cheap acceptance test that avoids save pollution entirely.
+
+## 原样迁移 + 冻结已验证实现（user directive, 2026-11-11, 死命令）
+这些规则来自同一类事故的十几次重复：每次都"没原样迁移 → 进游戏才发现 →
+回头对拍 → 把没照抄的补上 → 一遍过"。以后按此执行，不再例外。
+
+1. **唯一基准是 SC5 Asset Packager / Editor 的 `.py` 源码**
+   （vendored：`reference/sc5-packager-0.8.0/`；完整快照：
+   `investigation/sc5-asset-packager-0.8.0/`）。迁移 = 逐函数照抄（含常量、
+   编码 flags、顺序、判定文案）。禁止"重新设计""优化""按需裁剪"。
+   任何迁移都要能在基准里指出对应的函数与行号。
+2. **如无必要勿增实体**：已构建通过、游戏内验证正常的模块/资源/列，
+   一律不改、不重构、不"顺手优化"。只在它**再次出错**时才动它。
+3. **新功能一律新增模块**，不改已验证模块的既有分支；需要扩展时加新函数/
+   新文件，旧路径行为保持字节级不变。
+4. **改动必须可归因**：每次构建改动要能说出"对应基准哪一段 / 修的是哪个
+   已复现缺陷"。禁止"试一版看看"式的参数调整。
+5. **普适性判据**：同一构建器对任意建筑（换楼、换模型、换身份）必须给出一致
+   行为。若某个修法只对某一栋楼有效，视为未修好——正确修法是补进通用契约
+   （构建期闸门/配方），而不是给那栋楼打补丁。
+6. **回归防护优先于修复**：每修一个"缺字段/缺资源"类缺陷，同时补一条构建期
+   硬闸门（缺则 fail），否则该缺陷必然复发。

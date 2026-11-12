@@ -135,7 +135,7 @@ impl SceneDocument {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScenePath {
-    /// 路径类型 id（`pedestrian` / `driveway` / `custom`）。类型驱动语义：
+    /// 路径类型 id（`pedestrian` / `vehicle` / `driveway` / `custom`）。类型驱动语义：
     /// entry/scope/connect 全部由 `path_catalog` 换算，作者不填。
     pub kind: Option<String>,
     /// 高级模式：显式 entry instance（hex）。目录类型存在时忽略。
@@ -920,7 +920,7 @@ pub(super) fn transform_value(scale: Option<f32>, transform: &Option<Transform>)
 /// referenced lot's own props/lights/paths from resurfacing in the build.
 /// 场景写回的列族声明（schema.scene.writes）。delta 模式下只有列出的族会
 /// 被写回覆盖；未声明族从参照 lot 原样保留。
-#[derive(Clone, Default, serde::Serialize)]
+#[derive(Clone, Default, Debug, serde::Serialize)]
 pub struct SceneWrites {
     /// true = 权威模式（整体重写，native profile 从零构建专用）。
     pub authoritative: bool,
@@ -1620,6 +1620,15 @@ pub fn verify_units(
     document: &SceneDocument,
     writes: &SceneWrites,
 ) -> Result<(), String> {
+    verify_unit_counts(file, document, writes, true)
+}
+
+pub(super) fn verify_unit_counts(
+    file: &PropertyFile,
+    document: &SceneDocument,
+    writes: &SceneWrites,
+    count_spawners: bool,
+) -> Result<(), String> {
     let assembled = LotEditorDocument::from_property_file(file.clone()).assemble_units();
     let count_units = |pred: &dyn Fn(&sc_properties::LotUnit) -> bool| {
         assembled.units.iter().filter(|unit| pred(unit)).count()
@@ -1643,11 +1652,13 @@ pub fn verify_units(
             count_units(&|u| matches!(u, sc_properties::LotUnit::PathPoint { .. })),
             count_document(&|u| matches!(u, SceneUnit::PathPoint { .. })),
         ));
-        checks.push((
-            "spawners".into(),
-            count_units(&|u| matches!(u, sc_properties::LotUnit::Spawner { .. })),
-            count_document(&|u| matches!(u, SceneUnit::Spawner { .. })),
-        ));
+        if count_spawners {
+            checks.push((
+                "spawners".into(),
+                count_units(&|u| matches!(u, sc_properties::LotUnit::Spawner { .. })),
+                count_document(&|u| matches!(u, SceneUnit::Spawner { .. })),
+            ));
+        }
     } else {
         // delta 模式：只校验**声明族**；未声明族由 delta-audit 保证原样保留。
         if writes.paths {
@@ -1674,7 +1685,7 @@ pub fn verify_units(
                 (|u: &SceneUnit| matches!(u, SceneUnit::Light { .. })) as fn(&SceneUnit) -> bool,
             ),
             (
-                writes.spawners,
+                writes.spawners && count_spawners,
                 "spawners",
                 |u: &sc_properties::LotUnit| matches!(u, sc_properties::LotUnit::Spawner { .. }),
                 |u: &SceneUnit| matches!(u, SceneUnit::Spawner { .. }),

@@ -37,10 +37,14 @@ export interface LogicEdge {
 }
 
 export interface BuildingInfoParams {
-  w1: number;
-  w2: number;
-  w3: number;
-  minWorkers: number;
+  /** 这栋楼需要的劳工总数——作者唯一必须理解的概念。 */
+  workers: number | null;
+  /** 高级：按收入档拆分（三项齐全时覆盖 workers 的总数分配）。 */
+  w1: number | null;
+  w2: number | null;
+  w3: number | null;
+  /** 开工所需最低人数；null = 后端按原版比例（约 1/6）自动。 */
+  minWorkers: number | null;
   /** 八班排班表（每班规模，0=关班）；班位 i 对应排班列 0x0D00853A + i。 */
   schedule: number[];
 }
@@ -190,10 +194,11 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     labelKey: "studio.assetWorkbench.logicNode.buildingInfo",
     hintKey: "studio.assetWorkbench.logicNode.buildingInfoHint",
     defaultParams: () => ({
-      w1: 20,
-      w2: 5,
-      w3: 0,
-      minWorkers: 5,
+      workers: 25,
+      w1: null,
+      w2: null,
+      w3: null,
+      minWorkers: null,
       schedule: [6, 6, 7, 7, 6, 6, 7, 6],
     }),
   },
@@ -559,15 +564,19 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
     }
     if (node.kind === "building-info") {
       const labor = params as BuildingInfoParams;
+      const validCount = (v: unknown) => v === null || v === undefined || (Number.isInteger(v) && (v as number) >= 0);
+      const tiersComplete = [labor.w1, labor.w2, labor.w3].every(
+        (v) => Number.isInteger(v) && (v as number) >= 0,
+      );
+      const hasWorkers =
+        Number.isInteger(labor.workers) && (labor.workers as number) >= 0;
       if (
-        !Number.isInteger(labor.w1) ||
-        !Number.isInteger(labor.w2) ||
-        !Number.isInteger(labor.w3) ||
-        !Number.isInteger(labor.minWorkers) ||
-        labor.w1 < 0 ||
-        labor.w2 < 0 ||
-        labor.w3 < 0 ||
-        labor.minWorkers < 0
+        !validCount(labor.workers) ||
+        !validCount(labor.w1) ||
+        !validCount(labor.w2) ||
+        !validCount(labor.w3) ||
+        !validCount(labor.minWorkers) ||
+        (!hasWorkers && !tiersComplete)
       )
         issues.push({ code: "laborInvalid", nodeId: node.id });
     } else if (node.kind === "behavior-core") {
@@ -678,15 +687,27 @@ export function normalizeLogicGraph(raw: unknown): LogicGraph {
       graph.params[id] = params as LogicParams;
     }
   }
+  // 旧图迁移（2026-11-11）：老图只有 w1/w2/w3/minWorkers。补 workers 总额，
+  // 让新的「需要的劳工数」主输入能显示出来；分档原样保留为高级覆盖。
+  for (const node of graph.nodes) {
+    if (node.kind !== "building-info") continue;
+    const params = graph.params[node.id] as unknown as Record<string, unknown>;
+    if (!params || params.workers !== undefined) continue;
+    const tiers = ["w1", "w2", "w3"].map((key) => params[key]);
+    if (tiers.every((value) => typeof value === "number")) {
+      params.workers = (tiers as number[]).reduce((sum, value) => sum + value, 0);
+    }
+  }
   // 参数缺失的节点补默认值（按 kind / leaf type），避免图可画但构建必失败。
   for (const node of graph.nodes) {
     if (graph.params[node.id]) continue;
     if (node.kind === "building-info")
       graph.params[node.id] = {
-        w1: 20,
-        w2: 5,
-        w3: 0,
-        minWorkers: 5,
+        workers: 25,
+        w1: null,
+        w2: null,
+        w3: null,
+        minWorkers: null,
         schedule: [6, 6, 7, 7, 6, 6, 7, 6],
       };
     else if (node.kind === "behavior-core")

@@ -94,7 +94,7 @@ pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, S
     describe(root, &relative)
 }
 
-pub(super) fn import(root: &Path, payload: &Value) -> Result<Value, String> {
+pub(super) fn import(root: &Path, payload: &Value, blend_atlas: Option<&Path>) -> Result<Value, String> {
     let source = PathBuf::from(payload["path"].as_str().ok_or("Missing source path")?);
     if fs::metadata(&source).map_err(|e| e.to_string())?.len() > 128 * 1024 * 1024 {
         return Err("Asset exceeds 128 MiB".into());
@@ -105,7 +105,7 @@ pub(super) fn import(root: &Path, payload: &Value) -> Result<Value, String> {
         .unwrap_or("")
         .to_ascii_lowercase();
     if extension == "blend" {
-        return import_blend(root, &source);
+        return import_blend(root, &source, blend_atlas);
     }
     if ![
         "package", "glb", "lotm", "png", "jpg", "jpeg", "json", "rw4", "dds",
@@ -132,10 +132,8 @@ pub(super) fn import(root: &Path, payload: &Value) -> Result<Value, String> {
     describe(root, &relative)
 }
 
-/// Use Blender's headless Python API to turn a .blend into a project GLB and
-/// recover the six-slot image mapping from material node names. Blender is an
-/// optional runtime dependency; the error is explicit when it is unavailable.
-fn import_blend(root: &Path, source: &Path) -> Result<Value, String> {
+/// Read the Blend file with Blender and convert it to LOTM with Rust.
+fn import_blend(root: &Path, source: &Path, blend_atlas: Option<&Path>) -> Result<Value, String> {
     let cache_key = blend_cache_key(source)?;
     if let Some(mut cached) = read_blend_cache(root, &cache_key) {
         cached["cache"] = json!("hit");
@@ -156,22 +154,17 @@ fn import_blend(root: &Path, source: &Path) -> Result<Value, String> {
             "cache_key": cache_key,
         }),
     );
-    // A .blend import is a native LOTM conversion, never a GLB preview.
-    // Blender only reads the file (extract_blend.py); the export itself runs
-    // in Rust (blend_native::export).  Missing atlas data is an explicit
-    // error instead of silently producing a different asset.
-    let atlas = match blender_service::atlas_dir() {
-        Some(atlas) => atlas,
-        None => {
-            crate::blend_native::trace::emit("addon_missing", json!({}));
-            return Err(blender_service::MISSING_ADDON_HINT.to_string());
-        }
-    };
+    let atlas = blend_atlas
+        .filter(|path| path.join("catalog.json").is_file())
+        .ok_or("blend_atlas_missing")?;
     crate::blend_native::trace::emit(
-        "addon_found",
+        "atlas_found",
         json!({ "path": atlas.display().to_string() }),
     );
     let temp = root.join(".openscp-blend-import");
+    // Previous failed imports leave this dir around; wipe so extract/bundle
+    // writes never collide with stale temps (Windows os error 183).
+    let _ = fs::remove_dir_all(&temp);
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
     let lotm_bytes = match blender_service::export_native_rust(&atlas, source, &temp) {
         Ok(bytes) => {
@@ -192,9 +185,8 @@ fn import_blend(root: &Path, source: &Path) -> Result<Value, String> {
     Ok(result)
 }
 
-// 2026-11-06.4：抽取器补回 CORNER 属性（NY_DecalCoord）、法线改用
-// (M^-1)^T、贴花/调色板/浮雕/Office 内饰与插件对齐；旧缓存一律失效重导。
-const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-06.4";
+// Invalidate results written before the standalone Rust import configuration.
+const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-12.3";
 
 fn blend_cache_key(source: &Path) -> Result<String, String> {
     let bytes = fs::read(source).map_err(|error| error.to_string())?;
@@ -209,6 +201,12 @@ fn read_blend_cache(root: &Path, key: &str) -> Option<Value> {
     let path = blend_cache_dir(root, key).join("result.json");
     let result: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
     let asset = result.get("asset")?.as_str()?;
+    if result["source"] != "blend-native"
+        || result["nativeAdapter"]["status"] != "native-rust"
+        || result["lotm"].as_str() != Some(asset)
+    {
+        return None;
+    }
     if !safe_path(root, asset).ok()?.is_file() {
         return None;
     }
@@ -219,13 +217,13 @@ fn write_blend_cache(root: &Path, key: &str, result: &Value) -> Result<(), Strin
     let dir = blend_cache_dir(root, key);
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let bytes = serde_json::to_vec_pretty(result).map_err(|error| error.to_string())?;
-    crate::atomic_fs::write_atomic(&dir.join("result.json"), &bytes, false)
+    // replace=true: cache miss after deleting the LOTM still leaves result.json;
+    // create-new then surfaces Windows os error 183 and blocks every re-import.
+    crate::atomic_fs::write_atomic(&dir.join("result.json"), &bytes, true)
         .map_err(|error| error.to_string())
 }
 
-/// Persist the plug-in's LOTM as the project model.  The exporter also writes
-/// a GLB preview next to it; the project stores only the LOTM so every
-/// imported building uses the same container format as the game assets.
+/// Persist the Rust exporter's LOTM as the project model.
 fn import_native_bundle(root: &Path, lotm_bytes: Vec<u8>) -> Result<Value, String> {
     let lotm_bytes = lotm_bytes;
     let document = crate::asset_build_m1::lotm::parse(&lotm_bytes).map_err(|error| {
@@ -238,9 +236,8 @@ fn import_native_bundle(root: &Path, lotm_bytes: Vec<u8>) -> Result<Value, Strin
     let lotm_relative = format!("assets/models/{}.lotm", digest(&lotm_bytes));
     let target = safe_path(root, &lotm_relative)?;
     fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
-    if !target.exists() {
-        crate::atomic_fs::write_atomic(&target, &lotm_bytes, false).map_err(|e| e.to_string())?;
-    }
+    // Same digest ⇒ same bytes; replace keeps re-imports idempotent.
+    crate::atomic_fs::write_atomic(&target, &lotm_bytes, true).map_err(|e| e.to_string())?;
     let mut uv_kinds: Vec<u8> = document
         .mesh_material
         .iter()
@@ -362,47 +359,6 @@ pub(super) fn validate_links(
 }
 
 #[cfg(test)]
-mod blender_import_tests {
-    use super::*;
-
-    /// Manual gate: set `OPENSCP_BLENDER_SAMPLE` to a .blend with one building.
-    /// The test proves the built-in headless path joins the meshes and still
-    /// extracts the six-slot images without an installed add-on.
-    #[test]
-    #[ignore = "requires local Blender and OPENSCP_BLENDER_SAMPLE"]
-    fn headless_blend_import_joins_and_extracts_slots() {
-        let Ok(sample) = std::env::var("OPENSCP_BLENDER_SAMPLE") else {
-            return;
-        };
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("tmp")
-            .join(format!("openscp-blend-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
-        let result = import(&root, &json!({"path": sample})).unwrap();
-        assert!(
-            result["asset"]
-                .as_str()
-                .unwrap_or_default()
-                .ends_with(".glb")
-        );
-        assert_eq!(result["source"], "blend");
-        let glb = root.join(result["asset"].as_str().unwrap());
-        let bytes = fs::read(glb).unwrap();
-        let json_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
-        let doc: Value = serde_json::from_slice(&bytes[20..20 + json_len]).unwrap();
-        assert_eq!(
-            doc["meshes"].as_array().map(Vec::len),
-            Some(1),
-            "the Blender service must join the building into one mesh"
-        );
-        let cached = import(&root, &json!({"path": sample})).unwrap();
-        assert_eq!(cached["cache"], "hit");
-        let _ = fs::remove_dir_all(&root);
-    }
-}
-
-#[cfg(test)]
 mod raster_draft_tests {
     use super::*;
 
@@ -426,16 +382,14 @@ mod raster_draft_tests {
 mod native_import_tests {
     use super::*;
 
-    /// Manual end-to-end check of the .blend → LOTM path.  Requires Blender
-    /// and the SC5 Asset Editor exporter:
+    /// Manual end-to-end check of the .blend → LOTM path.
     ///
     /// ```text
-    /// OPENSCP_BLENDER_ADDON=<dir containing ny_facade> \
     /// OPENSCP_TEST_BLEND=<file.blend> \
     /// cargo test -p fluffy-open-scp native_blend_import_writes_lotm_only -- --ignored
     /// ```
     #[test]
-    #[ignore = "requires Blender and the SC5 Asset Editor exporter"]
+    #[ignore = "requires Blender and the staged atlas data"]
     fn native_blend_import_writes_lotm_only() {
         let source =
             std::env::var("OPENSCP_TEST_BLEND").expect("set OPENSCP_TEST_BLEND to a .blend file");
@@ -450,13 +404,21 @@ mod native_import_tests {
                     .as_nanos()
             ));
         fs::create_dir_all(&root).unwrap();
-        let result = import(&root, &json!({ "path": source })).expect("native import");
+        let atlas = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/blend-atlas");
+        let payload = json!({ "path": source });
+        let result = import(&root, &payload, Some(&atlas)).expect("native import");
         let asset = result["asset"].as_str().expect("asset");
         assert!(asset.ends_with(".lotm"), "asset must be LOTM: {asset}");
         assert_eq!(result["source"], "blend-native");
         assert_eq!(result["nativeAdapter"]["status"], "native-rust");
         let bytes = fs::read(root.join(asset)).unwrap();
         crate::asset_build_m1::lotm::parse(&bytes).expect("valid LOTM container");
+        assert_eq!(import(&root, &payload, Some(&atlas)).unwrap()["cache"], "hit");
+        fs::remove_file(root.join(asset)).unwrap();
+        let reimported = import(&root, &payload, Some(&atlas)).unwrap();
+        assert_eq!(reimported["asset"], asset);
+        assert!(reimported.get("cache").is_none());
+        assert_eq!(fs::read(root.join(asset)).unwrap(), bytes);
         // Byte hashes intentionally not compared: the native pipeline's PNG
         // compression level differs from the plug-in's zlib-6.  Structure is
         // verified above; visual parity is covered by tmp/final samples.

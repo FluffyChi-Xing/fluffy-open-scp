@@ -45,6 +45,7 @@ pub mod region_city;
 pub mod region_map;
 pub mod region_state;
 pub mod region_write;
+pub mod terrain_brush;
 pub mod semantic;
 pub mod swarm;
 pub mod swarm_material;

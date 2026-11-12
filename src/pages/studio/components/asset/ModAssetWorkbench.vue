@@ -190,7 +190,8 @@ const viewportBindings = computed(() => {
     selectedId: current.selectedId.value,
     tool: tool.value,
     editEnabled: editEnabled.value,
-    modelSelectable: editEnabled.value && current.editMode === "draft",
+    modelSelectable:
+      editEnabled.value && current.editMode === "draft" && !current.loading && !!current.modelPayload,
     modelTransform: current.modelTransform,
     modelOrigin: current.modelOrigin,
     streetFacingDegrees: current.streetFacingDegrees,
@@ -317,6 +318,9 @@ useEditorHotkeys(
     { combo: "g", handler: () => (tool.value = "translate") },
     { combo: "r", handler: () => (tool.value = "rotate") },
     { combo: "s", handler: () => (tool.value = "scale") },
+    ...(modelSelected.value
+      ? [{ combo: "delete", handler: () => void onRemoveModel() }]
+      : []),
     {
       combo: "escape",
       handler: () => {
@@ -386,77 +390,19 @@ async function onBindMaterialSlots(binding: MaterialSlotBinding) {
     toast.error(String(cause));
   }
 }
-async function onBlendImported(result: {
-  asset: string;
-  source?: "blend" | "blend-native";
-  lotm?: string;
-  baked?: boolean;
-  materialSlots?: Record<string, string>;
-  materialSlotsByMaterial?: Record<string, Record<string, string>>;
-  nativeAdapter?: { status: string; detail?: string };
-}) {
+async function onBlendImported(lotm: string) {
   try {
-    await asset.openDraftAsset(result.asset, {
-      nativeBlender: result.source === "blend-native",
-      nativeLotm: result.lotm,
+    await asset.openDraftAsset(lotm, {
+      nativeBlender: true,
+      nativeLotm: lotm,
     });
-    if (result.source === "blend-native") {
-      toast.success(t("studio.assetWorkbench.blendNativeImported"));
+    if (asset.sourceKind.value !== "lotm") {
+      toast.error(t("studio.assetWorkbench.blendNativeFailed"));
       return;
     }
-    if (result.baked) {
-      toast.success(t("studio.assetWorkbench.blendImported"));
-      return;
-    }
-    const slots = result.materialSlots as Record<string, unknown> & {
-      uvContract?: unknown;
-    };
-    const binding: MaterialSlotBinding = {};
-    for (const key of [
-      "params",
-      "materialParams",
-      "slot1",
-      "slot2",
-      "slot3",
-      "slot4",
-      "slot5",
-    ] as const) {
-      const value = slots[key];
-      if (typeof value === "string" && value) binding[key] = value;
-    }
-    // 导入脚本探测的 UV 契约：游戏资产（带 matIndex）走原生 tint 链。
-    if (slots.uvContract === "native" || slots.uvContract === "blender") {
-      binding.uvContract = slots.uvContract;
-    }
-    const byMaterial = result.materialSlotsByMaterial ?? {};
-    const materialBindings = Object.fromEntries(
-      Object.entries(byMaterial).flatMap(([name, slots]) => {
-        const entry: Record<string, string> = {};
-        for (const key of [
-          "slot1",
-          "slot2",
-          "slot3",
-          "slot4",
-          "slot5",
-        ] as const) {
-          if (typeof slots[key] === "string" && slots[key])
-            entry[key] = slots[key];
-        }
-        return Object.keys(entry).length ? [[name, entry]] : [];
-      }),
-    );
-    if (Object.keys(materialBindings).length)
-      binding.byMaterial = materialBindings;
-    if (Object.keys(binding).length) {
-      await asset.composeSlotMaterials(binding);
-      toast.success(
-        t("studio.assetWorkbench.blendImported", {
-          count: Object.keys(binding).length,
-        }),
-      );
-    } else {
-      toast.info(t("studio.assetWorkbench.blendImportedNoSlots"));
-    }
+    // Save the current model binding before the next build reads the document.
+    await asset.saveDocument();
+    toast.success(t("studio.assetWorkbench.blendNativeImported"));
   } catch (cause) {
     toast.error(String(cause));
   }
@@ -523,9 +469,13 @@ const isProjectConfig = computed(() => selectedFile.value === "package.json");
 function onTreeSelect(relativePath: string): void {
   selectedFile.value = relativePath;
 }
-function onOpenAsset(relativePath: string): void {
+async function onOpenAsset(relativePath: string): Promise<void> {
   selectedFile.value = null;
-  void asset.openDraftAsset(relativePath);
+  await asset.openDraftAsset(relativePath);
+  // 导入/打开后立刻落盘 assetPath，避免「视口已是新 LOTM、构建仍读旧 schema.model」
+  if (asset.schemaDocument.value) {
+    await asset.saveDocument();
+  }
 }
 const tgiSheetOpen = ref(false);
 const tgiPackagePath = ref("");
@@ -709,6 +659,25 @@ const unitCounts = computed(() => {
   };
 });
 
+const modelSelectable = computed(() => viewportBindings.value?.modelSelectable === true);
+const modelSelected = computed(() => modelSelectable.value && ui.value?.selectedId.value === "model");
+
+async function onRemoveModel() {
+  if (!modelSelected.value || removing.value || saving.value) return;
+  if (!window.confirm(t("studio.assetWorkbench.removeModelConfirm"))) return;
+  removing.value = true;
+  try {
+    await asset.removeModel();
+    toast.success(t("studio.assetWorkbench.modelRemoved"));
+  } catch (cause) {
+    console.warn("[workbench] remove model failed:", cause);
+    toast.error(t("studio.assetWorkbench.removeModelError"));
+  } finally {
+    void treeRef.value?.refresh();
+    removing.value = false;
+  }
+}
+
 /** 移除当前资产（清空视口回到空态，可重新上传/解析）。 */
 async function onRemoveAsset() {
   if (!asset.sourceKind.value) return;
@@ -891,7 +860,7 @@ function templateOf(resourceId: number) {
           <button
             type="button"
             class="maw-btn primary"
-            :disabled="saving || !asset.savedDirty.value"
+            :disabled="saving || removing || !asset.savedDirty.value"
             :title="t('studio.assetWorkbench.saveHint')"
             @click="onSave"
           >
@@ -971,18 +940,30 @@ function templateOf(resourceId: number) {
               </button>
             </template>
           </FTooltip>
-          <!-- 移除当前资产：删除文档+导入的模型文件，回到空态可重新导入 -->
+          <button
+            v-if="modelSelectable"
+            type="button"
+            class="maw-icon"
+            :class="{ active: modelSelected }"
+            :aria-pressed="modelSelected"
+            :aria-label="t('package.modelUnitLabel')"
+            :title="t('package.modelUnitLabel')"
+            @click="asset.selectUnit(modelSelected ? null : 'model')"
+          >
+            <FIcon name="Box" :size="14" aria-label="" />
+          </button>
           <FTooltip
-            :text="t('studio.assetWorkbench.removeAsset')"
+            :text="t(modelSelected ? 'studio.assetWorkbench.removeModel' : 'studio.assetWorkbench.removeAsset')"
             side="bottom"
           >
             <template #trigger>
               <button
+                :key="modelSelected ? 'remove-model' : 'remove-asset'"
                 type="button"
                 class="maw-icon"
-                :disabled="removing"
-                :aria-label="t('studio.assetWorkbench.removeAsset')"
-                @click="onRemoveAsset"
+                :disabled="removing || saving"
+                :aria-label="t(modelSelected ? 'studio.assetWorkbench.removeModel' : 'studio.assetWorkbench.removeAsset')"
+                @click="modelSelected ? onRemoveModel() : onRemoveAsset()"
               >
                 <FIcon
                   :name="removing ? 'Loader2' : 'Trash2'"

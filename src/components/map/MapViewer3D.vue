@@ -33,9 +33,11 @@ const props = defineProps<{
   showRoads?: boolean;
   activeResource?: string | null;
   resourceOpacity?: number;
+  terrainEditing?: boolean;
+  editedHeight?: string | null;
 }>();
 const { t, locale } = useI18n();
-const emit = defineEmits<{ selectPlot: [uid: string] }>();
+const emit = defineEmits<{ selectPlot: [uid: string]; terrainPoint: [x: number, y: number] }>();
 const localizedLabels: Array<{ sprite: THREE.Sprite; text: () => string; color: string; fontPx: number }> = [];
 
 function localizedSprite(text: () => string, color: string, fontPx = 42): THREE.Sprite {
@@ -274,6 +276,7 @@ function makeTerrainEngine(
       chunk.mesh.geometry = geo;
     } else {
       chunk.mesh = new THREE.Mesh(geo, mat);
+      chunk.mesh.userData.terrainSurface = true;
       chunk.mesh.matrixAutoUpdate = false;
       group.add(chunk.mesh);
     }
@@ -357,7 +360,10 @@ function makeTerrainEngine(
   return { group, updateLods, processQueue, dispose, heightWorld, setResource: terrainMaterial.setResource };
 }
 
-async function build(data: Region3DData) {
+async function build(data: Region3DData, preserveView = false) {
+  const view = preserveView && camera && controls
+    ? { position: camera.position.clone(), target: controls.target.clone() }
+    : null;
   const generation = ++buildGeneration;
   disposeScene();
   error.value = "";
@@ -374,7 +380,7 @@ async function build(data: Region3DData) {
   const detailPixels: Partial<Record<"dirt" | "grass" | "cliff" | "sand", ImageData>> = {};
   try {
     [heightPx, groundPx] = await Promise.all([
-      decodePng(data.heightPngBase64),
+      decodePng(props.editedHeight ?? data.heightPngBase64),
       decodePng(data.groundPngBase64),
     ]);
     await Promise.all((["dirt", "grass", "cliff", "sand"] as const).map(async (slot) => {
@@ -416,10 +422,19 @@ async function build(data: Region3DData) {
     if (e.button === 1 || e.button === 2) e.preventDefault();
   });
   el.addEventListener("pointerup", (e) => {
-    if (e.button !== 0 || Math.hypot(e.clientX - pointerStart[0], e.clientY - pointerStart[1]) > 5 || !camera || !plotGroup?.visible) return;
+    if (e.button !== 0 || Math.hypot(e.clientX - pointerStart[0], e.clientY - pointerStart[1]) > 5 || !camera) return;
     const bounds = el.getBoundingClientRect();
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2((e.clientX - bounds.left) / bounds.width * 2 - 1, 1 - (e.clientY - bounds.top) / bounds.height * 2), camera);
+    if (props.terrainEditing) {
+      const hit = ray.intersectObjects(terrain.group.children, false).find(h => h.object.userData.terrainSurface);
+      if (hit) {
+        const point = sceneToMap(hit.point);
+        emit("terrainPoint", point.x, point.y);
+      }
+      return;
+    }
+    if (!plotGroup?.visible) return;
     const hit = ray.intersectObjects(plotGroup.children, true).find(h => h.object.userData.plotUid);
     if (hit) emit("selectPlot", hit.object.userData.plotUid);
   });
@@ -433,6 +448,11 @@ async function build(data: Region3DData) {
   controls.maxDistance = Math.max(30000, SPAN * 2.2);
   controls.target.copy(CTR);
   controls.saveState();
+  if (view) {
+    camera.position.copy(view.position);
+    controls.target.copy(view.target);
+    controls.update();
+  }
   controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.PAN,
@@ -733,9 +753,9 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => props.data,
-  (d) => {
-    if (d) void build(d);
+  () => [props.data, props.editedHeight] as const,
+  ([d], [previous]) => {
+    if (d) void build(d, d === previous);
     else { buildGeneration++; ready.value = false; disposeScene(); }
   },
 );
@@ -767,7 +787,7 @@ watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activ
 </script>
 
 <template>
-  <div ref="wrap" class="viewer3d">
+  <div ref="wrap" class="viewer3d" :class="{ 'terrain-editing': terrainEditing }">
     <div v-if="!data && !error" class="ph"></div>
     <div v-if="error" class="err">{{ error }}</div>
     <button
@@ -791,6 +811,7 @@ watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activ
 </template>
 
 <style scoped>
+.terrain-editing :deep(canvas) { cursor: crosshair; }
 .viewer3d {
   position: relative;
   width: 100%;

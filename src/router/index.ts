@@ -7,6 +7,10 @@ import { appRoutes, toRouteRecord } from "@/router/registry";
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior() {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    return { left: 0, top: 0, behavior: reduceMotion ? "instant" : "smooth" };
+  },
   routes: [
     {
       path: "/",

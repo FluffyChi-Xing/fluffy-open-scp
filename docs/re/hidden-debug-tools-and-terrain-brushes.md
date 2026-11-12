@@ -2,6 +2,8 @@
 
 日期：2026-10-24。
 
+2026-11-12 复核更新。下文对当前零售版保留 Terrain Editor 交互及脚本执行链的判断需以[离线零售入口复核](terrain-debug-retail-entrypoints-20261112.md)为准。区域笔刷数据保留，零售版 `cTerrainSystem` 的交互编辑接口已与开发版分化。
+
 本文回答一个具体问题：Property 中出现 `waterTableEcoMapBrushes`（截图显示为地下水资源笔刷）是否意味着游戏仍保留隐藏的 debug 菜单，以及这些能力能否重新解锁。
 
 ## 结论

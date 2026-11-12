@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { Handle, Position } from "@vue-flow/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSelect from "@/components/ui/FSelect.vue";
 import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
+import BlueprintPortRow from "./BlueprintPortRow.vue";
 import { Switch } from "@/components/ui/switch";
 import {
   LOGIC_NODE_SPECS,
@@ -105,6 +105,21 @@ function onNumber(
   if (!Number.isFinite(value)) return;
   emit("update-params", { ...current, [patchKey]: value });
 }
+/** 可空数字：清空 = null（后端按原版默认推导）。 */
+function onOptionalNumber(
+  patchKey: string,
+  event: Event,
+  current: Record<string, unknown>,
+): void {
+  const raw = (event.target as HTMLInputElement).value.trim();
+  if (raw === "") {
+    emit("update-params", { ...current, [patchKey]: null });
+    return;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return;
+  emit("update-params", { ...current, [patchKey]: Math.trunc(value) });
+}
 function onText(patchKey: string, event: Event, current: Record<string, unknown>): void {
   emit("update-params", {
     ...current,
@@ -128,20 +143,6 @@ const leafOptions = computed(() =>
 
 <template>
   <article class="logic-card" :class="{ invalid: issues.length && !disabled, embedded }">
-    <Handle
-      v-if="isCore && !embedded"
-      id="leaf"
-      type="target"
-      :position="Position.Left"
-      :style="{ top: '42px' }"
-    />
-    <Handle
-      v-if="!embedded"
-      id="out"
-      type="source"
-      :position="Position.Right"
-      :style="{ top: '42px' }"
-    />
     <header v-if="!embedded" class="logic-head">
       <FIcon v-if="icon" :name="icon" :size="13" aria-label="" />
       <strong>{{ t(titleKey) }}</strong>
@@ -166,20 +167,61 @@ const leafOptions = computed(() =>
       </button>
     </header>
 
+    <template v-if="!embedded">
+      <BlueprintPortRow
+        id="out"
+        type="source"
+        :label="t(isCore ? 'studio.assetWorkbench.portBaseBehavior' : isLeaf ? 'studio.assetWorkbench.portBehavior' : titleKey)"
+      />
+      <BlueprintPortRow
+        v-if="isCore"
+        id="leaf"
+        type="target"
+        :label="t('studio.assetWorkbench.portBehavior')"
+      />
+    </template>
+
     <div class="logic-body nodrag nowheel">
-      <!-- 建筑基本信息 -->
+      <!-- 建筑基本信息：主输入只有「需要的劳工数」，其余由构建器推导 -->
       <template v-if="node.kind === 'building-info'">
-        <label v-for="field in (['w1', 'w2', 'w3', 'minWorkers'] as const)" :key="field" class="logic-field">
-          <span>{{ t(`studio.assetWorkbench.labor.${field}`) }}</span>
+        <label class="logic-field">
+          <span>{{ t("studio.assetWorkbench.labor.workers") }}</span>
           <input
             type="number"
             min="0"
             step="1"
-            :value="(params as BuildingInfoParams)[field]"
+            :value="(params as BuildingInfoParams).workers ?? ''"
             :disabled="disabled"
-            @change="onNumber(field, $event, params as unknown as Record<string, unknown>, 0)"
+            @change="onOptionalNumber('workers', $event, params as unknown as Record<string, unknown>)"
           />
         </label>
+        <p class="logic-hint">{{ t("studio.assetWorkbench.labor.workersHint") }}</p>
+        <details class="logic-advanced">
+          <summary>{{ t("studio.assetWorkbench.labor.advanced") }}</summary>
+          <label v-for="field in (['w1', 'w2', 'w3'] as const)" :key="field" class="logic-field">
+            <span>{{ t(`studio.assetWorkbench.labor.${field}`) }}</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              :value="(params as BuildingInfoParams)[field] ?? ''"
+              :disabled="disabled"
+              @change="onOptionalNumber(field, $event, params as unknown as Record<string, unknown>)"
+            />
+          </label>
+          <label class="logic-field">
+            <span>{{ t("studio.assetWorkbench.labor.minWorkers") }}</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              :placeholder="t('studio.assetWorkbench.labor.minWorkersAuto')"
+              :value="(params as BuildingInfoParams).minWorkers ?? ''"
+              :disabled="disabled"
+              @change="onOptionalNumber('minWorkers', $event, params as unknown as Record<string, unknown>)"
+            />
+          </label>
+        </details>
         <div class="logic-field">
           <span>{{ t("studio.assetWorkbench.scheduleTitle") }}</span>
           <ShiftScheduleSlider

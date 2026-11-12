@@ -6,9 +6,8 @@
  * 证据基线：docs/design/path-semantic-authoring.md §3.2（原版 entry 聚类，
  * Reference-first——不新建 PathEntry，零索引预算风险）。
  *
- * `vehicle` vs `driveway`（2026-11-10）：同 entry `7C9C4FFF`（filter
- * C37D661D 通用车辆类）；差别是 Local（地块内，拆除干净）vs Global+First
- * （校车跨城接路网，拆除可能留 stub）。
+ * `vehicle` 使用东京塔的本地引道 `03106C2E`（Local+None）。
+ * `driveway` 使用小学的校车引道 `7C9C4FFF`（Global+First）。
  */
 
 export type PathTypeId = "pedestrian" | "vehicle" | "driveway" | "custom";
@@ -42,7 +41,7 @@ export const PATH_TYPES: readonly PathTypeSpec[] = [
     labelKey: "studio.assetWorkbench.pathType.vehicle",
     hintKey: "studio.assetWorkbench.pathType.vehicleHint",
     icon: "Car",
-    entry: "7C9C4FFF",
+    entry: "03106C2E",
     scope: "local",
     roadConnect: false,
   },

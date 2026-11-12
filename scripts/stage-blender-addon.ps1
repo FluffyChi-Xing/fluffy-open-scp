@@ -1,11 +1,10 @@
-# Stage the SC5 Asset Editor exporter into OpenSCP's bundled resources.
+# Stage the SC5 Asset Editor exporter for offline reference comparisons.
 #
 # Usage:
 #   $env:SC5_ADDON_PATH = "C:\path\to\SC5 Asset Editor 1.23.7"
 #   pwsh -File scripts/stage-blender-addon.ps1
 #
-# The script is intentionally explicit: the exporter and its atlas library are
-# third-party assets, so redistribution terms must be checked before shipping.
+# For application packaging, stage only the atlas with stage-blend-atlas.ps1.
 
 param(
     [string]$Source = $env:SC5_ADDON_PATH,

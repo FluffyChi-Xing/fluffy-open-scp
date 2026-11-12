@@ -86,6 +86,11 @@ impl Catalog {
             result[2] = tile[0];
             result[3] = tile[1];
         }
+        // resources.py::window_recipe selects the migrated Office room sheet.
+        if pack == "Office" {
+            result[2] = 1.0 / 16.0;
+            result[3] = 0.0;
+        }
         Some(result)
     }
 }
@@ -135,7 +140,8 @@ mod tests {
 
     #[test]
     fn recipe_row_and_room_tile_override() {
-        let catalog = fixture();
+        let mut catalog = fixture();
+        catalog.packs.insert("Office".into(), catalog.packs["Commercial"].clone());
         let index = catalog.index();
         let entry = index.get("w1").unwrap();
         let row = catalog.window_recipe(Some(entry), "Commercial").unwrap();
@@ -145,6 +151,11 @@ mod tests {
         assert_eq!(
             catalog.window_recipe(Some(&tiled), "Commercial").unwrap(),
             [0.1, 0.2, 0.7, 0.8]
+        );
+        tiled.pack = "Office".into();
+        assert_eq!(
+            catalog.window_recipe(Some(&tiled), "Office").unwrap(),
+            [0.1, 0.2, 1.0 / 16.0, 0.0]
         );
     }
 }

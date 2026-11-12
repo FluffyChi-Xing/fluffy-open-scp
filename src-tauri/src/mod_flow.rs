@@ -41,11 +41,17 @@ pub fn ensure_project_layout(root: &Path, mod_type: &str) -> Result<Value, Strin
     Ok(json!({"schemas":schemas,"assets":assets,"output":"build"}))
 }
 pub(crate) static FLOW_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-pub fn dispatch(root: &Path, name: &str, action: &str, payload: Value) -> Result<Value, String> {
+pub fn dispatch(
+    root: &Path,
+    name: &str,
+    action: &str,
+    payload: Value,
+    blend_atlas: Option<&Path>,
+) -> Result<Value, String> {
     let _guard = FLOW_LOCK.lock().map_err(|_| "Workflow lock failed")?;
     let string = |key: &str| payload[key].as_str().unwrap_or("");
     match action {
-        "import-asset" => asset_inputs::import(root, &payload),
+        "import-asset" => asset_inputs::import(root, &payload, blend_atlas),
         "import-menu-image" => asset_inputs::import_menu_image(root, &payload),
         "read-menu-image" => asset_inputs::read_menu_image(root, &payload),
         "read-asset" => asset_inputs::describe(root, string("asset")),
@@ -1221,7 +1227,7 @@ mod tests {
                 .count(),
             6
         );
-        let imported = asset_inputs::import(&f.0, &json!({"path": source})).unwrap();
+        let imported = asset_inputs::import(&f.0, &json!({"path": source}), None).unwrap();
         let mut building = state
             .schemas
             .iter()

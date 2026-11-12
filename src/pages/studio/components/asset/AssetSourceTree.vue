@@ -25,14 +25,7 @@ const emit = defineEmits<{
   select: [relativePath: string];
   "open-asset": [relativePath: string];
   "open-package": [relativePath: string];
-  "blend-imported": [result: {
-    asset: string;
-    source?: "blend" | "blend-native";
-    lotm?: string;
-    materialSlots?: Record<string, string>;
-    materialSlotsByMaterial?: Record<string, Record<string, string>>;
-    nativeAdapter?: { status: string; detail?: string };
-  }];
+  "blend-imported": [lotm: string];
   imported: [];
 }>();
 
@@ -57,20 +50,13 @@ function errorMessage(cause: unknown): string {
 
 function importErrorToast(cause: unknown) {
   const message = errorMessage(cause).toLowerCase();
-  if (message.includes("blender executable not found")) {
+  if (message === "blend_atlas_missing") {
+    toast.error(t("studio.assetWorkbench.blendAtlasMissing"));
+  } else if (message.includes("cannot start blender")) {
     toast.error(t("studio.assetWorkbench.blendUnavailable"));
-  } else if (message.includes("blender could not export")) {
-    toast.error(t("studio.assetWorkbench.blendExportFailed"));
-  } else if (
-    message.includes("ny_facade") ||
-    message.includes("openscp_blender_addon")
-  ) {
-    toast.error(t("studio.assetWorkbench.blendAddonMissing"));
-  } else if (
-    message.includes("asset editor 导出失败") ||
-    message.includes("lotm 无效") ||
-    message.includes("blender/asset editor")
-  ) {
+  } else if (message.includes("blender reader failed")) {
+    toast.error(t("studio.assetWorkbench.blendReadFailed"));
+  } else if (message.includes("原生导出失败") || message.includes("lotm 无效")) {
     toast.error(t("studio.assetWorkbench.blendNativeFailed"));
   } else {
     toast.error(t("studio.assetWorkbench.importFailed"));
@@ -179,13 +165,8 @@ async function importFile() {
   try {
     const value = await command<{
       asset: string;
-      source?: "blend" | "blend-native";
-      lotm?: string;
-      baked?: boolean;
+      source?: "blend-native";
       cache?: "hit";
-      materialSlots?: Record<string, string>;
-      materialSlotsByMaterial?: Record<string, Record<string, string>>;
-      nativeAdapter?: { status: string; detail?: string };
     }>("code_flow", {
       request: { project: props.project, action: "import-asset", payload: { path } },
     });
@@ -193,16 +174,9 @@ async function importFile() {
     if (value.cache === "hit")
       toast.info(t("studio.assetWorkbench.blendCacheHit"));
     const lower = value.asset.toLowerCase();
-    if (value.source === "blend" || value.source === "blend-native")
-      emit("blend-imported", value);
-    // `blend-native` already opens the produced .lotm through the
-    // blend-imported handler; emitting open-asset as well would reload the
-    // same file twice and reset the session.
-    if (
-      value.source !== "blend" &&
-      value.source !== "blend-native" &&
-      MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))
-    ) {
+    if (value.source === "blend-native") {
+      emit("blend-imported", value.asset);
+    } else if (MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
       emit("open-asset", value.asset);
     }
     emit("imported");

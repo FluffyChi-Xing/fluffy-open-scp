@@ -328,8 +328,8 @@ mod tests {
     fn path_entry_property_is_required_dependency() {
         let entry = ResourceId {
             type_id: PROPERTY_TYPE,
-            group: 0x40E0_C400,
-            instance: 0x0310_6C2E,
+            group: 0x40E1_C400,
+            instance: 0x675B_61B1,
         };
         let bytes = encoded(vec![property(
             0x0CC8_FE7A,
@@ -341,7 +341,7 @@ mod tests {
         )]);
         let deps = property_dependencies(&bytes, true).unwrap();
         assert!(deps.iter().any(|dep| {
-            dep.label == "path-entry:0x03106C2E" && dep.required && dep.candidates == vec![entry]
+            dep.label == "path-entry:0x675B61B1" && dep.required && dep.candidates == vec![entry]
         }));
     }
 }

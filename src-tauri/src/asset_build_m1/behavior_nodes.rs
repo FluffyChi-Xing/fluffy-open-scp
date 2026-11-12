@@ -53,6 +53,8 @@ const ATTRACTION: u32 = 0x0E54_2F39;
 const TOURISM_INCOME_W1: u32 = 0x0EE2_A50D;
 const TOURISM_INCOME_W2: u32 = 0x0EE2_A50E;
 const TOURISM_INCOME_W3: u32 = 0x0EE2_A50F;
+/// 游客/顾客容量（kPropShopping_TotalShoppers）；前端细调预留参数 shoppers。
+const TOURISM_SHOPPERS: u32 = 0x0AD6_A725;
 const LANDMARK_TEMPLATE: u32 = 0x4E01_E311;
 
 /// 地价两对（值 + 财富档）。
@@ -60,6 +62,10 @@ const LAND_VALUE_A: u32 = 0x0E58_5AE0;
 const LAND_WEALTH_A: u32 = 0x0E58_5AE1;
 const LAND_VALUE_B: u32 = 0x0E58_5B00;
 const LAND_WEALTH_B: u32 = 0x0E58_5B01;
+
+/// 住人（kPropRCI_TotalPopulation + 镜像列）。
+const POPULATION: u32 = 0x0A79_17CB;
+const POPULATION_MIRROR: u32 = 0x0A79_17C2;
 
 /// 树 bundle（共享；bin draw 在场景层）。
 const TREE_BUNDLE: u32 = 0xE769_0450;
@@ -73,6 +79,10 @@ pub struct LaborSpec {
     pub min_workers: i32,
     /// 用户显式排班（8 班位规模，0=关班）；None = 由后端自动接线补齐。
     pub schedule: Option<[i32; 8]>,
+    /// 工人槽 [A9,B3,B4]（0x0E3F65A9/B3/B4，劳工 bundle #07F42755/56/57 的
+    /// 数量绑定——各财富档在场工人规模的"extra"杠杆，Willis 量级 75/75/15）。
+    /// None = 沿用闭环基线 A9=10/B3=0/B4=0。
+    pub slots: Option<[i32; 3]>,
 }
 
 /// 表现层请求（教育叶子的 donor 克隆）。
@@ -107,6 +117,8 @@ pub struct ResolvedBehavior {
     pub title_override: Option<String>,
     /// 教育闭环不变量是否适用（legacy / education 叶子）。
     pub education: bool,
+    #[serde(skip)]
+    pub(super) education_signatures: Vec<u32>,
     /// 树 bundle 不变量是否适用（tree 叶子）。
     pub tree_bundle: bool,
     /// 本次行为声明会改写的 Lot 列（delta-audit 允许集）。
@@ -131,6 +143,8 @@ pub struct ResolvedBehavior {
     pub(super) native_tourism: Option<super::behavior_tourism::NativeTourism>,
     #[serde(skip_serializing_if = "super::behavior_templates::Templates::is_empty")]
     pub(super) templates: super::behavior_templates::Templates,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) author_tourism: bool,
 }
 
 impl ResolvedBehavior {
@@ -198,6 +212,12 @@ pub fn parse_nodes(values: &[Value]) -> Result<Vec<Value>, String> {
 }
 
 /// 解析岗位声明（`semantics.labor`）。
+///
+/// 交互契约（2026-11-11 用户指令）：作者看到 `w1/w2/w3/minWorkers` 的直觉是
+/// "这就是我这栋楼需要的劳工数"，但引擎语义是
+/// `JobsWx→bin 容量/初值`、`工人槽→WorkersNeededWx`、`minWorkers→红字阈值`。
+/// 语义缺失由本函数吸收：**主输入只有 `workers`（这栋楼需要多少劳工）**，
+/// 分档、工人槽、开工阈值全部按原版比例自动推导；作者显式字段始终优先。
 pub fn parse_labor(value: Option<&Value>) -> Result<Option<LaborSpec>, String> {
     let Some(value) = value else { return Ok(None) };
     if value.is_null() {
@@ -206,18 +226,58 @@ pub fn parse_labor(value: Option<&Value>) -> Result<Option<LaborSpec>, String> {
     let object = value
         .as_object()
         .ok_or("semantics.labor must be an object")?;
-    let field = |name: &str| -> Result<i32, String> {
-        let raw = object
-            .get(name)
-            .ok_or_else(|| format!("semantics.labor.{name} is required"))?;
-        let number = raw
-            .as_i64()
-            .or_else(|| raw.as_f64().map(|v| v as i64))
-            .ok_or_else(|| format!("semantics.labor.{name} must be a number"))?;
-        i32::try_from(number)
-            .ok()
-            .filter(|v| *v >= 0)
-            .ok_or_else(|| format!("semantics.labor.{name} must be a non-negative integer"))
+    let optional = |name: &str| -> Result<Option<i32>, String> {
+        match object.get(name) {
+            None | Some(Value::Null) => Ok(None),
+            Some(raw) => {
+                let number = raw
+                    .as_i64()
+                    .or_else(|| raw.as_f64().map(|v| v as i64))
+                    .ok_or_else(|| format!("semantics.labor.{name} must be a number"))?;
+                i32::try_from(number)
+                    .ok()
+                    .filter(|v| *v >= 0)
+                    .map(Some)
+                    .ok_or_else(|| {
+                        format!("semantics.labor.{name} must be a non-negative integer")
+                    })
+            }
+        }
+    };
+    // 主输入：workers = 这栋楼需要的劳工总数。
+    let workers = optional("workers")?;
+    let tiers = (optional("w1")?, optional("w2")?, optional("w3")?);
+    let (w1, w2, w3) = match workers {
+        // 显式给了分档 → 用分档（总数以三档之和为准，workers 仅作一致性参考）。
+        Some(_) if matches!(tiers, (Some(_), Some(_), Some(_))) => {
+            let (a, b, c) = tiers;
+            (a.unwrap(), b.unwrap(), c.unwrap())
+        }
+        // 只给总数 → 全部计入最低收入档（测试城/主城劳动力主力的保守默认）。
+        Some(total) => (total, 0, 0),
+        None => match tiers {
+            (Some(a), Some(b), Some(c)) => (a, b, c),
+            _ => {
+                return Err(
+                    "semantics.labor requires \"workers\" (这栋楼需要的劳工总数) or \
+                     w1/w2/w3 tier split"
+                        .into(),
+                )
+            }
+        },
+    };
+    let total = w1.saturating_add(w2).saturating_add(w3);
+    // 开工阈值：作者显式优先；缺省按原版地标比例（Willis minWorkers 60 / jobs 360
+    // = 1/6；s31 大学 12 / 64 ≈ 1/5.3）取 1/6，保证开工后红字自然消失。
+    let min_workers = match optional("minWorkers")? {
+        Some(explicit) => explicit,
+        None => {
+            if total > 0 {
+                (total / 6).max(1)
+            } else {
+                0
+            }
+        }
     };
     let schedule = match object.get("schedule") {
         None | Some(Value::Null) => None,
@@ -242,16 +302,50 @@ pub fn parse_labor(value: Option<&Value>) -> Result<Option<LaborSpec>, String> {
         }
         Some(_) => return Err("semantics.labor.schedule must be an array of 8 integers".into()),
     };
+    let slots = match object.get("workerSlots") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(values)) => {
+            if values.len() != 3 {
+                return Err(
+                    "semantics.labor.workerSlots must contain exactly 3 values [A9,B3,B4]".into(),
+                );
+            }
+            let mut parsed = [0i32; 3];
+            for (slot, raw) in values.iter().enumerate() {
+                let number = raw
+                    .as_i64()
+                    .or_else(|| raw.as_f64().map(|v| v as i64))
+                    .ok_or_else(|| {
+                        format!("semantics.labor.workerSlots[{slot}] must be a number")
+                    })?;
+                parsed[slot] = i32::try_from(number)
+                    .ok()
+                    .filter(|v| *v >= 0)
+                    .ok_or_else(|| {
+                        format!(
+                            "semantics.labor.workerSlots[{slot}] must be a non-negative integer"
+                        )
+                    })?;
+            }
+            Some(parsed)
+        }
+        Some(_) => {
+            return Err(
+                "semantics.labor.workerSlots must be an array of 3 integers [A9,B3,B4]".into(),
+            )
+        }
+    };
     Ok(Some(LaborSpec {
-        w1: field("w1")?,
-        w2: field("w2")?,
-        w3: field("w3")?,
-        min_workers: field("minWorkers")?,
+        w1,
+        w2,
+        w3,
+        min_workers,
         schedule,
+        slots,
     }))
 }
 
-fn hex(value: &Value, field: &str) -> Result<u32, String> {
+pub(super) fn hex(value: &Value, field: &str) -> Result<u32, String> {
     if let Some(number) = value.as_u64() {
         return u32::try_from(number).map_err(|_| format!("{field}: out of range"));
     }
@@ -300,6 +394,28 @@ fn text(value: &Value) -> String {
     value.as_str().unwrap_or("").trim().to_string()
 }
 
+/// 学历分布 6 列（0DC1DB39/43/45 + 5B/5C/5D，W1/W2/W3 各档需求）。
+/// s31 实证配方：W1/W2 减半、W3 等值。2026-11-11 实证所有能吸收劳工的
+/// 样本（s31 大学 / Willis 观光 / C-zone 商店 / HTzhiyao）Unit 都带非零
+/// 学历分布；缺失时劳工市场按教育程度匹配不到人 → 永远「需要劳工」。
+/// 作者显式值优先（只补缺省）。
+fn set_education_distribution(resolved: &mut ResolvedBehavior, w1: f64, w2: f64, w3: f64) {
+    let mut set_default = |hash: u32, value: f64| {
+        if !resolved.set_float_fields.contains_key(&hash) {
+            resolved.set_float_fields.insert(hash, value);
+            if !resolved.declared_unit_columns.contains(&hash) {
+                resolved.declared_unit_columns.push(hash);
+            }
+        }
+    };
+    set_default(0x0DC1_DB39, w1 / 2.0);
+    set_default(0x0DC1_DB43, w2 / 2.0);
+    set_default(0x0DC1_DB45, w3);
+    set_default(0x0DC1_DB5B, w1 / 2.0);
+    set_default(0x0DC1_DB5C, w2 / 2.0);
+    set_default(0x0DC1_DB5D, w3);
+}
+
 /// 合并 `labor` + `behaviors` 为可执行指令集（纯函数）。
 /// 招工自动接线（2026-11-07 s31 实证配方固化）：前端只填 W1/W2/W3
 /// （0A7917C5/C6/C7），后端自动补齐——jobs bundle 挂载、岗位合计叶子
@@ -319,7 +435,8 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
     match resolved.labor_profile {
         LaborProfile::None => return,
         LaborProfile::AuthorOnly => {
-            // 只补岗位合计；不挂学校 jobs bundle / 学历 / 招工常量。
+            // 只补岗位合计与学历分布；bundle / 排除表解封 / 内部 path 由
+            // labor 闭环（behavior_loops::LABOR）统一落地。
             let job_w1 = resolved.set_float_fields.get(&JOB_W1).copied();
             let job_w2 = resolved.set_float_fields.get(&JOB_W2).copied().unwrap_or(0.0);
             let job_w3 = resolved.set_float_fields.get(&JOB_W3).copied().unwrap_or(0.0);
@@ -332,6 +449,41 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
                     .insert(JOB_TOTAL, w1 + job_w2 + job_w3);
                 if !resolved.declared_unit_columns.contains(&JOB_TOTAL) {
                     resolved.declared_unit_columns.push(JOB_TOTAL);
+                }
+            }
+            // 学历分布缺失 = 劳工市场按教育程度匹配不到人（2026-11-11
+            // 希望大厦 /48 实证）；紧随其后的家族 strip 靠 LABOR 闭环的
+            // 列归属豁免这 6 列，注入必须在 strip 之前。
+            set_education_distribution(resolved, w1, job_w2, job_w3);
+            // 工人槽默认 = 各财富档岗位数（引擎实证 2026-11-11）：A9/B3/B4
+            // 经劳工 bundle 映射表写成 WorkersNeededW1/W2/W3 bin，工人 sink
+            // 容量 = 该 bin amount。固定基线 10/0/0 会让任何岗位声明的资产
+            // 都只进 ~10 人（"招不满"的真因）；按岗位缩放才是 Willis 形态
+            // （Willis 360 岗 / 槽 75/75/15）。作者显式 workerSlots 已在
+            // compile 开头写入，or_insert 保证不覆盖。
+            {
+                const SLOT_A9: u32 = 0x0E3F_65A9;
+                const SLOT_B3: u32 = 0x0E3F_65B3;
+                const SLOT_B4: u32 = 0x0E3F_65B4;
+                for (hash, value) in [(SLOT_A9, w1), (SLOT_B3, job_w2), (SLOT_B4, job_w3)] {
+                    resolved.set_float_fields.entry(hash).or_insert(value);
+                    if !resolved.declared_unit_columns.contains(&hash) {
+                        resolved.declared_unit_columns.push(hash);
+                    }
+                }
+            }
+            // 排班缺省 = 原版地标 116 族（Willis 8 班全非零）：作者不需要
+            // 知道这 8 列存在，但没有非零班次就没有班次规则 → 工人不循环。
+            // 作者显式 schedule 已在 compile 开头写入 set_int_fields。
+            if resolved.set_int_fields.is_empty() {
+                const LANDMARK_SHIFT: i32 = 116;
+                for offset in 0..8u32 {
+                    let hash = 0x0D00_853A + offset;
+                    // 116/117 交替是原版地标实证值；这里统一 116 略保守。
+                    resolved.set_int_fields.insert(hash, LANDMARK_SHIFT);
+                    if !resolved.declared_unit_columns.contains(&hash) {
+                        resolved.declared_unit_columns.push(hash);
+                    }
                 }
             }
             return;
@@ -362,13 +514,6 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
     let w3 = job_w3.unwrap_or(0.0);
     set_default(JOB_TOTAL, w1 + w2 + w3);
     set_default(JOB_MIN_WORKERS, 12.0);
-    // 学历分布（vanilla 学校样本：W1/W2 减半、W3 等值）
-    set_default(0x0DC1_DB39, w1 / 2.0);
-    set_default(0x0DC1_DB43, w2 / 2.0);
-    set_default(0x0DC1_DB45, w3);
-    set_default(0x0DC1_DB5B, w1 / 2.0);
-    set_default(0x0DC1_DB5C, w2 / 2.0);
-    set_default(0x0DC1_DB5D, w3);
     // 招工调参常量（vanilla 学校样本）
     set_default(0x0AD6_A725, 51.0);
     set_default(0x0DA3_EE15, 51.0);
@@ -376,6 +521,8 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
     set_default(0x0E26_60C6, 17.0);
     set_default(0x0E3F_65A9, 10.0);
     set_default(0x0E3F_65B4, 0.0);
+    // 学历分布（vanilla 学校样本：W1/W2 减半、W3 等值）
+    set_education_distribution(resolved, w1, w2, w3);
     // 八班排班表（vanilla 学校样本；vanilla 为 Int32 标量）
     if resolved.set_int_fields.is_empty() {
         let schedule = [6i32, 6, 7, 7, 6, 6, 7, 6];
@@ -390,19 +537,35 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
 }
 
 pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBehavior, String> {
+    compile_with_profile(labor, nodes, false)
+}
+
+pub(super) fn compile_with_profile(
+    labor: Option<LaborSpec>,
+    nodes: &[Value],
+    author_tourism: bool,
+) -> Result<ResolvedBehavior, String> {
     let mut resolved = ResolvedBehavior::default();
-    let mut intent = super::behavior_family::leaf_intent_from_nodes(nodes, labor.is_some());
+    resolved.author_tourism = author_tourism;
+    let mut intent =
+        super::behavior_family::leaf_intent_from_nodes(nodes, labor.is_some());
     let templates = super::behavior_templates::select(nodes)?;
+    if templates.residence() {
+        intent.residence = false;
+    }
     if templates.land_value() {
         intent.landvalue = false;
     }
     let native_tourism = super::behavior_tourism::select(nodes)?;
-    if native_tourism.is_some() {
+    if native_tourism.is_some() && !author_tourism {
+        // This recipe installs the visitor bundles explicitly, independent of
+        // the identity chosen for education, park and labor.
         intent.tourism = false;
     }
     let family = super::behavior_family::resolve(intent);
-    // 先钉家族策略，再写叶子——labor 接线与 strip 都读 labor_profile。
+    // 先钉家族策略，再写叶子——labor 接线与 strip 都读 labor_profile/family。
     resolved.labor_profile = family.labor_profile;
+    resolved.family = Some(family.family);
 
     if let Some(labor) = labor {
         resolved.record_float(JOBS_W1, f64::from(labor.w1), "labor")?;
@@ -413,6 +576,15 @@ pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBeha
         resolved.declared_unit_columns.push(JOBS_W2);
         resolved.declared_unit_columns.push(JOBS_W3);
         resolved.declared_unit_columns.push(MIN_WORKERS);
+        // 工人槽 A9/B3/B4：作者显式值覆盖 LABOR 闭环基线(10/0/0)——
+        // 在场工人规模的 extra 杠杆（Willis 量级 75/75/15）。
+        const WORKER_SLOTS: [u32; 3] = [0x0E3F_65A9, 0x0E3F_65B3, 0x0E3F_65B4];
+        if let Some(slots) = labor.slots {
+            for (hash, value) in WORKER_SLOTS.iter().zip(slots) {
+                resolved.record_float(*hash, f64::from(value), "labor")?;
+                resolved.declared_unit_columns.push(*hash);
+            }
+        }
         // 用户显式排班优先；缺省由 apply_labor_auto_wiring 补齐。
         if let Some(schedule) = labor.schedule {
             for (offset, value) in schedule.iter().enumerate() {
@@ -448,15 +620,25 @@ pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBeha
             "tourism" if native_tourism.is_some() => {}
             "tourism" => {
                 compile_tourism(&mut resolved, &id, &params)?;
+                if author_tourism {
+                    continue;
+                }
                 let template = params
                     .get("templateInstance")
                     .map(|value| hex(value, "tourism.templateInstance"))
                     .transpose()?
                     .unwrap_or(LANDMARK_TEMPLATE);
-                set_template(&mut parent_template, template, &id)?;
+                // 身份由 park / education 叶子决定时，观光只是嫁接闭环。
+                if intent.park || intent.education {
+                    resolved.notes.push(format!(
+                        "{id}: templateInstance 0x{template:08X} ignored; identity owned by park/education leaf"
+                    ));
+                } else {
+                    set_template(&mut parent_template, template, &id)?;
+                }
             }
             "residence" if templates.residence() => {}
-            "residence" => return Err(format!("BEHAVIOR_TEMPLATE_PROFILE: {id}/residence")),
+            "residence" => compile_residence(&mut resolved, &id, &params)?,
             "park" => compile_land_values(&mut resolved, &id, &params, true)?,
             "landvalue" if templates.land_value() => {}
             "landvalue" => compile_land_values(&mut resolved, &id, &params, false)?,
@@ -477,9 +659,13 @@ pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBeha
             .notes
             .push(format!("parent template 0x{template:08X} ({node})"));
     }
-    apply_labor_auto_wiring(&mut resolved);
-    // 叶子写完后再应用家族适配器（strip 学校残留 / 补 donor·menu 元数据）。
-    super::behavior_family::apply_to_behavior(&mut resolved, &family);
+    if author_tourism {
+        resolved.notes.push("tourism: SC5 Asset Packager native landmark profile".into());
+    } else {
+        apply_labor_auto_wiring(&mut resolved);
+        // 叶子写完后再应用家族适配器（strip 学校残留 / 补 donor·menu 元数据）。
+        super::behavior_family::apply_to_behavior(&mut resolved, &family);
+    }
     if let Some(recipe) = native_tourism {
         recipe.apply(&mut resolved)?;
         resolved.native_tourism = Some(recipe);
@@ -608,6 +794,9 @@ fn compile_education(
         .transpose()?
         .unwrap_or(EDUCATION_BUNDLE);
     resolved.ensure_bundle(signature_bundle, node)?;
+    if !resolved.education_signatures.contains(&signature_bundle) {
+        resolved.education_signatures.push(signature_bundle);
+    }
     if resolved.lot_board.is_none() {
         resolved.lot_board = Some(EDUCATION_BOARD);
     }
@@ -747,6 +936,27 @@ fn compile_tourism(
                 resolved.remove_fields.push(field);
             }
         }
+    }
+    // 预留：前端观光叶细调的「消费者数量」。shoppers = 游客/顾客容量
+    // （kPropShopping_TotalShoppers，0AD6A725——地标语境的游客容量；教育
+    // 语境的招工常量是同哈希跨族复用）。前端尚未提供输入时，构建器按
+    // 威利斯叶基线自动填充（见 behavior_family）。
+    if let Some(value) = params.get("shoppers").filter(|value| !value.is_null()) {
+        resolved.record_float(TOURISM_SHOPPERS, number(value, "tourism.shoppers")?, node)?;
+    }
+    Ok(())
+}
+
+/// 住人闭环参数：`population` 覆盖 Copan 基线人口（主列 + 镜像列）。
+fn compile_residence(
+    resolved: &mut ResolvedBehavior,
+    node: &str,
+    params: &Value,
+) -> Result<(), String> {
+    if let Some(value) = params.get("population").filter(|value| !value.is_null()) {
+        let population = number(value, "residence.population")?;
+        resolved.record_float(POPULATION, population, node)?;
+        resolved.record_float(POPULATION_MIRROR, population, node)?;
     }
     Ok(())
 }
@@ -902,6 +1112,103 @@ mod tests {
     }
 
     #[test]
+    fn workers_alone_expands_to_all_engine_columns() {
+        // 直觉输入：作者只填「这栋楼需要多少劳工」。后端负责翻译成引擎列：
+        // 全部计入最低收入档、开工阈值按原版比例 1/6、工人槽按岗位缩放。
+        let labor = parse_labor(Some(&json!({"workers": 30})))
+            .unwrap()
+            .unwrap();
+        assert_eq!((labor.w1, labor.w2, labor.w3), (30, 0, 0));
+        assert_eq!(labor.min_workers, 5); // 30/6，原版地标比例（Willis 60/360）
+        assert!(labor.slots.is_none(), "槽由 auto-wiring 按岗位缩放");
+        let resolved = compile(Some(labor), &[]).unwrap();
+        assert_eq!(resolved.set_float_fields[&0x0A79_17C3], 30.0);
+        assert_eq!(resolved.set_float_fields[&0x0A79_17C8], 5.0);
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65A9], 30.0); // 工人槽 = 岗位
+        assert_eq!(resolved.set_int_fields[&0x0D00_853A], 116); // 原版地标排班
+        assert_eq!(resolved.set_int_fields[&0x0D00_8541], 116);
+    }
+
+    #[test]
+    fn workers_with_explicit_tiers_and_min_workers_wins() {
+        let labor = parse_labor(Some(&json!({
+            "workers": 30, "w1": 20, "w2": 10, "w3": 0, "minWorkers": 3
+        })))
+        .unwrap()
+        .unwrap();
+        assert_eq!((labor.w1, labor.w2, labor.w3), (20, 10, 0));
+        assert_eq!(labor.min_workers, 3);
+        let resolved = compile(Some(labor), &[]).unwrap();
+        assert_eq!(resolved.set_float_fields[&0x0A79_17C3], 30.0);
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65B3], 10.0);
+    }
+
+    #[test]
+    fn labor_without_workers_or_tiers_is_rejected_with_guidance() {
+        let error = parse_labor(Some(&json!({"minWorkers": 5}))).unwrap_err();
+        assert!(error.contains("workers"), "{error}");
+    }
+
+    #[test]
+    fn author_only_labor_scales_worker_slots_with_jobs_by_default() {
+        // 引擎实证（2026-11-11）：工人槽 A9/B3/B4 决定实际到岗数（写入
+        // WorkersNeededWx bin，sink 容量 = 该 bin amount）。缺省必须按岗位
+        // 缩放，否则固定基线 10 让任何规模的资产都只进 ~10 人。
+        let mut resolved = ResolvedBehavior::default();
+        resolved.labor_profile = crate::asset_build_m1::behavior_family::LaborProfile::AuthorOnly;
+        resolved.set_float_fields.insert(JOBS_W1, 30.0);
+        resolved.set_float_fields.insert(JOBS_W2, 0.0);
+        resolved.set_float_fields.insert(JOBS_W3, 0.0);
+        apply_labor_auto_wiring(&mut resolved);
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65A9], 30.0);
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65B3], 0.0);
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65B4], 0.0);
+        // 作者显式值不被覆盖（compile 已先写入显式 workerSlots）。
+        resolved.set_float_fields.insert(0x0E3F_65A9, 75.0);
+        apply_labor_auto_wiring(&mut resolved);
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65A9], 75.0);
+    }
+
+    #[test]
+    fn labor_worker_slots_override_loop_baselines() {
+        // Willis 量级：ploppable 资产配到百级在场工人的 extra 杠杆。
+        let labor = parse_labor(Some(&json!({
+            "w1": 150, "w2": 150, "w3": 60, "minWorkers": 60,
+            "workerSlots": [75, 75, 15]
+        })))
+        .unwrap()
+        .unwrap();
+        assert_eq!(labor.slots, Some([75, 75, 15]));
+        let resolved = compile(Some(labor), &[]).unwrap();
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65A9], 75.0);
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65B3], 75.0);
+        assert_eq!(resolved.set_float_fields[&0x0E3F_65B4], 15.0);
+    }
+
+    #[test]
+    fn author_only_labor_writes_education_distribution() {
+        // 希望大厦 /48 回归（2026-11-11）：AuthorOnly 只补岗位合计导致学历
+        // 分布全链缺失——所有能招工样本（s31/Willis/C-zone/HTzhiyao）都带
+        // 非零学历分布，缺失 = 劳工市场匹配不到人，永远「需要劳工」。
+        let mut resolved = ResolvedBehavior::default();
+        resolved.labor_profile = crate::asset_build_m1::behavior_family::LaborProfile::AuthorOnly;
+        resolved.set_float_fields.insert(JOBS_W1, 90.0);
+        resolved.set_float_fields.insert(JOBS_W2, 0.0);
+        resolved.set_float_fields.insert(JOBS_W3, 20.0);
+        apply_labor_auto_wiring(&mut resolved);
+        assert_eq!(resolved.set_float_fields[&0x0DC1_DB39], 45.0); // W1/2
+        assert_eq!(resolved.set_float_fields[&0x0DC1_DB43], 0.0); // W2/2
+        assert_eq!(resolved.set_float_fields[&0x0DC1_DB45], 20.0); // W3
+        assert_eq!(resolved.set_float_fields[&0x0DC1_DB5B], 45.0);
+        assert_eq!(resolved.set_float_fields[&0x0DC1_DB5C], 0.0);
+        assert_eq!(resolved.set_float_fields[&0x0DC1_DB5D], 20.0);
+        // 作者显式值优先：已写的列不覆盖。
+        resolved.set_float_fields.insert(0x0DC1_DB39, 7.0);
+        apply_labor_auto_wiring(&mut resolved);
+        assert_eq!(resolved.set_float_fields[&0x0DC1_DB39], 7.0);
+    }
+
+    #[test]
     fn explicit_power_ensures_bundle_and_derives_capacity() {
         let nodes = vec![node(
             "core-1",
@@ -970,7 +1277,7 @@ mod tests {
     }
 
     #[test]
-    fn conflicting_parent_templates_are_rejected() {
+    fn identity_leaf_owns_parent_over_grafted_tourism_template() {
         let nodes = vec![
             node("leaf-1", "education", json!({"capacity": 100})),
             node(
@@ -979,8 +1286,13 @@ mod tests {
                 json!({"templateInstance": "0x565B72B9"}),
             ),
         ];
-        let error = compile(None, &nodes).unwrap_err();
-        assert!(error.contains("different parent templates"), "{error}");
+        let resolved = compile(None, &nodes).unwrap();
+        assert_eq!(resolved.parent_template, Some(ELEMENTARY_TEMPLATE));
+        assert!(resolved.ensure_bundles.contains(&0xCF11_6B9C));
+        assert!(resolved
+            .notes
+            .iter()
+            .any(|note| note.contains("565B72B9") && note.contains("ignored")));
     }
 
     #[test]
@@ -1001,7 +1313,7 @@ mod tests {
     }
 
     #[test]
-    fn park_tourism_family_strips_school_and_keeps_landmark_parent() {
+    fn park_tourism_family_strips_school_and_keeps_park_identity() {
         let labor = parse_labor(Some(&json!({
             "w1": 30, "w2": 20, "w3": 0, "minWorkers": 10
         })))
@@ -1030,13 +1342,84 @@ mod tests {
         );
         assert_eq!(resolved.unit_donor.as_deref(), Some("generic-park"));
         assert_eq!(resolved.menu_skeleton.as_deref(), Some("generic"));
-        assert_eq!(resolved.parent_template, Some(0x4E01_E311));
+        // 实测：parent=7E4B99E5（教育模板）时夜景亮灯；地标模板会熄灯。
+        assert_eq!(resolved.parent_template, Some(ELEMENTARY_TEMPLATE));
         assert!(resolved.remove_bundles.contains(&0x6C04_2366));
-        assert!(resolved.remove_bundles.contains(&0xD07C_5A04));
+        // labor 多闭环：教育签名剥掉，学校劳工包保留（实测可招工组合）。
+        assert!(resolved.ensure_bundles.contains(&0xD07C_5A04));
         assert!(!resolved.remove_fields.contains(&0x0DA3_EE15));
         assert_eq!(resolved.set_float_fields[&0x0DA3_EE15], 51.0);
         assert_eq!(resolved.set_float_fields[&JOBS_W1], 30.0);
-        assert!(!resolved.ensure_bundles.contains(&0xD07C_5A04));
+    }
+
+    #[test]
+    fn author_only_labor_composes_hiring_loop_like_s31() {
+        // 公园+观光+labor 多闭环（对拍可放置 ce2ee50a）：解封 30645625 +
+        // 保留/ensure jobs bundle + 内部 path；教育签名仍剥离。
+        let labor = parse_labor(Some(&json!({
+            "w1": 30, "w2": 20, "w3": 0, "minWorkers": 30
+        })))
+        .unwrap()
+        .unwrap();
+        let nodes = vec![
+            node("leaf-park", "park", json!({})),
+            node(
+                "leaf-tourism",
+                "tourism",
+                json!({"attraction": 400, "templateInstance": "0x4E01E311"}),
+            ),
+        ];
+        let resolved = compile(Some(labor), &nodes).unwrap();
+        assert_eq!(
+            resolved.labor_profile,
+            crate::asset_build_m1::behavior_family::LaborProfile::AuthorOnly
+        );
+        assert!(resolved.remove_excluded_bundles.contains(&0x3064_5625));
+        assert!(resolved.ensure_bundles.contains(&0xD07C_5A04));
+        assert!(resolved.ensure_bundles.contains(&0xF236_BB93));
+        assert!(resolved.remove_bundles.contains(&0x6C04_2366));
+        assert!(resolved.remove_bundles.contains(&0x6C04_2367));
+        assert!(!resolved.ensure_bundles.contains(&0x6C04_2366));
+        assert!(
+            resolved.ensure_internal_path_ref,
+            "AuthorOnly labor must carry s31 door-finding path ref"
+        );
+    }
+
+    #[test]
+    fn overwide_tourism_remove_fields_cannot_strip_authored_labor() {
+        // /39 事故：schema removeFields 含 0A7917C3–C8 / 0D00853A–41，
+        // 作者 labor 写回后必须从 remove 列表豁免并保留 set 值。
+        let labor = parse_labor(Some(&json!({
+            "w1": 30, "w2": 20, "w3": 0, "minWorkers": 30,
+            "schedule": [0, 0, 7, 7, 6, 6, 0, 0]
+        })))
+        .unwrap()
+        .unwrap();
+        let nodes = vec![node(
+            "leaf-tourism",
+            "tourism",
+            json!({
+                "attraction": 400,
+                "removeFields": [
+                    "0AD6A725", "0A7917C3", "0A7917C5", "0A7917C6", "0A7917C7", "0A7917C8",
+                    "0D00853A", "0D00853B", "0D00853C", "0D00853D",
+                    "0D00853E", "0D00853F", "0D008540", "0D008541",
+                    "0AD7FAC9"
+                ]
+            }),
+        )];
+        let resolved = compile(Some(labor), &nodes).unwrap();
+        assert_eq!(resolved.set_float_fields[&JOBS_W1], 30.0);
+        assert_eq!(resolved.set_float_fields[&MIN_WORKERS], 30.0);
+        assert_eq!(resolved.set_int_fields[&0x0D00_853A], 0);
+        assert_eq!(resolved.set_int_fields[&0x0D00_853C], 7);
+        assert!(!resolved.remove_fields.contains(&JOBS_W1));
+        assert!(!resolved.remove_fields.contains(&0x0A79_17C3));
+        assert!(!resolved.remove_fields.contains(&0x0D00_853A));
+        assert!(resolved.remove_fields.contains(&0x0AD7_FAC9));
+        assert_eq!(resolved.set_float_fields[&TOURISM_SHOPPERS], 390.0);
+        assert_eq!(resolved.set_float_fields[&LAND_VALUE_A], 500.0);
     }
 
     #[test]

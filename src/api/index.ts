@@ -278,6 +278,9 @@ export const tauriApi = {
       command<CodeTextDocument>("code_write_text", {
         request: { project, relativePath, content, expectedRevision },
       }),
+    /** 在系统资源管理器中打开项目根目录。 */
+    codeOpenInExplorer: (project: string) =>
+      command<void>("code_open_in_explorer", { request: { project } }),
     codeDeleteFile: (project: string, relativePath: string) =>
       command<void>("code_delete_file", {
         request: { project, relativePath },

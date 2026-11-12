@@ -223,7 +223,19 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     let frozen = freeze_baseline(ctx.resources.all(), &menu_id, instance)?;
 
     let mut changed = Vec::new();
-    let unit = patch_unit(ctx, &unit_id, &program, &mut changed)?;
+    if program.author_tourism {
+        let (unit, bundle_id, bundle) =
+            super::author_tourism::build(ctx.resources.all(), unit_id, &program)?;
+        ctx.resources.insert(unit_id, unit);
+        ctx.resources.insert(bundle_id, bundle);
+        changed.push(serde_json::json!({
+            "resource": unit_id.to_string(),
+            "profile": "native-landmark-tourism-v1",
+            "constructionBundle": bundle_id.to_string(),
+        }));
+    } else {
+        patch_unit(ctx, &unit_id, &program, &mut changed)?;
+    }
     if !program.templates.is_empty() {
         let bytes = ctx.resources.get(&unit_id).ok_or("BEHAVIOR_TEMPLATE_RESOURCE: Unit")?;
         let unit = program.templates.patch(bytes)?;
@@ -233,7 +245,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
             "templates": program.templates,
         }));
     }
-    let lot = patch_lot(ctx, &lot_id, &program, &mut changed)?;
+    patch_lot(ctx, &lot_id, &program, &mut changed)?;
     let locale = match (&program.title_override, &frozen.locale) {
         (Some(title), Some((locale_id, _))) => {
             let (id, row) = override_locale_title(ctx, locale_id, title)?;
@@ -252,7 +264,8 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     // Presentation layer: clone donor stat rows / uiCategories / icon so the
     // building presents as education.  These are DECLARED menu-layer drifts;
     // the freeze below enforces that nothing beyond them moved.
-    let menu2_patched = if presentation_requested(&program) {
+    let allow_donor_categories = ctx.plan.selected_menu_categories.is_none();
+    let menu2_patched = if presentation_requested(&program, allow_donor_categories) {
         let presentation = ctx
             .presentation_resources
             .clone()
@@ -266,11 +279,12 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
 
     // Invariants, fail-closed: everything outside the declared set is frozen.
     frozen.verify(ctx.resources.all(), &locale, menu2_patched.as_ref())?;
-    ensure_behavior_invariants(ctx, &unit_id, &program)?;
+    if !program.author_tourism {
+        ensure_behavior_invariants(ctx, &unit_id, &program)?;
+    }
     if let Some(recipe) = &program.native_tourism {
         recipe.verify(ctx, &unit_id, &lot_id)?;
     }
-
 
     Ok(serde_json::json!({
         "instance": format!("{instance:08X}"),
@@ -296,9 +310,14 @@ struct FreezeBaseline {
     locale: Option<(ResourceId, Vec<u8>)>,
 }
 
-fn presentation_requested(spec: &super::behavior_nodes::ResolvedBehavior) -> bool {
+fn presentation_requested(
+    spec: &super::behavior_nodes::ResolvedBehavior,
+    allow_donor_categories: bool,
+) -> bool {
     spec.presentation.as_ref().is_some_and(|request| {
-        request.adopt_ui_categories || request.adopt_stat_rows || request.adopt_icon
+        (allow_donor_categories && request.adopt_ui_categories)
+            || request.adopt_stat_rows
+            || request.adopt_icon
     })
 }
 
@@ -378,7 +397,7 @@ fn apply_presentation(
 
     // b) uiCategories union: education board + category join; the park
     // container entry stays so the park menu remains the entry.
-    if request.adopt_ui_categories {
+    if request.adopt_ui_categories && ctx.plan.selected_menu_categories.is_none() {
         let Some(Kind::Array(donor_values)) = donor.get(HASH_UI_CATEGORIES).map(|p| &p.kind) else {
             return Err("donor menu has no uiCategories".into());
         };

@@ -75,14 +75,17 @@ function formatTime(ms: number): string {
 
 <style scoped>
 .notifications-panel {
+  /* 高度上限交给 FPopover/useFloatingMenu；这里不再自设 overflow，避免双滚动条。 */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  max-height: min(70vh, 420px);
-  min-width: 280px;
+  min-width: 0;
+  width: 100%;
 }
 .notifications-header {
   align-items: center;
   display: flex;
+  flex: none;
   justify-content: space-between;
   padding: 8px 10px 6px;
 }
@@ -105,7 +108,6 @@ function formatTime(ms: number): string {
 .notifications-list {
   list-style: none;
   margin: 0;
-  overflow: auto;
   padding: 0;
 }
 .notification-item {
@@ -113,6 +115,7 @@ function formatTime(ms: number): string {
   border-radius: var(--radius-sm);
   display: flex;
   gap: 10px;
+  min-width: 0;
   opacity: 0.72;
   padding: 9px 10px;
 }
@@ -203,6 +206,7 @@ function formatTime(ms: number): string {
 }
 .notifications-footer {
   border-top: 1px solid var(--border);
+  flex: none;
   padding: 8px 10px;
 }
 .notifications-hint {
@@ -210,5 +214,6 @@ function formatTime(ms: number): string {
   font-size: 11px;
   line-height: 1.4;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 </style>

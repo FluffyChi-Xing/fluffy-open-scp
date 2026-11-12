@@ -281,6 +281,7 @@ fn build_from_schema_inner(
     if !root.is_dir() {
         return Err("project root must be a directory".into());
     }
+    super::filesystem::prune_previous_builds_for_root(&root)?;
     // G3a 全链复用（用户指令 2026-11-05）："已确认的无变更流程，跑通
     // 构建器自检就能保证结果正确"。输入指纹命中 + 产物包 sha256 自检
     // 通过 → 直接回放上次结果；任何不一致都走全量链重建缓存。
@@ -1248,7 +1249,7 @@ pub(crate) fn validate_scene_path_semantics(
     let mut path_entry_count = 0;
     for (index, path) in paths.iter().enumerate() {
         let location = format!("editor.workbench.paths[{index}]");
-        // 类型驱动（2026-11-07）：作者只选 type（pedestrian/driveway）；
+        // 类型驱动（2026-11-07）：作者只选 type（pedestrian/vehicle/driveway）；
         // 高级模式才用显式 entry。解析失败 = 构建失败（引擎会整条跳过）。
         let kind = path
             .get("type")

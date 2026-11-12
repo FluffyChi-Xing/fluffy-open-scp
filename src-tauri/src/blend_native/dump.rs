@@ -186,7 +186,14 @@ pub struct Socket {
 
 impl Socket {
     pub fn f64(&self) -> Option<f64> {
-        self.value.as_f64()
+        let value = self.value.as_number()?;
+        if value.is_f64() {
+            // Blender RNA socket floats are f32. Widen the original value
+            // exactly so material grouping also matches Python's float keys.
+            value.as_f64().map(|value| f64::from(value as f32))
+        } else {
+            value.as_f64()
+        }
     }
 
     pub fn f32(&self) -> Option<f32> {

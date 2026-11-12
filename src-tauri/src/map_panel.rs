@@ -308,6 +308,61 @@ pub struct HeightmapWriteDto {
     pub region_px: u32,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerrainEditDto {
+    height_png_base64: Option<String>,
+    entry_count: usize,
+}
+
+#[tauri::command]
+pub async fn map_panel_apply_terrain(
+    package_path: String,
+    group: String,
+    strokes: Vec<sc_properties::terrain_brush::TerrainStroke>,
+    out_path: Option<String>,
+) -> Result<TerrainEditDto, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let group = u32::from_str_radix(group.trim_start_matches("0x"), 16)
+            .map_err(|e| e.to_string())?;
+        let source = std::path::Path::new(&package_path);
+        let package = dbpf::Package::open(source).map_err(|e| e.to_string())?;
+        let original = region_write::read_region_field(&package, group)?;
+        let edited = sc_properties::terrain_brush::apply_strokes(&original, &strokes)?;
+        if let Some(path) = out_path {
+            let output = std::path::Path::new(&path);
+            if output.exists() || output.extension().and_then(|ext| ext.to_str()) != Some("package") {
+                return Err("choose a new .package path".into());
+            }
+            let (bytes, entry_count) =
+                region_write::build_local_heightmap_overlay(&package, group, &original, &edited)?;
+            if entry_count != 0 {
+                crate::atomic_fs::write_atomic(output, &bytes, false).map_err(|e| e.to_string())?;
+            }
+            return Ok(TerrainEditDto { height_png_base64: None, entry_count });
+        }
+
+        let span = sc_properties::region_3d::region_visible_size(&package, group);
+        let offset = ((16384.0 - span / 2.0) / 8.0) as usize;
+        let size = (span / 16.0) as u32;
+        let width = region_write::REGION_FIELD_PX;
+        let png = image::RgbaImage::from_fn(size, size, |x, y| {
+            let index = (offset + y as usize * 2) * width + offset + x as usize * 2;
+            let raw = ([index, index + 1, index + width, index + width + 1]
+                .into_iter().map(|i| u32::from(edited[i])).sum::<u32>() / 4) as u16;
+            let [high, low] = raw.to_be_bytes();
+            image::Rgba([high, low, 0, 255])
+        });
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        png.write_to(&mut buffer, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+        use base64::Engine;
+        Ok(TerrainEditDto {
+            height_png_base64: Some(base64::engine::general_purpose::STANDARD.encode(buffer.into_inner())),
+            entry_count: 0,
+        })
+    }).await.map_err(|e| e.to_string())?
+}
+
 /// 高度图回写（map-workbench E1 / priorities P0-1）。
 ///
 /// 输入 16-bit 灰度 PNG（4096²；像素值 = 高度 raw 值，raw = (z+1024)×32，

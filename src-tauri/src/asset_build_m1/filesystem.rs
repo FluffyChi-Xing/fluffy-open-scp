@@ -1,4 +1,4 @@
-//! All output side effects live here. Each run publishes an immutable directory
+//! All output side effects live here. Each run publishes the current build
 //! only after readback; unsuccessful staging trees are removed by their owner.
 use std::{
     fs,
@@ -59,6 +59,14 @@ impl Staging {
         if base.canonicalize().map_err(|e| e.to_string())? != base || !base.is_dir() {
             return Err(".build must be a real directory under project root".into());
         }
+        // A project build is a replaceable deliverable. Keep the shared
+        // ledger/cache/baseline files, but remove packages from previous
+        // content hashes before allocating the next staging directory so a
+        // long sequence of builds cannot grow `.build` without bound.
+        // Cleanup is best-effort on Windows: Explorer, the desktop app, or
+        // an antivirus scanner may still hold a handle to an older package.
+        // A locked historical output must not prevent a new staging build.
+        prune_previous_builds(&base);
         let destination = base.join(build_hash);
         if destination.exists()
             && destination.canonicalize().map_err(|e| e.to_string())? != destination
@@ -102,6 +110,73 @@ impl Staging {
                 refresh_evidence(&self.path, &self.destination, "")
             }
             Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+/// Remove old content-addressed output directories before a build, including
+/// cache-reuse builds that do not enter the staging path.
+pub(crate) fn prune_previous_builds_for_root(root: &Path) -> Result<(), String> {
+    let base = root.join(".build");
+    if !base.exists() {
+        return Ok(());
+    }
+    if base.canonicalize().map_err(|e| e.to_string())? != base || !base.is_dir() {
+        return Err(".build must be a real directory under project root".into());
+    }
+    prune_previous_builds(&base);
+    Ok(())
+}
+
+fn prune_previous_builds(base: &Path) {
+    let entries = match fs::read_dir(base) {
+        Ok(entries) => entries,
+        Err(error) => {
+            eprintln!("[build] cannot scan old outputs {}: {error}", base.display());
+            return;
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                eprintln!("[build] cannot inspect old output entry: {error}");
+                continue;
+            }
+        };
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !entry
+            .file_type()
+            .map(|file_type| file_type.is_dir())
+            .unwrap_or(false)
+            || name.len() != 64
+            || !name.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            continue;
+        }
+        match path.canonicalize() {
+            Ok(canonical) if canonical != path => {
+                eprintln!("[build] keeping linked old output: {}", path.display());
+                continue;
+            }
+            Err(error) => {
+                eprintln!("[build] keeping unreadable old output {}: {error}", path.display());
+                continue;
+            }
+            _ => {}
+        }
+        if let Err(error) = fs::remove_dir_all(&path) {
+            // ERROR_ACCESS_DENIED is common while a package is open in an
+            // editor or being indexed. Leave it in place and continue; the
+            // next build will retry cleanup.
+            if error.raw_os_error() == Some(5)
+                || error.kind() == std::io::ErrorKind::PermissionDenied
+            {
+                eprintln!("[build] old output is locked; keeping {}", path.display());
+            } else {
+                eprintln!("[build] could not remove old output {}: {error}", path.display());
+            }
         }
     }
 }

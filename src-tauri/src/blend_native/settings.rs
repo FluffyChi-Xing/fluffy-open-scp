@@ -129,9 +129,10 @@ impl Default for SurfaceState {
             texture_offset_y: 0.0,
             night_room_mode: "GROUP".into(),
             night_ratio: 0.45,
-            night_variation: 0.6,
+            // channels.defaults reads Blender's RNA FloatProperty defaults.
+            night_variation: f64::from(0.6_f32),
             night_seed: 1,
-            relief_strength: 0.15,
+            relief_strength: f64::from(0.15_f32),
             base_uv_mode: "MATERIAL".into(),
             base_metallic: 0.0,
             base_roughness: 0.65,

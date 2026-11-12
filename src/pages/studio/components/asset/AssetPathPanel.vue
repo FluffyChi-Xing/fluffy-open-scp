@@ -20,8 +20,8 @@ import {
 
 /**
  * 路径规划面板（2026-11-07 类型化重设计）：作者只选"是什么路"
- * （人行道/车辆引道/自定义 entry），entry/scope/roadConnect 由构建器的
- * path_catalog 处理器换算写列。不再要求选包/选 property。
+ * （人行道/普通车辆/校车引道/自定义 entry），entry/scope/roadConnect 由
+ * 构建器的 path_catalog 处理器换算写列。不再要求选包/选 property。
  *
  * 纯函数边界：类型配方在 path-planning/pathTypes.ts，校验在 pathModel.ts，
  * 本组件只做展示与事件转发。

@@ -318,8 +318,8 @@ function hashLabel(hash: number) {
       <table class="structured-table">
         <thead>
           <tr>
-            <th>{{ $t("package.propertyColumn") }}</th>
-            <th>{{ $t("package.valueColumn") }}</th>
+            <th scope="col" class="prop-name-heading">{{ $t("package.propertyColumn") }}</th>
+            <th scope="col">{{ $t("package.valueColumn") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -424,8 +424,9 @@ function hashLabel(hash: number) {
 .structured-table {
   border-collapse: collapse;
   font-size: 12px;
-  min-width: 100%;
+  table-layout: fixed;
   text-align: start;
+  width: 100%;
 }
 .structured-table th {
   border-bottom: 1px solid var(--border);
@@ -444,9 +445,8 @@ function hashLabel(hash: number) {
   padding: 8px 10px;
   vertical-align: top;
 }
-.prop-name {
-  max-width: 320px;
-  min-width: 180px;
+.structured-table .prop-name-heading {
+  width: 34%;
 }
 .prop-name span {
   color: var(--foreground);

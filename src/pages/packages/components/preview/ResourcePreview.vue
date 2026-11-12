@@ -33,6 +33,7 @@ interface Props {
   typeName?: string;
   loading?: boolean;
   error?: string;
+  fill?: boolean;
 }
 const props = withDefaults(defineProps<Props>(), {
   typeName: "",
@@ -86,7 +87,11 @@ const unsupported = computed(
 </script>
 
 <template>
-  <section class="resource-preview" aria-live="polite">
+  <section
+    class="resource-preview"
+    :class="{ 'fill-table': fill && (propertyPreview || rw4Preview) }"
+    aria-live="polite"
+  >
     <div v-if="props.loading" class="preview-loading">
       <FSkeleton height="18px" width="42%" rounded />
       <FSkeleton height="12px" width="72%" />
@@ -133,6 +138,19 @@ const unsupported = computed(
   gap: 14px;
   min-width: 0;
   padding-top: 14px;
+}
+.resource-preview.fill-table {
+  flex: 1;
+  min-height: 0;
+}
+.fill-table > :deep(.structured-preview) {
+  flex: 1;
+  min-height: 0;
+}
+.fill-table > :deep(.structured-preview > .structured-table-wrap) {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
 }
 .preview-loading {
   display: grid;

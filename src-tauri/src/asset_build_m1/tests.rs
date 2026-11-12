@@ -249,8 +249,12 @@ fn repeat_build_preserves_source_opaque_resources_and_artifacts() {
     fs::write(&source, connector::link(&resources).unwrap()).unwrap();
     let original = fs::read(&source).unwrap();
     let first = build_from_schema(&root, &schema().to_string()).unwrap();
+    let stale = root.join(".build").join("a".repeat(64));
+    fs::create_dir_all(stale.join("packages")).unwrap();
+    fs::write(stale.join("packages/old.package"), b"stale").unwrap();
     let second = build_from_schema(&root, &schema().to_string()).unwrap();
     assert_eq!(first.build_hash, second.build_hash);
+    assert!(!stale.exists(), "a new build removes stale hash artifacts");
     assert_eq!(first.sha256, second.sha256);
     assert_eq!(original, fs::read(&source).unwrap());
     // Delta contract: the output carries only touched resources; the opaque
@@ -1197,8 +1201,8 @@ fn golden_full_chain_asset_dict_columns() {
     );
     assert_eq!(
         output.entries().len(),
-        10,
-        "menu baseline + mask raster + model RW4 + material raster + promoted PathEntry"
+        11,
+        "menu baseline + graphics unit + mask raster + model RW4 + material raster + promoted PathEntry"
     );
     drop(output);
     let _ = fs::remove_dir_all(root);

@@ -67,11 +67,11 @@ def node_value(socket):
         return None
     value = socket.default_value
     if hasattr(value, "__len__"):
-        return [round(float(item), 8) for item in value]
+        return [float(item) for item in value]
     if isinstance(value, bool):
         return bool(value)
     if isinstance(value, (int, float)):
-        return round(float(value), 8)
+        return value
     return value
 
 
