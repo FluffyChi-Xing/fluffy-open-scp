@@ -105,6 +105,29 @@ pub(super) fn columns(document: &SceneDocument) -> Result<Vec<Property>, String>
     Ok(output)
 }
 
+pub(super) fn native_columns(
+    document: &SceneDocument,
+    degrees: u32,
+) -> Result<Vec<Property>, String> {
+    let mut columns = columns(document)?;
+    let transforms = DECAL_TRANSFORM_BASE..DECAL_TRANSFORM_BASE + DECAL_CATEGORIES as u32;
+    for column in columns
+        .iter_mut()
+        .filter(|column| transforms.contains(&column.hash))
+    {
+        if let Kind::Array(values) = &mut column.kind {
+            for value in values {
+                if let Value::Transform(transform) = value {
+                    let matrix = super::native_profile::rotate_matrix(&transform.matrix, degrees)?;
+                    transform.matrix =
+                        super::native_profile::apply_model_translation(matrix, document).to_vec();
+                }
+            }
+        }
+    }
+    Ok(columns)
+}
+
 pub(super) fn validate_sources(document: &SceneDocument) -> Result<Vec<String>, String> {
     let mut packages = HashMap::new();
     let mut dictionaries = HashMap::new();

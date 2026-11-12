@@ -613,7 +613,7 @@ fn model_bounds(
 /// Rotate a prop/light local matrix about Z (`prop_contract.rotate_matrix`):
 /// integer-quantized rotation `c = round(cos a); s = round(sin a)`, applied
 /// to the three basis rows and the translation row alike.
-fn rotate_matrix(matrix: &[f32], degrees: u32) -> Result<[f32; 12], String> {
+pub(super) fn rotate_matrix(matrix: &[f32], degrees: u32) -> Result<[f32; 12], String> {
     if matrix.len() != 12 {
         return Err("unit transform matrix must contain 12 floats".into());
     }
@@ -644,7 +644,7 @@ const IDENTITY_12: [f32; 12] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0
 /// float by the authored offset (observed as a small effect/prop drift).
 /// Full affine composition is only needed when the workbench model transform
 /// carries rotation/scale; the editor's current move tool is translation-only.
-fn apply_model_translation(mut matrix: [f32; 12], scene: &SceneDocument) -> [f32; 12] {
+pub(super) fn apply_model_translation(mut matrix: [f32; 12], scene: &SceneDocument) -> [f32; 12] {
     if let Some(model) = scene.model_transform {
         matrix[9] += model[9];
         matrix[10] += model[10];
@@ -1651,6 +1651,11 @@ pub fn build(
     }
     for property in compile_effect_fields(scene, rotation_degrees)? {
         upsert(&mut asset, property);
+    }
+    if let Some(scene) = scene {
+        for property in super::decal::native_columns(scene, rotation_degrees)? {
+            upsert(&mut asset, property);
+        }
     }
     // Unit/Asset locale title edge (author `unit/asset[0x09fb78cb]=text(t,1)`).
     upsert(
