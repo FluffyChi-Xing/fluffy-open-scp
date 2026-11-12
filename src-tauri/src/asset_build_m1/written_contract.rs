@@ -106,6 +106,10 @@ pub(crate) fn validate(
         .ok_or_else(|| format!("written-contract: final Asset/Lot {lot_id} is missing"))?;
     let lot = PropertyFile::parse(lot_bytes)
         .map_err(|error| format!("written-contract: final Asset/Lot {lot_id}: {error}"))?;
+    let interior_lighting = spec.menu_instance.is_some() && spec.native_spawner_rotation.is_some();
+    if interior_lighting {
+        super::interior_lighting::verify_written(resources, lot_id, &lot)?;
+    }
 
     let presentation = if spec.menu_instance.is_some() {
         Some(validate_presentation(resources, instance)?)
@@ -170,6 +174,7 @@ pub(crate) fn validate(
             "groundStyle": ground_style,
             "loweredUnits": lowered_units,
             "models": models,
+            "interiorLighting": interior_lighting.then_some("verified"),
             "streetPlacement": street_placement,
             "resourceCount": resources.len(),
         }),
@@ -288,6 +293,7 @@ fn validate_scene(
     });
     if let Some(rotation) = native_spawner_rotation {
         report["spawners"] = super::spawner::verify_authored_locations(lot, document, rotation)?;
+        super::native_profile::verify_attachment_transforms(lot, document, rotation)?;
     }
     if writes.authoritative || writes.decals {
         super::decal::verify(lot, document)?;

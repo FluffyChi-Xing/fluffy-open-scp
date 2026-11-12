@@ -601,16 +601,7 @@ fn generate_parent_free(
                 }),
             );
         }
-        set_scalar(&mut file, 0x0E0BE186, PropType::Bool, Value::Bool(true));
-        // 内景控制器创建开关（SC5 研究报告《第九阶段》0x0081D020 实证）：
-        // 控制器创建时检查居民/工作人员来源，缺失时**只有图形资产上的
-        // 0F169C46=true 才允许创建**；控制器为空时模型用固定阈值 (1,1,1)
-        // → 永远选中内景图集第 0 列。我们的材质把夜景发光编在第 1 列
-        // → 窗格全黑（十几次反复的真正根因）。
-        // 有控制器后 GetInfo 输出 [q*d*s, q*s, s]：夜里 q=0.85 且 d=0 →
-        // 约 85% 房间选第 1 列 = 窗灯亮；白天 d=1 → 回第 0 列 = 不亮。
-        // 原版编码为 `0f169c46 0001 8000 01`（Bool 标量，flags 0x8000）。
-        set_scalar(&mut file, 0x0F16_9C46, PropType::Bool, Value::Bool(true));
+        super::interior_lighting::write_graphics_defaults(&mut file);
         let encoded = encode(&file)?;
         // 构建期硬门槛（防第 N 次回归）：图形单元必须同时声明两个内景开关。
         // 缺失任一条 = 窗灯必黑（SC5 报告《第九阶段》0x0081D020/0x0081CD60），
@@ -1024,21 +1015,7 @@ fn build_donor_locale(spec: &MenuRegistrationSpec, instance: u32, table: u32) ->
 /// 资源本身也不属于 `42E1C000` 的整包属性形态。
 
 fn verify_interior_controller_contract(bytes: &[u8]) -> Result<(), String> {
-    const SWITCHES: [(u32, &str); 2] = [
-        (0x0F16_9C46, "interior controller creation (0F169C46)"),
-        (0x0E0B_E186, "lightswhenactive (0E0BE186)"),
-    ];
-    let file = PropertyFile::parse(bytes)
-        .map_err(|error| format!("graphics unit contract: parse: {error}"))?;
-    for (hash, label) in SWITCHES {
-        let value = file.get(hash).and_then(|property| property.scalar());
-        if !matches!(value, Some(Value::Bool(true))) {
-            return Err(format!(
-                "graphics unit contract: {label} must be Bool(true) — without it the                  interior controller falls back to fixed thresholds (1,1,1) and the                  building's night windows stay dark (see SC5 stage-9 interior study)"
-            ));
-        }
-    }
-    Ok(())
+    super::interior_lighting::verify_graphics_switches(bytes).map(|_| ())
 }
 
 const GRAPHICS_BOUNDS: u32 = 0x00F9_EFBA;

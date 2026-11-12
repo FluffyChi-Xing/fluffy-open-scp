@@ -5,7 +5,7 @@
 use super::behavior::PROPERTY_TYPE;
 use super::connector::Resources;
 use super::menu::{UNIT_GROUP, lot_group};
-use super::property_edit::{encode, set_array_with_flags, set_scalar};
+use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
 use dbpf::ResourceId;
 use sc_properties::{Key, Kind, PropType, PropertyFile, Value as PropValue};
 use serde::Serialize;
@@ -20,6 +20,10 @@ const PATH_GROUP: u32 = 0x40E0_C400;
 const KEY_ARRAY_FLAGS: u16 = 0x809C;
 const STOCK_POPULATION: f32 = 1100.0;
 const LAND: &[u32] = &[0x8BA6_D35D];
+const LANDMARK_SINK_BUNDLE: u32 = 0x5CB4_02D9;
+const RESIDENCE_INTAKE_BIN_BUNDLE: u32 = 0x9DEF_44FB;
+const INITIAL_CONTROL_FLAGS: u32 = 0x0A88_D179;
+const VACANT_FLAG: PropValue = PropValue::Int32(22);
 // Subsequence of Copan 4DC31F9B's A4. Includes occupancy, agent sinks,
 // access/construction, happiness, and resident health/return transactions.
 const RESIDENCE: &[u32] = &[
@@ -64,6 +68,53 @@ impl Templates {
 
     pub(super) fn land_value(&self) -> bool {
         self.land.is_some()
+    }
+
+    /// Copan 4DC31F9B initializes Vacant, supplies the intake key bin for
+    /// BBAAD3D1, and excludes the landmark binding of residential sink 790C2A95.
+    pub(super) fn prepare_landmark_residence(
+        &self,
+        unit: &mut PropertyFile,
+        active: &mut Vec<PropValue>,
+        excluded: &mut Vec<PropValue>,
+        unban: &[u32],
+    ) -> Result<(), String> {
+        if !self.residence() {
+            return Ok(());
+        }
+        let mut flags = array(unit, INITIAL_CONTROL_FLAGS)?.to_vec();
+        if !flags.contains(&VACANT_FLAG) {
+            flags.push(VACANT_FLAG);
+            set_array(unit, INITIAL_CONTROL_FLAGS, PropType::Int32, flags);
+        }
+        excluded.retain(|value| {
+            instance(value).is_none_or(|id| id != RESIDENCE_INTAKE_BIN_BUNDLE && !unban.contains(&id))
+        });
+        if !active.iter().any(|value| instance(value) == Some(RESIDENCE_INTAKE_BIN_BUNDLE)) {
+            active.push(key(RESIDENCE_INTAKE_BIN_BUNDLE));
+        }
+        if !excluded.iter().any(|value| instance(value) == Some(LANDMARK_SINK_BUNDLE)) {
+            excluded.push(key(LANDMARK_SINK_BUNDLE));
+        }
+        Ok(())
+    }
+
+    pub(super) fn verify_landmark_residence(&self, unit: &PropertyFile) -> Result<(), String> {
+        if !self.residence() {
+            return Ok(());
+        }
+        if !array(unit, INITIAL_CONTROL_FLAGS)?.contains(&VACANT_FLAG) {
+            return Err("Copan residence requires initial Vacant flag 22 in 0A88D179".into());
+        }
+        if !contains(unit, &[EXCLUDED], LANDMARK_SINK_BUNDLE) {
+            return Err("Copan residence requires excluding landmark sink bundle 5CB402D9".into());
+        }
+        if contains(unit, &[EXCLUDED], RESIDENCE_INTAKE_BIN_BUNDLE)
+            || !contains(unit, &[ENABLE[3]], RESIDENCE_INTAKE_BIN_BUNDLE)
+        {
+            return Err("Copan residence intake requires A9ECEDE4 bundle 9DEF44FB".into());
+        }
+        Ok(())
     }
 
     pub(super) fn bundles(&self) -> impl Iterator<Item = u32> {

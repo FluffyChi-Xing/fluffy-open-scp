@@ -661,6 +661,10 @@ pub(super) fn compile_with_profile(
     }
     if author_tourism {
         resolved.notes.push("tourism: SC5 Asset Packager native landmark profile".into());
+        if templates.residence() && family.loops.contains(&super::behavior_loops::BehaviorLoop::Labor) {
+            apply_labor_auto_wiring(&mut resolved);
+            super::behavior_loops::apply(&mut resolved, super::behavior_loops::BehaviorLoop::Labor);
+        }
     } else {
         apply_labor_auto_wiring(&mut resolved);
         // 叶子写完后再应用家族适配器（strip 学校残留 / 补 donor·menu 元数据）。

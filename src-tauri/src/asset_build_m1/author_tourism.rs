@@ -41,7 +41,16 @@ pub(super) fn selected(nodes: &[serde_json::Value]) -> bool {
     let mut tourism = false;
     for node in nodes {
         match node["type"].as_str() {
-            Some("education" | "residence") => return false,
+            Some("education") => return false,
+            Some("residence") => {
+                // Copan contributes its residential fields and bundles through
+                // Templates::patch after the landmark Unit is built.
+                if node["params"]["residenceProfile"]
+                    != super::behavior_templates::RESIDENCE_PROFILE
+                {
+                    return false;
+                }
+            }
             Some("tourism") => {
                 let params = &node["params"];
                 if params["lodging"] == true
@@ -204,6 +213,12 @@ fn profile(
         }
         excluded.retain(|value| !refers_to(value, instance));
     }
+    program.templates.prepare_landmark_residence(
+        &mut unit,
+        &mut active,
+        &mut excluded,
+        &program.remove_excluded_bundles,
+    )?;
     set_keys(&mut unit, A5, active);
     set_keys(&mut unit, EXCLUDED, excluded);
     for property in &mut unit.values {
@@ -341,7 +356,7 @@ pub(super) fn verify(
     let unit_id = id(UNIT_GROUP, instance);
     let unit = parse(resources, unit_id)?;
     let lot = parse(resources, id(lot_group(), instance))?;
-    for hash in [0x0CA5_2005, 0x0F16_9C46] {
+    for hash in [0x0CA5_2005, super::interior_lighting::ACTIVE_CONTROLLER] {
         if lot.get(hash).and_then(|property| property.scalar()) != Some(&Value::Bool(true)) {
             return Err(format!(
                 "tourism contract: Lot {hash:08X} must be Bool(true)"
@@ -357,6 +372,8 @@ pub(super) fn verify(
         return Err("tourism contract: Lot 0CD4E49C needs a facility control list".into());
     }
     let bundle = construction_reference(&unit)?;
+    program.templates.verify_landmark_residence(&unit)?;
+    super::interior_lighting::verify_landmark_activation(&unit)?;
     if [0, CONSTRUCTION_SOURCE, CONSTRUCTION_FIXED].contains(&bundle.instance)
         || resources.get(&bundle) != Some(&construction_bundle(&anchors)?)
     {
@@ -403,13 +420,34 @@ mod tests {
     fn tourism_only_uses_the_author_route_for_supported_new_menu_profiles() {
         let tourism = json!({"type":"tourism", "params":{"tourismProfile":"native-tourism-v1"}});
         assert!(selected(std::slice::from_ref(&tourism)));
-        assert!(!selected(&[tourism, json!({"type":"education"})]));
+        assert!(!selected(&[tourism.clone(), json!({"type":"education"})]));
+        assert!(!selected(&[tourism.clone(), json!({"type":"residence"})]));
+        assert!(selected(&[
+            tourism,
+            json!({"type":"residence", "params":{"residenceProfile":"copan-residence-v1"}}),
+        ]));
         assert!(!selected(&[
             json!({"type":"tourism", "params":{"lodging":true}})
         ]));
         assert!(!selected(&[
             json!({"type":"tourism", "params":{"templateInstance":"0xDEADBEEF"}})
         ]));
+    }
+
+    #[test]
+    fn copan_residence_keeps_its_initial_vacancy_and_intake_bindings() {
+        let nodes = [json!({"type":"residence", "params":{"residenceProfile":"copan-residence-v1"}})];
+        let program = ResolvedBehavior {
+            templates: super::super::behavior_templates::select(&nodes).unwrap(),
+            ..ResolvedBehavior::default()
+        };
+        let unit = profile(&anchors(), &PropertyFile::default(), &program, 0x0123_4567)
+            .unwrap();
+        let unit = program.templates.patch(&encode(&unit).unwrap()).unwrap();
+        let unit = PropertyFile::parse(&unit).unwrap();
+        assert_eq!(array(&unit, 0x0A88_D179).unwrap(), &[Value::Int32(49), Value::Int32(22)]);
+        program.templates.verify_landmark_residence(&unit).unwrap();
+        assert!(array(&unit, A5).unwrap().iter().any(|value| refers_to(value, 0xE648_41C9)));
     }
 
     #[test]

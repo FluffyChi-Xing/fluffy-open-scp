@@ -20,6 +20,7 @@ pub mod delta_audit;
 pub mod events;
 mod filesystem;
 pub mod geometry_route;
+mod interior_lighting;
 pub mod lotm;
 pub mod material_atlas;
 pub mod material_gate;

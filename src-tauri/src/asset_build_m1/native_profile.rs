@@ -636,12 +636,7 @@ pub(super) fn rotate_matrix(matrix: &[f32], degrees: u32) -> Result<[f32; 12], S
 
 const IDENTITY_12: [f32; 12] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
 
-/// Workbench `modelTransform` moves the compiled model inside the lot. Scene
-/// units attached to the building (props/lights/effects/spawners) are authored
-/// in the same model frame, so they must receive the same translation or they
-/// float by the authored offset (observed as a small effect/prop drift).
-/// Full affine composition is only needed when the workbench model transform
-/// carries rotation/scale; the editor's current move tool is translation-only.
+/// Apply the model translation for the native decal route.
 pub(super) fn apply_model_translation(mut matrix: [f32; 12], scene: &SceneDocument) -> [f32; 12] {
     if let Some(model) = scene.model_transform {
         matrix[9] += model[9];
@@ -684,7 +679,6 @@ fn compile_prop_fields(
             Some(matrix) => rotate_matrix(&matrix.matrix, degrees)?,
             None => IDENTITY_12,
         };
-        let matrix = apply_model_translation(matrix, scene);
         let scale = scale.unwrap_or(1.0);
         if !(0.001..=100.0).contains(&scale) {
             return Err("道具缩放超出支持范围".into());
@@ -827,7 +821,6 @@ fn compile_light_fields(
             Some(matrix) => rotate_matrix(&matrix.matrix, degrees)?,
             None => IDENTITY_12,
         };
-        let matrix = apply_model_translation(matrix, scene);
         // Author rows carry POINT/SPOT; LINE passes through verbatim (see
         // LIGHT_LINE_TYPE). Anything unrecognized falls back to POINT.
         let kind = match *light_type {
@@ -967,7 +960,7 @@ fn compile_effect_fields(
             Some(matrix) => rotate_matrix(&matrix.matrix, degrees)?,
             None => IDENTITY_12,
         };
-        let matrix = apply_model_translation(matrix, scene);
+        // Workbench effect transforms are already authored in lot coordinates.
         ids.push(key_value(*effect_id));
         // Encoder invariant: flags 15 ⇔ unknown.is_some()。工作台场景文档
         // 的 effect transform 可能是 flags 15 但无 scale payload——规范化为
@@ -999,6 +992,41 @@ fn compile_effect_fields(
         array(EFFECT_REFS, PropType::Key, refs),
         array(EFFECT_ENABLED, PropType::Bool, enableds),
     ])
+}
+
+pub(super) fn verify_attachment_transforms(
+    lot: &PropertyFile,
+    document: &SceneDocument,
+    rotation: u32,
+) -> Result<(), String> {
+    let mut columns = std::collections::BTreeMap::<u32, Vec<[f32; 12]>>::new();
+    for unit in &document.units {
+        let (hash, authored) = match unit {
+            SceneUnit::Effect { transform, .. } => (EFFECT_TRANSFORMS, transform),
+            SceneUnit::Light { transform, .. } => (0x0CAA_8F12, transform),
+            SceneUnit::Prop { bin, transform, .. } => (PROP_TRANSFORMS + *bin as u32, transform),
+            _ => continue,
+        };
+        let matrix = match authored {
+            Some(transform) => rotate_matrix(&transform.matrix, rotation)?,
+            None => IDENTITY_12,
+        };
+        columns.entry(hash).or_default().push(matrix);
+    }
+    for (hash, expected) in columns {
+        let Some(Kind::Array(actual)) = lot.get(hash).map(|property| &property.kind) else {
+            return Err(format!("written-contract: attachment transforms {hash:08X} missing"));
+        };
+        if actual.len() != expected.len() {
+            return Err(format!("written-contract: attachment transform count for {hash:08X} differs from the scene"));
+        }
+        for (index, (value, matrix)) in actual.iter().zip(expected).enumerate() {
+            if !matches!(value, Value::Transform(transform) if transform.matrix == matrix) {
+                return Err(format!("written-contract: attachment {hash:08X}[{index}] differs from the authored lot coordinates"));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Rotate a lot-local vector with the author's quantized rotation — same
@@ -1557,7 +1585,7 @@ pub fn build(
     // build_candidate ships it via asset_bool_overrides.
     upsert(
         &mut asset,
-        scalar(0x0F16_9C46, PropType::Bool, Value::Bool(true)),
+        scalar(super::interior_lighting::ACTIVE_CONTROLLER, PropType::Bool, Value::Bool(true)),
     );
     // The school donor carries an empty optional footprint. Native
     // candidate assets omit it when there is no footprint to serialize.
