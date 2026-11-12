@@ -125,16 +125,5 @@ export default {
         order: 52,
       },
     },
-    {
-      name: "studio-versions",
-      path: "studio/versions",
-      component: () => import("@/pages/studio/panels/versions.vue"),
-      meta: {
-        titleKey: "navigation.studioVersions",
-        icon: "history",
-        groupKey: "navigation.modding",
-        order: 55,
-      },
-    },
   ],
 } satisfies RouteModule;

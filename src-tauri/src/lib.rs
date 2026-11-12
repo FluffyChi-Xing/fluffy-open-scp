@@ -47,7 +47,6 @@ mod settings;
 mod stats;
 #[cfg(test)]
 mod test_scratch;
-mod version_service;
 mod workspace;
 mod wwise;
 
@@ -92,10 +91,6 @@ use render_telemetry::{render_telemetry_clear, render_telemetry_record, render_t
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
 use stats::package_statistics;
 use tauri::{Manager, PhysicalPosition};
-use version_service::{
-    version_capture_baseline, version_changeset_detail, version_delete_changeset,
-    version_list_changesets, version_list_targets, version_record_changeset, version_rollback,
-};
 use workspace::{
     code_delete_file, code_manifest, code_package_entries, code_package_info, code_read_text,
     code_resource_preview, code_tree, code_write_text, workspace_create_folder,
@@ -215,13 +210,6 @@ pub fn run() {
             game_assets::count_limits::game_count_limits_read,
             game_assets::count_limits::game_count_limits_patch,
             game_launch::launch_game,
-            version_list_targets,
-            version_list_changesets,
-            version_changeset_detail,
-            version_record_changeset,
-            version_capture_baseline,
-            version_rollback,
-            version_delete_changeset,
             list_game_tree,
             list_package_files,
             open_package,
