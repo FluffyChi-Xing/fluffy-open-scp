@@ -52,4 +52,33 @@ describe("createParticleEffect (parallel)", () => {
     expect(quadMatrix(view).matrix.elements[14]).toBeCloseTo(5, 5);
     view.dispose();
   });
+
+  it("uses an emitter-local XY plane for the pump's axial mode 5 particle", () => {
+    const water = { ...emitter, particle: { ...particle, alignMode: 5 } };
+    const view = createParticleEffect(THREE, unit, [water], 4);
+    const material = quadMatrix(view).material as THREE.ShaderMaterial;
+    expect(material.defines.SWARM_EMITTER_PLANE).toBe(1);
+    expect(material.uniforms.uEmitterRight.value.toArray()).toEqual([1, 0]);
+    view.dispose();
+  });
+
+  it("derives the mode 5 basis from the average emission direction", () => {
+    const aligned: EffectEmitterData = {
+      ...emitter,
+      particle: {
+        ...particle,
+        alignMode: 5,
+        emitDirectionMin: [1, 0, 0],
+        emitDirectionMax: [1, 2, 0],
+      },
+    };
+    const view = createParticleEffect(THREE, unit, [aligned, emitter], 4);
+    const alignedMaterial = quadMatrix(view).material as THREE.ShaderMaterial;
+    const [x, y] = alignedMaterial.uniforms.uEmitterRight.value.toArray();
+    expect(x).toBeCloseTo(Math.SQRT1_2);
+    expect(y).toBeCloseTo(-Math.SQRT1_2);
+    const legacyMaterial = (view.object.children[2] as THREE.Mesh).material as THREE.ShaderMaterial;
+    expect(legacyMaterial.defines.SWARM_EMITTER_PLANE).toBeUndefined();
+    view.dispose();
+  });
 });

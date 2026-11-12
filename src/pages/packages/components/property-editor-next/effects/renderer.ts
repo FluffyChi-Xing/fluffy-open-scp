@@ -1,10 +1,21 @@
 import type * as ThreeNamespace from "three";
-import type { EffectEmitterData, EffectUnit, UnitTransformDto } from "@/api/tauri";
+import type { EffectEmitterData, EffectUnit, SwarmParticle, UnitTransformDto } from "@/api/tauri";
 import { ParticleSolver, sampleColor, sampleScalar } from "./solver";
 import { particleAtlasFrame } from "./frame";
 import { resolveSwarmUnitScale, toSceneEmitter } from "./scale";
 
 type Three = typeof ThreeNamespace;
+const ALIGN_EMITTER_PLANE = 5;
+
+function emitterPlaneRight(THREE: Three, particle: SwarmParticle): ThreeNamespace.Vector2 {
+  // Swarm GetParticleAxes(5): average the emission bounds, then cross with local +Z.
+  const x = (particle.emitDirectionMin[0] + particle.emitDirectionMax[0]) * 0.5;
+  const y = (particle.emitDirectionMin[1] + particle.emitDirectionMax[1]) * 0.5;
+  const length = Math.hypot(x, y);
+  return length > 0.0001
+    ? new THREE.Vector2(y / length, -x / length)
+    : new THREE.Vector2(1, 0);
+}
 
 export interface ParticleRenderOptions {
   /** Swarm 局部单位 → 米；默认 0.01，可用 1 做原始单位对照。 */
@@ -103,10 +114,13 @@ export function createParticleEffect(
 
     const tilesU = Math.max(1, emitter.particle.tileCount[0]);
     const tilesV = Math.max(1, emitter.particle.tileCount[1]);
+    const emitterAligned = emitter.particle.alignMode === ALIGN_EMITTER_PLANE;
     const material = new THREE.ShaderMaterial({
+      defines: emitterAligned ? { SWARM_EMITTER_PLANE: 1 } : {},
       uniforms: {
         uMap: { value: null }, uHasMap: { value: false },
         uTiles: { value: new THREE.Vector2(tilesU, tilesV) },
+        uEmitterRight: { value: emitterAligned ? emitterPlaneRight(THREE, emitter.particle) : null },
       },
       vertexShader: `
         attribute vec3 aColor;
@@ -118,6 +132,9 @@ export function createParticleEffect(
         attribute float aFrameMix;
         attribute float aNextFrame;
         attribute vec2 aCorner;
+        #ifdef SWARM_EMITTER_PLANE
+          uniform vec2 uEmitterRight;
+        #endif
         varying vec3 vColor;
         varying float vAlpha;
         varying vec2 vUv;
@@ -135,8 +152,17 @@ export function createParticleEffect(
           vec2 corner = vec2(aCorner.x * max(0.01, aAspect), aCorner.y) * aSize * 0.5;
           float sine = sin(aRotation);
           float cosine = cos(aRotation);
-          view.xy += vec2(cosine * corner.x - sine * corner.y,
-                          sine * corner.x + cosine * corner.y);
+          vec2 rotated = vec2(cosine * corner.x - sine * corner.y,
+                              sine * corner.x + cosine * corner.y);
+          #ifdef SWARM_EMITTER_PLANE
+            vec2 up = vec2(-uEmitterRight.y, uEmitterRight.x);
+            vec3 rightView = (modelViewMatrix * vec4(uEmitterRight, 0.0, 0.0)).xyz;
+            vec3 upView = (modelViewMatrix * vec4(up, 0.0, 0.0)).xyz;
+            view.xyz += rotated.x * rightView / max(length(rightView), 0.0001)
+                      + rotated.y * upView / max(length(upView), 0.0001);
+          #else
+            view.xy += rotated;
+          #endif
           gl_Position = projectionMatrix * view;
         }
       `,

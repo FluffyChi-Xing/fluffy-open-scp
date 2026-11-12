@@ -533,6 +533,7 @@ export interface SwarmParticle {
   color: [number, number, number][];
   texture: { group: number; instance: number; drawMode: number };
   tileCount: [number, number];
+  alignMode?: number;
   frameStart: number;
   frameCount: number;
   frameRandom: number;

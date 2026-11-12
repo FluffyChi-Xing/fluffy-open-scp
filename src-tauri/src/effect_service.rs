@@ -251,6 +251,7 @@ fn fast_particle_fallback() -> ParticleComponent {
             draw_mode: 0,
         },
         tile_count: [1, 1],
+        align_mode: 0,
         frame_start: 0,
         frame_count: 1,
         frame_random: 0,
