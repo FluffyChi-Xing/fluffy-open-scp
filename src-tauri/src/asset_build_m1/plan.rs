@@ -116,6 +116,9 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
     let behavior_program = if has_composed {
         let mut labor = super::behavior_nodes::parse_labor(im.semantics.labor.as_ref())?;
         let nodes = super::behavior_nodes::parse_nodes(&im.semantics.behaviors)?;
+        if menu.is_none() && nodes.iter().any(|node| node["type"] == "hotel") {
+            return Err("HOTEL_RESOURCE".into());
+        }
         let author_tourism = menu.is_some() && super::author_tourism::selected(&nodes);
         if author_tourism
             && im.semantics.labor.as_ref().is_some_and(|value| value["minWorkers"].is_null())

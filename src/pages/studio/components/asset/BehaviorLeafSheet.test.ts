@@ -44,13 +44,9 @@ describe("BehaviorLeafSheet", () => {
       expect(
         document.querySelector('[role="dialog"] h2')?.textContent?.trim(),
       ).toBe("Edit Tourism");
-      expect(
-        document.querySelector('[role="switch"]')?.getAttribute("aria-label"),
-      ).toBe("Offer medium-wealth guest rooms");
 
       attraction.value = "275";
       attraction.dispatchEvent(new Event("input", { bubbles: true }));
-      document.querySelector<HTMLButtonElement>('[role="switch"]')!.click();
       await nextTick();
       document
         .querySelector("form.behavior-sheet-form")!
@@ -63,10 +59,42 @@ describe("BehaviorLeafSheet", () => {
             type: "tourism",
             tourismProfile: "native-tourism-v1",
             attraction: 275,
-            lodging: true,
           },
         ],
       ]);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it("edits hotel rooms separately from tourism and checks the native bin limit", async () => {
+    i18n.global.locale.value = "zh-CN";
+    const wrapper = mount(BehaviorLeafSheet, {
+      attachTo: document.body,
+      global: { plugins: [i18n] },
+      props: {
+        node: { ...node, position: [0, 0] },
+        params: { type: "hotel" },
+        labelKey: "studio.assetWorkbench.logicNode.leafHotel",
+        trigger: null,
+      },
+    });
+    try {
+      await nextTick();
+      const dialog = document.querySelector('[role="dialog"]')!;
+      const input = dialog.querySelector<HTMLInputElement>('input[placeholder="68"]')!;
+      expect(input.closest("label")?.textContent?.trim()).toBe("客房数量");
+      i18n.global.locale.value = "en-US";
+      input.value = "1001";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await nextTick();
+      expect(input.closest("label")?.textContent?.trim()).toBe("Guest rooms");
+      expect(dialog.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+      input.value = "84";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await nextTick();
+      dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(wrapper.emitted("apply")).toEqual([[{ type: "hotel", rooms: 84 }]]);
     } finally {
       wrapper.unmount();
     }

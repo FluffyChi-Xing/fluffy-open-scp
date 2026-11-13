@@ -11,7 +11,6 @@ import {
   DialogTitle,
 } from "reka-ui";
 import FIcon from "@/components/extensions/FIcon.vue";
-import { Switch } from "@/components/ui/switch";
 import LogicNodeCard from "./LogicNodeCard.vue";
 import {
   cloneLogicParams,
@@ -19,6 +18,7 @@ import {
   type LeafParams,
   type LogicNode,
   type TourismParams,
+  validHotelRooms,
 } from "./logicGraph";
 
 const props = defineProps<{
@@ -39,12 +39,14 @@ const tourism = computed(() =>
 );
 const description = computed(() => {
   if (tourism.value) return "tourismTemplate";
+  if (draft.value.type === "hotel") return "hotelTemplate";
   if (draft.value.type === "residence") return "residenceTemplate";
   if (draft.value.type === "landvalue" && draft.value.landValueProfile) return "landTemplate";
   return "description";
 });
 const invalidTemplateValue = computed(() => {
   const current = draft.value;
+  if (current.type === "hotel") return validHotelRooms(current.rooms) ? null : "hotelRooms";
   if (current.type === "residence") {
     const population = current.population;
     return population != null && (!Number.isInteger(population) || population < 1 || population > 100_000)
@@ -185,17 +187,12 @@ function restoreFocus(event: Event): void {
               >
                 {{ t(`${keys}.quotaRequired`) }}
               </p>
-              <label class="behavior-sheet-lodging">
-                <Switch
-                  :model-value="tourism.lodging ?? false"
-                  :aria-label="t(`${keys}.lodging`)"
-                  @update:model-value="patchDraft({ lodging: $event })"
-                />
-                <span>{{ t(`${keys}.lodging`) }}</span>
-              </label>
-              <p v-if="tourism.lodging" class="behavior-sheet-hint">
-                {{ t(`${keys}.lodgingHint`) }}
-              </p>
+              <div v-if="tourism.lodging" class="behavior-sheet-lodging">
+                <p class="behavior-sheet-hint">{{ t(`${keys}.legacyLodging`) }}</p>
+                <button type="button" @click="patchDraft({ lodging: false })">
+                  {{ t(`${keys}.removeLegacyLodging`) }}
+                </button>
+              </div>
             </template>
             <LogicNodeCard
               v-else

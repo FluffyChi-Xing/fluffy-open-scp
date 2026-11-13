@@ -285,6 +285,13 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     if let Some(recipe) = &program.native_tourism {
         recipe.verify(ctx, &unit_id, &lot_id)?;
     }
+    if let Some(recipe) = &program.hotel {
+        recipe.verify_lot(ctx.resources.all(), &lot_id)?;
+        let bytes = ctx.resources.get(&unit_id).ok_or("HOTEL_RESOURCE")?;
+        let unit = recipe.patch(bytes)?;
+        ctx.resources.insert(unit_id, unit);
+        changed.push(serde_json::json!({"resource": unit_id.to_string(), "hotel": recipe}));
+    }
 
     Ok(serde_json::json!({
         "instance": format!("{instance:08X}"),

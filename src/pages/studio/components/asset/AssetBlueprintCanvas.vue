@@ -517,6 +517,12 @@ function onConnect(connection: Connection): void {
     connection.target === "units" ? "asset" : connection.target ?? "";
   const handle = connection.targetHandle;
   if (handle !== "info" && handle !== "behavior" && handle !== "leaf") return;
+  const node = props.logic.nodes.find((item) => item.id === source);
+  const leaf = node && leafTypeOf(props.logic, node);
+  if (handle === "leaf" && leaf && !behaviorConflicts.canAdd({
+    ...props.logic,
+    nodes: props.logic.nodes.filter((item) => item.id !== source),
+  }, leaf)) return;
   const result = connectLogic(props.logic, source, target, handle);
   if (result.error) {
     toast.warning(t(`studio.assetWorkbench.logicIssue.${result.error}`));

@@ -12,7 +12,7 @@ use serde_json::Value;
 
 const PROFILE: &str = "native-tourism-v1";
 const TOURIST_BUNDLES: [u32; 4] = [0xE153_69A2, 0x75D2_2FD2, 0x75D2_2FD1, 0x75D2_2FD0];
-const HOTEL_W2: u32 = 0x729A_6626;
+use super::behavior_hotel::INTAKE as HOTEL_W2;
 const ENABLE_ROWS: [u32; 4] = [0x0A02_09A2, 0x0A02_09A3, 0x0A02_09A4, 0x0A02_09A5];
 const EXCLUDE_ROW: u32 = 0x0A02_09B2;
 const PATH_ENTRIES: u32 = 0x0CC8_FE7A;
@@ -172,7 +172,7 @@ impl NativeTourism {
     }
 }
 
-fn has_visitor_access(entries: &[PropertyValue], connects: &[PropertyValue]) -> bool {
+pub(super) fn has_visitor_access(entries: &[PropertyValue], connects: &[PropertyValue]) -> bool {
     use super::native_profile::{PATH_ROAD_CONNECT_FIRST, PATH_ROAD_CONNECT_NONE};
 
     // Tokyo Tower's Asset (40E1C000:084DB48F) uses the pedestrian

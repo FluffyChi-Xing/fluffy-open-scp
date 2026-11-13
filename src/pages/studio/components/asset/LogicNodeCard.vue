@@ -47,6 +47,11 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const hotelRooms = computed(() => (props.params as { rooms?: number | null }).rooms);
+function updateHotelRooms(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  emit("update-params", { rooms: input.value === "" && !input.validity.badInput ? null : input.valueAsNumber });
+}
 const landFields = computed<readonly (keyof LandvalueParams)[]>(() =>
   (props.params as LandvalueParams).landValueProfile
     ? ["value", "value2"]
@@ -405,6 +410,20 @@ const leafOptions = computed(() =>
           />
         </label>
       </template>
+
+      <label v-else-if="leafType === 'hotel'" class="logic-field">
+        <span>{{ t("studio.assetWorkbench.behaviorSheet.hotelRoomCount") }}</span>
+        <input
+          type="number"
+          min="1"
+          max="1000"
+          step="1"
+          placeholder="68"
+          :value="hotelRooms ?? ''"
+          :disabled="disabled"
+          @change="updateHotelRooms"
+        />
+      </label>
 
       <label v-else-if="leafType === 'residence'" class="logic-field">
         <span>{{ t("studio.assetWorkbench.behaviorSheet.population") }}</span>

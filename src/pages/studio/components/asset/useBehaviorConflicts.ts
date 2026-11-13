@@ -1,7 +1,7 @@
 import { command } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { useI18n } from "vue-i18n";
-import { leafSpec, leafTypeOf, type BehaviorLeafType, type LogicGraph } from "./logicGraph";
+import { MAX_BEHAVIOR_LEAVES, behaviorTypesConflict, isLeaf, leafSpec, leafTypeOf, type BehaviorLeafType, type LogicGraph } from "./logicGraph";
 
 interface BehaviorBinReport {
   conflicts: {
@@ -20,11 +20,17 @@ export function useBehaviorConflicts() {
   const key = "studio.assetWorkbench.behaviorConflicts";
 
   function canAdd(graph: LogicGraph, type: BehaviorLeafType): boolean {
-    if (
-      (type === "tourism" || type === "residence" || type === "landvalue") &&
-      graph.nodes.some((node) => leafTypeOf(graph, node) === type)
-    ) {
-      toast.warning(t(`${key}.duplicateLeaf`, { behavior: t(leafSpec(type).labelKey) }));
+    const leaves = graph.nodes.filter(isLeaf);
+    if (leaves.length >= MAX_BEHAVIOR_LEAVES) {
+      toast.warning(t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }));
+      return false;
+    }
+    for (const node of leaves) {
+      const other = leafTypeOf(graph, node);
+      if (other == null || !behaviorTypesConflict(type, other)) continue;
+      toast.warning(t(`${key}.incompatible`, {
+        added: t(leafSpec(type).labelKey), other: t(leafSpec(other).labelKey),
+      }), { title: t(`${key}.potential`) });
       return false;
     }
     return true;

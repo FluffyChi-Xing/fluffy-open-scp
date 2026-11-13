@@ -145,6 +145,8 @@ pub struct ResolvedBehavior {
     pub(super) templates: super::behavior_templates::Templates,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) author_tourism: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) hotel: Option<super::behavior_hotel::Hotel>,
 }
 
 impl ResolvedBehavior {
@@ -202,7 +204,7 @@ pub fn parse_nodes(values: &[Value]) -> Result<Vec<Value>, String> {
             .ok_or_else(|| format!("behaviors node {id}: missing type"))?;
         if !matches!(
             kind,
-            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence"
+            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "hotel"
         ) {
             return Err(format!("behaviors node {id}: unknown type {kind:?}"));
         }
@@ -545,8 +547,11 @@ pub(super) fn compile_with_profile(
     nodes: &[Value],
     author_tourism: bool,
 ) -> Result<ResolvedBehavior, String> {
+    super::behavior_policy::validate(nodes)?;
     let mut resolved = ResolvedBehavior::default();
     resolved.author_tourism = author_tourism;
+    let hotel = super::behavior_hotel::select(nodes)?;
+    let labor = hotel.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
     let mut intent =
         super::behavior_family::leaf_intent_from_nodes(nodes, labor.is_some());
     let templates = super::behavior_templates::select(nodes)?;
@@ -639,6 +644,7 @@ pub(super) fn compile_with_profile(
             }
             "residence" if templates.residence() => {}
             "residence" => compile_residence(&mut resolved, &id, &params)?,
+            "hotel" => {}
             "park" => compile_land_values(&mut resolved, &id, &params, true)?,
             "landvalue" if templates.land_value() => {}
             "landvalue" => compile_land_values(&mut resolved, &id, &params, false)?,
@@ -676,6 +682,7 @@ pub(super) fn compile_with_profile(
     }
     templates.reconcile(&mut resolved);
     resolved.templates = templates;
+    resolved.hotel = hotel;
     resolved.declared_lot_columns = lot_columns(
         resolved.lot_board.is_some(),
         resolved.ensure_walk_path

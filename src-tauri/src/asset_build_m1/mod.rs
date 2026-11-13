@@ -4,6 +4,8 @@ pub mod author_building40;
 pub mod author_materials;
 pub mod behavior;
 mod behavior_conflicts;
+mod behavior_hotel;
+mod behavior_policy;
 pub mod behavior_family;
 pub mod behavior_loops;
 pub mod behavior_nodes;

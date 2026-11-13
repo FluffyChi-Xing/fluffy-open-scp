@@ -52,3 +52,30 @@ it("warns through the toast when an added leaf shares a bin with another leaf", 
     i18n.global.locale.value = previousLocale;
   }
 });
+
+it("rejects incompatible choices and the fifth behavior with a toast", () => {
+  const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
+  const hotel = addLogicNode(core.graph, leafSpec("hotel"), [0, 0]);
+  const full = (["park", "tourism", "landvalue", "tree"] as const).reduce(
+    (graph, type) => addLogicNode(graph, leafSpec(type), [0, 0]).graph, core.graph,
+  );
+  const toast = useToast();
+  const previousLocale = i18n.global.locale.value;
+  i18n.global.locale.value = "en-US";
+  const wrapper = mount(defineComponent({
+    setup() {
+      const { canAdd } = useBehaviorConflicts();
+      expect(canAdd(hotel.graph, "tourism")).toBe(false);
+      expect(toast.toasts.value.at(-1)).toMatchObject({
+        title: "Potential behavior conflict",
+        message: expect.stringContaining("Tourism may conflict with Hotel"),
+      });
+      expect(canAdd(full, "residence")).toBe(false);
+      expect(toast.toasts.value.at(-1)?.message).toContain("up to 4");
+      return () => null;
+    },
+  }), { global: { plugins: [i18n] } });
+  wrapper.unmount();
+  toast.clear();
+  i18n.global.locale.value = previousLocale;
+});

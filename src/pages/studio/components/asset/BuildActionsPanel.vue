@@ -207,6 +207,8 @@ function toggleStep(stage: string) {
 }
 
 function buildError(message: string): string {
+  const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT))\b/);
+  if (behaviorDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${behaviorDiagnostic[1]}`);
   const queueError = buildQueueErrorKey(message);
   if (queueError) return t(queueError);
   const vehicleDiagnostic = message.match(/\bVEHICLE_PATH_(RECEIVER|BINDING)\b/);

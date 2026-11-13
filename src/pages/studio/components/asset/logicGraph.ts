@@ -12,11 +12,14 @@
  * 数值并确保对应 utility bundle——不能只写数值。
  */
 
+import behaviorPolicy from "@/lib/asset-behavior-policy.json";
+
 export type LogicNodeKind = "building-info" | "behavior-core" | "behavior-leaf";
 export type BehaviorLeafType =
   | "education"
   | "tourism"
   | "residence"
+  | "hotel"
   | "park"
   | "tree"
   | "landvalue";
@@ -138,6 +141,7 @@ export const RESIDENCE_TEMPLATE_CAPACITY = 1100;
 export const LAND_TEMPLATE_VALUE = 500;
 
 export type LeafParams =
+  | { type: "hotel"; rooms?: number | null }
   | EducationParams
   | TourismParams
   | ResidenceParams
@@ -231,6 +235,14 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
       type: "tourism",
       tourismProfile: "native-tourism-v1",
     }),
+  },
+  {
+    kind: "behavior-leaf",
+    leafType: "hotel",
+    icon: "BedDouble",
+    labelKey: "studio.assetWorkbench.logicNode.leafHotel",
+    hintKey: "studio.assetWorkbench.logicNode.leafHotelHint",
+    defaultParams: () => ({ type: "hotel" }),
   },
   {
     kind: "behavior-leaf",
@@ -508,6 +520,19 @@ function numberOk(value: unknown, min = 0): boolean {
 /** 图级校验（fail-closed；构建器还会做一次同构校验）。 */
 export function logicIssues(graph: LogicGraph): LogicIssue[] {
   const issues: LogicIssue[] = [];
+  const leaves = graph.nodes.filter(isLeaf);
+  for (const node of leaves.slice(behaviorPolicy.maxLeaves)) {
+    issues.push({ code: "behaviorLeafLimit", nodeId: node.id });
+  }
+  for (const [index, node] of leaves.entries()) {
+    const type = leafTypeOf(graph, node);
+    if (type && leaves.slice(0, index).some((other) => {
+      const previous = leafTypeOf(graph, other);
+      return previous != null && behaviorTypesConflict(type, previous);
+    })) {
+      issues.push({ code: "behaviorLeafConflict", nodeId: node.id });
+    }
+  }
   const ids = new Set<string>();
   for (const node of graph.nodes) {
     if (ids.has(node.id)) issues.push({ code: "duplicateNode", nodeId: node.id });
@@ -619,6 +644,9 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
           if (leaf.population != null && (!Number.isInteger(leaf.population) || leaf.population < 1 || leaf.population > 100_000))
             issues.push({ code: "residenceCapacity", nodeId: node.id });
           break;
+        case "hotel":
+          if (!validHotelRooms(leaf.rooms)) issues.push({ code: "hotelRooms", nodeId: node.id });
+          break;
         case "tree":
           break;
         default:
@@ -627,6 +655,18 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
     }
   }
   return issues;
+}
+
+export const MAX_BEHAVIOR_LEAVES = behaviorPolicy.maxLeaves;
+
+export function behaviorTypesConflict(first: BehaviorLeafType, second: BehaviorLeafType): boolean {
+  return first === second || behaviorPolicy.incompatible.some(([head, ...others]) =>
+    (head === first && others.includes(second)) || (head === second && others.includes(first)),
+  );
+}
+
+export function validHotelRooms(rooms: unknown): boolean {
+  return rooms == null || (typeof rooms === "number" && Number.isInteger(rooms) && rooms >= 1 && rooms <= 1000);
 }
 
 // ---- 文档迁移（旧文档没有 logic 块 → 空图） ----

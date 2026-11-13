@@ -356,7 +356,7 @@ pub(super) fn array(file: &PropertyFile, hash: u32) -> Result<&[PropValue], Stri
     }
 }
 
-fn contains(file: &PropertyFile, hashes: &[u32], bundle: u32) -> bool {
+pub(super) fn contains(file: &PropertyFile, hashes: &[u32], bundle: u32) -> bool {
     hashes.iter().any(|hash| {
         array(file, *hash)
             .is_ok_and(|values| values.iter().any(|value| instance(value) == Some(bundle)))

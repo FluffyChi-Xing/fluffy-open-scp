@@ -2260,6 +2260,15 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         final_contract.detail["behaviorTemplates"] = serde_json::to_value(&program.templates)
             .map_err(|error| error.to_string())?;
     }
+    if let Some(recipe) = ctx.plan.behavior_program.as_ref().and_then(|p| p.hotel.as_ref()) {
+        let instance = ctx.menu_instance.ok_or("HOTEL_RESOURCE")?;
+        let id = ResourceId { type_id: super::behavior::PROPERTY_TYPE, group: super::menu::UNIT_GROUP, instance };
+        let bytes = final_resources.get(&id).ok_or("HOTEL_RESOURCE")?;
+        let unit = PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
+        recipe.verify(&unit)?;
+        recipe.verify_lot(&final_resources, &ResourceId { group: super::menu::lot_group(), ..id })?;
+        final_contract.detail["hotel"] = serde_json::to_value(recipe).map_err(|error| error.to_string())?;
+    }
     staging.write(
         "reports/written-contract.json",
         &serde_json::to_vec_pretty(&final_contract.detail).map_err(|error| error.to_string())?,

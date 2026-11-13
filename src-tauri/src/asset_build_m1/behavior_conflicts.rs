@@ -53,6 +53,7 @@ fn bundles(node: &Value) -> Result<BTreeSet<u32>, String> {
         .ensure_bundles
         .into_iter()
         .chain(program.templates.bundles())
+        .chain(program.hotel.iter().flat_map(|recipe| recipe.bundles()))
         .collect();
     if node["type"] == "park" {
         // The generic-park donor supplies the visitors' bins and sinks.
