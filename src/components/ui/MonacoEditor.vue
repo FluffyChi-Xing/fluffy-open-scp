@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as monaco from "monaco-editor";
+import { registerEr2 } from "./er2-language";
 
 const props = withDefaults(defineProps<{ value: string; language?: string; fill?: boolean; editable?: boolean }>(), {
   language: "plaintext",
@@ -31,26 +32,8 @@ function syncTheme() {
 }
 
 function monacoLanguage(language: string): string {
-  if (language === "er2") return "er2";
   if (language === "text") return "plaintext";
   return language;
-}
-
-function registerEr2() {
-  if (monaco.languages.getLanguages().some((item) => item.id === "er2")) return;
-  monaco.languages.register({ id: "er2", extensions: [".er2"] });
-  monaco.languages.setMonarchTokensProvider("er2", {
-    tokenizer: {
-      root: [
-        [/\/\/.*$/, "comment"],
-        [/[{}()[\],;]/, "delimiter"],
-        [/[a-zA-Z_][\w-]*/, { cases: { "@keywords": "keyword", "@default": "identifier" } }],
-        [/\d+(?:\.\d+)?/, "number"],
-        [/"(?:[^"\\]|\\.)*"/, "string"],
-      ],
-    },
-    keywords: ["unitRule", "globalRule", "define", "create", "set", "rate", "applyCount", "onSuccess", "onFail", "chain"],
-  });
 }
 
 onMounted(async () => {
@@ -60,7 +43,7 @@ onMounted(async () => {
   syncTheme();
   themeObserver = new MutationObserver(syncTheme);
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  registerEr2();
+  registerEr2(monaco.languages);
   model = monaco.editor.createModel(props.value, monacoLanguage(props.language));
   editor = monaco.editor.create(host.value, {
     model,
