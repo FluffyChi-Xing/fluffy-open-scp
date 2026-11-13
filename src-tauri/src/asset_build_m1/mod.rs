@@ -9,6 +9,7 @@ pub mod behavior_loops;
 pub mod behavior_nodes;
 mod spawner;
 mod behavior_templates;
+mod authored_reference;
 mod behavior_tourism;
 mod author_tourism;
 pub mod build_cache;

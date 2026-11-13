@@ -84,7 +84,11 @@ fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
             // Some protected/managed project folders reject MoveFileExW while
             // allowing the ordinary same-volume rename. The temporary file is
             // already fsynced, so this fallback preserves the atomic boundary.
-            return fs::rename(&source_path, &target_path);
+            return if replace {
+                fs::rename(&source_path, &target_path)
+            } else {
+                install_new(&source_path, &target_path)
+            };
         }
         if error.raw_os_error() != Some(ERROR_SHARING_VIOLATION) || attempt == RETRY_DELAYS_MS.len() {
             return Err(error);
@@ -96,13 +100,17 @@ fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
 
 #[cfg(not(windows))]
 fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
-    if !replace && target.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "target already exists",
-        ));
+    if replace {
+        fs::rename(source, target)
+    } else {
+        install_new(source, target)
     }
-    fs::rename(source, target)
+}
+
+fn install_new(source: &Path, target: &Path) -> io::Result<()> {
+    fs::hard_link(source, target)?;
+    let _ = fs::remove_file(source);
+    Ok(())
 }
 
 #[cfg(test)]

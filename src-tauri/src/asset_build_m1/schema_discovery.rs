@@ -109,9 +109,8 @@ pub fn discover_or_adapt(root: &Path) -> Result<SchemaCandidate, String> {
             if discovery_error.starts_with("no asset schema found")
                 && root.join("asset.lot.json").is_file() =>
         {
-            adapt_asset_editor(root).map_err(|adapter_error| {
-                format!("{discovery_error}; Asset Editor adapter: {adapter_error}")
-            })
+            adapt_asset_editor(root)
+                .map_err(|error| format!("Asset Editor (asset.lot.json): {error}"))
         }
         Err(error) => Err(error),
     }
@@ -166,38 +165,20 @@ fn adapt_asset_editor(root: &Path) -> Result<SchemaCandidate, String> {
                     Err(primary)
                 }
             })?;
-            let reference_package = root.join("build").join("reference.package");
-            if !reference_package.is_file() {
-                fs::create_dir_all(reference_package.parent().unwrap()).map_err(|e| e.to_string())?;
-                fs::copy(&source_path, &reference_package).map_err(|e| {
-                    format!(
-                        "copy reference package {} -> {}: {e}",
-                        source_path.display(),
-                        reference_package.display()
-                    )
-                })?;
-            } else if fs::read(&source_path).map_err(|e| e.to_string())?
-                != fs::read(&reference_package).map_err(|e| e.to_string())?
-            {
-                return Err("build/reference.package exists but differs from sourceLot.packagePath; archive or replace it explicitly".into());
-            }
             let donor = select_lot_config(&source_path, type_id, group, instance)?;
+            let reference_package = root.join("build/reference.package");
+            super::authored_reference::install(&source_path, &reference_package, true)
+                .map_err(|error| format!(
+                    "prepare reference {} -> {}: {error}",
+                    source_path.display(), reference_package.display()
+                ))?;
             (
                 Some(format!("{:08X}:{:08X}:{:08X}", donor.0, donor.1, donor.2)),
                 format!("asset-editor-{instance:08X}"),
             )
         }
         None if authored_only => {
-            // 菜单/行为骨架（unit donor 链）仍需一个参考包；地面不需要。
-            let reference_package = root.join("build").join("reference.package");
-            if !reference_package.is_file() {
-                return Err(
-                    "authored ground needs build/reference.package for the menu and \
-                     behavior skeletons (the ground itself is synthesized): import a \
-                     library lot once to create it, or copy the donor package there"
-                        .into(),
-                );
-            }
+            super::authored_reference::prepare(root)?;
             (None, "asset-editor-authored".to_string())
         }
         None => return Err("missing workbench.lotStyle.sourceLot".into()),
@@ -421,38 +402,6 @@ mod tests {
     }
 
     #[test]
-    fn adapter_authored_without_reference_package_names_the_skeleton_step() {
-        // 希望大厦「商业地标资产开发」项目回归（2026-11-11）：自绘地面把
-        // sourceLot 落盘为 null 后，adapter 曾报出令人误解的
-        // "sourceLot.tgi is required"。现在地面无需 donor，只剩菜单/行为
-        // 骨架需要参考包——报错要指向 build/reference.package。
-        let root = crate::test_scratch::scratch_base().join(format!(
-            "openscp-adapter-authored-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(root.join("assets/models")).unwrap();
-        std::fs::write(root.join("assets/models/tower.glb"), b"stub").unwrap();
-        let document = serde_json::json!({
-            "editor": {"workbench": {
-                "assetPath": "assets/models/tower.glb",
-                "lotStyle": {"sourceLot": null, "authored": true}
-            }}
-        });
-        std::fs::write(root.join("asset.lot.json"), document.to_string()).unwrap();
-        let error = discover_or_adapt(&root).unwrap_err();
-        assert!(error.starts_with("no asset schema found"), "{error}");
-        assert!(
-            error.contains("build/reference.package"),
-            "{error}"
-        );
-        std::fs::remove_dir_all(&root).ok();
-    }
-
-    #[test]
     fn adapter_authored_with_reference_package_synthesizes_donor_free_schema() {
         let root = crate::test_scratch::scratch_base().join(format!(
             "openscp-adapter-authored-ok-{}-{}",
@@ -463,9 +412,17 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(root.join("assets/models")).unwrap();
-        std::fs::create_dir_all(root.join("build")).unwrap();
         std::fs::write(root.join("assets/models/tower.glb"), b"stub").unwrap();
-        std::fs::write(root.join("build/reference.package"), b"DBPF-stub").unwrap();
+        let source = root.join("stock.package");
+        let target = root.join("build/reference.package");
+        let package = dbpf::write_uncompressed_overlay(&[]).unwrap();
+        std::fs::write(&source, &package).unwrap();
+        super::super::authored_reference::install(&source, &target, true).unwrap();
+        super::super::authored_reference::install(&source, &target, true).unwrap();
+        std::fs::write(&source, b"other").unwrap();
+        assert!(super::super::authored_reference::install(&source, &target, true).is_err());
+        super::super::authored_reference::install(&source, &target, false).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), package);
         let document = serde_json::json!({
             "editor": {"workbench": {
                 "assetPath": "assets/models/tower.glb",
@@ -480,6 +437,11 @@ mod tests {
         assert!(schema["reference"]["lot"].is_null(), "donor-free: no reference.lot");
         assert_eq!(schema["scene"]["authoredGround"], true);
         assert_eq!(schema["outputs"]["mode"], "full");
+        std::fs::write(&target, b"truncated").unwrap();
+        let error = discover_or_adapt(&root).unwrap_err();
+        assert!(error.starts_with("Asset Editor (asset.lot.json): open authored ground reference"));
+        assert!(!error.contains("no asset schema found"));
+        assert_eq!(std::fs::read(&target).unwrap(), b"truncated");
         std::fs::remove_dir_all(&root).ok();
     }
 }
