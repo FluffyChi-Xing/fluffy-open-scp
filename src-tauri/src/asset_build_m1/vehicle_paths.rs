@@ -3,7 +3,7 @@
 //! read by cTransportTraffic::AddSinkPositionsFromDataPaths.
 
 use super::behavior_templates::{ENABLE, EXCLUDED, array, key};
-use super::property_edit::{encode, set_array_with_flags};
+use super::property_edit::{encode, set_array_with_flags, set_scalar};
 use super::scene::SceneDocument;
 use sc_properties::{PropType, PropertyFile, Value};
 
@@ -15,6 +15,14 @@ const DIRECTIONS: u32 = 0x0D1A_7636;
 const OUTBOUND_ONLY: u32 = 26822469;
 const INITIAL_FLAGS: u32 = 0x0A88_D179;
 const CAR_RESTRICTION: Value = Value::Int32(49);
+const PARKING_PERCENT_FILL: u32 = 0x0C12_EF60;
+
+fn has_parking(lot: &PropertyFile) -> Result<bool, String> {
+    Ok(array(lot, sc_properties::lot_unit::PROP_ID_BASE)?
+        .iter()
+        .filter_map(instance)
+        .any(|id| (0x0AB4_DFE1..=0x0AB4_DFE3).contains(&id)))
+}
 
 // These are the car handler rows of the native bundles, limited to arrivals.
 // Ground commute rows require control bit 49 to be clear.
@@ -133,6 +141,16 @@ pub(super) fn bind(unit_bytes: &[u8], lot_bytes: &[u8]) -> Result<(Vec<u8>, Vec<
                 set_array_with_flags(&mut unit, INITIAL_FLAGS, PropType::Int32, flags, 0x809C);
             }
         }
+        if has_parking(&lot)? {
+            // Ground workplaces have uncapped CarW bins. Follow the native
+            // ground lots and prop_contract.py by drawing the resource count.
+            set_scalar(
+                &mut lot,
+                PARKING_PERCENT_FILL,
+                PropType::Bool,
+                Value::Bool(false),
+            );
+        }
     }
 
     let mut ids = array(&lot, SINK_IDS)?.to_vec();
@@ -177,6 +195,10 @@ pub(super) fn verify(unit: &[u8], lot: &[u8]) -> Result<(), String> {
     let paths = array(&lot, SINK_PATHS)?;
     let directions = array(&lot, DIRECTIONS)?;
     if (open_commute && array(&unit, INITIAL_FLAGS)?.contains(&CAR_RESTRICTION))
+        || (open_commute
+            && has_parking(&lot)?
+            && lot.get(PARKING_PERCENT_FILL).and_then(|prop| prop.scalar())
+                != Some(&Value::Bool(false)))
         || !array(&lot, PATH_ENTRIES)?
             .iter()
             .any(|value| instance(value) == Some(PATH))
@@ -225,10 +247,31 @@ mod tests {
             0x809C,
         );
         let source = encode(&unit).unwrap();
+        set_array_with_flags(
+            &mut lot,
+            sc_properties::lot_unit::PROP_ID_BASE,
+            PropType::Key,
+            vec![key(0x0AB4_DFE1)],
+            0x809C,
+        );
+        set_scalar(
+            &mut lot,
+            PARKING_PERCENT_FILL,
+            PropType::Bool,
+            Value::Bool(true),
+        );
         let lot = encode(&lot).unwrap();
         assert!(verify(&source, &lot).is_err());
         let (bound_unit, bound_lot) = bind(&source, &lot).unwrap();
         verify(&bound_unit, &bound_lot).unwrap();
+        let mut bad_lot = PropertyFile::parse(&bound_lot).unwrap();
+        set_scalar(
+            &mut bad_lot,
+            PARKING_PERCENT_FILL,
+            PropType::Bool,
+            Value::Bool(true),
+        );
+        assert!(verify(&bound_unit, &encode(&bad_lot).unwrap()).is_err());
         assert_eq!(
             array(&PropertyFile::parse(&bound_unit).unwrap(), INITIAL_FLAGS).unwrap(),
             &[Value::Int32(14), Value::Int32(23)]

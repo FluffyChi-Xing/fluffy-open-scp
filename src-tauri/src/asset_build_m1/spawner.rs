@@ -135,6 +135,9 @@ const TOURISM: Recipe = Recipe {
     definitions: &[(0x6372_21E5, COLLEGE.preferred_slots)],
 };
 
+#[path = "spawner_ground.rs"]
+mod ground;
+
 fn recipes(program: &ResolvedBehavior) -> Result<Vec<&'static Recipe>, String> {
     let mut selected = Vec::new();
     for signature in &program.education_signatures {
@@ -157,8 +160,11 @@ fn recipes(program: &ResolvedBehavior) -> Result<Vec<&'static Recipe>, String> {
     Ok(selected)
 }
 
-pub(super) fn has_recipes(program: &ResolvedBehavior) -> Result<bool, String> {
-    Ok(!recipes(program)?.is_empty())
+pub(super) fn has_recipes(
+    program: &ResolvedBehavior,
+    scene: Option<&SceneDocument>,
+) -> Result<bool, String> {
+    Ok(!recipes(program)?.is_empty() || ground::select(program, scene).is_some())
 }
 
 fn read_array(file: &PropertyFile, hash: u32) -> Result<&[Value], String> {
@@ -282,7 +288,13 @@ pub(super) fn bind(
     scene: Option<&SceneDocument>,
     rotation: u32,
 ) -> Result<Option<Bindings>, String> {
-    let recipes = recipes(program)?;
+    let mut recipes = recipes(program)?;
+    let ground = if recipes.is_empty() {
+        ground::select(program, scene)
+    } else {
+        None
+    };
+    recipes.extend(ground);
     if recipes.is_empty() {
         return Ok(None);
     }
@@ -383,6 +395,9 @@ pub(super) fn bind(
             *key = slot;
         }
     }
+    if let Some(recipe) = ground {
+        verify_ground_bindings(&positions, &selected_rows, recipe)?;
+    }
     for row in &selected_rows {
         vignette_rows.retain(|existing| existing[0].instance != row[0].instance);
         vignette_rows.push(row.clone());
@@ -430,6 +445,45 @@ pub(super) fn bind(
     }))
 }
 
+fn verify_ground_bindings(
+    positions: &[(Key, Transform)],
+    bindings: &[[Key; 3]],
+    recipe: &Recipe,
+) -> Result<(), String> {
+    let donor = PropertyFile::parse(recipe.snapshot).map_err(|error| error.to_string())?;
+    let native_rows = rows(&donor)?;
+    for &(definition, anchors) in recipe.definitions {
+        if !native_rows
+            .iter()
+            .any(|row| row[1].instance == definition && bindings.contains(row))
+            || !anchors
+                .iter()
+                .all(|id| positions.iter().any(|(key, _)| key.instance == *id))
+        {
+            return Err(format!(
+                "[spawner] native vignette {definition:08X} requires {} compatible authored anchors",
+                anchors.len()
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn verify_ground_output(
+    bytes: Option<&[u8]>,
+    program: &ResolvedBehavior,
+    scene: Option<&SceneDocument>,
+) -> Result<(), String> {
+    if recipes(program)?.is_empty()
+        && let Some(recipe) = ground::select(program, scene)
+    {
+        let bytes = bytes.ok_or("[spawner] missing final Lot")?;
+        let asset = PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
+        verify_ground_bindings(&locations(&asset)?, &rows(&asset)?, recipe)?;
+    }
+    Ok(())
+}
+
 fn write_array(file: &mut PropertyFile, hash: u32, kind: PropType, values: Vec<Value>) {
     let mut property = array(hash, kind, values);
     property.encoding.flags = 0x809C;
@@ -442,6 +496,51 @@ mod tests {
     use super::*;
     use crate::asset_build_m1::behavior_nodes::compile;
     use serde_json::json;
+
+    #[test]
+    fn authored_ground_spawners_bind_native_workplace_and_ambient_rows() {
+        let scene = SceneDocument {
+            units: (1..=5)
+                .map(|index| {
+                    let name = if index == 1 {
+                        "anchor".to_owned()
+                    } else {
+                        format!("anchor{index}")
+                    };
+                    SceneUnit::Spawner {
+                        id: Key {
+                            instance: fnv1_lower(&name),
+                            group: 0,
+                            type_id: 0,
+                        },
+                        transform: Transform {
+                            flags: 14,
+                            unknown: None,
+                            matrix: vec![
+                                1., 0., 0., 0., 1., 0., 0., 0., 1., index as f32, 0., 0.,
+                            ],
+                        },
+                    }
+                })
+                .collect(),
+            ..SceneDocument::default()
+        };
+        let empty = super::super::property_edit::encode(&PropertyFile::default()).unwrap();
+        for (jobs, definition) in [(30.0, 0x2A29_A2A5), (0.0, 0x9A84_297C)] {
+            let mut program = ResolvedBehavior::default();
+            program.set_float_fields.insert(0x0A79_17C6, jobs);
+            let bound = bind(&empty, &program, Some(&scene), 0).unwrap().unwrap();
+            let mut lot = PropertyFile::parse(&bound.bytes).unwrap();
+            assert_eq!(rows(&lot).unwrap()[0][1].instance, definition);
+            assert_eq!(locations(&lot).unwrap().len(), 5);
+            verify_ground_output(Some(&bound.bytes), &program, Some(&scene)).unwrap();
+            lot.values.retain(|property| {
+                ![VIGNETTE_ID, VIGNETTE_DEFINITION, VIGNETTE_SINK].contains(&property.hash)
+            });
+            let incomplete = super::super::property_edit::encode(&lot).unwrap();
+            assert!(verify_ground_output(Some(&incomplete), &program, Some(&scene)).is_err());
+        }
+    }
 
     #[test]
     fn spawner_recipes_resolve_the_native_definition_rows() {

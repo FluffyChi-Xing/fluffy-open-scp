@@ -1363,7 +1363,7 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                 ctx.author_building40,
             )?;
             if let Some(program) = &ctx.plan.behavior_program
-                && super::spawner::has_recipes(program)?
+                && super::spawner::has_recipes(program, ctx.scene_document.as_ref())?
             {
                 let asset_group = if menu.parent_free || ctx.author_building40 {
                     super::native_profile::ASSET_GROUP
@@ -2057,7 +2057,7 @@ fn delta_audit(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         let mut identity_allowed = allowed.clone();
         identity_allowed.extend([0x0CA5_CF4A, 0x09FB_78CB]);
         if let Some(program) = &ctx.plan.behavior_program
-            && super::spawner::has_recipes(program)?
+            && super::spawner::has_recipes(program, ctx.scene_document.as_ref())?
         {
             identity_allowed.extend(super::spawner::LOT_COLUMNS);
         }
@@ -2159,6 +2159,24 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     // A failed contract aborts before staging.publish(), so a bad package can
     // never replace the last accepted deliverable.
     let final_resources = connector::read_source(&staged_package)?;
+    if let (Some(instance), Some(menu), Some(program)) =
+        (ctx.menu_instance, &ctx.plan.menu, &ctx.plan.behavior_program)
+    {
+        let lot_id = ResourceId {
+            type_id: super::menu::PROPERTY_TYPE,
+            group: if menu.parent_free || ctx.author_building40 {
+                super::native_profile::ASSET_GROUP
+            } else {
+                super::menu::lot_group()
+            },
+            instance,
+        };
+        super::spawner::verify_ground_output(
+            final_resources.get(&lot_id).map(Vec::as_slice),
+            program,
+            ctx.scene_document.as_ref(),
+        )?;
+    }
     if super::vehicle_paths::authored(ctx.scene_document.as_ref()) {
         let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
         super::vehicle_paths::verify(
