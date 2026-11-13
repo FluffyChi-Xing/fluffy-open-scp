@@ -1,6 +1,11 @@
 # Raster 编辑契约
 
-独立菜单 `pages/studio/panels/raster.vue` 只组合 `components/raster/RasterEditor.vue`。
+独立菜单 `pages/studio/panels/raster.vue` 使用 `components/raster/RasterEditor.vue`，
+支持地面绘制（`lot-mask`）和贴花绘制（`decal-sign`）。
+贴花页首期开放招牌 / 广告牌。普通发光使用四色招牌 Shader，跑马灯使用 SDF
+Shader 的 `decalLightBackground` 扫光参数，依据 `docs/re/decal-engine-alignment.md` §十五。
+招牌草稿以可选的 `decal.sign` 保存效果、速度和扫光轴，旧草稿默认普通发光。
+跑马灯可导出 JSON 草稿和原始四色遮罩 PNG。游戏内播放还需要在 Lot 的贴花材质数据中写入动画速度。
 工作台 `RasterFlowTool.vue` 使用同一编辑器，以 `mode="flow"` 接收 `schema` 事件；
 将文档序列化到现有 `FlowSchema.config.document`，由父级 `save-node` 持久化。
 `asset` 继续保留原文件引用，编辑草稿优先于原文件参与建筑预览。
@@ -9,12 +14,14 @@
 
 | 模块 | 输入 / 输出与职责 |
 | --- | --- |
-| RasterProfilePicker | 用途值 → update:modelValue；建筑、Lot、Decal 分组 |
 | RasterSourcePanel | profile → create/image/schema/parameters；载入数据，不拥有编辑文档 |
 | RasterToolbar | 工具配置 v-model、undo/redo；通道与画笔参数 |
 | RasterCanvas | document/history → change/pick-color；像素事务与撤销 |
 | RasterParameterTable | 参数表 → update:modelValue；4 行 × N 列 float4 |
 | RasterMaterialPanel | lot/decal/sampling v-model → loadLot/loadDecal/changed |
+| DecalTypeTabs | 展示贴花类别及当前可用入口 |
+| RasterSignControls | 灯层、颜色、文字和发光设置 → 编辑动作 |
+| RasterDecalPreview | 贴花文档与发光设置 → 普通发光及扫光预览 |
 | RasterPreviewPanel | 只读 document/version/channel；原始通道与 Lot 染色示意 |
 | RasterPreviewCard | 预览标题、全屏 Sheet、焦点恢复与键盘关闭 |
 | RasterLotPreview | 当前原始 RGBA 与 Lot 配色 → PropertyEditorViewport 精细地面渲染；共享游戏地表/法线图集 |

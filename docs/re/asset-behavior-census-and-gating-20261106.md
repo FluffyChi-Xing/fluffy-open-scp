@@ -104,13 +104,11 @@ map/zone/path/point/transport/bundle 九组皆然）——组 ID 是代码常量
 | sink 条目本体 | 组 40E0C500（主表 sink 组声明 0x0A30A557）：`0x0A810F28` 资源、`0x0DA7921B` connected、`0x0B555629` invert、`0x0E7A94FF`/`0x0E7D5F1F` modifier、`0x0A810F29`+`0x0A810F2A` 测试表（按等级 int+bool，如电 sink 6DAA42EB=[11,13,15,22,19,60]/[F,F,F,F,T,F]）、UI 颜色 | **sink 条目自身没有消费量字段**——消费量三来源：①unit bin 的 capacity−amount（主来源）②amountModifier 偏移 ③无 key bin 保底常量 10 | `AddBaseEntitiesFromGroupIDs.c:139`（sink 组装载）、`cEcoSinkEntry::FillFromProps` 0x64B2C0、`SinkCapacity.c` 末段；普查 1047 sink/150 connected |
 | 规则 | `0x08080D58..5A`(Key[]) / `0x08327D48(+0..20)`(Key[]) | 常态规则引用 / 事件规则槽（21 槽，首槽 +1 起） | `AddBundle` 0x6490B0；`0x08080D58` 可为空数组 |
 
-**规则不读属性 hash（Q10 定案）**：规则结构体（`cEcoUnitRule_ord5221`/
-`cEcoResourceOp_ord7950`/`cAgentTest_ord14091`）没有属性槽位；规则执行管线
-（RunUnitRules/ApplyBinRule/ApplyNearbyRule/ProcessRules 等全集）零
-GetProperty 调用；ERZ 是纯二进制 op 数组（资源 ID + input/output 常量 +
-bin 运行时状态）。**named 属性的最终地位：纯 UI 看板参数**（水/垃圾连 UI
-读者都没有）。JS 层理论上可经 `BuildPropertiesJSValue` 读任意 hash，但那是
-UI 查询不是模拟行为。
+**规则怎样读取 Property**：常规资源操作使用资源 ID、输入输出量和运行时 bin。
+`CanRunRule` 支持从 Unit Property 或 SimProperties 读取整数型应用上限，
+规则专用化也能用指定的 PropOp 从属性改写规则字段。具体字段必须沿规则引用
+核对。水电等 named 属性的 UI 用途与 bundle 的运行时资源操作应分别追踪。
+见 [UnitRule 能力边界](./er2-unit-rule-capabilities-20261113.md#执行能力和依赖)。
 
 **挂接机制**：单位合并属性表（parent 链已在 PropertyManager 装载期展平）
 读四级启用数组 `0x0A0209A2/A3/A4/A5`（`cEcoUnitEntry::FillFromProps.c:261-275`，
