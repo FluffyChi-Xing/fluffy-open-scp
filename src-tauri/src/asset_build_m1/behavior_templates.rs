@@ -13,8 +13,8 @@ use serde_json::Value;
 
 pub(super) const RESIDENCE_PROFILE: &str = "copan-residence-v1";
 pub(super) const LAND_PROFILE: &str = "copan-land-value-v1";
-const ENABLE: [u32; 4] = [0x0A02_09A2, 0x0A02_09A3, 0x0A02_09A4, 0x0A02_09A5];
-const EXCLUDED: u32 = 0x0A02_09B2;
+pub(super) const ENABLE: [u32; 4] = [0x0A02_09A2, 0x0A02_09A3, 0x0A02_09A4, 0x0A02_09A5];
+pub(super) const EXCLUDED: u32 = 0x0A02_09B2;
 const PATH_ENTRIES: u32 = 0x0CC8_FE7A;
 const PATH_GROUP: u32 = 0x40E0_C400;
 const KEY_ARRAY_FLAGS: u16 = 0x809C;
@@ -331,7 +331,7 @@ fn amount(params: &Value, field: &str, id: &str, default: f64, min: f64) -> Resu
         .ok_or_else(|| format!("BEHAVIOR_TEMPLATE_PARAMETER: {id}/{field}"))
 }
 
-fn key(instance: u32) -> PropValue {
+pub(super) fn key(instance: u32) -> PropValue {
     PropValue::Key(Key {
         type_id: 0,
         group: 0,
@@ -346,7 +346,7 @@ fn instance(value: &PropValue) -> Option<u32> {
     }
 }
 
-fn array(file: &PropertyFile, hash: u32) -> Result<&[PropValue], String> {
+pub(super) fn array(file: &PropertyFile, hash: u32) -> Result<&[PropValue], String> {
     match file.get(hash).map(|property| &property.kind) {
         Some(Kind::Array(values)) => Ok(values),
         None => Ok(&[]),

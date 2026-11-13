@@ -650,9 +650,7 @@ pub(super) fn apply_model_translation(mut matrix: [f32; 12], scene: &SceneDocume
 /// Instances group by bin (the field offset); a bin holding several resource
 /// ids writes one merged prototype set — ids = distinct resources in
 /// first-appearance order, transforms = instances concatenated in scene
-/// order, indices = each instance's prototype index (the author's one-preset
-/// bin therefore writes one id + N transforms + N zero slots). Mixed-resource
-/// bins must not use 0..N, which silently binds later prototypes to the wrong id.
+/// order. Parking uses an independent slot number for each transform.
 fn compile_prop_fields(
     scene: Option<&SceneDocument>,
     degrees: u32,
@@ -710,7 +708,7 @@ fn compile_prop_fields(
         }
     }
     let mut out = Vec::new();
-    for (bin, resources, records, indices) in bins {
+    for (bin, resources, records, mut indices) in bins {
         // Author semantics: the bin value IS the field offset
         // (`fields[202567456+bin]`); the author catalog uses 9..=12 (their
         // trees) and commercial777's control package used 10/11. Pass the
@@ -727,6 +725,11 @@ fn compile_prop_fields(
         // the complete E1/E2/E3 family; the runtime chooses the variant per
         // slot. Emitting only E1 leaves the bin present but unresolvable.
         if vehicle_bin {
+            // prop_contract.py uses range(n) for the slot column. For parking,
+            // cUnitBinDraw assigns the vehicle resource to each slot at runtime.
+            for (slot, index) in indices.iter_mut().enumerate() {
+                *index = slot as i32;
+            }
             for resource in 0x0AB4_DFE1..=0x0AB4_DFE3 {
                 if !resources.contains(&resource) {
                     resources.push(resource);
@@ -768,6 +771,43 @@ fn compile_prop_fields(
         ));
     }
     Ok(out)
+}
+
+pub(super) fn verify_parking_slots(bytes: &[u8], scene: Option<&SceneDocument>) -> Result<(), String> {
+    let Some(scene) = scene else {
+        return Ok(());
+    };
+    let parking_props = scene.units.iter().filter_map(|unit| match unit {
+        SceneUnit::Prop {
+            bin: 0,
+            resource_id,
+            ..
+        } => *resource_id,
+        _ => None,
+    });
+    if !parking_props
+        .clone()
+        .any(|id| (0x0AB4_DFE1..=0x0AB4_DFE3).contains(&id))
+    {
+        return Ok(());
+    }
+    let count = parking_props.count();
+    let lot = PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
+    let transforms = lot.get(PROP_TRANSFORMS).and_then(Property::array);
+    let slots = lot.get(PROP_INDICES).and_then(Property::array);
+    if !transforms.is_some_and(|values| values.len() == count)
+        || !slots.is_some_and(|values| {
+            values.len() == count
+                && values.iter().enumerate().all(|(slot, value)| {
+                    matches!(value, Value::Int32(index) if *index == slot as i32)
+                })
+        })
+    {
+        return Err(format!(
+            "Parking slot readback mismatch (0C12EF30/0C12EF40, expected {count} slots)"
+        ));
+    }
+    Ok(())
 }
 
 /// One authored light row, schema fields already defaulted to the author
@@ -2176,6 +2216,41 @@ mod tests {
         assert_eq!(
             column(PROP_INDICES + 1),
             &[Value::Int32(0), Value::Int32(0), Value::Int32(1)]
+        );
+    }
+
+    #[test]
+    fn parking_slots_are_independent_of_vehicle_resource() {
+        let units = (0..15)
+            .map(|index| {
+                json!({
+                    "kind": "prop", "bin": 0,
+                    "resourceId": if index < 7 { 0x0AB4_DFE1 } else { 0x0AB4_DFE2 },
+                    "transform": {"flags": 15, "matrix": IDENTITY_12}
+                })
+            })
+            .collect::<Vec<_>>();
+        let scene = parse_scene(&json!({ "units": units })).unwrap();
+        let mut lot = PropertyFile {
+            values: compile_prop_fields(Some(&scene), 0).unwrap(),
+            claimed_count: 0,
+        };
+        verify_parking_slots(&lot.encode_canonical().unwrap(), Some(&scene)).unwrap();
+
+        upsert(
+            &mut lot,
+            array(
+                PROP_INDICES,
+                PropType::Int32,
+                (0..15)
+                    .map(|index| Value::Int32(i32::from(index >= 7)))
+                    .collect(),
+            ),
+        );
+        assert!(
+            verify_parking_slots(&lot.encode_canonical().unwrap(), Some(&scene))
+                .unwrap_err()
+                .contains("Parking slot readback mismatch")
         );
     }
 

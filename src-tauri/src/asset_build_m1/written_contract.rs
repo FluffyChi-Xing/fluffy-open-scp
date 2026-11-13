@@ -730,7 +730,7 @@ fn validate_props(
                 expected.len()
             ));
         }
-        if !slots.is_empty() && slots.len() != expected.len() {
+        if (vehicle_bin || !slots.is_empty()) && slots.len() != expected.len() {
             return Err(format!(
                 "written-contract: prop bin {bin} slot column has {} rows, expected {}",
                 slots.len(),
@@ -751,10 +751,14 @@ fn validate_props(
             }
         }
         for (row, (slot, expected_id)) in slots.iter().zip(expected.iter()).enumerate() {
-            let expected_slot = expected_id.and_then(|id| expected_ids.iter().position(|candidate| *candidate == id));
+            let expected_slot = if vehicle_bin {
+                Some(row)
+            } else {
+                expected_id.and_then(|id| expected_ids.iter().position(|candidate| *candidate == id))
+            };
             if !matches!(slot, Value::Int32(index) if Some(*index as usize) == expected_slot) {
                 return Err(format!(
-                    "written-contract: prop bin {bin} instance {row} slot {slot:?} does not reference its authored prototype"
+                    "written-contract: prop bin {bin} instance {row} slot {slot:?}, expected {expected_slot:?}"
                 ));
             }
         }

@@ -612,6 +612,8 @@ fn generate_parent_free(
         }
         encoded
     };
+    let encoded_asset = encode(&native.asset)?;
+    super::native_profile::verify_parking_slots(&encoded_asset, scene_document)?;
     let mut entries = vec![
         (
             ResourceId {
@@ -622,7 +624,7 @@ fn generate_parent_free(
             menu2,
         ),
         (unit_id, encode(&native.unit)?),
-        (asset_id, encode(&native.asset)?),
+        (asset_id, encoded_asset),
         (
             ResourceId {
                 type_id: PROPERTY_TYPE,

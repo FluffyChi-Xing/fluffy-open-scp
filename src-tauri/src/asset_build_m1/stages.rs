@@ -156,7 +156,19 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             "compute-identity" => compute_identity(ctx),
             "property-patches" => apply_property_patches(ctx),
             "scene-semantics" => apply_scene_semantics(ctx),
-            "behavior-bind" => super::behavior::apply(ctx),
+            "behavior-bind" => super::behavior::apply(ctx).and_then(|mut detail| {
+                if super::vehicle_paths::authored(ctx.scene_document.as_ref()) {
+                    let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
+                    let (unit, lot) = super::vehicle_paths::bind(
+                        ctx.resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing Unit")?,
+                        ctx.resources.get(&lot_id).ok_or("VEHICLE_PATH_BINDING: missing Lot")?,
+                    )?;
+                    ctx.resources.insert(unit_id, unit);
+                    ctx.resources.insert(lot_id, lot);
+                    detail["ordinaryVehiclePath"] = serde_json::Value::Bool(true);
+                }
+                Ok(detail)
+            }),
             "vanilla-shadow-strip" => vanilla_shadow_strip(ctx),
             "material-binding-contract" => material_binding_contract(ctx),
             "identity-closure" => identity_closure(ctx),
@@ -2078,6 +2090,25 @@ fn delta_audit(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
 }
 
 /// 唯一副作用阶段:staging 写盘 → delta/全量 → 闭包补全 → 链接 → 读回校验。
+fn vehicle_path_targets(ctx: &BuildContext) -> Result<(ResourceId, ResourceId), String> {
+    let id = |group, instance| ResourceId {
+        type_id: super::menu::PROPERTY_TYPE,
+        group,
+        instance,
+    };
+    if let Some(instance) = ctx.menu_instance {
+        return Ok((
+            id(super::menu::UNIT_GROUP, instance),
+            id(super::menu::lot_group(), instance),
+        ));
+    }
+    let lot = ctx.plan.intermediate.references.lot
+        .ok_or("VEHICLE_PATH_BINDING: missing Lot identity")?;
+    let unit = ctx.plan.intermediate.references.unit
+        .ok_or("VEHICLE_PATH_BINDING: missing Unit identity")?;
+    Ok((id(unit.group, unit.instance), id(lot.group, lot.instance)))
+}
+
 fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     ctx.delta_mode = ctx.plan.intermediate.output.mode != crate::asset_build_m0::OutputMode::Full;
     let mut staging = Staging::create(&ctx.root, &ctx.build_hash)?;
@@ -2128,6 +2159,13 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     // A failed contract aborts before staging.publish(), so a bad package can
     // never replace the last accepted deliverable.
     let final_resources = connector::read_source(&staged_package)?;
+    if super::vehicle_paths::authored(ctx.scene_document.as_ref()) {
+        let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
+        super::vehicle_paths::verify(
+            final_resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing final Unit")?,
+            final_resources.get(&lot_id).ok_or("VEHICLE_PATH_BINDING: missing final Lot")?,
+        )?;
+    }
     let requested_edge = ctx
         .plan
         .menu

@@ -209,6 +209,10 @@ function toggleStep(stage: string) {
 function buildError(message: string): string {
   const queueError = buildQueueErrorKey(message);
   if (queueError) return t(queueError);
+  const vehicleDiagnostic = message.match(/\bVEHICLE_PATH_(RECEIVER|BINDING)\b/);
+  if (vehicleDiagnostic) {
+    return t(`studio.assetWorkbench.behaviorSheet.buildError.VEHICLE_PATH_${vehicleDiagnostic[1]}`);
+  }
   const decalDiagnostic = message.match(/\bDECAL_(CATEGORY|FIELD|READBACK|SOURCE)\b(?:: ([^\r\n]+))?/);
   if (decalDiagnostic) {
     const [, code, detail] = decalDiagnostic;

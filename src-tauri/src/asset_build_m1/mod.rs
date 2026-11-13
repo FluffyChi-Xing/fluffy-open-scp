@@ -34,6 +34,7 @@ pub mod native_profile;
 mod package;
 pub mod patch;
 pub mod path_catalog;
+mod vehicle_paths;
 pub mod plan;
 mod processor;
 pub mod property_edit;
