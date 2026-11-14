@@ -8,6 +8,7 @@
 //! 失败时把错误文本打到 stderr 并以非零码退出。构建产物与台账仍写入
 //! 项目内 `.build/`（与 app 构建同位，便于基线对拍）。
 
+use fluffy_open_scp_lib::road_asset;
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -30,6 +31,11 @@ fn main() {
                 std::process::exit(2);
             }
         }, schema.clone())
+    } else if let Some((path, raw)) = road_asset::project_schema(&root).unwrap_or_else(|error| {
+        eprintln!("discover asset schema: {error}");
+        std::process::exit(2);
+    }) {
+        (raw, path)
     } else {
         let candidate = match fluffy_open_scp_lib::asset_build_m1::schema_discovery::discover_or_adapt(&root) {
             Ok(candidate) => candidate,
@@ -64,7 +70,12 @@ fn main() {
         }, candidate.path)
     };
     let started = std::time::Instant::now();
-    match fluffy_open_scp_lib::asset_build_m1::build_from_schema(&root, &raw) {
+    let result = if road_asset::is_schema(&raw) {
+        road_asset::build(&root, &raw, None)
+    } else {
+        fluffy_open_scp_lib::asset_build_m1::build_from_schema(&root, &raw)
+    };
+    match result {
         Ok(result) => {
             println!(
                 "{}",

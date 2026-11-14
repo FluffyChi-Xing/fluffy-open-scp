@@ -315,7 +315,7 @@ impl BuildQueueManager {
                         let payload = serde_json::json!({
                             "jobId": job_id,
                             "label": job.label,
-                            "totalStages": crate::asset_build_m1::stages::CHAIN.len(),
+                            "totalStages": if crate::road_asset::is_schema(&job.schema) { 1 } else { crate::asset_build_m1::stages::CHAIN.len() },
                             "event": event,
                         });
                         let _ = app.emit(BUILD_QUEUE_EVENT, payload);
@@ -325,7 +325,11 @@ impl BuildQueueManager {
             });
             let root = Path::new(&job.project_root);
             std::panic::catch_unwind(|| {
-                crate::asset_build_m1::build_from_schema_with_progress(root, &job.schema, Some(tx))
+                if crate::road_asset::is_schema(&job.schema) {
+                    crate::road_asset::build(root, &job.schema, Some(tx))
+                } else {
+                    crate::asset_build_m1::build_from_schema_with_progress(root, &job.schema, Some(tx))
+                }
             })
             .unwrap_or_else(|_| Err(INTERRUPTED_ERROR.into()))
         });
@@ -388,7 +392,7 @@ impl BuildQueueManager {
                 "startedAtMs": job.started_at_ms,
                 "finishedAtMs": job.finished_at_ms,
                 "durationMs": job.duration_ms,
-                "totalStages": crate::asset_build_m1::stages::CHAIN.len(),
+                "totalStages": if crate::road_asset::is_schema(&job.schema) { 1 } else { crate::asset_build_m1::stages::CHAIN.len() },
             });
             let _ = app.emit(BUILD_QUEUE_EVENT, payload);
         }
@@ -578,6 +582,13 @@ pub async fn build_queue_enqueue_project(
     label: Option<String>,
 ) -> Result<Json, crate::activity::CommandError> {
     let root_path = Path::new(&root);
+    if let Some((path, raw)) = crate::road_asset::project_schema(root_path)
+        .map_err(|error| crate::activity::CommandError::new("road_schema_invalid", error))?
+    {
+        let job = queue.enqueue(&root, raw, label)
+            .map_err(|error| crate::activity::CommandError::new("build_queue_enqueue_failed", error))?;
+        return Ok(serde_json::json!({ "jobId": job, "schema": path, "logic": null }));
+    }
     let candidate = crate::asset_build_m1::schema_discovery::discover_or_adapt(root_path)
         .map_err(|e| crate::activity::CommandError::new("asset_schema_missing", e))?;
     // 工作台逻辑图 → schema 语义覆盖（菜单/建筑信息/行为）。文档是权威输入：

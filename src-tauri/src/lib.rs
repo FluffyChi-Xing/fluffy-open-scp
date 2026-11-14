@@ -30,6 +30,7 @@ mod lot_model_blend;
 mod map_panel;
 mod media_tools;
 mod mod_flow;
+pub mod road_asset;
 mod mod_project;
 mod mod_project_repo;
 mod overrides;

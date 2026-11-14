@@ -37,6 +37,7 @@ import ModFlowWorkbench from './mod-flow/ModFlowWorkbench.vue';
 import FlowInitializeSheet from './mod-flow/FlowInitializeSheet.vue';
 import { isEngineManifest } from './mod-flow/contracts';
 import StandardModEditorPanel from './StandardModEditorPanel.vue';
+import RoadAssetWorkbench from "./road/RoadAssetWorkbench.vue";
 import ModAssetWorkbench from './asset/ModAssetWorkbench.vue';
 
 /**
@@ -128,6 +129,7 @@ const standardModKind = computed(() => {
  * Flow 项目仍使用独立的构建/部署按钮。
  */
 const buildBusy = ref(false);
+const roadWorkbench = ref<InstanceType<typeof RoadAssetWorkbench> | null>(null);
 const buildActivity = useBuildActivityStore();
 
 async function buildM1InBackground(): Promise<boolean> {
@@ -135,6 +137,7 @@ async function buildM1InBackground(): Promise<boolean> {
   if (!root || buildBusy.value) return false;
   buildBusy.value = true;
   try {
+    if (isRoadProject.value && !(await roadWorkbench.value?.save())) return false;
     const submitted = await tauriApi.buildQueue.enqueueProject(
       root,
       props.project.name,
@@ -169,8 +172,10 @@ async function buildM1InBackground(): Promise<boolean> {
   }
 }
 
+const isRoadProject = computed(() => engineEnabled.value && standardModKind.value === "road");
+
 const projectBuildAvailable = computed(
-  () => standardModKind.value === "assets" && Boolean(props.project.folderPath),
+  () => (standardModKind.value === "assets" || isRoadProject.value) && Boolean(props.project.folderPath),
 );
 
 async function buildDeployAndLaunch() {
@@ -485,11 +490,11 @@ watch(
           <FIcon :name="buildBusy ? 'Loader2' : 'Hammer'" :size="13" aria-label="" />
           {{ t(buildBusy ? 'studio.assetWorkbench.buildEnqueueing' : 'flow.build') }}
         </button>
-        <button v-if="engineEnabled" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
+        <button v-if="engineEnabled && !isRoadProject" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
           <FIcon :name="deployBusy ? 'Loader2' : 'Play'" :size="13" aria-label="" />
           {{ t(deployBusy ? 'flow.buildDeploying' : 'flow.buildDeploy') }}
         </button>
-        <button v-else class="refresh-button" :disabled="loading || !tree" @click="initializeOpen = true">{{ t('flow.initialize') }}</button>
+        <button v-else-if="!engineEnabled" class="refresh-button" :disabled="loading || !tree" @click="initializeOpen = true">{{ t('flow.initialize') }}</button>
         <span v-if="tree" class="tree-stats">
           {{
             $t("studio.code.stats", {
@@ -529,6 +534,15 @@ watch(
       <FIcon name="FolderOpen" :size="20" aria-label="" />
       <p>{{ fatalMessage }}</p>
     </div>
+
+    <RoadAssetWorkbench
+      v-else-if="isRoadProject"
+      ref="roadWorkbench"
+      :key="project.relPath"
+      :project="project.relPath"
+      :manifest="projectManifest"
+      class="asset-workbench-host"
+    />
 
     <!-- 资产 Mod：整栏 Blender 式工作台（自带文件树，不套 Code 外壳左右分栏） -->
     <ModAssetWorkbench

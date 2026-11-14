@@ -9,11 +9,6 @@ import FSheet from "@/components/ui/FSheet.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
 import MonacoEditor from "@/components/ui/MonacoEditor.vue";
 import { Switch } from "@/components/ui/switch";
-import {
-  Resizable,
-  ResizableHandle,
-  ResizablePanel,
-} from "@/components/ui/resizable";
 import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
 import type { Tgi } from "@/api/tauri";
@@ -35,6 +30,7 @@ import AssetSourceTree from "./AssetSourceTree.vue";
 import { useUnitClipboard } from "./clipboard/useUnitClipboard";
 import AssetComponentLibrary from "./AssetComponentLibrary.vue";
 import AssetLotPanel from "./AssetLotPanel.vue";
+import SceneWorkbenchLayout from "../SceneWorkbenchLayout.vue";
 import AssetBlueprintCanvas from "./AssetBlueprintCanvas.vue";
 import {
   useWorkbenchAsset,
@@ -62,7 +58,6 @@ const toast = useToast();
 const asset = useWorkbenchAsset(props.project);
 const ui = asset.ui;
 // 两条竖分隔线相邻时，命中区也要保持独立。
-const columnHandleMargins = { coarse: 0, fine: 0 };
 
 // ---- 顶部工具条状态（与 PropertyEditor 渲染控制同口径）----
 const editEnabled = ref(true);
@@ -977,8 +972,8 @@ function templateOf(resourceId: number) {
       </div>
     </header>
 
-    <Resizable direction="horizontal" class="maw-split">
-      <ResizablePanel id="maw-tree" :default-size="17" :min-size="0">
+    <SceneWorkbenchLayout>
+      <template #files>
         <div class="maw-scroll-pane maw-tree-pane">
           <AssetSourceTree
             ref="treeRef"
@@ -991,14 +986,9 @@ function templateOf(resourceId: number) {
             @blend-imported="onBlendImported"
           />
         </div>
-      </ResizablePanel>
-      <ResizableHandle
-        orientation="horizontal"
-        :hit-area-margins="columnHandleMargins"
-        :label="t('studio.assetWorkbench.resizeTree')"
-      />
-      <ResizablePanel id="maw-center" :default-size="57" :min-size="0">
-        <div v-if="isProjectConfig" class="maw-scroll-pane maw-config-pane">
+      </template>
+      <template #center v-if="isProjectConfig">
+        <div class="maw-scroll-pane maw-config-pane">
           <PackageProjectForm
             :project="props.project"
             :menu="asset.menu"
@@ -1011,8 +1001,8 @@ function templateOf(resourceId: number) {
             @close="selectedFile = null"
           />
         </div>
-        <Resizable v-else direction="vertical" class="maw-center">
-          <ResizablePanel id="maw-viewport" :default-size="64" :min-size="0">
+      </template>
+      <template #viewport>
             <div
               ref="placementViewport"
               class="maw-viewport"
@@ -1080,12 +1070,8 @@ function templateOf(resourceId: number) {
                 />
               </div>
             </div>
-          </ResizablePanel>
-          <ResizableHandle
-            orientation="vertical"
-            :label="t('studio.assetWorkbench.resizeBlueprint')"
-          />
-          <ResizablePanel id="maw-blueprint" :default-size="36" :min-size="0">
+      </template>
+      <template #lower>
             <AssetBlueprintCanvas
               :source-kind="asset.sourceKind.value"
               :source-label="asset.sourceLabel.value"
@@ -1102,17 +1088,8 @@ function templateOf(resourceId: number) {
               @import-model="treeRef?.refresh()"
               @open-tgi="tgiSheetOpen = true"
             />
-          </ResizablePanel>
-        </Resizable>
-      </ResizablePanel>
-      <ResizableHandle
-        orientation="horizontal"
-        :hit-area-margins="columnHandleMargins"
-        :label="t('studio.assetWorkbench.resizeRight')"
-      />
-      <ResizablePanel id="maw-right" :default-size="26" :min-size="0">
-        <Resizable direction="vertical" class="maw-right">
-          <ResizablePanel id="maw-right-tabs" :default-size="52" :min-size="0">
+      </template>
+      <template #library>
             <div class="maw-right-panel maw-scroll-pane">
               <div class="maw-tabs" role="tablist">
                 <button
@@ -1214,16 +1191,8 @@ function templateOf(resourceId: number) {
                 </p>
               </div>
             </div>
-          </ResizablePanel>
-          <ResizableHandle
-            orientation="vertical"
-            :label="t('studio.assetWorkbench.resizeInspector')"
-          />
-          <ResizablePanel
-            id="maw-right-inspector"
-            :default-size="48"
-            :min-size="0"
-          >
+      </template>
+      <template #inspector>
             <div class="maw-inspector maw-scroll-pane">
               <template v-if="ui">
                 <UnitInspector
@@ -1240,10 +1209,8 @@ function templateOf(resourceId: number) {
                 {{ t("studio.assetWorkbench.noAssetRight") }}
               </p>
             </div>
-          </ResizablePanel>
-        </Resizable>
-      </ResizablePanel>
-    </Resizable>
+      </template>
+    </SceneWorkbenchLayout>
 
     <FSheet
       v-model:open="tgiSheetOpen"
@@ -1484,14 +1451,6 @@ function templateOf(resourceId: number) {
   gap: 6px;
   white-space: nowrap;
 }
-.maw-split {
-  border-inline: 1px solid var(--border);
-  flex: 1;
-  min-height: 0;
-}
-.maw-split :deep([data-panel-size="0.0"]) {
-  visibility: hidden;
-}
 .maw-scroll-pane {
   block-size: 100%;
   min-block-size: 0;
@@ -1503,11 +1462,6 @@ function templateOf(resourceId: number) {
 }
 .maw-config-pane > * {
   min-inline-size: 500px;
-}
-.maw-center,
-.maw-right {
-  height: 100%;
-  min-height: 0;
 }
 .maw-viewport {
   container: scene-viewport / size;

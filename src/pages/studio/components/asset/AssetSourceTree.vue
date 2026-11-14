@@ -19,6 +19,7 @@ const props = defineProps<{
   activeAsset: string;
   /** 当前在右侧配置区打开的文件（package.json 等），单独高亮。 */
   selectedPath?: string | null;
+  readOnly?: boolean;
 }>();
 const emit = defineEmits<{
   /** 任意文件点击（package.json 等配置入口）。 */
@@ -199,6 +200,7 @@ onMounted(loadTree);
       <button
         type="button"
         class="tree-import"
+        v-if="!readOnly"
         :disabled="importing || loading"
         :title="t('studio.assetWorkbench.importFile')"
         :aria-label="t('studio.assetWorkbench.importFile')"

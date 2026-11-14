@@ -421,7 +421,7 @@ async function enqueueSchema() {
                     :size="12"
                     aria-label=""
                   />
-                  <span class="stage-name">{{ step.stage }}</span>
+                  <span class="stage-name">{{ step.stage === "road::compile" ? t("roadAsset.compileStage") : step.stage }}</span>
                   <span class="stage-duration">{{
                     formatDuration(step.durationMs)
                   }}</span>

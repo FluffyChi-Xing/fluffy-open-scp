@@ -400,6 +400,14 @@ pub struct ModProjectIdRequest {
     pub id: i64,
 }
 
+fn clean_new_road_project(folder: &Path) {
+    let _ = fs::remove_file(folder.join(crate::road_asset::SCHEMA_PATH));
+    for path in ["schemas/road", "schemas", "assets/roads", "assets", "build"] {
+        let _ = fs::remove_dir(folder.join(path));
+    }
+    let _ = fs::remove_dir(folder);
+}
+
 #[tauri::command]
 pub async fn mod_project_list(
     state: State<'_, AppState>,
@@ -446,10 +454,33 @@ pub async fn mod_project_create(
         }
         fs::create_dir(&folder)?;
         let mod_type=request.mod_type.as_deref().unwrap_or("assets");
-        if !["map","code","assets","gameplay"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
-        let metadata=serde_json::json!({"format":"openscp.mod","manifest_version":2,"origin":"openscp","name":name,"version":"0.1.0","description":request.description.as_deref().unwrap_or(""),"author":request.author.as_deref().unwrap_or(""),"mod_type":mod_type,"created_at":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"engine":{"enabled":false,"version":1},"internal_dependencies":{},"outer_dependencies":[]});
-        if let Err(error)=crate::atomic_fs::write_atomic(&folder.join("package.json"),&serde_json::to_vec_pretty(&metadata).unwrap(),false){let _=fs::remove_dir(&folder);return Err(error.into());}
-        crate::mod_flow::ensure_project_layout(&folder,mod_type).map_err(|e|ModProjectError::Io(io::Error::other(e)))?;
+        if !["map","code","assets","gameplay","road"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
+        let mut metadata=serde_json::json!({"format":"openscp.mod","manifest_version":2,"origin":"openscp","name":name,"version":"0.1.0","description":request.description.as_deref().unwrap_or(""),"author":request.author.as_deref().unwrap_or(""),"mod_type":mod_type,"created_at":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"engine":{"enabled":false,"version":1},"internal_dependencies":{},"outer_dependencies":[]});
+        if mod_type == "road" {
+            let game_data = store.app_settings().ok().flatten().and_then(|settings| settings.game_data_path);
+            if let Err(error) = crate::road_asset::initialize_project(
+                &folder,
+                &name,
+                game_data.as_deref().map(Path::new),
+                &mut metadata,
+            ) {
+                clean_new_road_project(&folder);
+                return Err(ModProjectError::Io(io::Error::other(error)));
+            }
+        }
+        let manifest_bytes = serde_json::to_vec_pretty(&metadata).unwrap();
+        if let Err(error) = crate::atomic_fs::write_atomic(&folder.join("package.json"), &manifest_bytes, false) {
+            if mod_type == "road" {
+                clean_new_road_project(&folder);
+            } else {
+                let _ = fs::remove_dir(&folder);
+            }
+            return Err(error.into());
+        }
+        if mod_type != "road" {
+            crate::mod_flow::ensure_project_layout(&folder,mod_type)
+                .map_err(|e|ModProjectError::Io(io::Error::other(e)))?;
+        }
         let input = ModProjectInput {
             name: name.clone(),
             rel_path: name,
@@ -462,7 +493,11 @@ pub async fn mod_project_create(
             // 建库失败回滚磁盘文件夹，避免留下无记录的孤儿目录
             Err(error) => {
                 let _ = fs::remove_file(folder.join("package.json"));
-                let _ = fs::remove_dir(&folder);
+                if mod_type == "road" {
+                    clean_new_road_project(&folder);
+                } else {
+                    let _ = fs::remove_dir(&folder);
+                }
                 return Err(ModProjectError::from(error));
             }
         };

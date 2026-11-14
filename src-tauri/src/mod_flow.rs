@@ -31,6 +31,7 @@ pub fn ensure_project_layout(root: &Path, mod_type: &str) -> Result<Value, Strin
             "assets/materials",
             "assets/audio",
         ],
+        "road" => vec!["assets/roads"],
         "gameplay" => vec!["assets/properties", "assets/tuning", "assets/localization"],
         _ => return Err("Unknown mod type".into()),
     };

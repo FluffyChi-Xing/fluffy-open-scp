@@ -1,5 +1,6 @@
 import { createI18n } from "vue-i18n";
 import { appConfig } from "@/config/app";
+import { roadAssetZh, roadAssetEn } from "./road-asset";
 import { flowZh, flowEn } from './mod-flow';
 import { mapGraphZh, mapGraphEn } from './map-graph';
 
@@ -10,6 +11,7 @@ import { spawnerPanelZh, spawnerPanelEn } from './spawner-panel';
 const messages = {
   "zh-CN": {
     flow: flowZh,
+    roadAsset: roadAssetZh,
     mapGraph: mapGraphZh,
     rasterEditor: rasterZh,
     diagnostics: diagnosticsZh,
@@ -2550,6 +2552,7 @@ const messages = {
   },
   "en-US": {
     flow: flowEn,
+    roadAsset: roadAssetEn,
     mapGraph: mapGraphEn,
     rasterEditor: rasterEn,
     diagnostics: diagnosticsEn,
