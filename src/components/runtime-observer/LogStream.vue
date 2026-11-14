@@ -6,6 +6,12 @@ import FSelect from "@/components/ui/FSelect.vue";
 import FButton from "@/components/ui/FButton.vue";
 import { save } from "@tauri-apps/plugin-dialog";
 import { command } from "@/api/tauri";
+import {
+  bridgeEventValue,
+  bridgeRequest,
+  bridgeResult,
+  matchesBridgeTarget,
+} from "./bridgePresentation";
 import { useToast } from "@/composables/useToast";
 const props = defineProps<{
   rows: Record<string, unknown>[];
@@ -70,9 +76,26 @@ function text(row: Record<string, unknown>) {
       );
     return t("assetCapture.reading", reading);
   }
-  const args = row.arguments as { text?: string }[] | undefined;
+  const request = bridgeRequest(row);
+  const result = bridgeResult(row);
+  if (row.channel === "result" && result !== undefined)
+    return request ? `${request} → ${result}` : result;
+  if (row.eventID === 182429322) {
+    const speed = bridgeEventValue(row, "speed");
+    const label =
+      speed === 182362487
+        ? t("runtimeObserver.paused")
+        : speed === 182362527
+          ? "1×"
+          : speed === 182362531
+            ? "2×"
+            : speed === 182362534
+              ? "3×"
+              : speed;
+    if (label !== undefined) return String(label);
+  }
   return (
-    args?.[0]?.text ??
+    (row.channel === "invoke" && request ? request : undefined) ??
     (typeof row.message === "string" ? row.message : undefined) ??
     (typeof row.text === "string" ? row.text : undefined) ??
     JSON.stringify(row.result ?? row.event ?? row)
@@ -83,6 +106,7 @@ type LogTone =
   | "workers"
   | "tourists"
   | "lighting"
+  | "utilities"
   | "resource"
   | "simulation"
   | "engine"
@@ -98,6 +122,7 @@ function tone(row: Record<string, unknown>): LogTone {
       case "workers":
       case "tourists":
       case "lighting":
+      case "utilities":
         return row.metric;
     }
   }
@@ -118,7 +143,8 @@ function toneLabel(value: LogTone) {
     value === "vehicles" ||
     value === "workers" ||
     value === "tourists" ||
-    value === "lighting"
+    value === "lighting" ||
+    value === "utilities"
   )
     return t(`assetCapture.filter.${value}`);
   return t(`runtimeObserver.category.${value}`);
@@ -160,21 +186,7 @@ const lines = computed(() =>
         (props.scope === "ui" ||
           !props.scope ||
           x.row.observationScope === props.scope) &&
-        (!props.target ||
-          props.target === "all" ||
-          (props.target === "school"
-            ? ["school", "elementary", "小学"].some((value) =>
-                x.serialized.includes(value),
-              )
-            : props.target === "omegaco"
-              ? ["omega", "omegaco"].some((value) =>
-                  x.serialized.includes(value),
-                )
-              : props.target === "police"
-                ? ["police", "cop", "警车"].some((value) =>
-                    x.serialized.includes(value),
-                  )
-                : x.serialized.includes(props.target.toLowerCase()))) &&
+        matchesBridgeTarget(props.target, x.row) &&
         (!props.metric || x.row.metric === props.metric) &&
         (!instance.value ||
           `${x.row.unitSlot} / ${x.row.unitStamp}` === instance.value) &&
@@ -247,6 +259,19 @@ async function copyLogs() {
   }
 }
 function lineName(row: Record<string, unknown>) {
+  if (row.channel === "event" && row.eventID === 182429322)
+    return t("observerMenu.speedChanged");
+  if (row.channel === "event")
+    return `${t("observerMenu.event")} ${row.eventID ?? ""}`.trim();
+  if (row.channel === "invoke" || row.channel === "result") {
+    const request = bridgeRequest(row);
+    if (request === "periodTimes/0") return t("observerMenu.clock");
+    if (request === "totalElapsedGameTime") return t("observerMenu.elapsed");
+    if (request === "gamespeed") return t("observerMenu.speed");
+    if (row.channel === "result") return t("observerMenu.queryResult");
+    if (row.name === "RequestGameData") return t("observerMenu.query");
+    if (row.name === "PostGameCommand") return t("observerMenu.command");
+  }
   return row.channel === "asset.resource"
     ? t(`assetCapture.resource.${row.name}`)
     : (row.name ?? row.channel);
@@ -497,18 +522,39 @@ input[type="search"] {
 .tone-tourists {
   --log-color: #c9a8ff;
 }
+.tone-utilities {
+  --log-color: #f8cf83;
+}
 .tone-lighting {
   --log-color: #f8cf83;
 }
-.line:where(.tone-vehicles, .tone-workers, .tone-tourists, .tone-lighting) {
+.line:where(
+  .tone-vehicles,
+  .tone-workers,
+  .tone-tourists,
+  .tone-lighting,
+  .tone-utilities
+) {
   box-shadow: inset 2px 0 var(--log-color);
   background: color-mix(in srgb, var(--log-color) 8%, transparent);
 }
-.line:where(.tone-vehicles, .tone-workers, .tone-tourists, .tone-lighting)
+.line:where(
+    .tone-vehicles,
+    .tone-workers,
+    .tone-tourists,
+    .tone-lighting,
+    .tone-utilities
+  )
   .line-kind {
   color: var(--log-color);
 }
-.line:where(.tone-vehicles, .tone-workers, .tone-tourists, .tone-lighting):hover {
+.line:where(
+    .tone-vehicles,
+    .tone-workers,
+    .tone-tourists,
+    .tone-lighting,
+    .tone-utilities
+  ):hover {
   background: color-mix(in srgb, var(--log-color) 15%, #08090b);
 }
 .tone-resource .line-kind,

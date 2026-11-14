@@ -309,7 +309,7 @@ function createObserver(config) {
                             threadId: this.threadId, binding: binding.object, page: binding.page});
                     if (name === 'RequestGameData') this.queryResult = {
                         resultChannel: clock ? 'clockResult' : template ? 'templateResult' : region ? 'regionResult' : mutation ? 'mutationResult' : 'result', requestName: request, mutation, profile,
-                        address: stack.add(16).readPointer(), callSequence, name,
+                        address: stack.add(16).readPointer(), callSequence, name, requestPath: decoded[0]?.text,
                         binding: binding.object, page: binding.page};
                 } catch (error) { failed(error); }
             },
@@ -320,7 +320,7 @@ function createObserver(config) {
                     if (!admit(pending.resultChannel)) return;
                     const success = (retval.toUInt32() & 255) !== 0;
                     append(pending.resultChannel, {channel: 'result', name: pending.name, requestName: pending.requestName, operationKind: pending.mutation ? 'mutation' : undefined,
-                        callSequence: pending.callSequence, binding: pending.binding,
+                        callSequence: pending.callSequence, binding: pending.binding, requestPath: pending.requestPath,
                         page: pending.page, threadId: this.threadId, success,
                         result: success ? argument(pending.address, pending.profile) : {type: 'unavailable', reason: 'invoke_false'}});
                 } catch (error) { failed(error); }

@@ -209,7 +209,17 @@ pub async fn observer_start(
         ));
     std::fs::create_dir_all(dir.parent().unwrap())
         .map_err(|e| CommandError::internal(e.to_string()))?;
-    let script = root.join(if unit_entry.is_some() {
+    let observation = observation.unwrap_or_else(|| "ui:all".into());
+    let city_unit = observation
+        .strip_prefix("city:")
+        .map(|id| {
+            id.parse::<u32>()
+                .ok()
+                .filter(|id| *id != 0)
+                .ok_or_else(|| CommandError::new("invalid_observation", "Invalid city unit ID"))
+        })
+        .transpose()?;
+    let script = root.join(if unit_entry.is_some() || city_unit.is_some() {
         "probes/runtime/asset_watch.py"
     } else {
         "tools/dynamic/ui-observer/native_trace.py"
@@ -218,7 +228,6 @@ pub async fn observer_start(
         .map_err(|e| CommandError::internal(e.to_string()))?;
     let mut command = observer_python_command();
     let profile = profile.unwrap_or_else(|| "balanced".into());
-    let observation = observation.unwrap_or_else(|| "ui:all".into());
     command.current_dir(&root).args([
         script.to_string_lossy().as_ref(),
         "--pid",
@@ -228,8 +237,11 @@ pub async fn observer_start(
         "--directory",
         dir.to_string_lossy().as_ref(),
     ]);
-    if let Some(unit_entry) = unit_entry {
+    if let Some(unit_entry) = unit_entry.or(city_unit) {
         command.args(["--unit-entry", &unit_entry.to_string()]);
+        if city_unit.is_some() {
+            command.arg("--city-metrics");
+        }
     } else {
         command.args(["--profile", &profile, "--observation", &observation]);
     }

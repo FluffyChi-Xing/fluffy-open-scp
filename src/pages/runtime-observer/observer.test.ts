@@ -25,6 +25,31 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("observer controls", () => {
+  it("switches the building catalog between city and development menus", async () => {
+    vi.mocked(runtimeObserver.listProcesses).mockResolvedValue([{ pid: 4, name: "SimCity.exe" }]);
+    vi.mocked(runtimeObserver.status).mockResolvedValue(idle);
+    vi.mocked(runtimeObserver.stop).mockResolvedValue(idle);
+    vi.mocked(runtimeObserver.start).mockResolvedValue({ ...idle, running: true });
+    const w = mount(Page, { global: { plugins: [i18n] } });
+    try {
+      await flushPromises();
+      const click = (label: string) =>
+        w.findAll("button").find((button) => button.text() === label)!.trigger("click");
+      await click("建筑观测");
+      expect(w.text()).toContain("燃煤发电厂");
+      await click("城市发展");
+      expect(w.text()).toContain("OmegaCo 工厂");
+      expect(w.text()).not.toContain("燃煤发电厂");
+      await click("城市");
+      await click("燃油发电厂");
+      await click("开始捕获");
+      await flushPromises();
+      expect(runtimeObserver.start).toHaveBeenCalledWith(4, 60, "balanced", "city:1848207142");
+    } finally {
+      w.unmount();
+    }
+  });
+
   it("distinguishes a stationary clock from a confirmed pause", async () => {
     vi.mocked(runtimeObserver.listProcesses).mockResolvedValue([]);
     vi.mocked(runtimeObserver.status).mockResolvedValue({

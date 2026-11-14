@@ -36,6 +36,24 @@ RESOURCES = {
     INTERIOR_LIGHTS: ("lighting", "interiorLights"),
     **VEHICLE_RESOURCES,
 }
+CITY_RESOURCES = {
+    2391494160: ("utilities", "power"),
+    1970301135: ("utilities", "powerToTransmit"),
+    3989257529: ("utilities", "powerToSend"),
+    0xBA111A2A: ("utilities", "outputBin"),
+    3469052172: ("utilities", "coalStock"),
+    3212172292: ("utilities", "oilStock"),
+    1541996840: ("utilities", "coalBurned"),
+    2688949744: ("utilities", "oilBurned"),
+    2654748154: ("utilities", "water"),
+    1087599423: ("utilities", "waterInMap"),
+    0xCD1DDC35: ("utilities", "sewage"),
+    0x7CB23A4E: ("utilities", "garbage"),
+    688112595: ("utilities", "waitingRoom"),
+    2801080940: ("utilities", "openCells"),
+    1253104808: ("vehicles", "policeCarStock"),
+    116259821: ("utilities", "studentCount"),
+}
 
 
 def game_scripts(reader, game, base):
@@ -159,7 +177,7 @@ def read_interiors(reader, graphics, game, base, slot):
                 drivenByActive=bool(raw[0x1D]), allLitWhenActive=bool(raw[0x1C])), checks
 
 
-def sample(reader, game, scripts, graphics, base, iid):
+def sample(reader, game, scripts, graphics, base, iid, resources=RESOURCES):
     tick = reader.u32(game + 0x17A0)
     if game_scripts(reader, game, base) != scripts:
         raise ValueError("asset_city_changed")
@@ -198,7 +216,7 @@ def sample(reader, game, scripts, graphics, base, iid):
                 bins = reader.read(bb, be - bb)
             for index, _, amount, capacity in struct.iter_unpack("<HHii", bins):
                 resource = by_index.get(index)
-                if resource in RESOURCES:
+                if resource in resources:
                     values[(slot, stamp, resource)] = {"amount": amount, "capacity": capacity}
             if graphics:
                 try:
@@ -226,13 +244,13 @@ def sample(reader, game, scripts, graphics, base, iid):
     return tick, clock, matches, values
 
 
-def changes(previous, current, tick, clock, iid):
+def changes(previous, current, tick, clock, iid, resources=RESOURCES):
     for key in sorted(previous.keys() | current.keys()):
         before, after = previous.get(key), current.get(key)
         if before == after:
             continue
         slot, stamp, resource = key
-        metric, name = RESOURCES[resource]
+        metric, name = resources[resource]
         source = "graphics-interiors" if resource == INTERIOR_LIGHTS else "unit-local"
         row = dict(channel="asset.resource", semantic="resource_change", source=source,
                    unitEntryId=iid, unitSlot=slot, unitStamp=stamp,
@@ -254,7 +272,7 @@ def vehicle_inventory(readings):
     return counts
 
 
-def capture(reader, game, scripts, graphics, base, iid, seconds, directory, state, save):
+def capture(reader, game, scripts, graphics, base, iid, seconds, directory, state, save, resources=RESOURCES):
     deadline = time.monotonic() + seconds
     stop = directory.with_suffix(".stop")
     previous, last_tick, sequence = {}, None, 0
@@ -263,7 +281,7 @@ def capture(reader, game, scripts, graphics, base, iid, seconds, directory, stat
     with (directory / "trace.jsonl").open("w", encoding="utf-8") as trace:
         while time.monotonic() < deadline and not stop.exists():
             try:
-                result = sample(reader, game, scripts, graphics, base, iid)
+                result = sample(reader, game, scripts, graphics, base, iid, resources)
             except OSError:
                 result = None
             if result is None:
@@ -280,7 +298,7 @@ def capture(reader, game, scripts, graphics, base, iid, seconds, directory, stat
                 }
                 controller_count = sum(resource == INTERIOR_LIGHTS for _, _, resource in current)
                 readings = prior_readings | current
-                for row in changes(previous, readings, tick, clock, iid):
+                for row in changes(previous, readings, tick, clock, iid, resources):
                     if sequence >= max_records:
                         state["stopReason"] = "asset_record_limit"
                         return
@@ -297,8 +315,8 @@ def capture(reader, game, scripts, graphics, base, iid, seconds, directory, stat
                     vehicles=dict(counts=vehicle_inventory(current), added=vehicle_added,
                                   removed=vehicle_removed),
                     metricCounts={
-                        metric: sum(RESOURCES[resource][0] == metric for _, _, resource in current)
-                        for metric in ("vehicles", "workers", "tourists", "lighting")
+                        metric: sum(resources[resource][0] == metric for _, _, resource in current)
+                        for metric in {metric for metric, _ in resources.values()}
                     },
                     samples=state["samples"] + 1,
                 )
@@ -311,6 +329,7 @@ def main():
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--seconds", type=int, choices=range(5, 301), required=True)
     parser.add_argument("--unit-entry", type=int, required=True)
+    parser.add_argument("--city-metrics", action="store_true")
     parser.add_argument("--directory", type=Path, required=True)
     args = parser.parse_args()
     directory = args.directory
@@ -336,7 +355,8 @@ def main():
             raise ValueError("unsupported_exe")
         binding = discover_game(reader, module["base"], stop)
         if binding:
-            capture(reader, *binding, module["base"], args.unit_entry, args.seconds, directory, state, save)
+            resources = RESOURCES | CITY_RESOURCES if args.city_metrics else RESOURCES
+            capture(reader, *binding, module["base"], args.unit_entry, args.seconds, directory, state, save, resources)
     except (OSError, RuntimeError, ValueError) as error:
         state["error"] = str(error)
     finally:
