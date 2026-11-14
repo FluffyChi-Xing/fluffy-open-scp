@@ -47,13 +47,6 @@ const panels = computed(
         status: "next",
         to: "/studio/raster",
       },
-      {
-        key: "asset",
-        icon: "Boxes",
-        stage: "build",
-        status: "planned",
-        to: "/studio/asset",
-      },
     ] as const,
 );
 

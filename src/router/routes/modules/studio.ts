@@ -104,17 +104,6 @@ export default {
       },
     },
     {
-      name: "studio-asset",
-      path: "studio/asset",
-      component: () => import("@/pages/studio/panels/asset.vue"),
-      meta: {
-        titleKey: "navigation.studioAsset",
-        icon: "boxes",
-        groupKey: "navigation.modding",
-        order: 50,
-      },
-    },
-    {
       name: "studio-camera",
       path: "studio/camera",
       component: () => import("@/pages/studio/panels/camera.vue"),

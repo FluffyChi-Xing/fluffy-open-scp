@@ -66,7 +66,6 @@ const messages = {
       studioProperty: "属性编辑",
       studioRaster: "Raster 绘制",
       studioUI: "UI 工作台",
-      studioAsset: "资产面板",
       studioCamera: "摄像机开发",
       studioOverview: "面板总览",
       studioProject: "项目详情",
@@ -1091,21 +1090,6 @@ const messages = {
             "通道视图（R/G/B/A 分离预览）",
             "槽位格式校验与同槽替换",
             "undo/redo 与无损保存",
-          ],
-        },
-        asset: {
-          title: "资产面板",
-          status: "排期中",
-          description:
-            "以建筑/道具为单位的资产聚合：LOD1-4 模型链、8 槽位材质、引用 property 与 impostor；导入 mesh 即可复用已有材质图。",
-          meta: "WP5 · OBJ 导入 · 材质复用管线",
-          prereq:
-            "sc-exporter 反向导入管线（P1 OBJ Import）；property 编辑器先行。",
-          features: [
-            "资产依赖小依赖图（模型→贴图→调色板→locale）",
-            "OBJ 导入对照视图（顶点数/UV 域差异提示）",
-            "材质 8 槽位复用选择器",
-            "openscp.mod.toml 声明式项目集成",
           ],
         },
       },
@@ -2786,7 +2770,6 @@ const messages = {
       studioProperty: "Property editor",
       studioRaster: "Raster paint",
       studioUI: "UI workbench",
-      studioAsset: "Asset panel",
       studioCamera: "Camera development",
       studioOverview: "Panel overview",
       studioProject: "Project detail",
@@ -3839,21 +3822,6 @@ const messages = {
             "Channel views (separate R/G/B/A previews)",
             "Slot format validation and same-slot replacement",
             "Undo/redo and lossless saving",
-          ],
-        },
-        asset: {
-          title: "Asset panel",
-          status: "Scheduled",
-          description:
-            "Asset aggregation per building or prop: the LOD1-4 model chain, 8-slot materials, referenced properties and impostors — import a mesh and reuse existing material maps.",
-          meta: "WP5 · OBJ import · material reuse pipeline",
-          prereq:
-            "The sc-exporter reverse import pipeline (P1 OBJ import); the property editor first.",
-          features: [
-            "Small dependency graphs per asset (model → texture → palette → locale)",
-            "OBJ import comparison view (vertex count / UV domain diffs)",
-            "8-slot material reuse picker",
-            "openscp.mod.toml declarative project integration",
           ],
         },
       },
