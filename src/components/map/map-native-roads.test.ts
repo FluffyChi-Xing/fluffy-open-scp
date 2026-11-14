@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { Region3DData, RoadSweep, StateSource } from "@/lib/region-map";
+import type {
+  Region3DData,
+  RoadRibbon,
+  RoadSweep,
+  StateSource,
+} from "@/lib/region-map";
 import {
   createNativeRoads,
   createStaticRoads,
@@ -92,6 +97,55 @@ const data = {
 } as unknown as Region3DData;
 
 describe("native empty-map geometry", () => {
+  it("keeps the 339AF2F5 retaining-wall ribbons upright on both sides", () => {
+    const assets = data.roadAssets!;
+    const wall: Omit<RoadRibbon, "offset" | "rotation"> = {
+      component: 0xa83e46f5,
+      texture: 1,
+      scale: [5, 2, 2],
+      worldSize: [8, 8],
+      uvStart: [0, 0],
+      uvEnd: [1, 1],
+    };
+    const group = createNativeRoads(
+      {
+        ...data,
+        roadAssets: {
+          ...assets,
+          sweeps: {},
+          ribbons: {
+            1: [
+              { ...wall, offset: [12, 0, -19.9], rotation: [0, 90, 0] },
+              { ...wall, offset: [-12, 0, -19.9], rotation: [0, -90, 0] },
+            ],
+          },
+        },
+      },
+      { 1: pixel },
+      () => 0,
+    );
+    const mesh = group.children[0] as THREE.Mesh<
+      THREE.BufferGeometry,
+      THREE.Material
+    >;
+    try {
+      const positions = mesh.geometry.getAttribute("position");
+      for (const [first, x, delta] of [
+        [0, 12, -40],
+        [positions.count / 2, -12, 40],
+      ]) {
+        expect(positions.getX(first)).toBeCloseTo(x);
+        expect(positions.getX(first + 1)).toBeCloseTo(x);
+        expect(positions.getY(first + 1) - positions.getY(first)).toBeCloseTo(
+          delta,
+        );
+      }
+    } finally {
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
+  });
+
   it("maps CapeTrinity unit Y axis into the world road direction", () => {
     const matrix = roadUnitTransform(
       [0.006266865, 0.9999804, 0, -0.9999804, 0.006266865, 0, 0, 0, 1],
