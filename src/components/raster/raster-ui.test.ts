@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { i18n } from "@/locales";
 import RasterSourcePanel from "./RasterSourcePanel.vue";
-import RasterProfilePicker from "./RasterProfilePicker.vue";
+import RasterEditor from "./RasterEditor.vue";
+import DecalTypeTabs from "./sign/DecalTypeTabs.vue";
+import RasterSignControls from "./sign/RasterSignControls.vue";
+import RasterDecalPreview from "./RasterDecalPreview.vue";
 import RasterToolbar from "./RasterToolbar.vue";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
@@ -176,11 +179,92 @@ describe("Raster editor regressions", () => {
     expect(source).toMatchObject({ packageId: 42, tgi });
     wrapper.unmount();
   });
-  it("switches profiles and tool labels immediately when the locale changes", async () => {
-    const picker = mount(RasterProfilePicker, {
-      props: { modelValue: "slot2" },
+  it("offers only ground and decal painting and translates the active panel live", async () => {
+    const panel = shallowMount(RasterEditor, {
+      global: { ...global, stubs: { DecalTypeTabs: false, RasterSignControls: false } },
+    });
+    const select = panel.getComponent(FSelect);
+    expect(select.props("options")).toEqual([
+      { value: "", label: "选择 Raster 类型以开始" },
+      { value: "lot-mask", label: "地面绘制" },
+      { value: "decal-sign", label: "贴花绘制" },
+    ]);
+    select.vm.$emit("update:modelValue", "lot-mask");
+    await nextTick();
+    expect(panel.getComponent(RasterSourcePanel).props("profile")).toBe("lot-mask");
+    select.vm.$emit("update:modelValue", "decal-sign");
+    await nextTick();
+    expect(panel.getComponent(RasterSourcePanel).props("profile")).toBe("decal-sign");
+    const tabs = panel.getComponent(DecalTypeTabs);
+    expect(tabs.get('[aria-selected="true"]').text()).toBe("招牌 / 广告牌");
+    expect(tabs.findAll('button[role="tab"]:not([disabled])')).toHaveLength(1);
+    expect(tabs.findAll('button[role="tab"][disabled]')).toHaveLength(6);
+    await panel.getComponent(RasterSignControls).findAll('input[type="radio"]')[1].setValue();
+    expect(panel.text()).toContain("扫光速度");
+
+    i18n.global.locale.value = "en-US";
+    await nextTick();
+    expect(select.props("options")).toEqual([
+      { value: "lot-mask", label: "Ground painting" },
+      { value: "decal-sign", label: "Decal painting" },
+    ]);
+    expect(tabs.get('[aria-selected="true"]').text()).toBe("Signs and billboards");
+    expect(panel.text()).toContain("Sweep speed");
+    panel.unmount();
+  });
+  it("rejects an unsupported document in the panel and accepts a decal document", async () => {
+    const panel = shallowMount(RasterEditor, { global });
+    panel.getComponent(FSelect).vm.$emit("update:modelValue", "lot-mask");
+    await nextTick();
+    const source = panel.getComponent(RasterSourcePanel);
+    const session = useRasterSession();
+    session.changeProfile("slot0");
+    source.vm.$emit("schema", session.snapshot());
+    await nextTick();
+    expect(source.props("profile")).toBe("lot-mask");
+    expect(panel.get('[role="alert"]').text()).toContain("贴花绘制");
+
+    session.changeProfile("decal-sign");
+    session.create(1, 1);
+    source.vm.$emit("schema", session.snapshot());
+    await nextTick();
+    expect(panel.getComponent(RasterSourcePanel).props("profile")).toBe("decal-sign");
+    expect(panel.find('[role="alert"]').exists()).toBe(false);
+    panel.unmount();
+  });
+  it("creates a sign preset and reopens its marquee settings", async () => {
+    const panel = shallowMount(RasterEditor, { global });
+    panel.getComponent(FSelect).vm.$emit("update:modelValue", "decal-sign");
+    await nextTick();
+    await panel.get(".sign-start button").trigger("click");
+    const settings = { effect: "marquee", axis: "vertical", speed: 0.6 } as const;
+    panel.getComponent(RasterSignControls).vm.$emit("settings", settings);
+    await nextTick();
+    expect(panel.getComponent(RasterDecalPreview).props("sign")).toEqual(settings);
+    const snapshot = panel.vm.snapshot();
+    expect(snapshot?.image).toMatchObject({ width: 256, height: 128 });
+    expect(snapshot?.decal.sign).toEqual(settings);
+    panel.unmount();
+
+    const reopened = shallowMount(RasterEditor, { props: { initialSchema: snapshot! }, global });
+    expect(reopened.getComponent(RasterSignControls).props("settings")).toEqual(settings);
+    expect(reopened.find(".material-actions").exists()).toBe(false);
+    reopened.unmount();
+  });
+  it("keeps the embedded editor on its assigned material slot", async () => {
+    const panel = shallowMount(RasterEditor, {
+      props: { mode: "flow", initialProfile: "slot0", lockedProfile: true },
       global,
     });
+    const select = panel.getComponent(FSelect);
+    expect(select.props("disabled")).toBe(true);
+    expect(select.props("options").map(({ value }) => value)).toEqual(["slot0"]);
+    select.vm.$emit("update:modelValue", "decal-sign");
+    await nextTick();
+    expect(panel.getComponent(RasterSourcePanel).props("profile")).toBe("slot0");
+    panel.unmount();
+  });
+  it("switches tool labels immediately when the locale changes", async () => {
     const toolbar = mount(RasterToolbar, {
       props: {
         tool: "brush",
@@ -202,12 +286,8 @@ describe("Raster editor regressions", () => {
     });
     i18n.global.locale.value = "en-US";
     await nextTick();
-    expect(picker.text()).toContain("Six building slots");
-    expect(picker.text()).toContain("Normal / AO");
-    expect(picker.text()).not.toMatch(/[\u3400-\u9fff]/);
     expect(toolbar.findAll("button[aria-label]").map(b => b.attributes("aria-label"))).toContain("Brush");
     expect(toolbar.text()).not.toMatch(/[\u3400-\u9fff]/);
-    picker.unmount();
     toolbar.unmount();
   });
   it("translates the lot drawing and layer selection controls live", async () => {

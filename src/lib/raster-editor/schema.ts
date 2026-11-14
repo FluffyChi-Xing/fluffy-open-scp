@@ -2,6 +2,7 @@ import { i18n } from "@/locales";
 const t = i18n.global.t;
 import type { Tgi } from "@/api/tauri";
 import { base64ToRgba } from "./encoders";
+import { isSignSettings, type SignSettings } from "./signPaint";
 
 export const RASTER_PROFILES = [
   {
@@ -222,6 +223,7 @@ export interface RasterSchema {
     entryTgi?: Tgi;
     replaceInstance: string;
     atlas: RasterSource | null;
+    sign?: SignSettings;
   };
 }
 export function isMaskProfile(profile: RasterProfile) {
@@ -328,7 +330,9 @@ export function parseRasterSchema(input: unknown): RasterSchema {
     !Number.isFinite(s.decal.aspectRatio) ||
     s.decal.aspectRatio <= 0 ||
     typeof s.decal.entryId !== "string" ||
-    typeof s.decal.replaceInstance !== "string"
+    typeof s.decal.replaceInstance !== "string" ||
+    (s.decal.sign !== undefined &&
+      (s.profile !== "decal-sign" || !isSignSettings(s.decal.sign)))
   )
     throw new Error(t("rasterEditor.text161"));
   for (const source of [

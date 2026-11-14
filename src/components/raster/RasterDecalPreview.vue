@@ -5,6 +5,7 @@ import type * as Three from "three";
 import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
 import type { RasterDocument } from "@/lib/raster-editor/document";
 import type { RasterProfile } from "@/lib/raster-editor/schema";
+import { signAnimationParameter, type SignSettings } from "@/lib/raster-editor/signPaint";
 import {
   decalPreviewFamily,
   decalPreviewPixels,
@@ -16,15 +17,46 @@ const props = defineProps<{
   profile: RasterProfile;
   colors: string[];
   aspectRatio: number;
+  sign?: SignSettings;
 }>();
 const { t } = useI18n();
 const host = ref<HTMLElement>();
 const failed = ref(false);
+const playing = ref(false);
+const time = { value: 0 };
+const animEnabled = { value: 0 };
+let frame = 0;
 let disposed = false;
 let observer: ResizeObserver | undefined;
 let renderer: Three.WebGLRenderer | undefined;
 let draw: (() => void) | undefined;
 let release: (() => void) | undefined;
+let renderFrame: (() => void) | undefined;
+
+function stopPlayback() {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  animEnabled.value = 0;
+  playing.value = false;
+  renderFrame?.();
+}
+function togglePlayback() {
+  if (playing.value) {
+    stopPlayback();
+    return;
+  }
+  if (!renderFrame) return;
+  const start = performance.now();
+  playing.value = true;
+  animEnabled.value = 1;
+  time.value = 0;
+  const tick = (now: number) => {
+    time.value = (now - start) / 1000;
+    renderFrame?.();
+    frame = requestAnimationFrame(tick);
+  };
+  frame = requestAnimationFrame(tick);
+}
 
 onMounted(async () => {
   try {
@@ -37,6 +69,7 @@ onMounted(async () => {
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
     camera.position.z = 2;
+    renderFrame = () => renderer?.render(scene, camera);
     const geometry = new THREE.PlaneGeometry(2, 2);
     let texture: Three.DataTexture | undefined;
     let material: Three.ShaderMaterial | undefined;
@@ -61,15 +94,20 @@ onMounted(async () => {
       );
       texture.minFilter = texture.magFilter = THREE.LinearFilter;
       texture.needsUpdate = true;
+      const sign = props.sign;
+      const marquee = sign?.effect === "marquee";
       material = createEngineDecalMaterial(
         THREE,
-        decalPreviewFamily(props.profile),
+        sign ? (marquee ? "sdf" : "sign") : decalPreviewFamily(props.profile),
         {
           map: texture,
-          layerColors: props.colors.map((hex) => {
+          layerColors: props.colors.map((hex, index) => {
             const color = new THREE.Color(hex);
-            return [color.r, color.g, color.b, 0];
+            // Engine material consumes doubled DTO animation values.
+            const animation = marquee ? 2 * signAnimationParameter(sign.axis, index) : 0;
+            return [color.r, color.g, color.b, animation];
           }),
+          ...(sign ? { materialInfo: [0.4, marquee ? sign.speed : 0, 0.1] } : {}),
           graffiti: props.profile === "decal-graffiti",
           decalData: null,
           worldDirection: new THREE.Vector3(0, 0, 1),
@@ -79,7 +117,8 @@ onMounted(async () => {
             dayLight: { value: 1 },
             nightBoost: { value: 1 },
             decalGlow: { value: 2.5 },
-            animEnabled: { value: 0 },
+            animEnabled,
+            time,
           },
           side: THREE.DoubleSide,
         },
@@ -97,7 +136,7 @@ onMounted(async () => {
       );
       scene.add(mesh);
       renderer.setSize(width, height);
-      renderer.render(scene, camera);
+      renderFrame?.();
     };
     observer = new ResizeObserver(() => draw?.());
     observer.observe(host.value);
@@ -113,11 +152,17 @@ watch(
     props.profile,
     ...props.colors,
     props.aspectRatio,
+    props.sign,
   ],
   () => draw?.(),
 );
+watch(() => props.sign?.effect, (effect) => {
+  if (effect !== "marquee") stopPlayback();
+});
 onBeforeUnmount(() => {
   disposed = true;
+  renderFrame = undefined;
+  stopPlayback();
   observer?.disconnect();
   release?.();
   renderer?.dispose();
@@ -126,7 +171,7 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div class="decal-preview">
+  <div class="decal-preview" :class="{ 'sign-preview': sign }">
     <p v-if="failed" role="alert">{{ t("rasterEditor.decalPreviewError") }}</p>
     <div
       v-else
@@ -135,7 +180,10 @@ onBeforeUnmount(() => {
       role="img"
       :aria-label="t('rasterEditor.decalPreview')"
     />
-    <p>{{ t(`rasterEditor.profileGuide.${profile}`) }}</p>
+    <button v-if="sign?.effect === 'marquee' && !failed" type="button" @click="togglePlayback">
+      {{ t(playing ? "rasterEditor.sign.pause" : "rasterEditor.sign.play") }}
+    </button>
+    <p v-if="!sign">{{ t(`rasterEditor.profileGuide.${profile}`) }}</p>
   </div>
 </template>
 <style scoped>
@@ -155,6 +203,27 @@ onBeforeUnmount(() => {
 .decal-image :deep(canvas) {
   display: block;
 }
+.sign-preview { gap: 8px; }
+.sign-preview .decal-image {
+  flex: auto;
+  height: 120px;
+  border-radius: 6px;
+  background: #171f2c;
+  outline: 1px solid oklch(1 0 0 / 0.1);
+  outline-offset: -1px;
+}
+.sign-preview button {
+  align-self: start;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sign-preview button:focus-visible { outline: 2px solid var(--primary); }
 p {
   margin: 6px 0 0;
   font-size: 11px;

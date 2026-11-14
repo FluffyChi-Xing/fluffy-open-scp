@@ -11,9 +11,32 @@ import {
   validateParameters,
 } from "./schema";
 import { encodeRgbaPng } from "./png";
+import { signAnimationParameter, signDisplayPixels, stampSignLettering } from "./signPaint";
 import { rasterDraftAsset } from "@/pages/studio/components/mod-flow/assetFlow";
 
 describe("Raster editing contract", () => {
+  it("preserves marquee settings and rejects invalid values or a different profile", () => {
+    const session = useRasterSession();
+    session.changeProfile("decal-sign");
+    session.create(1, 1);
+    const legacy = session.snapshot();
+    expect(parseRasterSchema(legacy).decal.sign).toBeUndefined();
+    const sign = { effect: "marquee", axis: "vertical", speed: 0.5 } as const;
+    const value = { ...legacy, decal: { ...legacy.decal, sign } };
+    expect(parseRasterSchema(JSON.stringify(value)).decal.sign).toEqual(sign);
+    expect(() => parseRasterSchema({ ...value, profile: "lot-mask" })).toThrow();
+    expect(() => parseRasterSchema({ ...value, decal: { ...value.decal, sign: { ...sign, speed: 0 } } })).toThrow();
+  });
+  it("previews and stamps all four light layers without treating alpha as transparency", () => {
+    const colors = ["#ff0000", "#00ff00", "#0000ff", "#ffee00"];
+    const pixels = new Uint8ClampedArray([255, 0, 0, 0, 0, 0, 0, 0]);
+    const glyphs = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 0]);
+    expect(stampSignLettering(pixels, glyphs, 3)).toBe(true);
+    expect([...pixels]).toEqual([0, 0, 0, 255, 0, 0, 0, 0]);
+    expect([...signDisplayPixels(pixels, colors)]).toEqual([255, 238, 0, 255, 0, 0, 0, 0]);
+    expect(signAnimationParameter("horizontal", 2)).toBe(60.6);
+    expect(signAnimationParameter("vertical", 2)).toBe(-60.6);
+  });
   it("round-trips pixels under zero alpha, source identity and material settings", () => {
     const s = useRasterSession();
     s.changeProfile("decal-sdf");

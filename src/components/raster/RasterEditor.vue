@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, ref, shallowRef, useId, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
-import FSelect from "@/components/ui/FSelect.vue";
+import FSelect, { type SelectOption } from "@/components/ui/FSelect.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
@@ -25,6 +25,17 @@ import RasterParameterTable from "./RasterParameterTable.vue";
 import RasterSourcePanel from "./RasterSourcePanel.vue";
 import RasterMaterialPanel from "./RasterMaterialPanel.vue";
 import RasterPreviewPanel from "./RasterPreviewPanel.vue";
+import RasterDecalPreview from "./RasterDecalPreview.vue";
+import DecalTypeTabs from "./sign/DecalTypeTabs.vue";
+import RasterSignControls from "./sign/RasterSignControls.vue";
+import {
+  createSignPaintPreview,
+  createSignLettering,
+  defaultSignSettings,
+  signPalette,
+  stampSignLettering,
+  type SignSettings,
+} from "@/lib/raster-editor/signPaint";
 import { useRasterSession } from "./useRasterSession";
 import LotGroundSize from "@/components/lot-ground/LotGroundSize.vue";
 import LotMaterialPalette from "@/components/lot-ground/LotMaterialPalette.vue";
@@ -78,6 +89,8 @@ const {
 } = session;
 if (!props.initialSchema && props.initialProfile)
   profile.value = props.initialProfile;
+if (!props.initialSchema && props.mode === "standalone" && profile.value === "decal-sign")
+  decal.value = { ...decal.value, colors: [...signPalette] };
 const editorStarted = ref(!!props.initialSchema || !!props.initialProfile);
 const packages = useGamePackagesStore();
 const canvas = ref<InstanceType<typeof RasterCanvas> | null>(null);
@@ -104,7 +117,57 @@ const locked = computed(() => saving.value || props.busy);
 const descriptor = computed(() =>
   RASTER_PROFILES.find((p) => p.id === profile.value)!,
 );
+function isPanelProfile(value: RasterProfile) {
+  return value === "lot-mask" || value === "decal-sign";
+}
+const selectableProfiles = computed(() =>
+  RASTER_PROFILES.filter((item) => {
+    if (props.lockedProfile) return item.id === profile.value;
+    if (props.mode === "standalone") return isPanelProfile(item.id);
+    return item.id !== "lot-texture";
+  }),
+);
+const profileOptions = computed(() => {
+  const options = selectableProfiles.value.map(
+    ({ id, label }): SelectOption => ({ value: id, label }),
+  );
+  if (!editorStarted.value)
+    options.unshift({ value: "", label: t("rasterEditor.text170") });
+  return options;
+});
 const isLot = computed(() => profile.value === "lot-mask");
+const isSign = computed(() => props.mode === "standalone" && profile.value === "decal-sign");
+const signId = useId();
+const signSettings = computed(() => decal.value.sign ?? defaultSignSettings);
+const signAnimated = computed(() => isSign.value && signSettings.value.effect === "marquee");
+const signPreview = computed(() => isSign.value && doc.value
+  ? createSignPaintPreview(decal.value.colors)
+  : null);
+const signSizes = [
+  { name: "wide", width: 256, height: 128 },
+  { name: "tall", width: 128, height: 256 },
+  { name: "square", width: 128, height: 128 },
+] as const;
+function setSignSettings(sign: SignSettings) {
+  decal.value = { ...decal.value, sign };
+  changed();
+}
+function setSignColor(index: number, color: string) {
+  decal.value = { ...decal.value, colors: decal.value.colors.map((current, i) => i === index ? color : current) };
+  changed();
+}
+function createBlank(width: number, height: number) {
+  replace(() => session.create(width, height));
+}
+function addSignLettering(text: string) {
+  const image = doc.value;
+  if (!image || !canvas.value || !text) return;
+  const glyphs = createSignLettering(image.width, image.height, text);
+  if (!glyphs) return;
+  canvas.value.applyEdit((pixels) =>
+    stampSignLettering(pixels, glyphs, layer.value) ? image.fullRect() : null,
+  );
+}
 const ground = useLotGround({
   enabled: isLot,
   lot,
@@ -209,6 +272,10 @@ function image(
   );
 }
 function restore(value: RasterSchema) {
+  if (props.mode === "standalone" && !isPanelProfile(value.profile)) {
+    error.value = t("rasterEditor.unsupportedPanelProfile");
+    return;
+  }
   if (props.lockedProfile && value.profile !== profile.value) {
     error.value = t("rasterEditor.text003");
     return;
@@ -217,22 +284,32 @@ function restore(value: RasterSchema) {
   for (const origin of [value.source, value.lot.target, value.decal.atlas])
     if (origin) delete origin.packageId;
   replace(() => {
+    if (value.profile !== profile.value) resetLotLayers();
     session.load(value);
     if (props.mode === "flow") changed();
   });
 }
-function changeProfile(value: RasterProfile) {
-  editorStarted.value = true;
-  if (value !== profile.value) {
+function changeProfile(value: string) {
+  const next = selectableProfiles.value.find((item) => item.id === value);
+  if (!next) return;
+  if (next.id !== profile.value && props.mode === "standalone") {
+    if (!replace(() => {
+      doc.value = null;
+      history.value = null;
+      source.value = null;
+      resetLotLayers();
+      delete decal.value.sign;
+      if (next.id === "decal-sign")
+        decal.value = { ...decal.value, colors: [...signPalette] };
+      session.changeProfile(next.id);
+      dirty.value = false;
+    })) return;
+  } else if (next.id !== profile.value) {
     generation++;
-    session.changeProfile(value);
+    session.changeProfile(next.id);
   }
+  editorStarted.value = true;
 }
-const profileOptions = computed(() =>
-  RASTER_PROFILES
-    .filter((item) => item.id !== "lot-texture")
-    .map((item) => ({ value: item.id, label: item.label })),
-);
 function toggleLotBaseVisible() {
   if (!doc.value || !baseLotPixels.value || !lotOverlayPixels.value) return;
   baseLotVisible.value = !baseLotVisible.value;
@@ -419,6 +496,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         entryTgi: { ...entry.id },
         replaceInstance: `0x${entry.id.instance.toString(16)}`,
         aspectRatio: entry.aspectRatio ?? image.width / image.height,
+        sign: undefined,
         colors: entry.colorsRgba8?.map(
           (c) =>
             "#" +
@@ -450,14 +528,9 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         <FSelect
           class="profile-select"
           :model-value="editorStarted ? profile : ''"
-          :options="[
-            { value: '', label: t('rasterEditor.text170') },
-            ...profileOptions,
-          ]"
-          :disabled="locked"
-          @update:model-value="
-            (value) => value && changeProfile(value as RasterProfile)
-          "
+          :options="profileOptions"
+          :disabled="locked || lockedProfile"
+          @update:model-value="changeProfile"
         />
       </div>
       <div class="actions">
@@ -465,7 +538,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           {{
             profile === "slot0"
               ? t("rasterEditor.text015")
-              : t("rasterEditor.text016")
+              : isSign ? t("rasterEditor.sign.exportMask") : t("rasterEditor.text016")
           }}</button
         ><button :disabled="!ready || locked" @click="output(true)">
           {{ t("rasterEditor.text017") }}</button
@@ -484,7 +557,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         >
           {{ t("rasterEditor.text031") }}
         </button><button
-          v-else-if="profile !== 'slot0'"
+          v-else-if="profile !== 'slot0' && !signAnimated"
           class="primary"
           :disabled="!doc || locked || !isTauri()"
           @click="save('raster')"
@@ -493,7 +566,12 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         </button>
       </div>
     </header>
-    <div class="editor-layout" :class="{ 'is-empty': !editorStarted }">
+    <DecalTypeTabs v-if="editorStarted && isSign" :tab-id="`${signId}-tab`" :panel-id="`${signId}-panel`" />
+    <div
+class="editor-layout" :class="{ 'is-empty': !editorStarted, 'sign-layout': isSign }"
+      :id="editorStarted && isSign ? `${signId}-panel` : undefined"
+      :role="editorStarted && isSign ? 'tabpanel' : undefined"
+      :aria-labelledby="editorStarted && isSign ? `${signId}-tab` : undefined">
       <aside v-if="editorStarted" class="left-rail">
         <div v-if="profile === 'lot-mask' && doc" class="layer-section">
           <h2>{{ t("rasterEditor.baseLayer") }}</h2>
@@ -512,7 +590,17 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             <span class="base-layer-name">{{ t("rasterEditor.drawingLayer") }}</span>
           </div>
         </div>
-        <div v-if="editorStarted" class="rail-section source-section">
+        <section v-if="isSign" class="sign-sizes">
+          <h2>{{ t("rasterEditor.sign.canvas") }}</h2>
+          <button
+v-for="preset in signSizes" :key="preset.name" type="button" :disabled="locked"
+            @click="createBlank(preset.width, preset.height)">
+            <span>{{ t(`rasterEditor.sign.sizes.${preset.name}`) }}</span>
+            <small>{{ preset.width }} × {{ preset.height }}</small>
+          </button>
+        </section>
+        <component :is="isSign ? 'details' : 'div'" class="rail-section source-section">
+          <summary v-if="isSign" class="sign-disclosure">{{ t("rasterEditor.sign.sources") }}</summary>
           <RasterSourcePanel
             :image-width="doc?.width"
             :image-height="doc?.height"
@@ -520,7 +608,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             @load-decal="loadDecal"
             :profile="profile"
             :disabled="locked"
-            @create="(w, h) => replace(() => session.create(w, h))"
+            @create="createBlank"
             @image="image"
             @schema="restore"
             @parameters="
@@ -531,12 +619,12 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
                 })
             "
           />
-        </div>
+        </component>
       </aside>
       <main class="workspace" :inert="locked">
         <div v-if="editorStarted" class="document-heading">
           <div>
-            <strong>{{ descriptor.label }}</strong>
+            <strong>{{ isSign ? t("rasterEditor.sign.signs") : descriptor.label }}</strong>
           </div>
           <span class="dirty-state">{{
             dirty ? t("rasterEditor.text020") : t("rasterEditor.text021")
@@ -575,9 +663,9 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
               :lot-border-widths="lot.borderWidths"
               :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
               :meters-per-pixel="isLot ? sampling.metersPerPixel : null"
-              :paint-preview="ground.paintPreview.value"
+              :paint-preview="isSign ? signPreview : ground.paintPreview.value"
               :backdrop="ground.backdrop.value"
-              :erase-all-channels="isLot"
+              :erase-all-channels="isLot || isSign"
               @change="onCanvasChange"
               @pick-color="pick"
               @pick-layer="onPickLayer"
@@ -593,7 +681,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           </div>
           <div class="editor-guidance">
             <p v-if="profile === 'lot-mask'">{{ t("rasterEditor.lotGuide") }}</p>
-            <p>{{ t(`rasterEditor.profileGuide.${profile}`) }}</p>
+            <p>{{ isSign ? t("rasterEditor.sign.paintHint") : t(`rasterEditor.profileGuide.${profile}`) }}</p>
           </div>
           <footer class="document-footer">
             <code>{{ doc.width }} × {{ doc.height }} · RGBA8</code
@@ -611,11 +699,19 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             }}</span>
           </footer>
         </template>
-        <div v-else class="empty-canvas empty-editor">
-          <strong>{{ t("rasterEditor.text170") }}</strong>
+        <div v-else class="empty-canvas empty-editor" :class="{ 'sign-empty': isSign }">
+          <div v-if="isSign" class="sign-start">
+            <FIcon name="Brush" :size="22" aria-label="" />
+            <strong>{{ t("rasterEditor.sign.start") }}</strong>
+            <p>{{ t("rasterEditor.sign.startHint") }}</p>
+            <button type="button" :disabled="locked" @click="createBlank(256, 128)">
+              {{ t("rasterEditor.sign.create") }}
+            </button>
+          </div>
+          <strong v-else>{{ t("rasterEditor.text170") }}</strong>
         </div>
         <div
-          v-if="mode === 'standalone' && doc && isTauri() && profile.startsWith('decal-')"
+          v-if="mode === 'standalone' && doc && isTauri() && profile.startsWith('decal-') && !signAnimated"
           class="material-actions"
         >
           <button
@@ -639,6 +735,16 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         </details>
       </main>
       <aside v-if="editorStarted" class="inspector">
+        <section v-if="isSign && doc" class="sign-live">
+          <h2>{{ t("rasterEditor.sign.preview") }}</h2>
+          <RasterDecalPreview
+:doc="doc" :version="version" :profile="profile"
+            :colors="decal.colors" :aspect-ratio="decal.aspectRatio" :sign="signSettings" />
+        </section>
+        <RasterSignControls
+v-if="isSign" :layer="layer" :settings="signSettings" :colors="decal.colors"
+          :disabled="locked" :can-letter="!!doc" @update:layer="onPickLayer" @settings="setSignSettings"
+          @color="setSignColor" @lettering="addSignLettering" />
         <section v-if="isLot" class="ground-inspector">
           <LotGroundSize
             :size="ground.size.value"
@@ -667,15 +773,17 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             <label>{{ t("rasterEditor.text115") }}<input v-model.number="parkingLength" type="number" min="1" max="256" /></label>
             <label>{{ t("rasterEditor.text116") }}<input v-model.number="parkingSpacing" type="number" min="1" max="256" /></label>
           </template>
-          <template v-if="!isLot">
+          <template v-if="!isLot && !isSign">
             <label v-if="!mask && channel === 'rgba'">RGB <input v-model="color" type="color" /></label>
             <label v-if="channel === 'rgba' && (!mask || profile === 'decal-graffiti')">{{ t("rasterEditor.channelStrength") }}<input v-model.number="alpha" type="number" min="0" max="255" /></label>
             <label v-if="channel !== 'rgba'">{{ t("rasterEditor.channelValue", { channel: channel.toUpperCase() }) }}<input v-model.number="channelValue" type="number" min="0" max="255" /></label>
             <label>{{ t("rasterEditor.text122") }}<FSelect :model-value="channel" :options="['rgba','r','g','b','a'].map((value) => ({ value, label: value.toUpperCase() }))" @update:model-value="channel = $event as Channel" /></label>
           </template>
         </section>
-        <RasterMaterialPanel
-          v-if="editorStarted && profile !== 'slot0'"
+        <p v-if="signAnimated" class="sign-export-note">{{ t("rasterEditor.sign.animatedExport") }}</p>
+        <component v-if="profile !== 'slot0' && !signAnimated" :is="isSign ? 'details' : 'div'">
+          <summary v-if="isSign" class="sign-disclosure">{{ t("rasterEditor.sign.advanced") }}</summary>
+          <RasterMaterialPanel
           v-model:lot="lot"
           v-model:decal="decal"
           v-model:sampling="sampling"
@@ -684,9 +792,10 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           @load-lot="loadLot"
           @load-decal="loadDecal"
           @changed="changed"
-        />
+          />
+        </component>
         <RasterPreviewPanel
-          v-if="editorStarted && doc && profile !== 'slot0'"
+          v-if="doc && profile !== 'slot0' && !isSign"
           :doc="doc"
           :version="version"
           :profile="profile"
@@ -782,6 +891,43 @@ button:disabled {
   overflow: hidden;
 }
 .editor-layout.is-empty { grid-template-columns: minmax(0, 1fr); }
+.sign-layout {
+  --sign-stage: #171f2c;
+  --sign-grid: #8390ad18;
+}
+.sign-sizes, .sign-live { padding: 16px; }
+.sign-sizes h2, .sign-live h2 { margin: 0 0 9px; font-size: 12px; }
+.sign-sizes button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px;
+  margin-top: 5px;
+  text-align: start;
+}
+.sign-sizes small { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.sign-sizes button:hover:enabled, .sign-start button:hover:enabled { background: var(--accent); }
+.sign-disclosure {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.sign-export-note { margin: 0; padding: 0 16px 14px; color: var(--muted-foreground); font-size: 12px; }
+.empty-canvas.sign-empty {
+  color: #e4e9f4;
+  background: var(--sign-stage);
+  background-image: radial-gradient(var(--sign-grid) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.sign-start { display: grid; justify-items: center; gap: 10px; padding: 24px; text-align: center; }
+.sign-start strong { font-size: 17px; }
+.sign-empty .sign-start p { margin: 0; color: #aebbd3; font-size: 12px; }
+.sign-start button { margin-top: 4px; }
+.sign-layout :is(button, summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .left-rail {
   min-width: 0;
   min-height: 0;
@@ -848,9 +994,6 @@ button:disabled {
   color: var(--muted-foreground);
 }
 .layer-icon-button:hover { color: var(--foreground); background: var(--surface-hover); }
-.profile-section :deep(.raster-profiles) {
-  padding: 14px 10px;
-}
 .source-section :deep(.source-panel) {
   padding: 14px;
 }
@@ -1076,7 +1219,9 @@ pre {
   .inspector {
     display: block;
   }
+  .sign-layout .inspector { max-height: none; }
   .canvas-stage { min-height: 480px; }
+  .sign-layout .canvas-stage { min-height: 360px; }
   .canvas-stage :deep(.raster-toolbar) {
     left: 50%;
     bottom: 42px;

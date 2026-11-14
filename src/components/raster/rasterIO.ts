@@ -71,6 +71,8 @@ export async function saveRasterCopy(
   const s = parseRasterSchema(value);
   if (!s.image || s.profile === "slot0")
     throw new Error(t("rasterEditor.text037"));
+  if (s.decal.sign?.effect === "marquee")
+    throw new Error(t("rasterEditor.sign.animatedExport"));
   if (kind === "raster" && s.source?.tgi?.typeId === 0x2f4e681b)
     throw new Error(t("rasterEditor.rw4Export"));
   const { width, height, data: rgbaBase64 } = s.image;
