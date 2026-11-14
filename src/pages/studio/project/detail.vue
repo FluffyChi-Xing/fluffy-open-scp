@@ -11,13 +11,14 @@ import CodeWorkbench from "../components/CodeWorkbench.vue";
 import BuildActionsPanel from "../components/asset/BuildActionsPanel.vue";
 import ProjectRepoCodeTab from "../components/project-detail/ProjectRepoCodeTab.vue";
 import ProjectRepoSettingsTab from "../components/project-detail/ProjectRepoSettingsTab.vue";
+import ProjectAssetCaptureTab from "../components/project-detail/ProjectAssetCaptureTab.vue";
 
 /**
  * 项目详情页（GitHub repo 形态）：
  * Code / Issues(灰) / Develop / Actions / Settings。
  * Develop = 原全屏 Code 工作台；编辑/删除迁入 Settings。
  */
-type RepoTab = "code" | "issues" | "develop" | "actions" | "settings";
+type RepoTab = "code" | "issues" | "develop" | "actions" | "settings" | "capture";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -57,6 +58,12 @@ const tabs = computed(() => [
     icon: "Settings",
     disabled: false,
   },
+  {
+    id: "capture" as const,
+    label: t("assetCapture.title"),
+    icon: "Terminal",
+    disabled: !(project.value?.folderExists ?? false),
+  },
 ]);
 
 function statusLabel(status: string): string {
@@ -81,13 +88,14 @@ function syncTabFromQuery() {
     "develop",
     "actions",
     "settings",
+    "capture",
   ];
   if (!allowed.includes(raw as RepoTab) || raw === "issues") {
     tab.value = "code";
     return;
   }
   if (
-    (raw === "develop" || raw === "actions") &&
+    (raw === "develop" || raw === "actions" || raw === "capture") &&
     !(project.value?.folderExists ?? false)
   ) {
     tab.value = "code";
@@ -198,6 +206,11 @@ watch(
           :project="project"
           :groups="store.groups"
           @remove="onRemove"
+        />
+        <ProjectAssetCaptureTab
+          v-else-if="tab === 'capture'"
+          :key="project.id"
+          :project="project.relPath"
         />
       </div>
     </template>

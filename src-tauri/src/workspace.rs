@@ -1583,6 +1583,33 @@ pub async fn code_package_entries(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+#[command]
+pub async fn code_package_observable_units(
+    state: State<'_, AppState>,
+    request: CodePathRequest,
+) -> Result<Vec<u32>, CommandError> {
+    use crate::asset_build_m1::menu::{MENU_GROUP, PROPERTY_TYPE, UNIT_GROUP};
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        let relative =
+            validate_relative_path(&request.relative_path, false).map_err(CommandError::from)?;
+        let path = existing_path(&root, &relative).map_err(CommandError::from)?;
+        let package = open_mod_package(&path).map_err(CommandError::from)?;
+        let mut ids: Vec<_> = package.entries().iter().filter_map(|entry| {
+            let id = entry.id;
+            (id.type_id == PROPERTY_TYPE && id.group == UNIT_GROUP
+                && package.entry(dbpf::ResourceId { group: MENU_GROUP, ..id }).is_some())
+                .then_some(id.instance)
+        }).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        Ok(ids)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
 fn code_resource_preview_data(
     path: &Path,
     target: dbpf::ResourceId,

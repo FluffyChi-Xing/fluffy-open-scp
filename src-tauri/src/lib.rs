@@ -284,6 +284,7 @@ pub fn run() {
             code_delete_file,
             code_package_info,
             code_package_entries,
+            workspace::code_package_observable_units,
             code_resource_preview,
             code_manifest,
             workspace::code_flow,

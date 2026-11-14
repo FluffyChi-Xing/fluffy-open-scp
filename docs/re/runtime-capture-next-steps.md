@@ -72,3 +72,31 @@
 零售 Game JS 已确认保存 `SaveLocalGame`、另存为 `SaveRegionAs`、城市改名 `UpdateBoxName`、区域改名 `UpdateRegionName` 都通过 RequestGameData。原有“可能由更外层原生菜单触发”的推测已修正；这也意味着整个 RequestGameData 通道不能被归为只读。
 
 save-reload-60s 已存在保存提示事件 2628581196（三条，showNotification=true/false/true）。下一步优先级增加“稀有写请求独立采样”，解决当前每秒 40 次共享查询限流在参数解码前丢弃的问题。该事件仅反映保存提示，不替代返回值和文件持久化校验。完整调用链见 retail-eawebkit-runtime.md 的保存与改名修正节。
+
+## 2026-11-14 资产日志入口
+
+- 项目详情的「日志捕获」从最近构建包的同 instance Menu2 / Unit 资源读取建筑 ID。匹配运行时 UnitEntry ID，按 slot + stamp 区分同一资产的多栋建筑。构建选择用于确定资源 ID，游戏进程中究竟加载了哪一版包仍取决于实际部署。
+- 资产探针用 ReadProcessMemory 读取同一模拟 tick 的游戏内日周期和建筑本地资源槽。劳工显示 TotalWorkers 与 W1–W3，游客显示 TouristW1–W3。本地资源槽数值与 HUD 的 connectedUnits 聚合读数口径可能不同。输出包含初始值和采样间的变化，规则因果与轮询间短暂变化需要其他证据。
+- 窗灯通过零售 cGraphicsGame::UpdateUnits 的 slot → cUnitModel → cGraphicsUnitInteriors 路径读取目标值、插值后读数和完好度因子。渲染侧独立更新，可能跳过不一致样本。cGraphicsUnitInteriors::GetInfo 还会应用昼夜系数和随机项，日志中的比例是控制器数据。
+- 全局网页桥接为 periodTimes 和 gamespeed 保留独立采样额度。逐行时间优先匹配同页五秒内的邻近 periodTimes/0，必要时使用同次捕获的其他绑定读数。来源与相对采样时间保留在导出中。资产日志逐采样保存日周期时钟。
+- 可用性优先级：资产诊断先检查是否匹配实例与对应资源槽，再对照换班、游客到达和夜间亮灯。全局桥接更适合查询调用和 UI 事件排障，建筑/Agent 标签仍是原网页桥观察范围。
+
+## 2026-11-14 警车与单栋建筑的可读事件
+
+第一版可用现有只读探针输出「选择警情目标」「恢复巡逻目标」「车辆速度」「目标仍在寻找」「全城抓捕数增加」。在详细行里保留模拟 tick、车型 ID、handler、事务 key、Agent 地址和当前 sink。实时使用时从当前进程的脚本表解析车型及 sink，历史样本中的 50、323、1122 仅用于回放该会话。只在有效采样之间生成变化，隔着缺样的前后值显示为两次观测。若能读到事务 stamp，则把它纳入身份，避免事务或对象复用后误接前一辆车的轨迹。
+
+| 用户看到的行 | 数据来源 | 证据边界 |
+|---|---|---|
+| 巡逻车 → 选择警情目标 | 事务的**当前** sink 从其他类型变为 CrimeInProgress。UpdateVehicleDestination 会在选中类型变化时重建初始路径并通知交通视图 | 证明任务选中。最初何时派车需关联创建事务或停车库存 |
+| 目标建筑、接收点坐标 | 车辆分配到具体 sink 后，Deliver 由 Agent 的 sink slot 查 SinkInfo，得到目标 Unit slot、Unit sink index。目标坐标来自 SinkInfo。再由 Unit slot + stamp 关联资产身份和名称 | 当前 sink 的类型只能说明要找什么。旧样本里的 transaction.position 是事务位置，不能当作目的地。旧探针的 Agent sink 槽仍为候选，需要验证零售布局 |
+| 行驶速度 | cTransportVehicle::SimVehicles 用 Agent +0x15C 的速度乘模拟步长，结果与以米计的路径距离相加 | 可显示 m/模拟秒，游戏时间按模拟 tick 对齐。常态只记录起步、停驶或明显变化 |
+| 捕获或入狱 | 全城 CriminalsArrested / CriminalsIncarcerated 提供统计结果。归属到车辆需记录同一事务的 Criminal 载荷，或把实际送达与该事务绑定的规则写入对齐 | 全城计数变化不能指定哪辆车受理。Maxis Man 的 AEC 样本中存在抓捕入事务载荷的分支，也存在满员仍增加入狱统计的分支，两者不能直接外推到所有零售警车规则 |
+| 规则实际执行 | cEcoUnit::ApplyRule 从 stateIndex 查 mRuleIndices，满足 CanRunRule 并由 RunRule 返回应记日志时调用 LogUnitRule。DeliverTransaction 可以临时为 sink 挂载规则状态并执行规则 | 需要记录 Unit slot/stamp、stateIndex、规则集/规则索引、实际 Rule ID 和 applyCount。存在没有写规则日志的执行路径，单独用 LogUnitRule 覆盖不到所有 CanRunRule 尝试或成功链 |
+
+重新按稳定表头、同 tick、连续 tick、相同 handler/key/Agent 地址/车型复核存量日志。三倍速样本 412 行中 336 行符合快照条件，严格筛选后没有留下 323→109 的相邻帧。犯罪对齐样本 660 行中 612 行符合条件，留下 1 条 323→109。该车 key 12993、Agent 0xbc315e54，在 tick 80849→80850 的事务位置不变，事务 age 递增。随后 tick 80855 全城抓捕 +1，tick 80887 全城入狱 +1。第二条历史候选的 81194 快照跨 tick，因此只保留为线索。109 的脚本语义和单车抓捕归属仍待闭合。
+
+建筑入口可以应用同样的证据链。以瓦科停车为例，按实例显示「接收点容量为 0，控制位 49 实际 1、要求 0」或「车辆交付到该接收点；CarW1 0→1」。前者由 sink、旗标和现有零售实测支持，后者需要事务交付与资源写入共同确认。对同一实例同时显示劳工、停车库存、接收点容量和状态变更，就能判断故障是在接收条件、派发/送达还是车位显示。对任何楼都先解析当前实例的接收点与规则，避免把瓦科的 bit 49 当成所有建筑统一条件。
+
+后续采集顺序：复用外部只读快照先建立带时间和对象身份的状态流，再闭合零售具体 sink 与事务 stamp/载荷。最后用独立、限时的规则取证确认实际 Rule ID 和执行结果。全局统计、地图上的车辆表现与单车因果分开显示。检索键保留规则 ID，界面默认使用用户可读的事件文案。
+
+源码依据：SC/cTransportVehicle/UpdateVehicleDestination.c:27–44、Deliver.c:28–60、SimVehicles.c:344–366；GB/cEcoGame/CreateTransaction.c:58–85、AddUnitSinks.c:69–109、DeliverTransaction.c:90–173；GB/cEcoUnit/ApplyRule.c:24–38。旧样本窗口见 [事件触发采样](traffic-police-event-trigger-20261025.md)、[抓捕与返回](traffic-police-return-phase6-20261025.md)；单栋建筑实测见 [瓦科车辆路径与停车](waco-office-parking-20261113.md)。

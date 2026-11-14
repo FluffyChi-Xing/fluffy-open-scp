@@ -13,6 +13,36 @@ use tauri::State;
 
 use crate::activity::{AppState, CommandError};
 
+mod bridge_time;
+
+fn observer_python() -> PathBuf {
+    #[cfg(windows)]
+    if let Some(path) = std::env::var_os("PATH") {
+        if let Some(executable) = std::env::split_paths(&path)
+            .filter(|path| {
+                !path
+                    .components()
+                    .any(|part| part.as_os_str().eq_ignore_ascii_case("WindowsApps"))
+            })
+            .map(|path| path.join("python.exe"))
+            .find(|path| path.is_file())
+        {
+            return executable;
+        }
+    }
+    PathBuf::from("python")
+}
+
+fn observer_python_command() -> Command {
+    let mut command = Command::new(observer_python());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    command
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameProcess {
@@ -36,6 +66,7 @@ pub struct ObserverStatus {
     pub game_clock_seconds: Option<f64>,
     pub game_clock_source: Option<String>,
     pub game_paused: Option<bool>,
+    pub clock_advancing: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -55,6 +86,8 @@ pub struct ObserverManager {
     directory: Mutex<Option<PathBuf>>,
     cursor: Mutex<usize>,
     synced: Mutex<usize>,
+    asset_scope: Mutex<bool>,
+    stopping: Mutex<bool>,
 }
 
 impl ObserverManager {
@@ -65,6 +98,8 @@ impl ObserverManager {
             directory: Mutex::new(None),
             cursor: Mutex::new(0),
             synced: Mutex::new(0),
+            asset_scope: Mutex::new(false),
+            stopping: Mutex::new(false),
         }
     }
     fn reap(&self) {
@@ -143,11 +178,19 @@ pub async fn observer_start(
     seconds: Option<u32>,
     profile: Option<String>,
     observation: Option<String>,
+    unit_entry: Option<u32>,
 ) -> Result<ObserverStatus, CommandError> {
     let manager = state.observer.clone();
+    let stopping = manager.stopping.lock().unwrap();
+    if *stopping {
+        return Err(CommandError::new(
+            "observer_busy",
+            "Capture cleanup is pending",
+        ));
+    }
     manager.reap();
     let mut child_guard = manager.child.lock().unwrap();
-    if child_guard.is_some() {
+    if child_guard.is_some() || *manager.asset_scope.lock().unwrap() {
         return Err(CommandError::new("observer_busy", "Capture already active"));
     }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -162,36 +205,35 @@ pub async fn observer_start(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_millis()
+                .as_nanos()
         ));
     std::fs::create_dir_all(dir.parent().unwrap())
         .map_err(|e| CommandError::internal(e.to_string()))?;
-    let script = root.join("tools/dynamic/ui-observer/native_trace.py");
+    let script = root.join(if unit_entry.is_some() {
+        "probes/runtime/asset_watch.py"
+    } else {
+        "tools/dynamic/ui-observer/native_trace.py"
+    });
     let stderr = std::fs::File::create(dir.with_extension("stderr"))
         .map_err(|e| CommandError::internal(e.to_string()))?;
-    let mut command = Command::new("python");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
+    let mut command = observer_python_command();
     let profile = profile.unwrap_or_else(|| "balanced".into());
     let observation = observation.unwrap_or_else(|| "ui:all".into());
+    command.current_dir(&root).args([
+        script.to_string_lossy().as_ref(),
+        "--pid",
+        &pid.to_string(),
+        "--seconds",
+        &seconds.unwrap_or(60).to_string(),
+        "--directory",
+        dir.to_string_lossy().as_ref(),
+    ]);
+    if let Some(unit_entry) = unit_entry {
+        command.args(["--unit-entry", &unit_entry.to_string()]);
+    } else {
+        command.args(["--profile", &profile, "--observation", &observation]);
+    }
     let child = command
-        .current_dir(&root)
-        .args([
-            script.to_string_lossy().as_ref(),
-            "--pid",
-            &pid.to_string(),
-            "--seconds",
-            &seconds.unwrap_or(60).to_string(),
-            "--profile",
-            &profile,
-            "--observation",
-            &observation,
-            "--directory",
-            dir.to_string_lossy().as_ref(),
-        ])
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr))
         .spawn()
@@ -201,6 +243,7 @@ pub async fn observer_start(
     *manager.directory.lock().unwrap() = Some(dir);
     *manager.cursor.lock().unwrap() = 0;
     *manager.synced.lock().unwrap() = 0;
+    *manager.asset_scope.lock().unwrap() = unit_entry.is_some();
     Ok(ObserverStatus {
         running: true,
         pid: Some(pid),
@@ -219,12 +262,47 @@ pub async fn observer_start(
         game_clock_seconds: None,
         game_clock_source: None,
         game_paused: None,
+        clock_advancing: None,
     })
 }
 
 #[tauri::command]
-pub async fn observer_stop(state: State<'_, AppState>) -> Result<ObserverStatus, CommandError> {
-    if let Some(dir) = state.observer.directory.lock().unwrap().clone() {
+pub async fn observer_stop(
+    state: State<'_, AppState>,
+    asset_directory: Option<String>,
+) -> Result<ObserverStatus, CommandError> {
+    {
+        let mut stopping = state.observer.stopping.lock().unwrap();
+        if *stopping {
+            return Err(CommandError::new(
+                "observer_busy",
+                "Capture cleanup is pending",
+            ));
+        }
+        *stopping = true;
+    }
+    let result = stop_session(state.clone(), asset_directory).await;
+    *state.observer.stopping.lock().unwrap() = false;
+    result
+}
+
+async fn stop_session(
+    state: State<'_, AppState>,
+    asset_directory: Option<String>,
+) -> Result<ObserverStatus, CommandError> {
+    let directory = state.observer.directory.lock().unwrap().clone();
+    let asset_scope = *state.observer.asset_scope.lock().unwrap();
+    if asset_scope != asset_directory.is_some()
+        || asset_directory.as_deref().is_some_and(|expected| {
+            directory.as_ref().and_then(|dir| dir.to_str()) != Some(expected)
+        })
+    {
+        return Err(CommandError::new(
+            "observer_busy",
+            "Another capture owns the session",
+        ));
+    }
+    if let Some(ref dir) = directory {
         std::fs::write(dir.with_extension("stop"), b"stop")
             .map_err(|e| CommandError::internal(e.to_string()))?;
     }
@@ -244,26 +322,56 @@ pub async fn observer_stop(state: State<'_, AppState>) -> Result<ObserverStatus,
     })
     .await
     .map_err(|e| CommandError::internal(e.to_string()))??;
-    if state.observer.directory.lock().unwrap().is_some() {
+    if directory.is_some() && !asset_scope {
         observer_sync(state.clone()).await?;
     }
-    let snapshot = observer_status(state.clone()).await?;
-    if let Some(dir) = state.observer.directory.lock().unwrap().clone() {
+    let snapshot = observer_status(state.clone(), asset_directory).await?;
+    if let Some(dir) = directory {
         match std::fs::remove_file(dir.join("trace.jsonl")) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(CommandError::internal(e.to_string())),
         }
     }
+    if asset_scope {
+        *state.observer.asset_scope.lock().unwrap() = false;
+        *state.observer.directory.lock().unwrap() = None;
+        *state.observer.pid.lock().unwrap() = None;
+    }
     Ok(snapshot)
 }
 
 #[tauri::command]
-pub async fn observer_status(state: State<'_, AppState>) -> Result<ObserverStatus, CommandError> {
+pub async fn observer_status(
+    state: State<'_, AppState>,
+    asset_directory: Option<String>,
+) -> Result<ObserverStatus, CommandError> {
     let manager = state.observer.clone();
     manager.reap();
+    let asset_scope = *manager.asset_scope.lock().unwrap();
     let running = manager.is_running();
     let dir = manager.directory.lock().unwrap().clone();
+    if asset_scope != asset_directory.is_some()
+        || asset_directory
+            .as_deref()
+            .is_some_and(|expected| dir.as_ref().and_then(|dir| dir.to_str()) != Some(expected))
+    {
+        return Ok(ObserverStatus {
+            running,
+            pid: None,
+            directory: None,
+            records: 0,
+            synced: 0,
+            status: running.then(|| serde_json::json!({"error": "observer_busy"})),
+            recent: Vec::new(),
+            event_counts: HashMap::new(),
+            game_time_seconds: None,
+            game_clock_seconds: None,
+            game_clock_source: None,
+            game_paused: None,
+            clock_advancing: None,
+        });
+    }
     let status_path = dir.as_ref().map(|p| p.join("status.json"));
     let mut status: Option<Value> = status_path
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -282,69 +390,52 @@ pub async fn observer_status(state: State<'_, AppState>) -> Result<ObserverStatu
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.lines().map(str::to_owned).collect::<Vec<_>>())
         .unwrap_or_default();
-    let recent = lines
-        .iter()
-        .rev()
-        .take(80)
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .collect::<Vec<_>>();
+    let mut recent = std::collections::VecDeque::new();
     let mut event_counts = HashMap::new();
+    let mut game_time_seconds = None;
+    let mut game_clock_seconds = status
+        .as_ref()
+        .and_then(|status| status.get("gameClockSeconds"))
+        .and_then(Value::as_f64);
+    let mut game_clock_source = game_clock_seconds.map(|_| "eco_game.day_period".into());
+    let mut bridge = bridge_time::BridgeTime::default();
+    let mut request_by_call = HashMap::new();
     for line in &lines {
-        if let Ok(row) = serde_json::from_str::<Value>(line) {
+        let Ok(row) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if !asset_scope {
             if row.get("name").and_then(Value::as_str) == Some("ReceiveGameEventFromClient") {
                 if let Some(id) = row.get("eventID").and_then(Value::as_i64) {
                     *event_counts.entry(id.to_string()).or_insert(0) += 1;
                 }
             }
+            bridge.observe(&row, &mut request_by_call);
         }
+        if recent.len() == 1000 {
+            recent.pop_front();
+        }
+        if row.get("channel").and_then(Value::as_str) == Some("result") {
+            let request = row
+                .get("requestName")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let value = row.get("result").and_then(|result| result.get("value"));
+            if request == "totalElapsedGameTime" {
+                game_time_seconds = value.and_then(Value::as_f64);
+            }
+        }
+        recent.push_back(row);
     }
-    let mut game_time_seconds = None;
-    let mut game_clock_seconds = None;
-    let mut game_clock_source = None;
-    let mut game_paused = None;
-    let mut request_by_call: HashMap<i64, String> = HashMap::new();
-    for line in &lines {
-        let Ok(row) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if row.get("channel").and_then(Value::as_str) == Some("invoke") {
-            if let (Some(sequence), Some(text)) = (
-                row.get("sequence").and_then(Value::as_i64),
-                row.get("arguments")
-                    .and_then(Value::as_array)
-                    .and_then(|args| args.first())
-                    .and_then(|arg| arg.get("text"))
-                    .and_then(Value::as_str),
-            ) {
-                request_by_call.insert(sequence, text.to_string());
-            }
-            continue;
-        }
-        if row.get("channel").and_then(Value::as_str) != Some("result") {
-            continue;
-        }
-        let request = row
-            .get("requestName")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let value = row.get("result").and_then(|result| result.get("value"));
-        if request == "totalElapsedGameTime" {
-            game_time_seconds = value.and_then(Value::as_f64);
-        }
-        if request == "periodTimes" {
-            let call_sequence = row.get("callSequence").and_then(Value::as_i64);
-            let full_request =
-                call_sequence.and_then(|seq| request_by_call.get(&seq).map(String::as_str));
-            if full_request == Some("periodTimes/0") {
-                if let Some(fraction) = value.and_then(Value::as_f64).filter(|v| v.is_finite()) {
-                    game_clock_seconds = Some(fraction.rem_euclid(1.0) * 86_400.0);
-                    game_clock_source = Some("ui_bridge.periodTimes/0".into());
-                }
-            }
-        }
-        if request.starts_with("globalFlags") {
-            game_paused = value.and_then(Value::as_bool);
-        }
+    bridge.finish();
+    if let Some(seconds) = bridge.latest_clock() {
+        game_clock_seconds = Some(seconds);
+        game_clock_source = Some("ui_bridge.periodTimes/0".into());
+    }
+    let game_paused = bridge.paused();
+    let clock_advancing = bridge.advancing();
+    for row in &mut recent {
+        bridge.annotate(row);
     }
     let records = lines.len();
     Ok(ObserverStatus {
@@ -354,12 +445,13 @@ pub async fn observer_status(state: State<'_, AppState>) -> Result<ObserverStatu
         records,
         synced: *manager.synced.lock().unwrap(),
         status,
-        recent,
+        recent: recent.into_iter().rev().collect(),
         event_counts,
         game_time_seconds,
         game_clock_seconds,
         game_clock_source,
         game_paused,
+        clock_advancing,
     })
 }
 
@@ -434,7 +526,7 @@ pub async fn observer_frame(pid: u32) -> Result<GameFrame, CommandError> {
                 .as_nanos()
         ));
         let script = root.join("tools/runtime_capture/window_frame.py");
-        let result = Command::new("python")
+        let result = observer_python_command()
             .args([
                 script.to_string_lossy().as_ref(),
                 "--pid",

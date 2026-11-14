@@ -2,7 +2,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "@/locales";
 import Page from "./index.vue";
-import LogStream from "./LogStream.vue";
+import LogStream from "@/components/runtime-observer/LogStream.vue";
 import { runtimeObserver } from "@/api/runtimeObserver";
 vi.mock("@/api/runtimeObserver", () => ({
   runtimeObserver: {
@@ -25,6 +25,54 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("observer controls", () => {
+  it("distinguishes a stationary clock from a confirmed pause", async () => {
+    vi.mocked(runtimeObserver.listProcesses).mockResolvedValue([]);
+    vi.mocked(runtimeObserver.status).mockResolvedValue({
+      ...idle, records: 3, clockAdvancing: false, gameClockSeconds: 64800,
+    });
+    vi.mocked(runtimeObserver.stop).mockResolvedValue(idle);
+    const w = mount(Page, { global: { plugins: [i18n] } });
+    try {
+      await flushPromises();
+      expect(w.get(".runtime-pill").text()).toBe("时钟未推进");
+      expect(w.get(".runtime-time").text()).toContain("最后采样时间");
+      expect(w.get(".runtime-time").text()).toContain("18:00:00");
+      i18n.global.locale.value = "en-US";
+      await flushPromises();
+      expect(w.get(".runtime-pill").text()).toBe("Clock stationary");
+    } finally {
+      i18n.global.locale.value = "zh-CN";
+      w.unmount();
+    }
+  });
+
+  it("gives vehicle and worker rows separate categories and shows inventory changes", async () => {
+    const w = mount(LogStream, {
+      props: {
+        rows: [
+          { sequence: 1, channel: "asset.resource", metric: "vehicles", name: "carW1",
+            unitSlot: 4, unitStamp: 7, amountDelta: 2,
+            before: { amount: 0, capacity: 12 }, after: { amount: 2, capacity: 12 } },
+          { sequence: 2, channel: "asset.resource", metric: "workers", name: "totalWorkers",
+            unitSlot: 4, unitStamp: 7, before: null, after: { amount: 5, capacity: 12 } },
+        ],
+      },
+      global: { plugins: [i18n] },
+    });
+    try {
+      expect(w.get(".tone-vehicles .line-kind").text()).toBe("车辆");
+      expect(w.get(".tone-workers .line-kind").text()).toBe("劳工");
+      expect(w.get(".tone-vehicles").text()).toContain("库存增加 2 辆");
+      i18n.global.locale.value = "en-US";
+      await w.setProps({ metric: "vehicles" });
+      expect(w.find(".tone-workers").exists()).toBe(false);
+      expect(w.get(".tone-vehicles").text()).toContain("Inventory +2");
+    } finally {
+      i18n.global.locale.value = "zh-CN";
+      w.unmount();
+    }
+  });
+
   it("separates live and static panels and translates custom file controls", async () => {
     vi.mocked(runtimeObserver.listProcesses).mockResolvedValue([]);
     vi.mocked(runtimeObserver.status).mockResolvedValue(idle);
@@ -151,7 +199,12 @@ describe("observer controls", () => {
       .find((b) => b.text().includes("开始捕获"))!
       .trigger("click");
     await flushPromises();
-    expect(runtimeObserver.start).toHaveBeenCalledWith(5, 60, "balanced", "ui:all");
+    expect(runtimeObserver.start).toHaveBeenCalledWith(
+      5,
+      60,
+      "balanced",
+      "ui:all",
+    );
     expect(w.find('[role="alert"]').text()).toContain(
       "未找到通过校验的网页绑定",
     );
@@ -253,5 +306,52 @@ describe("observer controls", () => {
     expect(w.text()).toContain("Live log stream");
     i18n.global.locale.value = "zh-CN";
     w.unmount();
+  });
+
+  it("shows game time and translates scoped readings when the locale changes", async () => {
+    const w = mount(LogStream, {
+      props: {
+        rows: [
+          {
+            sequence: 1,
+            channel: "asset.resource",
+            metric: "workers",
+            name: "totalWorkers",
+            gameClockSeconds: 59431,
+            unitSlot: 7,
+            unitStamp: 3,
+            before: { amount: 0, capacity: 30 },
+            after: { amount: 5, capacity: 30 },
+          },
+          {
+            sequence: 2,
+            channel: "asset.resource",
+            metric: "tourists",
+            name: "touristW1",
+            time: 1234567890000,
+            unitSlot: 8,
+            unitStamp: 4,
+            before: null,
+            after: { amount: 3, capacity: 20 },
+          },
+        ],
+        metric: "workers",
+      },
+      global: { plugins: [i18n] },
+    });
+    try {
+      expect(w.find("time").text()).toBe("16:30:31");
+      expect(w.text()).toContain("在岗劳工");
+      expect(w.text()).toContain("0 / 30 → 5 / 30");
+      expect(w.findAll(".line")).toHaveLength(1);
+      i18n.global.locale.value = "en-US";
+      await w.setProps({ metric: "tourists" });
+      expect(w.find("time").text()).toBe("—");
+      expect(w.text()).toContain("W1 tourists");
+      expect(w.text()).toContain("No bin → 3 / 20");
+    } finally {
+      i18n.global.locale.value = "zh-CN";
+      w.unmount();
+    }
   });
 });

@@ -14,7 +14,7 @@ import FButton from "@/components/ui/FButton.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSelect from "@/components/ui/FSelect.vue";
 import Switch from "@/components/ui/switch/Switch.vue";
-import LogStream from "./LogStream.vue";
+import LogStream from "@/components/runtime-observer/LogStream.vue";
 import DiagnosticWorkbench from "./DiagnosticWorkbench.vue";
 import {
   runtimeObserver,
@@ -99,11 +99,12 @@ const events = computed(() =>
   Object.values(status.value.eventCounts).reduce((a, b) => a + b, 0),
 );
 const latestDataResult = (requestName: string) => [...status.value.recent].reverse().find((row) => row.requestName === requestName && row.channel === "result");
-const gamePaused = computed<boolean | undefined>(() => {
-  if (typeof status.value.gamePaused === "boolean") return status.value.gamePaused;
-  const row = [...status.value.recent].reverse().find((candidate) => typeof candidate.requestName === "string" && candidate.requestName.startsWith("globalFlags") && candidate.channel === "result");
-  const value = row?.result && typeof row.result === "object" && "value" in row.result ? row.result.value : undefined;
-  return typeof value === "boolean" ? value : undefined;
+const gameState = computed(() => {
+  if (status.value.gamePaused === true) return "paused";
+  if (status.value.clockAdvancing === false) return "clockStopped";
+  if (status.value.gamePaused === false || status.value.clockAdvancing === true)
+    return "playing";
+  return "unknownStatus";
 });
 const gameTime = computed(() => {
   const source = typeof status.value.gameClockSeconds === "number"
@@ -151,7 +152,8 @@ async function refresh() {
     if (captureFrames.value && next.pid) {
       try {
         const frame = await runtimeObserver.frame(next.pid);
-        frameUrl.value = `data:${frame.mime};base64,${frame.dataBase64}`;
+        if (active && captureFrames.value && epoch === captureEpoch.value && version === pollVersion)
+          frameUrl.value = `data:${frame.mime};base64,${frame.dataBase64}`;
       } catch {
         // A minimized or transitioning window can fail one frame; keep the last good frame.
       }
@@ -214,6 +216,10 @@ async function stop() {
           recent: status.value.recent,
           records: status.value.records,
           eventCounts: status.value.eventCounts,
+          gameClockSeconds: next.gameClockSeconds ?? status.value.gameClockSeconds,
+          gameTimeSeconds: next.gameTimeSeconds ?? status.value.gameTimeSeconds,
+          gamePaused: next.gamePaused ?? status.value.gamePaused,
+          clockAdvancing: next.clockAdvancing ?? status.value.clockAdvancing,
         };
     frozen = !next.running;
   } catch (e) {
@@ -263,18 +269,18 @@ onBeforeUnmount(release);
         <p v-if="error" class="error" role="alert">{{ displayError }}</p>
 
         <section class="summary">
-          <div class="preview" :class="{ ready: frameUrl }">
-            <img v-if="frameUrl" :src="frameUrl" :alt="t('runtimeObserver.frame')" />
+          <div class="preview" :class="{ ready: captureFrames && frameUrl }">
+            <img v-if="captureFrames && frameUrl" :src="frameUrl" :alt="t('runtimeObserver.frame')" />
             <span v-else>{{ t("runtimeObserver.previewUnavailable") }}</span>
           </div>
           <div class="session">
             <div class="runtime-strip">
-              <span class="runtime-strip-title">{{ t("runtimeObserver.runtimeStatus") }}</span>
-              <span class="runtime-pill" :class="{ paused: gamePaused === true, active: gamePaused === false }">
+              <span class="runtime-strip-title">{{ t(status.running || !status.records ? "runtimeObserver.runtimeStatus" : "runtimeObserver.lastGameStatus") }}</span>
+              <span class="runtime-pill" :class="{ paused: gameState === 'paused', active: gameState === 'playing' }">
                 <span class="runtime-dot" aria-hidden="true"></span>
-                {{ gamePaused === true ? t("runtimeObserver.paused") : gamePaused === false ? t("runtimeObserver.playing") : t("runtimeObserver.unknownStatus") }}
+                {{ t(`runtimeObserver.${gameState}`) }}
               </span>
-              <span class="runtime-time"><span>{{ t(gameTimeIsClock ? "runtimeObserver.gameClock" : "runtimeObserver.gameTime") }}</span><strong>{{ gameTime ?? "—" }}</strong></span>
+              <span class="runtime-time"><span>{{ t(gameTimeIsClock ? (status.running ? "runtimeObserver.gameClock" : "runtimeObserver.lastGameClock") : "runtimeObserver.gameTime") }}</span><strong>{{ gameTime ?? "—" }}</strong></span>
               <label class="frame-toggle"><Switch v-model="captureFrames" :aria-label="t('runtimeObserver.captureFrame')" /><span>{{ t("runtimeObserver.captureFrame") }}</span></label>
               <div class="header-process">
                 <FDropdown v-model:open="processMenuOpen" :width="240">

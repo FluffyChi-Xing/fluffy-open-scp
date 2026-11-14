@@ -1,7 +1,7 @@
 import { command } from "./tauri";
 
 export interface GameProcess { pid: number; name: string; memoryKb?: number }
-export interface ObserverStatus { running: boolean; pid?: number; directory?: string; records: number; synced: number; status?: Record<string, unknown>; recent: Record<string, unknown>[]; eventCounts: Record<string, number>; gameTimeSeconds?: number; gameClockSeconds?: number; gameClockSource?: string; gamePaused?: boolean }
+export interface ObserverStatus { running: boolean; pid?: number; directory?: string; records: number; synced: number; status?: Record<string, unknown>; recent: Record<string, unknown>[]; eventCounts: Record<string, number>; gameTimeSeconds?: number; gameClockSeconds?: number; gameClockSource?: string; gamePaused?: boolean; clockAdvancing?: boolean }
 export interface GameFrame { mime: string; dataBase64: string; capturedAt: number; width?: number; height?: number }
 
 export const runtimeObserver = {
