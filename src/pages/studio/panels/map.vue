@@ -14,7 +14,6 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import MapPlotDetails from "@/components/map/MapPlotDetails.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 
-import FTypography from "@/components/extensions/FTypography.vue";
 
 import MapPreviewPane from "@/components/map/MapPreviewPane.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
@@ -75,6 +74,13 @@ function packagePathOf(packageId: number): string {
       ?.package.path ?? ""
   );
 }
+
+const terrainSource = computed(() => {
+  const id = selectedPackageId.value;
+  if (id === null || !selectedGroup.value) return null;
+  const packagePath = packagePathOf(id);
+  return packagePath ? { packagePath, group: selectedGroup.value } : null;
+});
 
 let renderRequest = 0;
 let regionsRequest = 0;
@@ -165,18 +171,9 @@ function resourceLabel(kind: string): string {
 
 <template>
   <section class="map-page">
-    <header class="page-header">
-      <span class="page-icon"><FIcon name="Map" :size="20" /></span>
-      <div>
-        <FTypography :header="2" spacing="none">{{
-          t("studio.map.title")
-        }}</FTypography>
-        <p class="page-meta">{{ t("studio.map.meta") }}</p>
-      </div>
-    </header>
-
-    <!-- 工具行：包选择 + 区域选择 + 渲染 -->
-    <section class="toolbar" :aria-label="t('studio.map.configLabel')">
+    <header class="map-command-bar">
+      <h2 class="map-heading"><FIcon name="Map" :size="19" />{{ t("studio.map.title") }}</h2>
+      <div class="toolbar" role="group" :aria-label="t('studio.map.configLabel')">
       <FDropdown :width="320">
         <template #trigger>
           <button
@@ -253,35 +250,28 @@ function resourceLabel(kind: string): string {
         <FIcon name="Play" :size="14" />
         {{ loadingRender ? t("studio.map.rendering") : t("studio.map.render") }}
       </button>
-    </section>
+      </div>
+    </header>
 
     <p v-if="errorMsg" class="error-message" role="alert">{{ errorMsg }}</p>
-    <p v-if="render" class="notice" role="status">
-      {{
-        t(
-          `studio.map.static${render.staticStatus === "ready" ? "Ready" : render.staticStatus === "invalid" ? "Invalid" : "Missing"}`,
-        )
-      }}
-      <span v-if="render.staticStatus === 'ready' && !render.roadAssets">{{
-        t("studio.map.roadAssetsMissing")
-      }}</span>
+    <p v-if="render && (render.staticStatus !== 'ready' || !render.roadAssets)" class="notice" role="status">
+      {{ t(render.staticStatus === "ready"
+        ? "studio.map.roadAssetsMissing"
+        : render.staticStatus === "invalid" ? "studio.map.staticInvalid" : "studio.map.staticMissing") }}
     </p>
-    <p v-if="!openedPackages.length" class="notice" role="status">
-      {{ t("studio.map.needPackage") }}
-    </p>
-
-    <!-- 主区：左预览卡片 + 右面板 -->
-    <div class="workspace">
+    <div class="workspace" :class="{ 'has-inspector': render }">
       <div class="viewer-card">
         <MapPreviewPane
           :data="render"
           :title="renderRegionName"
+          :empty-hint="!openedPackages.length ? t('studio.map.needPackage') : undefined"
           :options="resourceOptions"
+          :terrain-source="terrainSource"
           :selected-plot-uid="selectedPlotUid"
           @select-plot="selectedPlotUid = $event"
         />
       </div>
-      <aside class="side-panel">
+      <aside v-if="render" class="side-panel">
         <MapPlotDetails :data="render" :plot="selectedPlot" />
       </aside>
     </div>
@@ -291,175 +281,93 @@ function resourceLabel(kind: string): string {
 <style scoped>
 .map-page {
   box-sizing: border-box;
-  padding-bottom: 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  height: 100%;
-  max-height: calc(100dvh - 7.5rem);
-  min-height: 0;
-  overflow: hidden;
+  gap: 12px;
+  block-size: calc(100dvh - 7.5rem);
+  min-block-size: 34rem;
+  padding: 2px 2px 10px;
 }
-.page-header {
+.map-command-bar {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 8px 2px 11px;
+  border-block-end: 1px solid var(--border);
 }
-.page-icon {
-  display: inline-flex;
+.map-heading {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--brand);
-  flex-shrink: 0;
-}
-.page-header :deep(h2) {
+  gap: 9px;
   margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 650;
 }
-.page-meta {
-  margin: 0.2rem 0 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.6875rem;
-  color: var(--subtle-foreground);
-}
+.map-heading :deep(svg) { color: var(--brand); }
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
   flex-wrap: wrap;
+  gap: 6px;
+  min-inline-size: 0;
 }
-.package-trigger {
+.package-trigger, .run-button {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--foreground);
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-.package-trigger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.run-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 0.9rem;
-  border: 1px solid var(--brand);
-  border-radius: var(--radius-md);
-  background: var(--brand);
-  color: var(--brand-foreground, #fff);
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-.run-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.error-message,
-.notice {
-  margin: 0;
-  padding: 0.7rem 1rem;
-  border-radius: var(--radius-md);
-  font-size: 0.75rem;
-}
-.error-message {
-  border: 1px solid var(--destruct, #b91c1c);
-  color: var(--destruct, #b91c1c);
-  background: color-mix(in srgb, var(--destruct, #b91c1c) 8%, transparent);
-}
-.notice {
-  border: 1px solid var(--border);
-  color: var(--muted-foreground);
-  background: var(--surface);
-}
-.workspace {
-  display: flex;
-  gap: 0.75rem;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-/* 预览卡片：顶部横向工具条（分段式图层切换 + outline 按钮） */
-.viewer-card {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-}
-:deep(.map-preview-pane) {
-  min-height: 0;
-}
-.card-toolbar {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-/* outline 图标按钮（展开/关闭，对齐 property editor） */
-.outline-btn {
-  align-items: center;
-  background: transparent;
+  gap: 7px;
+  min-block-size: 34px;
+  max-inline-size: min(21rem, 80vw);
+  padding-inline: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: inline-flex;
-  justify-content: center;
-  min-height: 28px;
-  min-width: 28px;
-}
-.outline-btn:hover {
-  background: var(--surface-hover);
+  background: var(--surface);
   color: var(--foreground);
+  font-size: .75rem;
+  cursor: pointer;
 }
-.outline-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
+.package-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.card-viewer {
-  position: relative;
-  flex: 1;
-  min-height: 0;
+.package-trigger:hover:enabled { background: var(--surface-hover); }
+.run-button {
+  padding-inline: 14px;
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--brand-foreground, #fff);
 }
-.viewer-empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1.5rem;
+.package-trigger:disabled, .run-button:disabled { opacity: .48; cursor: not-allowed; }
+.package-trigger:focus-visible, .run-button:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
-.viewer-empty :deep(.f-empty) {
-  max-width: 22rem;
-}
-.side-panel {
-  width: 272px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  overflow-y: auto;
-}
-.menu-empty {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.75rem;
+.error-message, .notice {
+  margin: 0;
+  padding: 6px 10px;
+  border-inline-start: 2px solid var(--border);
   color: var(--muted-foreground);
+  font-size: .75rem;
+}
+.error-message {
+  border-color: var(--destruct, #b91c1c);
+  color: var(--destruct, #b91c1c);
+}
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1;
+  min-block-size: 0;
+}
+.workspace.has-inspector { grid-template-columns: minmax(0, 1fr) 17rem; gap: 12px; }
+.viewer-card { min-inline-size: 0; min-block-size: 0; }
+.side-panel { overflow-y: auto; min-inline-size: 0; }
+.menu-empty { padding: .5rem .75rem; font-size: .75rem; color: var(--muted-foreground); }
+@media (max-width: 900px) {
+  .map-page { block-size: auto; }
+  .workspace.has-inspector { grid-template-columns: minmax(0, 1fr); }
+  .viewer-card { block-size: max(26rem, 68dvh); }
 }
 </style>

@@ -30,8 +30,11 @@ pub fn apply_strokes(original: &[u16], strokes: &[TerrainStroke]) -> Result<Vec<
         return Err("invalid terrain edit size".into());
     }
     let mut edited = original.to_vec();
-    let index = |v: f64| ((v + HALF_REGION) / SAMPLE_METERS).floor()
-        .clamp(0.0, (REGION_FIELD_PX - 1) as f64) as usize;
+    let index = |v: f64| {
+        ((v + HALF_REGION) / SAMPLE_METERS)
+            .floor()
+            .clamp(0.0, (REGION_FIELD_PX - 1) as f64) as usize
+    };
     for stroke in strokes {
         if !(-HALF_REGION..HALF_REGION).contains(&stroke.x)
             || !(-HALF_REGION..HALF_REGION).contains(&stroke.y)
@@ -55,9 +58,40 @@ pub fn apply_strokes(original: &[u16], strokes: &[TerrainStroke]) -> Result<Vec<
                     BrushMode::Lower => -step,
                     BrushMode::Level => (target - value).clamp(-step, step),
                 };
-                *cell = (value + delta * weight).round().clamp(0.0, f64::from(u16::MAX)) as u16;
+                *cell = (value + delta * weight)
+                    .round()
+                    .clamp(0.0, f64::from(u16::MAX)) as u16;
             }
         }
     }
     Ok(edited)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stamps_are_local_and_level_toward_the_clicked_height() {
+        let center = 2048 * REGION_FIELD_PX + 2048;
+        let mut original = vec![1000; REGION_FIELD_PX * REGION_FIELD_PX];
+        original[center] = 1200;
+        let mut stroke = TerrainStroke {
+            mode: BrushMode::Raise,
+            x: 0.0,
+            y: 0.0,
+            radius: 64.0,
+            strength: 8.0,
+        };
+        let raised = apply_strokes(&original, &[stroke]).unwrap();
+        assert_eq!(raised[center], 1456);
+        assert_eq!(raised[center + 8], 1000);
+        stroke.mode = BrushMode::Lower;
+        assert_eq!(apply_strokes(&original, &[stroke]).unwrap()[center], 944);
+        stroke.mode = BrushMode::Level;
+        let level = apply_strokes(&original, &[stroke]).unwrap();
+        assert_eq!(level[center], 1200);
+        assert_eq!(level[center + 4], 1100);
+        assert_eq!(level[center + 8], 1000);
+    }
 }

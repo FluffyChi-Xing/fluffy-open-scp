@@ -352,6 +352,9 @@ pub fn build_local_heightmap_overlay(
     if [original.len(), edited.len()] != [REGION_FIELD_PX * REGION_FIELD_PX; 2] {
         return Err("invalid terrain field size".into());
     }
+    if original == edited {
+        return Ok((Vec::new(), 0));
+    }
     let baseline = level_fields(original);
     let modified = level_fields(edited);
     let pyramid = solve_f0_pyramid(package, group)?;
@@ -363,8 +366,15 @@ pub fn build_local_heightmap_overlay(
         if before == after {
             continue;
         }
-        let id = ResourceId { type_id: F0_TYPE_ID, group, instance };
-        let source = package.entries().iter().find(|entry| entry.id == id)
+        let id = ResourceId {
+            type_id: F0_TYPE_ID,
+            group,
+            instance,
+        };
+        let source = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id == id)
             .ok_or_else(|| format!("missing terrain tile {id}"))?;
         let mut data = package.read(source).map_err(|e| e.to_string())?;
         let mut changed = false;
@@ -380,7 +390,9 @@ pub fn build_local_heightmap_overlay(
         }
     }
     let count = entries.len();
-    let bytes = if count == 0 { Vec::new() } else {
+    let bytes = if count == 0 {
+        Vec::new()
+    } else {
         dbpf::write_uncompressed_overlay(&entries).map_err(|e| e.to_string())?
     };
     Ok((bytes, count))
