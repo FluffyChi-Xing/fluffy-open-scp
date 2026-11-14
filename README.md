@@ -6,66 +6,62 @@
 
 # OpenSCP
 
-> 基于 Rust + Tauri 2 + Vue 3 的 SimCity (2013) `.package` 资源浏览器与模组工具链 —— 浏览资源结构、预览模型与贴图、编辑属性表、导出 glTF/OBJ/音视频，并逐步构建声明式 Modding Suite。
+OpenSCP 是面向 SimCity (2013) 的桌面资源浏览器和模组工作台，基于 Rust、Tauri 2 和 Vue 3。项目延续了 [SimCityPak](https://github.com/altinctrl/SimCityPak) 的资源浏览工作流，并加入 3D 资产预览、场景编辑和建筑模组构建。
 
-## 这个项目是什么 / 目标
-
-OpenSCP 是经典 C#/WPF 工具 [SimCityPak](https://github.com/altinctrl/SimCityPak) 的现代化重写，但不止于"重写一个浏览器"。目标分三层：
-
-1. **可靠的格式底座（P0）**：DBPF 容器、RefPack 解压、RenderWare4（RW4）模型/贴图/骨骼/动画、属性表（property list）的精确解析与可保真写回。所有解析器为纯 Rust crate（`crates/`），不依赖 Tauri，可独立测试复用。
-2. **可用的资源工作台（进行中）**：包结构树（TGI 浏览）、语法高亮文本查看（Shiki）、RW4 模型 3D 预览（含材质通道）、贴图/属性表/音视频预览、Lot 编辑器会话（灯光/贴花/Prop/路径单位）、首页统计仪表盘（扩展名数量/容量占比、可识别覆盖率）。
-3. **模组工作流编排（P1）**：`openscp.mod.toml` 声明式项目、OBJ 导入与 LOD 管理、依赖解析、自动校验、确定性 overlay package 构建。详见 [docs/roadmap/modding-suite.md](docs/roadmap/modding-suite.md)。
+**当前版本 0.12.0**。本次更新包括场景驱动的建筑打包、项目详情和构建记录、地形笔刷与覆盖包导出，以及游戏运行日志和资产诊断。
 
 ## 界面预览
 
-**资源解析** —— IDE 式浏览游戏目录、package 与资源：文件树 + 多标签页，TGI 筛选/搜索/分页，类型分类与属性语义预览。
+### 资源地图
 
-![Source parsing](docs/assets/publicity/source-parsing.png)
+显示已打开 package 的资源类型分布、解压容量、压缩率和识别覆盖率，并提供游戏运行日志入口。
 
-**Property 编辑器 · 精细渲染** —— 真实材质通道 + 日夜时间与供电状态，单位树覆盖灯光/贴花/Prop/效果/生成器/路径。
+![资源地图](docs/assets/publicity/zh-CN/overview.png)
 
-![Property Editor refined render](docs/assets/publicity/rendering-1.png)
+### 源文件解析
 
-**Property 编辑器 · 近景** —— tint 调色、法线与室内图集多贴图材质，视口内单位标记点标注。
+通过目录树和多标签页浏览 DBPF package，按类型筛选、按名称或 TGI 搜索，并查看十六进制数据或资源预览。
 
-![Property Editor close-up](docs/assets/publicity/rendering-2.png)
+![源文件解析](docs/assets/publicity/zh-CN/source-parsing.png)
 
-**地图面板** —— 区域地形合成预览：341-tile 金字塔 + 全局水位面，城市地块框与 9 类资源图层（油/矿/水表/土壤/森林/煤等）。
+### 资产预览器
 
-![Map panel](docs/assets/publicity/map-review.png)
+在 3D 视口中查看建筑模型、地块和尺寸，切换灯光、道具、贴花与路径图层，调整时段和供电状态。
 
-**Raster 绘制** —— 四通道 LotMask 像素画布（笔刷/油漆桶/停车位标线笔刷），Lot 表面与贴花预览，保存为 overlay package。
+![资产预览器](docs/assets/publicity/zh-CN/asset-viewer.png)
 
-![Raster paint](docs/assets/publicity/raster-paint.png)
+### 地图面板
 
-## 使用方法 / Usage
+查看区域地形、资源图层、城市地块与伟大工程槽位。用笔刷抬升、抹平或下挖地形，并导出覆盖包。
 
-### 安装与启动
+![地图面板](docs/assets/publicity/zh-CN/map-panel.png)
 
-1. 从发布页下载安装包（MSI / NSIS），或从源码构建（见下节开发说明）；
-2. 首次启动后，在 **设置 → 游戏目录** 中指定 SimCity 安装目录（通常为含 `SimCityData\` 的那一层，如 `D:\ea-games\SimCity`）。OpenSCP 会自动扫描并呈现所有 `.package`；
-3. 也可以在包列表中直接双击任意 `.package` 打开，无需配置。
+### 开发工作台
 
-### 日常操作
+创建和分组管理模组项目，查看近期活动，在 OpenSCP Actions 中启动后台构建并跟踪结果。
 
-- **浏览**：左侧资源树按目录列出 package；打开后在资源页中按 TGI（Type/Group/Instance）筛选、搜索、分页浏览（大包也流畅，虚拟化渲染）；目录自动来自设置页持久化的游戏目录，切换页面后打开的 package、页码、筛选全部保留；
-- **预览**：点击资源自动识别类型 —— 模型（RW4 3D 视口，含材质/LOD）、贴图（PNG/JPG/TGA/DDS/Raster）、属性表（可读键值 + 编辑）、文本（JSON/HTML/JS 语法高亮）、音频（Wwise → WAV 试听）、视频（VP6 → MP4 播放）、二进制（hex 视图）；
-- **Lot 编辑器**：打开 Lot 资源可查看地面图（LotMask 四色量化）、模型 LOD 链、灯光/贴花/Prop 等单位列表与变换矩阵；
-- **导出**：模型 → glTF 2.0（`.glb`，含材质/骨骼/动画）或 Wavefront `.obj`；贴图 → PNG/JPG/TGA/DDS；属性表 → JSON/TXT；音频 → WAV；视频 → MP4；
-- **首页仪表盘**：统计历史打开 package 的扩展名数量占比（环形图）、容量占比（条形图）、可识别类型覆盖率，可展开查看单包明细。
+![开发工作台](docs/assets/publicity/zh-CN/mod-studio.png)
 
-### 模组开发工作台（Mod Studio）
+### 项目详情
 
-主导航「模组/资产制作」分组，入口 `/studio` —— 按 **解析 → 编辑 → 构建 → 校验** 管线组织的面板编排：
+在项目内查看源文件和构建产物，打开开发视图、构建记录、设置和日志捕获。
 
-| 面板 | 状态 | 能力 |
-|---|---|---|
-| **TGI 复写检测** | 可用 | 扫描游戏目录 + mod 目录全部 package 索引，按 TGI 分组标记被覆盖资源，展示覆盖链（原版 → mod1 → mod2）与内容差异；默认目录自动来自设置，支持自动扫描与手动选目录 |
-| **Locale 文本编辑** | 可用 | stringID → 译文双栏表格，脏标记 / 按行还原 / 筛选；导出**确定性 overlay package**（同 TGI、明文、排序稳定），放入游戏 mod 目录即覆盖原版文本 —— 这是所有编辑面板共用的写回链路试金石 |
-| **UI 预览** | 预览版 | 54 个游戏屏幕全局轮播；`assembleGameUiHtml` 装配方法用真实 locale 文案（FNV-1 屏名映射）+ 游戏 CSS + 采样图在 iframe 沙箱中重建游戏 UI 窗口；编辑 Sheet 占位待 WP3 |
-| Property 编辑 / Raster 绘制 / 资产面板 | 排期中 | 见 `docs/roadmap/workspace-panels.md` |
+![项目详情](docs/assets/publicity/zh-CN/project-detail.png)
 
-游戏 UI 静态资产（CSS/locale 表/清单）已解包至 `public/game-ui/`（图片体积原因 gitignore，`cargo run -p probes --example ui_assets -- <SimCityData> --extract public/game-ui` 可再生）。
+### 场景构建工作台
+
+在 3D 场景中布置建筑和地块组件，在节点图中配置建筑行为与菜单项。构建时读取 `schemas/` 下的 `openscp.asset`，通过 Rust Building40 构建器生成 `.package`。
+
+![场景构建工作台](docs/assets/publicity/zh-CN/scene-workbench.png)
+
+## 使用方法
+
+1. 从项目发布页下载 Windows 安装包（MSI 或 NSIS），或按下方开发说明从源码构建。
+2. 在 **设置 → 游戏目录** 选择含有 `SimCityData` 的安装目录，也可以在「源文件解析」中直接打开 `.package`。
+3. 按 TGI（Type / Group / Instance）定位资源，预览模型、贴图、属性表或媒体。模型可导出为 glTF（`.glb`）或 OBJ，属性表可导出为 JSON 或 TXT。
+4. 在「开发工作台」创建模组项目，从项目详情进入开发视图，再通过 **OpenSCP Actions → 构建项目** 生成包并查看结果。
+
+工作台还提供 TGI 复写检测、Locale 文本编辑、属性编辑、[Raster 绘制](docs/assets/publicity/raster-paint.png)和游戏 UI 预览。
 
 ### ⚠️ 音视频转码需要手动安装外部工具
 
@@ -97,15 +93,12 @@ fluffy-open-scp/
     └── roadmap/            # 迁移与 Modding Suite 规划
 ```
 
-## 路线图 / Roadmap
+## 进一步阅读
 
-- **P0 底座**（大部分已完成）：DBPF/RefPack、RW4、属性表的可靠解析与写回，OBJ 导入、overlay package、精细错误和 roundtrip 测试
-- **Mod Studio 已交付**：TGI 复写检测（WP0）、Locale 编辑 + overlay 写回链路（WP2）、游戏 UI 重建预览（WP3 预览版）；面板状态全部在 `/studio` hub 上如实标注
-- **当前进行**：Property 编辑器（WP1）、UI 编辑实装（布局 JSON → 装配管线）、预览体验完善（模型视口材质通道、日夜循环/供电状态渲染）
-- **P1 Modding Suite**：`openscp.mod.toml` 声明式项目、一键构建、LOD/依赖管理、自动校验、可行动诊断、预览与文件监听
-- **P2/P3**：高级材质/LOD/骨骼编辑，游戏联动、依赖生态和插件能力
-
-详细规划：[docs/roadmap/modding-suite.md](docs/roadmap/modding-suite.md)；底层迁移进度：[docs/roadmap/migration.md](docs/roadmap/migration.md)；领域知识入口：[docs/overview/rendering-pipeline.md](docs/overview/rendering-pipeline.md)、[docs/overview/file-formats.md](docs/overview/file-formats.md)、[docs/overview/ui-rendering-and-development.md](docs/overview/ui-rendering-and-development.md)、[docs/overview/glassbox-engine.md](docs/overview/glassbox-engine.md)。
+- [Rust 格式迁移进度](docs/roadmap/migration.md)
+- [地图工作台规划](docs/roadmap/map-workbench.md)
+- [GlassBox 引擎笔记](docs/overview/glass-box/README.md)
+- [渲染管线调研](docs/rendering.md)
 
 ## 开发 / Development
 
