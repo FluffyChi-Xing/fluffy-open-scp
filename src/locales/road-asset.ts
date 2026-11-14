@@ -1,5 +1,13 @@
 export const roadAssetEn = {
   title: "Road asset",
+  appearance: {
+    view3d: "3D preview",
+    propertyToolbar: "Property tools",
+    loading: "Loading road appearance…",
+    empty: "No renderable road components were found.",
+    error: "Could not preview this road appearance.",
+    partial: "Some road components could not be resolved ({count}).",
+  },
   name: "Road name",
   compileStage: "Compile road package",
   library: "Original road recipes",
@@ -51,6 +59,14 @@ export const roadAssetEn = {
 
 export const roadAssetZh = {
   title: "道路资产",
+  appearance: {
+    view3d: "3D 预览",
+    propertyToolbar: "属性工具",
+    loading: "正在读取道路外观…",
+    empty: "未找到可渲染的道路组件。",
+    error: "无法预览此道路外观。",
+    partial: "部分道路组件无法解析（{count} 项）。",
+  },
   name: "道路名称",
   compileStage: "构建道路资源包",
   library: "原版道路配方",

@@ -222,17 +222,70 @@ pub fn road_assets(game: &dbpf::Package, textures: &[&dbpf::Package], ids: &[u32
     let texture_packages: Vec<_> = std::iter::once(game)
         .chain(textures.iter().copied())
         .collect();
+    let appearances = ids.iter().filter_map(|&id| {
+        let path = prop(game, 0x40E1C400, id)?;
+        let extrusion = key(&path, 0x09532375)?;
+        Some((id, prop(game, extrusion.group, extrusion.instance)?))
+    });
+    render_road_appearances(
+        appearances,
+        |group, instance| prop(game, group, instance),
+        &texture_packages,
+        false,
+    )
+}
+
+/// Resolve a selected appearance directly, without looking for a PathEntry
+/// with the same instance. The selected package takes precedence over donors.
+pub fn road_appearance(
+    selected: &dbpf::Package,
+    group: u32,
+    instance: u32,
+    dependencies: &[&dbpf::Package],
+) -> Option<RoadAssets> {
+    let packages: Vec<_> = std::iter::once(selected)
+        .chain(dependencies.iter().copied())
+        .collect();
+    let appearance = prop_across(&packages, group, instance)?;
+    Some(render_road_appearances(
+        [(instance, appearance)],
+        |group, instance| prop_across(&packages, group, instance),
+        &packages,
+        true,
+    ))
+}
+
+fn prop_across(packages: &[&dbpf::Package], group: u32, instance: u32) -> Option<PropertyFile> {
+    let read = |group, instance| {
+        let tgi = dbpf::ResourceId {
+            type_id: 0x00B1_B104,
+            group,
+            instance,
+        };
+        packages
+            .iter()
+            .find_map(|pkg| PropertyFile::parse(&pkg.read(pkg.entry(tgi)?).ok()?).ok())
+    };
+    Some(crate::inherit::flatten_parent_inheritance(
+        read(group, instance)?,
+        |key| {
+            read(key.group, key.instance).or_else(|| {
+                (key.group == 0)
+                    .then(|| read(group, key.instance))
+                    .flatten()
+            })
+        },
+    ))
+}
+
+fn render_road_appearances(
+    appearances: impl IntoIterator<Item = (u32, PropertyFile)>,
+    resolve: impl Fn(u32, u32) -> Option<PropertyFile>,
+    texture_packages: &[&dbpf::Package],
+    report_missing_ribbons: bool,
+) -> RoadAssets {
     let mut out = RoadAssets::default();
-    for &id in ids {
-        let Some(path) = prop(game, 0x40E1C400, id) else {
-            continue;
-        };
-        let Some(extrusion) = key(&path, 0x09532375) else {
-            continue;
-        };
-        let Some(p) = prop(game, extrusion.group, extrusion.instance) else {
-            continue;
-        };
+    for (id, p) in appearances {
         let mut ribbons = Vec::new();
         let mut sweeps = Vec::new();
         let mut pending = vec![(p, [0.0; 3], [1.0; 3], 0)];
@@ -244,9 +297,9 @@ pub fn road_assets(game: &dbpf::Package, textures: &[&dbpf::Package], ids: &[u32
                 }
                 // InitExtrusionComponents falls back to the model column when the
                 // optional component config does not resolve (bridge deck/cables).
-                let c = prop(game, k.group, k.instance)
+                let c = resolve(k.group, k.instance)
                     .or_else(|| match values(&p, 0x09558827).get(i) {
-                        Some(Value::Key(m)) => prop(game, m.group, m.instance),
+                        Some(Value::Key(m)) => resolve(m.group, m.instance),
                         _ => None,
                     })
                     .unwrap_or_default();
@@ -292,7 +345,7 @@ pub fn road_assets(game: &dbpf::Package, textures: &[&dbpf::Package], ids: &[u32
                         if let std::collections::btree_map::Entry::Vacant(e) =
                             out.models.entry(mk.instance)
                         {
-                            let mp = prop(game, mk.group, mk.instance);
+                            let mp = resolve(mk.group, mk.instance);
                             let resource = mp
                                 .as_ref()
                                 .and_then(|p| key(p, 0x00F9EFBB))
@@ -310,7 +363,7 @@ pub fn road_assets(game: &dbpf::Package, textures: &[&dbpf::Package], ids: &[u32
                                     .or_else(|| key(&c, 0x0E534076))
                                     .or_else(|| mp.as_ref().and_then(|p| key(p, 0x0E534076)))
                                 {
-                                    if let Some(png) = texture_png(&texture_packages, t.instance) {
+                                    if let Some(png) = texture_png(texture_packages, t.instance) {
                                         m.diffuse_png_base64 = png;
                                     }
                                 }
@@ -360,7 +413,7 @@ pub fn road_assets(game: &dbpf::Package, textures: &[&dbpf::Package], ids: &[u32
                 if let std::collections::btree_map::Entry::Vacant(e) =
                     out.textures.entry(texture.instance)
                 {
-                    if let Some(png) = texture_png(&texture_packages, texture.instance) {
+                    if let Some(png) = texture_png(texture_packages, texture.instance) {
                         e.insert(png);
                     }
                 }

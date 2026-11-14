@@ -12,6 +12,7 @@ import { buildBuildingTextureSlotFiles } from "@/lib/building-texture-export";
 import { isDecalAtlasGroup } from "@/lib/resource-types";
 import PropertyViewer from "../property-editor/PropertyViewer.vue";
 import DecalDictionaryGallery from "./DecalDictionaryGallery.vue";
+import RoadAppearancePreview from "./RoadAppearancePreview.vue";
 import SemanticCardView from "./SemanticCard.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import { command } from "@/api/tauri";
@@ -170,6 +171,9 @@ const isDecalDictionary = computed(() =>
 /** 命中专属预览卡家族（后端 extract_semantic_card）。 */
 const semanticCard = computed(() => props.preview.card ?? null);
 const showCard = ref(true);
+const isRoadAppearance = computed(() => props.preview.tgi.typeId === 0x00B1B104 && props.preview.tgi.group === 0x09558B7E);
+const showRoadAppearance = ref(false);
+watch(probeKey, () => { showRoadAppearance.value = false; });
 watch(
   () => [props.preview.packageId, props.preview.tgi] as const,
   () => {
@@ -194,7 +198,7 @@ function hashLabel(hash: number) {
 
 <template>
   <div class="structured-preview">
-    <div class="preview-toolbar" role="toolbar" aria-label="Property toolbar">
+    <div class="preview-toolbar" role="toolbar" :aria-label="t('roadAsset.appearance.propertyToolbar')">
       <button type="button" disabled>
         <FIcon name="Plus" :size="13" aria-label="" />{{
           $t("package.toolbarAddProperty")
@@ -266,6 +270,15 @@ function hashLabel(hash: number) {
         }}
       </button>
       <button
+        v-else-if="isRoadAppearance"
+        type="button"
+        :aria-pressed="showRoadAppearance"
+        @click="showRoadAppearance = !showRoadAppearance"
+      >
+        <FIcon :name="showRoadAppearance ? 'ListTree' : 'Box'" :size="13" aria-label="" />
+        {{ showRoadAppearance ? t("package.card.viewTable") : t("roadAsset.appearance.view3d") }}
+      </button>
+      <button
         v-else-if="semanticCard"
         type="button"
         :aria-pressed="showCard"
@@ -309,8 +322,14 @@ function hashLabel(hash: number) {
       :package-id="preview.packageId"
       :tgi="preview.tgi"
     />
+    <RoadAppearancePreview
+      v-else-if="isRoadAppearance && showRoadAppearance"
+      :key="probeKey"
+      :package-id="preview.packageId"
+      :tgi="preview.tgi"
+    />
     <SemanticCardView
-      v-else-if="semanticCard && showCard && !isDecalDictionary"
+      v-else-if="semanticCard && showCard && !isDecalDictionary && !isRoadAppearance"
       :card="semanticCard"
       :package-id="preview.packageId"
     />

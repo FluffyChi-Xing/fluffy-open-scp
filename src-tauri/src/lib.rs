@@ -31,6 +31,7 @@ mod map_panel;
 mod media_tools;
 mod mod_flow;
 pub mod road_asset;
+mod road_appearance_preview;
 mod mod_project;
 mod mod_project_repo;
 mod overrides;
@@ -219,6 +220,7 @@ pub fn run() {
             list_resources,
             read_resource_bytes,
             read_resource_data,
+            road_appearance_preview::read_road_appearance,
             read_resource_text,
             read_resource_text_range,
             read_lot_editor_session,

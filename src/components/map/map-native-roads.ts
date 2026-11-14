@@ -156,9 +156,11 @@ export function curveChains(records: CurveRecord[]): CurveRecord[][] {
   }
   return chains;
 }
+export type NativeRoadSceneData = Pick<Region3DData, "staticLayers" | "roadAssets" | "size" | "metersPerPixel" | "originWorld">;
+
 /** Source splines and ribbon width/UV/offsets, never raster-derived centerlines. */
 export function createNativeRoads(
-  data: Region3DData,
+  data: NativeRoadSceneData,
   pixels: Record<string, ImageData>,
   height: (x: number, y: number) => number,
 ): THREE.Group {
@@ -275,7 +277,7 @@ export function createNativeRoads(
 
 function appendRegionalJunctions(
   group: THREE.Group,
-  data: Region3DData,
+  data: NativeRoadSceneData,
   pixels: Record<string, ImageData>,
 ) {
   for (const instance of data.roadAssets?.instances ?? []) {
@@ -320,7 +322,7 @@ function appendRegionalJunctions(
 
 function appendModelSweeps(
   group: THREE.Group,
-  data: Region3DData,
+  data: NativeRoadSceneData,
   pixels: Record<string, ImageData>,
   height: (x: number, y: number) => number,
 ) {
