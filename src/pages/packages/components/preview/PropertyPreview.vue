@@ -10,7 +10,7 @@ import { useToast } from "@/composables/useToast";
 import { parseLotModelContainer } from "@/lib/three-gltf";
 import { buildBuildingTextureSlotFiles } from "@/lib/building-texture-export";
 import { isDecalAtlasGroup } from "@/lib/resource-types";
-import PropertyViewer from "../property-editor/PropertyViewer.vue";
+import PropertyViewer from "../property-editor-next/animation/AnimatedPropertyViewer.vue";
 import DecalDictionaryGallery from "./DecalDictionaryGallery.vue";
 import RoadAppearancePreview from "./RoadAppearancePreview.vue";
 import SemanticCardView from "./SemanticCard.vue";

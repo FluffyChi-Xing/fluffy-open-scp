@@ -15,6 +15,10 @@ pub mod asset_build_m1;
 pub(crate) mod asset_build_samples;
 mod asset_dependencies;
 mod atomic_fs;
+mod building_animation_preview;
+mod building_animation_states;
+mod building_motion_timeline;
+mod building_vertex_motion;
 pub mod blend_native;
 mod blender_service;
 mod build_queue;
@@ -233,6 +237,8 @@ pub fn run() {
             list_path_sources,
             list_prop_bin_catalog,
             read_lot_model_meshes,
+            building_animation_preview::list_building_animations,
+            building_animation_preview::read_building_animation,
             export_lot_model_blend,
             read_sim_parts,
             release_prop_model_packages,

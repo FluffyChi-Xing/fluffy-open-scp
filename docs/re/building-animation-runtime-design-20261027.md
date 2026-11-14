@@ -388,7 +388,7 @@ PropertyEditorViewport.vue` 仅允许加法式 prop/挂点透传(与 cameraFocus
 |---|---|---|
 | `0xCD33F38` | **进度资源 ID**(Key) | → `IndexFromResourceID` → `mProgressBinIndex`(资源 bin 下标) |
 | `0xCD33F39` | **卡车资源 ID 数组**(Key[]) | 同上,逐个解析为 bin(送货卡车与进度同源) |
-| `0xD0BEFAA` | 建造完成 Effect ID | 完工时 `SetEffectsRunning` |
+| `0xD0BEFAA` | 建造完成 Effect ID | `cConstructionSite::Unload` 在 ID 非零且目标进度大于零时创建并启动 |
 | `0xE5EF383` | 建造地块生成 Effect ID | 施工粒子(尘土等) |
 | `0xDC21CE0` (230825184) | **cap 模型 ID 表**(Key[]) | 每层 cap 是一个独立模型(脚手架/楼板盖) |
 | `0xDC21CE1` (230825185) | cap 变换表(Vector3/Transform[]) | cap 的初始摆放 |
@@ -402,18 +402,19 @@ PropertyEditorViewport.vue` 仅允许加法式 prop/挂点透传(与 cameraFocus
    (bin 增加)推动进度,与 RCI 建造的资源物流直接耦合。
 2. **缓动逼近**:`mCurrentPercent = mStartPercent + (target−start)·k`
    (逐 tick 收敛,跳跃的送货量被平滑成连续升起)。
-3. **上升的渲染高度**:`mRenderHeight = (unitBBox.max.z − unitBBox.min.z)
-   × mCurrentPercent`——**建筑总高 × 百分比**,再沿 UP 轴写入 cap/顶盖
-   变换的平移(`xform.mTranslation += mRenderHeight × up`)。所谓"逐层
-   升起"= 一块(或数块)楼板盖模型随百分比沿建筑高度滑升。
+3. **上升的渲染高度**:`mRenderHeight = unitBBox.min.z +
+   (unitBBox.max.z − unitBBox.min.z) × mCurrentPercent`。cap 沿 UP 轴
+   平移这个高度，建筑本体也把它写进批渲染实例参数（`cUnitModel::Update.c:60-83`）；
+   对应批渲染 feature 带自定义裁切平面（`cGraphicsMeshBatch::Setup.c:92-120`）。
+   预览应同时处理本体裁切和 cap 位移，着色器端细节另验。
 4. **cap 顺序消耗**:每个 cap 有 `visibleUntilPercent`;`mCurrentPercent
    <= 阈值` 期间可见,**越过阈值即从 vector 弹出(物理移除)**——脚手架
-   层按阈值从低到高逐层消失;每层 cap 还有 4 通道动画(speeds/data)随
-   进度驱动(脚手架上的细节动画)。
-5. **模型换装与完工**:`SetUnitIsVisible(slot, truckPresent)` 控制
-   建筑本体模型与施工模型的显隐切换;进度到 1 时触发
-   `0xD0BEFAA` 完成 Effect(含 `0xE5EF383` 地块生成粒子),建筑本体
-   换回可见。
+   按各自阈值消失；cap 的 4 个动画参数在有卡车的分支按游戏时间和速度在 0–1
+   之间往返（`Update.c:363-397`），与决定其高度的进度是不同输入。
+5. **显隐和特效生命周期**:工地 Update 要求进度和卡车两个 bin 都能解析；
+   `SetUnitIsVisible(slot, truckPresent)` 读取卡车 bin。首次更新可以启动
+   `0xE5EF383` 地块生成特效（`Update.c:558-600`），完工特效是独立资源，
+   在工地 Unload 检查（`Unload.c:35-71`），不能把它做成「进度滑块到 100%」的硬编码。
 
 ### 10.3 对 OpenSCP 复刻的直接推论
 
@@ -454,4 +455,63 @@ buildingRuntime/
   预览既有链路,本节不重复;
 - 进度 bin 的 bin 名称(amount/capacity 的资源语义)随具体 Unit 的
   bundle 而定,解算器只消费 bin 下标 + 数值,不猜语义。
+
+### 10.6 原版包抽样与当前 Viewer 复查（2026-11-14）
+
+只读检查安装目录的 `SimCity_Game.package` 和 `SimCity_Graphics.package`。
+用户指定目录的 `SimCity.c` 只有反编译器错误一行，函数证据来自同级
+`SimCity2013-source-tree/src` 的既有反编译文本。以下是静态数据和代码证据，
+没有运行游戏，也没有确认某个镜头里的活动网格。
+
+| 样本 | 可复查的数据 |
+|---|---|
+| 煤矿集货地，Game `00B1B104:40E1C000:34E0E232` | AnimModel：`Coal (CEC5890C)` → ID `2A72B9A8`，平滑参数 0.1，映射端点 1 → 0。同实例 RW4 `2F4E681B:00000000:34E0E232` 有 1 个 mesh、骨架及 4 个 ANIM；动画目录 `FF0001` 中该 ID 对应 section #3（约 0.95833 秒、7 通道）。三个 LOD 也有该 ID。 |
+| 煤矿坑，Game `00B1B104:40E1C000:85A5E95C` | 同时具备 Coal → `06D14A3C` 和多个 Effect 挂件；主 RW4 有 4 个 ANIM。该 Property ID 未在主 RW4 的裸动画目录直接命中，不能把它按序号绑定或断言可见传送带对应某条轨道。 |
+| 施工图形变体，Graphics `00B1B104:46ADA11F:3857FA8A` | cap 表的两行引用 Property `00B1B104:40E02D00:077BCB80`、`00B1B104:40E02D00:160E62AF`，阈值按原顺序为 1.0、0.3。cap key 可先指向 Property，再由其 `00F9EFBB` 找 RW4；其中还可有特效和 vignette。 |
+| 工地图形配置，Game `00B1B104:40E1C000:A8210873` | 进度资源为 `ConstructionProgress (568282EB)`，卡车候选资源为 `87AA975E/5D/5C`，另有两个独立 Effect key。此行与上一个样本分别验证字段，未证明二者属于同一个 Unit。 |
+
+复查用 `prop_dump` / `prop_hash_scan`，模型用 `Rw4File::sections_of_type` /
+`decode_anim`。`cUnitModel::UpdateModelAnimations.c:104-165` 会先平滑库存比例，再映射端点并
+按目标范围采样；表里的 speed 不能一律当成播放倍速，也不能一律假定端点是 0 → 1。
+
+目前 `PropertyViewer.vue:15` 复用编辑器的 viewer 模式；其 LOTM 仍以
+`export_glb_with_colors(&mesh, None, &[], ...)` 输出（`package_service.rs:4424-4431`），
+前端 `three-gltf.ts:153-155` 只取场景。直接 GLB 资源导出已有骨架轨道路径
+（`package_service.rs:6046` 附近），适合外部检查部分片段；它不能重放 Unit 的动画绑定或施工。
+做只读预览时，先保留 `hash → ANIM section` 映射并允许拖动轨道/资源比例；
+施工另用进度和卡车状态解算本体裁切与 cap，支持回拖时从源表重算附件。
+原版样本通过之后，再研究自制资产的 RW4 写出和运行时绑定，保留现有静态路径。
+
+### 10.7 独立动画预览进展
+
+Property Viewer 现有独立动画视口。除 AnimModel 外，也读取
+`cChoreographyAnimations::FillFromProps.c:48-86` 的 channel、sequence、track type
+三列：`0DA7CAD4` 是模型轨道引用，`0DA7CAD5` 是 sequence ID，
+`0DA7CB06` 的非零 track type 不当成模型轨道。当前播放被引用的单个片段，
+不模拟 sequence 的时间偏移、循环/往返、混合或 Effect。只有动画目录命中、
+骨架匹配且可影响网格的片段才会让开关出现。
+
+- 基础抽水泵站 `00B1B104:40E1C000:CEAA14AE` 的三条片段
+  `85AC66E5 / 9308AB95 / AC6EA6B2` 在 Three.js 抽样中分别带动 80、312、480 个顶点。
+- Graphics 样本 `00B1B104:42E1C000:DBF54200` 有两条可预览的 choreography 片段
+  `96AB26DF / B8F33895`，分别带动 31、8 个顶点；尚未逐一确认对应的门或零件。
+- 精细模式按同一 RW4 资源读取 LOTM 材质，并在动画视口单独管理贴图和着色器。
+  原视口和它的材质缓存保持独立。建筑本体的材质可复用，地面、贴花和 Swarm
+  特效目前不随动画视口加载。
+
+### 壳体部件脱离修复
+
+`43E1C000:7966EB66` 的 LOD0 是 `7966EB69`；`42E1C000:6DC32BF1` 的
+LOD0 与 Property 同 instance。两者没有 BLENDINDICES，使用 TEXCOORD1 UBYTE4
+（轴与通道）和 TEXCOORD2 SHORT4（枢轴或位移、半角）。旧预览只按前者分组并
+绑定最近骨骼，导致共享通道的多个风扇围绕单一枢轴转动，也漏掉轴为零但
+位移非零的顶点。新分支按原版 `building5MorphRotationAnimVS` 的
+`unpackAxisAnim / unpackTransAngle / animMorphRot` 直接解算顶点，
+来源：SimCity_App g40212002，`tmp/shaders/cpp_SimCity_App_g40212002_0.txt:4093-4150`。
+通道索引取 FF0001 表的行号；对应 `AddAnimationsFromArena.c:763` 写入顺序
+和 `cChoreographyAnimations::LoadModelInfo.c:50` 的枚举槽位。
+
+两栋原版模型的六条通道在 Three.js 中以 25% 抽样：未选通道不动，回到 0%
+恢复原始顶点；风扇两组分别有 8 和 4 个独立枢轴，旋转前后半径最大误差
+低于 0.000002 模型单位。此为几何验证，未在游戏中部署或目测。
 

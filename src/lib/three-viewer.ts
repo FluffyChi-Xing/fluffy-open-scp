@@ -96,7 +96,10 @@ export class ThreeViewer {
   /** 挂起/恢复轨道相机与轻点拾取（TransformControls dragging-changed 用）。 */
   setOrbitEnabled(enabled: boolean) {
     this.orbitEnabled = enabled;
-    if (!enabled) this.setHovered(null);
+    if (!enabled) {
+      this.cancelCameraDrag();
+      this.setHovered(null);
+    }
   }
 
   private readonly renderer: ThreeNamespace.WebGLRenderer;
@@ -136,12 +139,14 @@ export class ThreeViewer {
   private readonly defaultTheta = 0.34;
   private readonly defaultPhi = 1.2;
   private selected: ThreeNamespace.Object3D | null = null;
-  private pointerActive = false;
+  private activePointerId: number | null = null;
   private pointerButton = 0;
   private pointerShift = false;
   private lastX = 0;
   private lastY = 0;
   private moved = 0;
+  private pendingDragX = 0;
+  private pendingDragY = 0;
   /** 最近一次 hover 射线时间（30 Hz 节流；pointermove 在 WebView2 里可
    *  远超帧率，逐事件递归 raycast 会吃掉整个相机帧的预算）。 */
   private lastHoverAt = 0;
@@ -442,7 +447,8 @@ export class ThreeViewer {
     container.addEventListener("pointerdown", this.onPointerDown);
     container.addEventListener("pointermove", this.onPointerMove);
     container.addEventListener("pointerup", this.onPointerUp);
-    container.addEventListener("pointercancel", this.onPointerUp);
+    container.addEventListener("pointercancel", this.onPointerCancel);
+    container.addEventListener("lostpointercapture", this.onPointerCancel);
     container.addEventListener("wheel", this.onWheel, { passive: false });
     container.addEventListener("contextmenu", this.onContextMenu);
     // 中键默认触发 Chromium/WebView2 自动滚动，需在 mousedown 阶段拦截。
@@ -721,18 +727,15 @@ export class ThreeViewer {
 
   private orbit(dx: number, dy: number) {
     this.orbitTheta -= (dx * Math.PI) / 180 * 0.6;
-    this.orbitPhi -= (dy * Math.PI) / 180 * 0.6;
+    this.orbitPhi = Math.min(Math.PI - 0.02, Math.max(0.02, this.orbitPhi - (dy * Math.PI) / 180 * 0.6));
     this.applyCamera();
   }
 
   private pan(dx: number, dy: number) {
     // 沿相机 right/up 平移轨道目标，步长随相机距离缩放。
     const scale = this.cameraDistance * 0.0016;
-    const right = new this.THREE.Vector3().setFromMatrixColumn(
-      this.camera.matrix,
-      0,
-    );
-    const up = new this.THREE.Vector3().setFromMatrixColumn(this.camera.matrix, 1);
+    const right = new this.THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    const up = new this.THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
     this.orbitTarget
       .addScaledVector(right, -dx * scale)
       .addScaledVector(up, dy * scale);
@@ -740,7 +743,9 @@ export class ThreeViewer {
   }
 
   private zoom(direction: number) {
+    this.flushDrag();
     this.beginCameraInteraction();
+    this.scheduleQualityRestore();
     const factor = direction > 0 ? 1.12 : 1 / 1.12;
     const radius = this.frameRadius;
     this.cameraDistance = Math.min(
@@ -751,10 +756,10 @@ export class ThreeViewer {
   }
 
   private onPointerDown = (event: PointerEvent) => {
-    if (this.pointerActive) return;
+    if (this.activePointerId !== null || event.button < 0 || event.button > 2) return;
     if (event.target !== this.renderer.domElement) return;
     if (!this.orbitEnabled) return;
-    this.pointerActive = true;
+    this.activePointerId = event.pointerId;
     this.pointerButton = event.button;
     this.pointerShift = event.shiftKey;
     this.lastX = event.clientX;
@@ -765,20 +770,8 @@ export class ThreeViewer {
   };
 
   private onPointerMove = (event: PointerEvent) => {
-    if (this.pointerActive) {
-      const dx = event.clientX - this.lastX;
-      const dy = event.clientY - this.lastY;
-      this.lastX = event.clientX;
-      this.lastY = event.clientY;
-      this.moved += Math.abs(dx) + Math.abs(dy);
-      // 相机直接在输入事件里落地（不累积到下一帧）：orbit/pan 只是几次
-      // 向量运算，提前一帧应用可消除拖拽时整帧的输入→画面延迟。
-      if (this.moved > 4) this.beginCameraInteraction();
-      if (this.pointerButton === 1 || this.pointerButton === 2 || (this.pointerButton === 0 && this.pointerShift)) {
-        this.pan(dx, dy);
-      } else if (this.pointerButton === 0) {
-        this.orbit(dx, dy);
-      }
+    if (this.activePointerId !== null) {
+      if (event.pointerId === this.activePointerId) this.queueDrag(event);
       return;
     }
     if (!this.orbitEnabled || !this.options.onHover) return;
@@ -811,14 +804,49 @@ export class ThreeViewer {
   }
 
   private onPointerUp = (event: PointerEvent) => {
-    if (!this.pointerActive) return;
-    this.pointerActive = false;
-    // 只有真正进入过交互档（拖拽超过阈值/滚轮）才需要恢复全质量。
-    if (this.interactionActive) this.scheduleQualityRestore();
-    const isTap =
-      this.pointerButton === 0 && !this.pointerShift && this.moved < 4;
-    if (isTap) this.pick(event);
+    if (event.pointerId !== this.activePointerId) return;
+    this.queueDrag(event);
+    // The next gesture may change the drag mode before rAF; commit its last delta now.
+    this.flushDrag();
+    const isTap = this.pointerButton === 0 && !this.pointerShift && this.moved < 4;
+    this.cancelCameraDrag();
+    if (isTap && this.options.onTap) this.pick(event);
   };
+
+  private onPointerCancel = (event: PointerEvent) => {
+    if (event.pointerId === this.activePointerId) this.cancelCameraDrag();
+  };
+
+  private queueDrag(event: PointerEvent) {
+    const dx = event.clientX - this.lastX;
+    const dy = event.clientY - this.lastY;
+    this.lastX = event.clientX;
+    this.lastY = event.clientY;
+    this.pendingDragX += dx;
+    this.pendingDragY += dy;
+    this.moved += Math.abs(dx) + Math.abs(dy);
+    if (this.moved >= 4) this.invalidate();
+  }
+
+  private flushDrag() {
+    if (this.activePointerId === null || this.moved < 4) return;
+    const dx = this.pendingDragX;
+    const dy = this.pendingDragY;
+    if (dx === 0 && dy === 0) return;
+    this.pendingDragX = this.pendingDragY = 0;
+    this.beginCameraInteraction();
+    if (this.pointerButton !== 0 || this.pointerShift) this.pan(dx, dy);
+    else this.orbit(dx, dy);
+  }
+
+  private cancelCameraDrag() {
+    const pointerId = this.activePointerId;
+    if (pointerId === null) return;
+    this.activePointerId = null;
+    this.pendingDragX = this.pendingDragY = 0;
+    if (this.container.hasPointerCapture(pointerId)) this.container.releasePointerCapture(pointerId);
+    if (this.interactionActive) this.scheduleQualityRestore();
+  }
 
   private onMouseDown = (event: MouseEvent) => {
     if (event.button === 1 || event.button === 2) event.preventDefault();
@@ -847,7 +875,7 @@ export class ThreeViewer {
 
   private onWheel = (event: WheelEvent) => {
     event.preventDefault();
-    if (this.orbitEnabled) this.zoom(event.deltaY);
+    if (this.orbitEnabled && event.deltaY !== 0) this.zoom(event.deltaY);
   };
 
   private resize() {
@@ -879,18 +907,15 @@ export class ThreeViewer {
       this.interactionShadowState = true;
       this.renderer.shadowMap.autoUpdate = false;
     }
-    this.scheduleQualityRestore();
   }
 
   private scheduleQualityRestore() {
     if (this.qualityRestoreTimer !== null) clearTimeout(this.qualityRestoreTimer);
     this.qualityRestoreTimer = setTimeout(() => {
       this.qualityRestoreTimer = null;
-      if (this.pointerActive) {
-        this.scheduleQualityRestore();
-        return;
-      }
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
+      if (this.activePointerId !== null) return;
+      const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
+      if (this.renderer.getPixelRatio() !== full) this.renderer.setPixelRatio(full);
       if (this.interactionShadowState) {
         this.renderer.shadowMap.autoUpdate = true;
         this.renderer.shadowMap.needsUpdate = true;
@@ -904,6 +929,10 @@ export class ThreeViewer {
   private renderLoop = () => {
     this.frame = requestAnimationFrame(this.renderLoop);
     if (this.assemblingScene || !this.needsRender) return;
+    // The animation branch covers the static PE with visibility:hidden. Keep
+    // its dirty frame pending, but don't submit hidden draws to the same GPU.
+    if (this.domElement.checkVisibility?.({ visibilityProperty: true }) === false) return;
+    this.flushDrag();
     this.needsRender = false;
     const now = performance.now();
     const interval = this.lastRenderAt > 0 ? now - this.lastRenderAt : 0;
@@ -953,7 +982,8 @@ export class ThreeViewer {
     this.container.removeEventListener("pointerdown", this.onPointerDown);
     this.container.removeEventListener("pointermove", this.onPointerMove);
     this.container.removeEventListener("pointerup", this.onPointerUp);
-    this.container.removeEventListener("pointercancel", this.onPointerUp);
+    this.container.removeEventListener("pointercancel", this.onPointerCancel);
+    this.container.removeEventListener("lostpointercapture", this.onPointerCancel);
     this.container.removeEventListener("wheel", this.onWheel);
     this.container.removeEventListener("mousedown", this.onMouseDown);
     this.container.removeEventListener("contextmenu", this.onContextMenu);
