@@ -512,17 +512,17 @@ mod tests {
         for hash in [0x0CA5_2005, 0x0F16_9C46] {
             resources.insert(lot_id, encode(&lot).unwrap());
             assert!(
-                verify(&resources, instance, &program)
+                verify(&resources, instance, &program, false)
                     .unwrap_err()
                     .contains(&format!("{hash:08X}"))
             );
             set_scalar(&mut lot, hash, PropType::Bool, Value::Bool(true));
         }
         resources.insert(lot_id, encode(&lot).unwrap());
-        verify(&resources, instance, &program).unwrap();
+        verify(&resources, instance, &program, false).unwrap();
         resources.remove(&bundle_id);
         assert!(
-            verify(&resources, instance, &program)
+            verify(&resources, instance, &program, false)
                 .unwrap_err()
                 .contains("construction bundle")
         );
@@ -530,7 +530,7 @@ mod tests {
         lot.values.retain(|property| property.hash != 0x0CD4_E49C);
         resources.insert(lot_id, encode(&lot).unwrap());
         assert!(
-            verify(&resources, instance, &program)
+            verify(&resources, instance, &program, false)
                 .unwrap_err()
                 .contains("0CD4E49C")
         );
