@@ -338,12 +338,9 @@ pub fn compile_model_with_transform(
                 read_f32x3(&vertex[0..12])
             });
             if cross_squared(points) <= 1e-20 {
-                // Editor native_asset.py::addpoly skips collapsed triangles.
-                // Older Rust exports tested before packing positions to f32.
-                // Repair only that known output defect in already saved LOTMs.
-                let [a, b, c] = [triangle[0], triangle[1], triangle[2]]
+                let source_points = [triangle[0], triangle[1], triangle[2]]
                     .map(|index| position.vec3(index as usize));
-                if rust_export && (a == b || b == c || a == c) {
+                if native_triangle_collapsed(source_points, points, rust_export) {
                     removed += 1;
                     continue;
                 }
@@ -561,6 +558,18 @@ fn cross_squared(points: [[f32; 3]; 3]) -> f64 {
         a[0] * b[1] - a[1] * b[0],
     ];
     cross.iter().map(|value| value * value).sum()
+}
+
+fn native_triangle_collapsed(
+    source: [[f32; 3]; 3],
+    packed: [[f32; 3]; 3],
+    rust_export: bool,
+) -> bool {
+    let coincident = |[a, b, c]: [[f32; 3]; 3]| a == b || b == c || a == c;
+    // Keep the repair for older Rust exports with coincident source positions.
+    // A valid native triangle can also lose an edge when its translated
+    // positions are rounded to the Building40 Float32 vertex format.
+    (rust_export && coincident(source)) || (coincident(packed) && cross_squared(source) > 1e-20)
 }
 
 fn write_f32x2(target: &mut [u8], value: [f32; 2]) {
@@ -819,6 +828,26 @@ mod tests {
     fn float32_degenerate_test_removes_repeated_and_collinear_faces() {
         let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
         assert!(cross_squared(points) <= 1e-20);
+    }
+
+    #[test]
+    fn native_triangle_can_collapse_during_lot_translation() {
+        let scene = SceneTransform::new([
+            1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 12.752_596, 0.,
+        ])
+        .unwrap();
+        let source = [
+            [8.018_624, 35.456_856, 34.030_907],
+            [8.018_624, 35.456_852, 34.030_907],
+            [11.018_623, 32.456_856, 34.030_907],
+        ];
+        let packed = source.map(|point| scene.point(point));
+        assert_ne!(source[0], source[1]);
+        assert_eq!(packed[0], packed[1]);
+        assert!(native_triangle_collapsed(source, packed, false));
+        assert!(!native_triangle_collapsed(source, source, false));
+        let collinear = [[0., 0., 0.], [1., 0., 0.], [2., 0., 0.]];
+        assert!(!native_triangle_collapsed(collinear, collinear, false));
     }
 
     #[test]
