@@ -10,6 +10,7 @@ export type RoadAppearance = NonNullable<Region3DData["roadAssets"]>;
 export async function createRoadAppearanceScene(
   assets: RoadAppearance,
   instance: number,
+  sample: "straight" | "curve" = "curve",
 ): Promise<THREE.Group> {
   const images = [
     ...Object.entries(assets.textures),
@@ -53,12 +54,20 @@ export async function createRoadAppearanceScene(
             {
               entryId: instance,
               path: 0,
-              controls: [
-                [-64, -20, 0],
-                [-21, -20, 0],
-                [21, 20, 0],
-                [64, 20, 0],
-              ],
+              controls:
+                sample === "straight"
+                  ? [
+                      [-64, 0, 0],
+                      [-21, 0, 0],
+                      [21, 0, 0],
+                      [64, 0, 0],
+                    ]
+                  : [
+                      [-64, -20, 0],
+                      [-21, -20, 0],
+                      [21, 20, 0],
+                      [64, 20, 0],
+                    ],
             },
           ],
         },

@@ -10,15 +10,19 @@ import {
   type RoadAppearance,
 } from "./roadAppearanceScene";
 
-const props = defineProps<{ packageId: number; tgi: Tgi }>();
+const props = defineProps<{
+  packageId?: number;
+  tgi?: Tgi;
+  loadRecipe?: () => Promise<[number, RoadAppearance]>;
+}>();
 const { t } = useI18n();
 const host = ref<HTMLDivElement | null>(null);
 const status = ref<"loading" | "empty" | "error" | "ready">("loading");
 const unresolved = ref(0);
 
 watch(
-  () => [host.value, props.packageId, props.tgi] as const,
-  async ([element, packageId, tgi], _, onCleanup) => {
+  () => [host.value, props.packageId, props.tgi, props.loadRecipe] as const,
+  async ([element, packageId, tgi, loadRecipe], _, onCleanup) => {
     if (!element) return;
     status.value = "loading";
     unresolved.value = 0;
@@ -29,12 +33,25 @@ watch(
       release?.();
     });
     try {
-      const assets = await command<RoadAppearance>("read_road_appearance", {
-        packageId,
-        tgi,
-      });
+      if (!loadRecipe && (packageId === undefined || !tgi)) {
+        status.value = "error";
+        return;
+      }
+      const [instance, assets] = loadRecipe
+        ? await loadRecipe()
+        : ([
+            tgi?.instance ?? 0,
+            await command<RoadAppearance>("read_road_appearance", {
+              packageId,
+              tgi,
+            }),
+          ] as const);
       if (cancelled) return;
-      const road = await createRoadAppearanceScene(assets, tgi.instance);
+      const road = await createRoadAppearanceScene(
+        assets,
+        instance,
+        loadRecipe ? "straight" : "curve",
+      );
       if (cancelled) {
         disposeRoadAppearance(road);
         return;
@@ -106,6 +123,7 @@ watch(
 <template>
   <section
     class="road-appearance"
+    :class="{ embedded: loadRecipe }"
     :aria-label="t('roadAsset.appearance.view3d')"
   >
     <div ref="host" class="viewport" />
@@ -127,6 +145,12 @@ watch(
   border-radius: 6px;
   overflow: hidden;
   background: var(--surface-elevated);
+}
+.embedded {
+  min-block-size: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
 }
 .viewport {
   position: absolute;

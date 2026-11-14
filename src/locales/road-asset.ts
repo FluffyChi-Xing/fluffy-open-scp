@@ -2,6 +2,10 @@ export const roadAssetEn = {
   title: "Road asset",
   appearance: {
     view3d: "3D preview",
+    style: "Preview appearance",
+    original: "Original",
+    future: "Futurized",
+    sourceRequired: "Choose a game package to preview the original road textures.",
     propertyToolbar: "Property tools",
     loading: "Loading road appearance…",
     empty: "No renderable road components were found.",
@@ -61,6 +65,10 @@ export const roadAssetZh = {
   title: "道路资产",
   appearance: {
     view3d: "3D 预览",
+    style: "预览外观",
+    original: "普通",
+    future: "未来化",
+    sourceRequired: "请选择游戏资源包以预览原版道路贴图。",
     propertyToolbar: "属性工具",
     loading: "正在读取道路外观…",
     empty: "未找到可渲染的道路组件。",

@@ -150,6 +150,8 @@ defineExpose({ save });
       <template #viewport>
         <RoadPreview
           v-if="schema"
+          :project="project"
+          :game-package="schema.gamePackage"
           :recipe="schema.recipe"
           :streetlights="schema.streetlights ?? 'original'"
         />

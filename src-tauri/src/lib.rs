@@ -221,6 +221,7 @@ pub fn run() {
             read_resource_bytes,
             read_resource_data,
             road_appearance_preview::read_road_appearance,
+            road_appearance_preview::read_road_recipe_appearance,
             read_resource_text,
             read_resource_text_range,
             read_lot_editor_session,

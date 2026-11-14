@@ -22,7 +22,7 @@ const PATH_TITLE: u32 = 0x0EC4_AB13;
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
-enum Recipe {
+pub(crate) enum Recipe {
     Dirt,
     LowStreet,
     MediumStreet,
@@ -32,7 +32,7 @@ enum Recipe {
     Streetcar,
 }
 impl Recipe {
-    fn donor(self) -> (u32, u32) {
+    pub(crate) fn donor(self) -> (u32, u32) {
         match self {
             Self::Dirt => (0x7DD8_A627, 0x0984_F4ED),
             Self::LowStreet => (0xB7D3_F194, 0x13E5_FC33),
@@ -59,9 +59,9 @@ struct RoadSchema {
     streetlights: Streetlights,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-enum Streetlights {
+pub(crate) enum Streetlights {
     #[default]
     Original,
     Left,
@@ -283,7 +283,7 @@ fn replace_text(file: &mut PropertyFile, hash: u32, table: u32, row: u32) -> Res
     Ok(())
 }
 
-fn open_source(root: &Path, path: &str) -> Result<Package, String> {
+pub(crate) fn open_source(root: &Path, path: &str) -> Result<Package, String> {
     if path.trim().is_empty() {
         return Err("road_sources_required".into());
     }
