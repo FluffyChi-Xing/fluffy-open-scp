@@ -236,19 +236,13 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
         };
         document.ground_style = parse_ground_style(lot)?;
     }
-    // 自绘地面且未绑 donor（workbench lotStyle.authored 且 sourceLot 为
-    // null/缺失）：地面列全在 lot 块里、mask 像素在项目文件里，走项目内
-    // 合成路径（stages::authored_ground_snapshot）。绑了 donor 的 authored
-    // 文档保持现状（donor 地面列 + scene 尺寸覆盖），不改变已验证资产。
-    let authored_only = json
+    // A workbench can retain its library reference after the author paints
+    // the ground. The authored marker selects the project-local mask.
+    let authored = json
         .pointer("/editor/workbench/lotStyle/authored")
         .and_then(Json::as_bool)
-        == Some(true)
-        && json
-            .pointer("/editor/workbench/lotStyle/sourceLot")
-            .map(Json::is_null)
-            .unwrap_or(true);
-    if authored_only {
+        == Some(true);
+    if authored {
         document.lot_mask = Some(SceneLotMaskKind::Authored);
     }
     // sourceLot 显式为 null（自绘地面且未绑 donor）时不在此报错：缺 donor
@@ -1857,9 +1851,7 @@ mod tests {
     }
 
     #[test]
-    fn authored_with_donor_keeps_source_kind() {
-        // 绑了 donor 的 authored 文档保持现状（donor 地面列 + scene 覆盖），
-        // 不改变已验证资产的地面。
+    fn authored_ground_overrides_the_mask_even_with_a_library_reference() {
         let document = parse_document(&json!({
             "lot": {"size": [80, 80], "mask": {"kind": "source"}},
             "editor": {"workbench": {"lotStyle": {
@@ -1868,7 +1860,8 @@ mod tests {
             }}}
         }))
         .unwrap();
-        assert_eq!(document.lot_mask, Some(SceneLotMaskKind::Source));
+        assert_eq!(document.lot_mask, Some(SceneLotMaskKind::Authored));
+        assert!(document.ground_source.is_some());
         let without_authored_flag = parse_document(&json!({
             "lot": {"size": [80, 80], "mask": {"kind": "source"}},
             "editor": {"workbench": {"lotStyle": {"sourceLot": null}}}

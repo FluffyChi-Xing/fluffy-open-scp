@@ -146,6 +146,10 @@ pub struct ResolvedBehavior {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) author_tourism: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) office: Option<super::behavior_office::Office>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) commercial: Option<super::behavior_commercial::Commercial>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) hotel: Option<super::behavior_hotel::Hotel>,
 }
 
@@ -204,7 +208,7 @@ pub fn parse_nodes(values: &[Value]) -> Result<Vec<Value>, String> {
             .ok_or_else(|| format!("behaviors node {id}: missing type"))?;
         if !matches!(
             kind,
-            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "hotel"
+            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel"
         ) {
             return Err(format!("behaviors node {id}: unknown type {kind:?}"));
         }
@@ -550,6 +554,10 @@ pub(super) fn compile_with_profile(
     super::behavior_policy::validate(nodes)?;
     let mut resolved = ResolvedBehavior::default();
     resolved.author_tourism = author_tourism;
+    let office = super::behavior_office::select(nodes)?;
+    let labor = office.as_ref().map(|office| office.labor(labor)).or(labor);
+    let commercial = super::behavior_commercial::select(nodes)?;
+    let labor = commercial.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
     let hotel = super::behavior_hotel::select(nodes)?;
     let labor = hotel.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
     let mut intent =
@@ -644,7 +652,7 @@ pub(super) fn compile_with_profile(
             }
             "residence" if templates.residence() => {}
             "residence" => compile_residence(&mut resolved, &id, &params)?,
-            "hotel" => {}
+            "office" | "commercial" | "hotel" => {}
             "park" => compile_land_values(&mut resolved, &id, &params, true)?,
             "landvalue" if templates.land_value() => {}
             "landvalue" => compile_land_values(&mut resolved, &id, &params, false)?,
@@ -667,7 +675,7 @@ pub(super) fn compile_with_profile(
     }
     if author_tourism {
         resolved.notes.push("tourism: SC5 Asset Packager native landmark profile".into());
-        if templates.residence() && family.loops.contains(&super::behavior_loops::BehaviorLoop::Labor) {
+        if (templates.residence() || office.is_some()) && family.loops.contains(&super::behavior_loops::BehaviorLoop::Labor) {
             apply_labor_auto_wiring(&mut resolved);
             super::behavior_loops::apply(&mut resolved, super::behavior_loops::BehaviorLoop::Labor);
         }
@@ -682,6 +690,8 @@ pub(super) fn compile_with_profile(
     }
     templates.reconcile(&mut resolved);
     resolved.templates = templates;
+    resolved.office = office;
+    resolved.commercial = commercial;
     resolved.hotel = hotel;
     resolved.declared_lot_columns = lot_columns(
         resolved.lot_board.is_some(),

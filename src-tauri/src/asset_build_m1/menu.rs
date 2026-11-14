@@ -72,7 +72,7 @@ const HASH_DESC: u32 = 0x0A09_F5FB;
 pub(crate) const HASH_MENU_UNIT: u32 = 0x0975_695F;
 /// Menu2 工具对象类别（原版 plop 建筑统一 `C710B6E9` kCategoryIDBuilding；
 /// 见 docs/re/building-eco-chain-and-s17-diagnosis-20261106.md §5.3 R1）。
-const HASH_BUILDING_CATEGORY: u32 = 0x0975_695E;
+pub(super) const HASH_BUILDING_CATEGORY: u32 = 0x0975_695E;
 const HASH_TOOL_ICON: u32 = 0x0977_AA8F;
 const HASH_UI_CATEGORY: u32 = 0x0DB9_FC63;
 const HASH_UI_POSITION: u32 = 0x0DC1_E3E0;

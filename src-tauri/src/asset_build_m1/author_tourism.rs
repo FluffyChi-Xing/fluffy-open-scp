@@ -47,6 +47,7 @@ pub(super) fn selected(nodes: &[serde_json::Value]) -> bool {
                 // Templates::patch after the landmark Unit is built.
                 if node["params"]["residenceProfile"]
                     != super::behavior_templates::RESIDENCE_PROFILE
+                    && node["params"]["residenceProfile"] != super::behavior_residence_fill::PROFILE
                 {
                     return false;
                 }
@@ -351,6 +352,7 @@ pub(super) fn verify(
     resources: &Resources,
     instance: u32,
     program: &ResolvedBehavior,
+    ordinary_vehicle_path: bool,
 ) -> Result<serde_json::Value, String> {
     let anchors = anchors();
     let unit_id = id(UNIT_GROUP, instance);
@@ -396,6 +398,18 @@ pub(super) fn verify(
         expected
     } else {
         program.templates.patch(&expected)?
+    };
+    let expected = match &program.office {
+        Some(office) => office.patch(&expected)?,
+        None => expected,
+    };
+    let expected = if ordinary_vehicle_path {
+        let lot_bytes = resources
+            .get(&id(lot_group(), instance))
+            .ok_or("tourism contract: missing Lot")?;
+        super::vehicle_paths::bind(&expected, lot_bytes)?.0
+    } else {
+        expected
     };
     if resources.get(&unit_id) != Some(&expected) {
         return Err("tourism contract: written Unit differs from the native tourism recipe".into());

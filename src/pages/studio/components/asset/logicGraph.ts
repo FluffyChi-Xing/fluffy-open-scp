@@ -12,6 +12,9 @@
  * 数值并确保对应 utility bundle——不能只写数值。
  */
 
+import { validCommercial, type CommercialParams } from "./commercialBehavior";
+import { validOffice, type OfficeParams } from "./officeBehavior";
+import { residenceCapacityError, type ResidenceParams } from "./residenceBehavior";
 import behaviorPolicy from "@/lib/asset-behavior-policy.json";
 
 export type LogicNodeKind = "building-info" | "behavior-core" | "behavior-leaf";
@@ -19,6 +22,8 @@ export type BehaviorLeafType =
   | "education"
   | "tourism"
   | "residence"
+  | "office"
+  | "commercial"
   | "hotel"
   | "park"
   | "tree"
@@ -131,13 +136,6 @@ export interface LandvalueParams {
   wealth2?: number;
 }
 
-export interface ResidenceParams {
-  type: "residence";
-  residenceProfile?: "copan-residence-v1";
-  population?: number | null;
-}
-
-export const RESIDENCE_TEMPLATE_CAPACITY = 1100;
 export const LAND_TEMPLATE_VALUE = 500;
 
 export type LeafParams =
@@ -145,6 +143,8 @@ export type LeafParams =
   | EducationParams
   | TourismParams
   | ResidenceParams
+  | OfficeParams
+  | CommercialParams
   | ParkParams
   | TreeParams
   | LandvalueParams;
@@ -238,6 +238,22 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
   },
   {
     kind: "behavior-leaf",
+    leafType: "office",
+    icon: "Building2",
+    labelKey: "studio.assetWorkbench.logicNode.leafOffice",
+    hintKey: "studio.assetWorkbench.logicNode.leafOfficeHint",
+    defaultParams: () => ({ type: "office" }),
+  },
+  {
+    kind: "behavior-leaf",
+    leafType: "commercial",
+    icon: "Store",
+    labelKey: "studio.assetWorkbench.logicNode.leafCommercial",
+    hintKey: "studio.assetWorkbench.logicNode.leafCommercialHint",
+    defaultParams: () => ({ type: "commercial", commercialProfile: "ground-commercial-w2-v1" }),
+  },
+  {
+    kind: "behavior-leaf",
     leafType: "hotel",
     icon: "BedDouble",
     labelKey: "studio.assetWorkbench.logicNode.leafHotel",
@@ -252,7 +268,7 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     hintKey: "studio.assetWorkbench.logicNode.leafResidenceHint",
     defaultParams: () => ({
       type: "residence",
-      residenceProfile: "copan-residence-v1",
+      residenceProfile: "ground-residence-w1-v1",
     }),
   },
   {
@@ -640,12 +656,20 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
             : !numberOk(leaf.value) || !numberOk(leaf.value2))
             issues.push({ code: "landValueInvalid", nodeId: node.id });
           break;
-        case "residence":
-          if (leaf.population != null && (!Number.isInteger(leaf.population) || leaf.population < 1 || leaf.population > 100_000))
-            issues.push({ code: "residenceCapacity", nodeId: node.id });
+        case "residence": {
+          const error = residenceCapacityError(leaf);
+          if (error)
+            issues.push({ code: error === "populationInvalid" ? "residenceCapacity" : "residenceSlots", nodeId: node.id });
+          break;
+        }
+        case "commercial":
+          if (!validCommercial(leaf)) issues.push({ code: "commercialInvalid", nodeId: node.id });
           break;
         case "hotel":
           if (!validHotelRooms(leaf.rooms)) issues.push({ code: "hotelRooms", nodeId: node.id });
+          break;
+        case "office":
+          if (!validOffice(leaf)) issues.push({ code: "officeInvalid", nodeId: node.id });
           break;
         case "tree":
           break;

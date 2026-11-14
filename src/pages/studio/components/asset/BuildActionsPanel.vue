@@ -221,7 +221,7 @@ function buildError(message: string): string {
     const label = t(`studio.assetWorkbench.decalBuildError.${code}`);
     return detail ? `${label} (${detail})` : label;
   }
-  const templateDiagnostic = message.match(/\b(BEHAVIOR_TEMPLATE_(?:PROFILE|PARAMETER|RESOURCE|BUNDLE|FIELD)|RESIDENCE_PATH)\b(?:: ([^\r\n]+))?/);
+  const templateDiagnostic = message.match(/\b(BEHAVIOR_TEMPLATE_(?:PROFILE|PARAMETER|RESOURCE|BUNDLE|FIELD)|RESIDENCE_(?:PATH|FILL_BUNDLE|FILL_INTAKE|GROUND_(?:PROFILE|CAPACITY|VACANT|BUNDLE|ALTERNATE))|OFFICE_(?:PARAMETER|CONFLICT|RESOURCE|FIELD|BUNDLE|LABOR)|COMMERCIAL_(?:PARAMETER|CONFLICT|RESOURCE|FIELD|BUNDLE|ROAD_ACCESS))\b(?:: ([^\r\n]+))?/);
   if (templateDiagnostic) {
     const [, code, detail] = templateDiagnostic;
     const label = t(`studio.assetWorkbench.behaviorSheet.buildError.${code}`);

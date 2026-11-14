@@ -2,7 +2,7 @@
   "maxLeaves": 4,
   "incompatible": [
     ["commercial", "education", "tourism", "residence", "office", "park", "hotel"],
-    ["office", "education", "residence", "tourism", "hotel"],
+    ["office", "education", "residence", "hotel"],
     ["hotel", "education", "residence", "tourism", "park"],
     ["education", "residence"]
   ]

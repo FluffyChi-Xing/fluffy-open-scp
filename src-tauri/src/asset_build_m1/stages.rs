@@ -602,9 +602,9 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             Some((snapshot, source_lot))
         }
         Some(document) if document.lot_mask == Some(super::scene::SceneLotMaskKind::Authored) => {
-            if !ctx.plan.intermediate.scene.authored_ground {
+            if lot_target.is_none() && !ctx.plan.intermediate.scene.authored_ground {
                 return Err(
-                    "scene document is authored-ground (lotStyle.authored, no sourceLot) but \
+                    "scene document uses authored ground without reference.lot, but \
                      the schema does not declare scene.authoredGround; rebuild the schema or \
                      set \"authoredGround\": true"
                         .into(),
@@ -641,7 +641,9 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         if let Some(document) = &ctx.scene_document {
             super::decal::validate_sources(document)?;
         }
-        ctx.plan.processor_version = "openscp.property.m1/56";
+        if ctx.plan.processor_version != super::behavior_plop::PROCESSOR_VERSION {
+            ctx.plan.processor_version = "openscp.property.m1/56";
+        }
     }
     // The scene document is an input to the built bytes (unit columns, menu
     // ground numerics, light/prop matrices) but the schema only references it
@@ -1329,8 +1331,7 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                 .as_ref()
                 .is_some_and(|document| {
                     document.lot_mask == Some(super::scene::SceneLotMaskKind::Authored)
-                })
-                && ctx.plan.intermediate.scene.authored_ground;
+                });
             if authored_ground && !(menu.parent_free || ctx.author_building40) {
                 return Err(
                     "authored ground without a donor lot requires the parent-free identity \
@@ -1362,6 +1363,9 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                 &ctx.root,
                 ctx.author_building40,
             )?;
+            if ctx.plan.processor_version == super::behavior_plop::PROCESSOR_VERSION {
+                super::behavior_plop::bind_tool(&mut generated)?;
+            }
             if let Some(program) = &ctx.plan.behavior_program
                 && super::spawner::has_recipes(program, ctx.scene_document.as_ref())?
             {
@@ -2250,8 +2254,12 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     )?;
     if let Some(program) = ctx.plan.behavior_program.as_ref().filter(|p| p.author_tourism) {
         let instance = ctx.menu_instance.ok_or("tourism contract: missing menu identity")?;
-        final_contract.detail["facilityOperation"] =
-            super::author_tourism::verify(&final_resources, instance, program)?;
+        final_contract.detail["facilityOperation"] = super::author_tourism::verify(
+            &final_resources,
+            instance,
+            program,
+            super::vehicle_paths::authored(ctx.scene_document.as_ref()),
+        )?;
     }
     if let Some(program) = ctx.plan.behavior_program.as_ref().filter(|p| !p.templates.is_empty()) {
         let instance = ctx.menu_instance.or_else(|| ctx.reference_lot.as_ref().map(|(id, _)| id.instance))
@@ -2259,6 +2267,28 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         program.templates.verify(&final_resources, instance)?;
         final_contract.detail["behaviorTemplates"] = serde_json::to_value(&program.templates)
             .map_err(|error| error.to_string())?;
+    }
+    if let Some(office) = ctx.plan.behavior_program.as_ref().and_then(|p| p.office.as_ref()) {
+        let instance = ctx.menu_instance.ok_or("OFFICE_RESOURCE: missing menu identity")?;
+        let id = ResourceId {
+            type_id: super::behavior::PROPERTY_TYPE,
+            group: super::menu::UNIT_GROUP,
+            instance,
+        };
+        let bytes = final_resources.get(&id).ok_or("OFFICE_RESOURCE: Unit")?;
+        let unit = PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
+        office.verify(&unit)?;
+        final_contract.detail["office"] =
+            serde_json::to_value(office).map_err(|error| error.to_string())?;
+    }
+    if let Some(recipe) = ctx.plan.behavior_program.as_ref().and_then(|p| p.commercial.as_ref()) {
+        let instance = ctx.menu_instance.ok_or("COMMERCIAL_RESOURCE: missing menu identity")?;
+        let id = ResourceId { type_id: super::behavior::PROPERTY_TYPE, group: super::menu::UNIT_GROUP, instance };
+        let bytes = final_resources.get(&id).ok_or("COMMERCIAL_RESOURCE: Unit")?;
+        let unit = PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
+        recipe.verify(&unit)?;
+        recipe.verify_lot(&final_resources, &ResourceId { group: super::menu::lot_group(), ..id })?;
+        final_contract.detail["commercial"] = serde_json::to_value(recipe).map_err(|error| error.to_string())?;
     }
     if let Some(recipe) = ctx.plan.behavior_program.as_ref().and_then(|p| p.hotel.as_ref()) {
         let instance = ctx.menu_instance.ok_or("HOTEL_RESOURCE")?;
@@ -2268,6 +2298,11 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         recipe.verify(&unit)?;
         recipe.verify_lot(&final_resources, &ResourceId { group: super::menu::lot_group(), ..id })?;
         final_contract.detail["hotel"] = serde_json::to_value(recipe).map_err(|error| error.to_string())?;
+    }
+    if ctx.plan.processor_version == super::behavior_plop::PROCESSOR_VERSION
+        && let (Some(instance), Some(menu)) = (ctx.menu_instance, ctx.plan.menu.as_ref())
+    {
+        super::behavior_plop::verify_written(&final_resources, instance, menu)?;
     }
     staging.write(
         "reports/written-contract.json",

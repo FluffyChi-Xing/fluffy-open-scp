@@ -57,10 +57,6 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
         Some(spec)
     };
-    let selected_menu_categories = menu
-        .as_ref()
-        .and_then(|spec| spec.ui_categories())
-        .map(<[u32]>::to_vec);
     let scene_writes = super::scene::SceneWrites::parse(&im.scene.writes);
     // 声明位拼写错误必须 fail-closed：`"path"` 会被 parse 静默忽略，构建
     // 看起来"成功"但什么都没写——这正是 r10 类事故的温床。
@@ -113,11 +109,15 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
             &im.semantics.behavior,
         )?)
     };
+    let mut completed_plop_menu = false;
     let behavior_program = if has_composed {
         let mut labor = super::behavior_nodes::parse_labor(im.semantics.labor.as_ref())?;
         let nodes = super::behavior_nodes::parse_nodes(&im.semantics.behaviors)?;
         if menu.is_none() && nodes.iter().any(|node| node["type"] == "hotel") {
             return Err("HOTEL_RESOURCE".into());
+        }
+        if let Some(spec) = menu.as_mut() {
+            completed_plop_menu = super::behavior_plop::complete_menu(spec, &nodes);
         }
         let author_tourism = menu.is_some() && super::author_tourism::selected(&nodes);
         if author_tourism
@@ -130,6 +130,10 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
     } else {
         None
     };
+    let selected_menu_categories = menu
+        .as_ref()
+        .and_then(|spec| spec.ui_categories())
+        .map(<[u32]>::to_vec);
     // IR 叶子 → 家族适配器补齐 menu donor / Menu2 骨架（作者显式字段优先）。
     if let (Some(spec), Some(program)) = (menu.as_mut(), behavior_program.as_ref()) {
         if let Some(mut semantics) = super::behavior_family::semantics_from_program(program) {
@@ -230,7 +234,9 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         // /53–55: ordinary vehicle paths use Tokyo Tower's 03106C2E entry.
         // Bump whenever game-side lowering/geometry contracts change. The
         // run cache must never replay a package built by an older interpreter.
-        processor_version: if behavior_program
+        processor_version: if completed_plop_menu {
+            super::behavior_plop::PROCESSOR_VERSION
+        } else if behavior_program
             .as_ref()
             .is_some_and(|program| !program.templates.is_empty())
         {
@@ -273,6 +279,41 @@ mod tests {
         assert!(plan.menu.is_some());
         assert!(plan.intermediate.references.lot.is_none());
         assert!(plan.intermediate.scene.authored_ground);
+    }
+
+    #[test]
+    fn building_behaviors_get_a_plop_menu_without_a_park_leaf() {
+        for kind in ["residence", "office", "hotel"] {
+            for (category, expected_category, expected_parent) in [
+                (None, 0x0704_9250, Some(0xF970_A822)),
+                (Some("0x899BEA70"), 0x0704_9250, Some(0xF970_A822)),
+                (Some("0x3F43E038"), 0x3F43_E038, Some(super::super::menu::PLOP_MENU_PARENT)),
+            ] {
+                let mut menu = serde_json::json!({"title": "Standalone"});
+                if let Some(category) = category {
+                    menu["categoryInstances"] = serde_json::json!([category]);
+                }
+                let schema = serde_json::json!({
+                    "$schema": "openscp.asset", "schema_version": 2,
+                    "id": "standalone", "kind": "building-asset",
+                    "reference": {"package": "source.package"},
+                    "scene": {"document": "asset.lot.json", "authoredGround": true},
+                    "semantics": {
+                        "menu": menu,
+                        "behaviors": [{"id": "main", "type": kind, "params": {}}]
+                    },
+                    "outputs": {"package": "000_standalone.package", "mode": "full"}
+                });
+                let plan = plan_from_schema(&schema.to_string())
+                    .unwrap_or_else(|error| panic!("{kind}: {error}"));
+                let spec = plan.menu.unwrap();
+                assert_eq!(spec.ui_categories(), Some([expected_category].as_slice()));
+                assert_eq!(spec.menu_parent_instance, expected_parent);
+                assert_eq!(spec.building_category_instance, Some(0xC710_B6E9));
+                assert_eq!(spec.unit_donor.as_deref(), Some("generic-park"));
+                assert_eq!(plan.processor_version, super::super::behavior_plop::PROCESSOR_VERSION);
+            }
+        }
     }
 
     #[test]

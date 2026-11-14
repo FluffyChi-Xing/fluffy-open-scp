@@ -3,6 +3,7 @@
 //! from Copan's effective Unit, not from its landmark identity or menu.
 
 use super::behavior::PROPERTY_TYPE;
+use super::behavior_residence_wealth::GroundResidence;
 use super::connector::Resources;
 use super::menu::{UNIT_GROUP, lot_group};
 use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
@@ -53,6 +54,10 @@ const RESIDENCE: &[u32] = &[
 pub(super) struct Templates {
     #[serde(skip_serializing_if = "Option::is_none")]
     population: Option<u32>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    megatower_fill: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ground_residence: Option<GroundResidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     land: Option<[f32; 2]>,
 }
@@ -120,13 +125,17 @@ impl Templates {
     pub(super) fn bundles(&self) -> impl Iterator<Item = u32> {
         self.population
             .iter()
+            .filter(|_| self.ground_residence.is_none())
             .flat_map(|_| RESIDENCE.iter().copied())
+            .chain(self.ground_residence.iter().flat_map(GroundResidence::bundles))
             .chain(self.land.iter().flat_map(|_| LAND.iter().copied()))
     }
 
     fn fields(&self) -> Vec<(u32, PropType, PropValue)> {
         let mut fields = Vec::new();
-        if let Some(population) = self.population {
+        if let Some(residence) = &self.ground_residence {
+            fields.extend(residence.fields());
+        } else if let Some(population) = self.population {
             let population = population as f32;
             let scale = population / STOCK_POPULATION;
             fields.extend(
@@ -241,6 +250,12 @@ impl Templates {
                 property.encoding.array_item_size = None;
             }
         }
+        if self.megatower_fill {
+            super::behavior_residence_fill::patch(&mut unit)?;
+        }
+        if let Some(residence) = &self.ground_residence {
+            residence.patch(&mut unit)?;
+        }
         encode(&unit)
     }
 
@@ -251,6 +266,9 @@ impl Templates {
         }
         let catalog = super::behavior_conflicts::catalog()?;
         for bundle in self.bundles() {
+            if self.megatower_fill && bundle == 0x999F_8484 {
+                continue;
+            }
             if !catalog.has_bundle(bundle)
                 || !contains(&unit, &ENABLE, bundle)
                 || contains(&unit, &[EXCLUDED], bundle)
@@ -271,6 +289,12 @@ impl Templates {
             }
         }
         if self.residence() {
+            if self.megatower_fill {
+                super::behavior_residence_fill::verify(&unit)?;
+            }
+            if let Some(residence) = &self.ground_residence {
+                residence.verify(&unit)?;
+            }
             let lot = resource(resources, lot_group(), instance)?;
             if !array(&lot, PATH_ENTRIES)?.iter().any(|entry| {
                 matches!(entry, PropValue::Key(key) if key.group == PATH_GROUP && key.instance != 0)
@@ -289,7 +313,17 @@ pub(super) fn select(nodes: &[Value]) -> Result<Templates, String> {
         let id = node["id"].as_str().unwrap_or("behavior");
         match node["type"].as_str() {
             Some("residence") if !params["residenceProfile"].is_null() => {
-                if templates.residence() || params["residenceProfile"] != RESIDENCE_PROFILE {
+                if templates.residence() {
+                    return Err(format!("BEHAVIOR_TEMPLATE_PROFILE: {id}/residence"));
+                }
+                if let Some(residence) = GroundResidence::select(params, id)? {
+                    templates.population = Some(residence.population);
+                    templates.ground_residence = Some(residence);
+                    continue;
+                }
+                templates.megatower_fill =
+                    params["residenceProfile"] == super::behavior_residence_fill::PROFILE;
+                if !templates.megatower_fill && params["residenceProfile"] != RESIDENCE_PROFILE {
                     return Err(format!("BEHAVIOR_TEMPLATE_PROFILE: {id}/residence"));
                 }
                 let value = amount(params, "population", id, f64::from(STOCK_POPULATION), 1.0)?;
@@ -297,6 +331,9 @@ pub(super) fn select(nodes: &[Value]) -> Result<Templates, String> {
                     return Err(format!("BEHAVIOR_TEMPLATE_PARAMETER: {id}/population"));
                 }
                 templates.population = Some(value as u32);
+            }
+            Some("residence") => {
+                GroundResidence::select(params, id)?;
             }
             Some("landvalue") if !params["landValueProfile"].is_null() => {
                 if templates.land_value() || params["landValueProfile"] != LAND_PROFILE {
@@ -385,6 +422,61 @@ mod tests {
     use super::*;
     use crate::asset_build_m1::{behavior, menu, plan::plan_from_schema, stages::BuildContext};
     use serde_json::json;
+
+    #[test]
+    fn ground_wealth_profiles_roundtrip_independent_intake_and_capacity() {
+        for (profile, bundle, intake, kind, workers, shoppers, children) in [
+            ("ground-residence-w1-v1", 0xD4C3_0C02, 0x999F_8485, 0x31D3_307B, 40.0, 20.0, 15.0),
+            ("ground-residence-w2-v1", 0xA8CB_9DE1, 0xA797_4BCE, 0x02CA_56B2, 20.0, 10.0, 10.0),
+            ("ground-residence-w3-v1", 0xAC8B_8A48, 0x8D9A_F497, 0x10BA_89C9, 7.0, 3.0, 4.0),
+        ] {
+            let templates = select(&[json!({"id":"r","type":"residence","params":{"residenceProfile":profile}})]).unwrap();
+            let mut donor = PropertyFile::default();
+            set_array(&mut donor, ENABLE[0], PropType::Key, vec![key(0xAB9A_0A3E), key(0xEBFC_1753), key(bundle)]);
+            let bytes = templates.patch(&encode(&donor).unwrap()).unwrap();
+            let unit = read(&bytes).unwrap();
+            assert!(contains(&unit, &[ENABLE[3]], bundle));
+            assert!(contains(&unit, &[ENABLE[3]], intake));
+            assert!(contains(&unit, &[EXCLUDED], 0xEBFC_1753));
+            assert_eq!(unit.get(0x0D02_D846).unwrap().scalar(), Some(&key(kind)));
+            for (hash, value) in [(0x0E33_502E, workers), (0x0E33_5022, shoppers), (0x0A79_17CC, children)] {
+                assert_eq!(unit.get(hash).unwrap().scalar(), Some(&PropValue::Float(value)));
+            }
+            let catalog = super::super::behavior_conflicts::catalog().unwrap();
+            assert!(templates.bundles().all(|id| catalog.has_bundle(id)));
+            assert_eq!(templates.patch(&bytes).unwrap(), bytes);
+        }
+        let params = |workers| json!({"id":"r","type":"residence","params":{
+            "residenceProfile":"ground-residence-w2-v1","population":90,"residentWorkers":workers,"residentChildren":8,
+        }});
+        assert!(select(&[params(91)]).is_err());
+        let schema = json!({
+            "$schema":"openscp.asset", "schema_version":2, "id":"ground-residence",
+            "kind":"building-asset",
+            "reference":{"package":"source.package", "lot":"00B1B104:40E1C000:4DC31F9B"},
+            "scene":{"document":"asset.lot.json"},
+            "semantics":{"behaviors":[params(50)]},
+            "outputs":{"package":"ground-residence.package","mode":"full"}
+        }).to_string();
+        let mut ctx = BuildContext::new(".".into(), plan_from_schema(&schema).unwrap());
+        let instance = 0x1234_5678;
+        ctx.menu_instance = Some(instance);
+        let id = |group| ResourceId { type_id: PROPERTY_TYPE, group, instance };
+        let empty = encode(&PropertyFile::default()).unwrap();
+        ctx.resources.insert(id(UNIT_GROUP), empty.clone());
+        ctx.resources.insert(id(menu::MENU_GROUP), empty);
+        let mut lot = PropertyFile::default();
+        set_array(&mut lot, PATH_ENTRIES, PropType::Key, vec![PropValue::Key(Key {
+            type_id: PROPERTY_TYPE, group: PATH_GROUP, instance: 0x418A_18B1,
+        })]);
+        ctx.resources.insert(id(lot_group()), encode(&lot).unwrap());
+        behavior::apply(&mut ctx).unwrap();
+        ctx.plan.behavior_program.as_ref().unwrap().templates
+            .verify(ctx.resources.all(), instance).unwrap();
+        let unit = read(ctx.resources.get(&id(UNIT_GROUP)).unwrap()).unwrap();
+        assert_eq!(unit.get(0x0E33_5022).unwrap().scalar(), Some(&PropValue::Float(40.0)));
+        assert_eq!(unit.get(0x0A79_17CC).unwrap().scalar(), Some(&PropValue::Float(8.0)));
+    }
 
     #[test]
     fn composes_residence_and_land_on_the_generated_unit() {

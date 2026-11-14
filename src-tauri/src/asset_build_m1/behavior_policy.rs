@@ -53,6 +53,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert!(validate(&nodes(&["utilities-core", "hotel", "tree", "landvalue"])).is_ok());
+        assert!(validate(&nodes(&["park", "tourism", "landvalue", "office"])).is_ok());
         assert!(
             validate(&nodes(&["hotel", "tourism"]))
                 .unwrap_err()

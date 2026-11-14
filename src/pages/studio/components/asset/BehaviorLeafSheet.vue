@@ -12,6 +12,9 @@ import {
 } from "reka-ui";
 import FIcon from "@/components/extensions/FIcon.vue";
 import LogicNodeCard from "./LogicNodeCard.vue";
+import { validCommercial } from "./commercialBehavior";
+import { validOffice } from "./officeBehavior";
+import { groundResidence, residenceCapacityError } from "./residenceBehavior";
 import {
   cloneLogicParams,
   TOURISM_TEMPLATE_DEFAULTS,
@@ -39,19 +42,24 @@ const tourism = computed(() =>
 );
 const description = computed(() => {
   if (tourism.value) return "tourismTemplate";
+  if (draft.value.type === "commercial") return "commercialTemplate";
   if (draft.value.type === "hotel") return "hotelTemplate";
-  if (draft.value.type === "residence") return "residenceTemplate";
+  if (draft.value.type === "office") return "officeTemplate";
+  if (draft.value.type === "residence") {
+    if (groundResidence(draft.value)) return "residenceGroundTemplate";
+    return draft.value.residenceProfile === "megatower-residence-v1"
+      ? "residenceFillTemplate"
+      : "residenceTemplate";
+  }
   if (draft.value.type === "landvalue" && draft.value.landValueProfile) return "landTemplate";
   return "description";
 });
 const invalidTemplateValue = computed(() => {
   const current = draft.value;
+  if (current.type === "commercial") return validCommercial(current) ? null : "commercialInvalid";
   if (current.type === "hotel") return validHotelRooms(current.rooms) ? null : "hotelRooms";
-  if (current.type === "residence") {
-    const population = current.population;
-    return population != null && (!Number.isInteger(population) || population < 1 || population > 100_000)
-      ? "populationInvalid" : null;
-  }
+  if (current.type === "office") return validOffice(current) ? null : "officeInvalid";
+  if (current.type === "residence") return residenceCapacityError(current);
   if (current.type === "landvalue" && current.landValueProfile) {
     return [current.value, current.value2].some(
       (value) => value != null && (!Number.isFinite(value) || Math.abs(value) > 100_000),

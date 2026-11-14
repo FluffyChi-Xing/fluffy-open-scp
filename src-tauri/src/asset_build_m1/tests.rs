@@ -1679,6 +1679,26 @@ fn rejects_unknown_scene_write_family_before_staging() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn standalone_residence_writes_a_new_plop_menu() {
+    let root = temp_root();
+    behavior_donor(&root);
+    fs::write(root.join("asset.lot.json"), "{}").unwrap();
+    let mut schema = behavior_schema("full");
+    schema["semantics"] = serde_json::json!({
+        "menu": {"title": "Standalone Residence", "categoryInstances": ["0x899BEA70"]},
+        "behaviors": [{"id": "residence", "type": "residence", "params": {"population": 80}}]
+    });
+    let result = build_from_schema(&root, &schema.to_string()).unwrap();
+    let instance = result.menu_instance.expect("new menu identity");
+    assert_ne!(instance, 0x8D00_7745);
+    let resources = connector::read_source(&result.path).unwrap();
+    let plan = plan::plan_from_schema(&schema.to_string()).unwrap();
+    super::behavior_plop::verify_written(&resources, instance, plan.menu.as_ref().unwrap())
+        .unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// 2026-11-07 逻辑编排图端到端：document(menu+logic) → workbench_logic 编译
 /// → schema 覆盖 → 构建。断言行为绑定到**新菜单身份**的 Unit 叶子上，
 /// labor/core/education 的节点参数真实落到列。
