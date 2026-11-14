@@ -2426,18 +2426,7 @@ fn build_lot_editor_session(
     // Parent(0x00B2CCCB) 继承展平：78% 的 property 带继承链，lot 变体常把
     // LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
     // 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
-    let mut properties = flatten_lot_parents(raw_properties.clone(), package, manager);
-    // 派生 lot 的父级授权可能落在 SimCity_Game.package，而会话只打开了当前
-    // （如 Graphics）包——父链断裂时 manager 查不到，四通道回退黑/红/绿/蓝、
-    // 图集回退本地占位 tile（用户实证 0xDBF54200：黑色停车坪 + 蓝色车位线 +
-    // 占位草皮）。仅当授权 key 全缺时用源包句柄重试，正常 lot 不付这个代价。
-    if !lot_chain_resolved(&properties) {
-        let sources = locate_sim_source_packages(manager, store).unwrap_or_default();
-        if !sources.is_empty() {
-            properties =
-                flatten_lot_parents_with_sources(raw_properties, package, manager, &sources);
-        }
-    }
+    let properties = resolve_lot_properties(raw_properties, package, manager, store);
     // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
     // 附带 materialData 三元组存在性与 material/shader-def 引用
     // 诊断（P4-D1 证据链）。
@@ -3044,24 +3033,103 @@ pub(crate) fn flatten_lot_parents_with_sources(
     })
 }
 
-/// 父链是否已经提供地表授权。派生 lot 的 mask/size 在本级、颜色与图集在
-/// 父级——若一个授权 key 都没解析到，基本可判定父链没打通（值得用源包重试）。
-pub(crate) fn lot_chain_resolved(properties: &sc_properties::PropertyFile) -> bool {
-    const AUTHORIZATION_KEYS: [u32; 5] = [
-        0x0D02_D586,
-        0x0D02_D587,
-        0x0D02_D588,
-        0x0D02_D589,
-        0x0CCB_7FD4, // Lot Textures
-    ];
-    AUTHORIZATION_KEYS
+const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
+
+/// 派生 lot 可在本级声明图集或部分颜色，剩余地表属性由父级补齐。
+pub(crate) fn resolve_lot_properties(
+    root: sc_properties::PropertyFile,
+    current: &Package,
+    manager: &PackageManager,
+    store: &sc_store::Store,
+) -> sc_properties::PropertyFile {
+    if root.get(sc_properties::PARENT_HASH).is_none() {
+        return flatten_lot_parents(root, current, manager);
+    }
+    let properties = flatten_lot_parents(root.clone(), current, manager);
+    if lot_chain_resolved(&properties) {
+        return properties;
+    }
+    let sources = locate_sim_source_packages(manager, store).unwrap_or_default();
+    if sources.is_empty() {
+        return properties;
+    }
+    flatten_lot_parents_with_sources(root, current, manager, &sources)
+}
+
+fn lot_chain_resolved(properties: &sc_properties::PropertyFile) -> bool {
+    LOT_COLOR_HASHES
         .iter()
-        .any(|hash| properties.get(*hash).is_some())
+        .all(|hash| lot_color_value(properties, *hash).is_some())
+        && matches!(
+            properties.get(0x0CCB_7FD4).and_then(|property| property.scalar()),
+            Some(sc_properties::Value::Key(key)) if key.instance != 0
+        )
+}
+
+fn lot_color_value(
+    properties: &sc_properties::PropertyFile,
+    hash: u32,
+) -> Option<&sc_properties::Value> {
+    let property = properties.get(hash)?;
+    // 部分原版模板把 LotColor 编码为单元素数组。
+    match property
+        .scalar()
+        .or_else(|| property.array().and_then(|values| values.first()))
+    {
+        color @ Some(sc_properties::Value::ColorRgba { .. }) => color,
+        _ => None,
+    }
 }
 
 #[cfg(test)]
 mod derived_lot_parent_chain {
     use super::*;
+
+    #[test]
+    fn preview_resolves_parent_colors_when_leaf_already_has_atlas() {
+        let Ok(graphics) = std::env::var("SC_DERIVED_LOT_GRAPHICS") else {
+            eprintln!("skipping: SC_DERIVED_LOT_GRAPHICS unset");
+            return;
+        };
+        let manager = PackageManager::new();
+        let (package_id, package) = manager.insert(Package::open(&graphics).unwrap()).unwrap();
+        let id = ResourceId {
+            type_id: PROPERTY_RESOURCE_TYPE,
+            group: 0x43E1_C000,
+            instance: 0x5B5A_23D8,
+        };
+        let data = package
+            .read(package.entry(id).expect("derived lot property"))
+            .unwrap();
+        let leaf = sc_properties::PropertyFile::parse(&data).unwrap();
+        assert!(leaf.get(0x0CCB_7FD4).is_some(), "leaf supplies the atlas");
+        assert!(LOT_COLOR_HASHES.iter().all(|hash| leaf.get(*hash).is_none()));
+
+        let store = sc_store::Store::open(":memory:").unwrap();
+        let preview = build_lot_editor_session(
+            &data,
+            &package,
+            &manager,
+            &store,
+            LotEditorSessionRequest {
+                package_id,
+                tgi: TgiDto {
+                    type_id: id.type_id,
+                    group: id.group,
+                    instance: id.instance,
+                },
+            },
+            None,
+        )
+        .unwrap();
+        assert_eq!(preview.lot_colors_authored, [true; 4]);
+        assert_eq!(preview.lot_colors.map(|color| color[3]), [7, 1, 7, 7]);
+        assert_eq!(preview.lot_base_tile, 14);
+        assert_eq!(preview.lot_tile_period, Some([10.0, 10.0]));
+        assert!(preview.lot_mask_raw_rgba.is_some());
+        assert!(preview.lot_surface_png.is_some());
+        assert!(preview.lot_normal_atlas_png.is_some());
+    }
 
     /// 回归（2026-11-06 用户实证 0xDBF54200）：派生 lot 位于 Graphics，父级
     /// 授权（LotColor1-4 / Lot Textures）只在 Game。会话只打开 Graphics 时
@@ -3117,18 +3185,13 @@ mod derived_lot_parent_chain {
 
 /// LotColor1-4 提取（raster 工作台 read_lot_material 共用）。
 pub(crate) fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bool; 4]) {
-    const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
     const FALLBACKS: [[u8; 4]; 4] = [[0, 0, 0, 0], [255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0]];
     let mut colors = FALLBACKS;
     let mut authored = [false; 4];
     for (index, hash) in LOT_COLOR_HASHES.iter().enumerate() {
-        // LotColor 常以单元素数组编码（图书馆 0xA6B49A4B 实证 scalar() 取
-        // 不到），需回退 array 首元素。
-        let property = document.properties.get(*hash);
-        let value = property
-            .and_then(|p| p.scalar())
-            .or_else(|| property.and_then(|p| p.array()).and_then(|v| v.first()));
-        if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = value {
+        if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) =
+            lot_color_value(&document.properties, *hash)
+        {
             authored[index] = true;
             colors[index] = [
                 linear_to_srgb_byte(*r),
