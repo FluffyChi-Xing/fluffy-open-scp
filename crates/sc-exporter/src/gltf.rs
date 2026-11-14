@@ -386,7 +386,14 @@ pub fn export_glb(
     skeleton: Option<&DecodedSkeleton>,
     anims: &[DecodedAnim],
 ) -> GlbOutput {
-    export_glb_with_colors(mesh, skeleton, anims, EmbeddedTextures::default(), None, None)
+    export_glb_with_colors(
+        mesh,
+        skeleton,
+        anims,
+        EmbeddedTextures::default(),
+        None,
+        None,
+    )
 }
 
 /// Optional PNG images embedded in the GLB BIN chunk.

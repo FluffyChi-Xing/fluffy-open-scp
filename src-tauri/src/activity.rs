@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use crate::runtime_observer::ObserverManager;
+use std::sync::Arc;
 
 use sc_store::{ActivityClearResult, Event, Operation, Package, Store, StoreError};
 use serde::Serialize;
@@ -11,6 +11,7 @@ use crate::workspace::WorkspaceManager;
 pub const ACTIVITY_EVENT: &str = "activity:event";
 
 pub struct AppState {
+    pub(crate) build_queue: Arc<crate::build_queue::BuildQueueManager>,
     pub(crate) store: Arc<Store>,
     pub(crate) packages: Arc<PackageManager>,
     pub(crate) workspace: Arc<WorkspaceManager>,
@@ -21,6 +22,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(app: AppHandle, store: Store) -> Self {
         Self {
+            build_queue: Arc::new(crate::build_queue::BuildQueueManager::new()),
             store: Arc::new(store),
             packages: Arc::new(PackageManager::new()),
             workspace: Arc::new(WorkspaceManager::new()),

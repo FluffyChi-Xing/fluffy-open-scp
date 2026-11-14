@@ -5,7 +5,7 @@
  * 水面纹理 + 实例化植被 + 地块框/伟工标记 + 栅格道路预览 + 生态资源图层。
  * 相机和图层变化按需渲染；水面可见时以 30fps 更新波纹。
  * 数据源 = map_panel_region_3d（16m/格 高度+地面编码 PNG）。
- * 交互：左键旋转 / 中键或右键平移 / 滚轮缩放（事件就地拦截，不冒泡到页面）。
+ * 交互：中键旋转 / 右键平移 / 滚轮缩放。左键可旋转或落笔。
  */
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -33,9 +33,12 @@ const props = defineProps<{
   showRoads?: boolean;
   activeResource?: string | null;
   resourceOpacity?: number;
+  terrainEditing?: boolean;
+  brushRadius?: number;
+  editedHeight?: string | null;
 }>();
 const { t, locale } = useI18n();
-const emit = defineEmits<{ selectPlot: [uid: string] }>();
+const emit = defineEmits<{ selectPlot: [uid: string]; terrainPoint: [x: number, y: number] }>();
 const localizedLabels: Array<{ sprite: THREE.Sprite; text: () => string; color: string; fontPx: number }> = [];
 
 function localizedSprite(text: () => string, color: string, fontPx = 42): THREE.Sprite {
@@ -274,6 +277,7 @@ function makeTerrainEngine(
       chunk.mesh.geometry = geo;
     } else {
       chunk.mesh = new THREE.Mesh(geo, mat);
+      chunk.mesh.userData.terrainSurface = true;
       chunk.mesh.matrixAutoUpdate = false;
       group.add(chunk.mesh);
     }
@@ -357,7 +361,10 @@ function makeTerrainEngine(
   return { group, updateLods, processQueue, dispose, heightWorld, setResource: terrainMaterial.setResource };
 }
 
-async function build(data: Region3DData) {
+async function build(data: Region3DData, preserveView = false) {
+  const view = preserveView && camera && controls
+    ? { position: camera.position.clone(), target: controls.target.clone() }
+    : null;
   const generation = ++buildGeneration;
   disposeScene();
   error.value = "";
@@ -374,7 +381,7 @@ async function build(data: Region3DData) {
   const detailPixels: Partial<Record<"dirt" | "grass" | "cliff" | "sand", ImageData>> = {};
   try {
     [heightPx, groundPx] = await Promise.all([
-      decodePng(data.heightPngBase64),
+      decodePng(props.editedHeight ?? data.heightPngBase64),
       decodePng(data.groundPngBase64),
     ]);
     await Promise.all((["dirt", "grass", "cliff", "sand"] as const).map(async (slot) => {
@@ -410,16 +417,54 @@ async function build(data: Region3DData) {
   container.appendChild(renderer.domElement);
   // 中键自动滚屏 / 右键菜单 / 滚轮页面滚动：就地拦截，不冒泡到页面
   const el = renderer.domElement;
-  let pointerStart: [number, number] = [0, 0];
-  el.addEventListener("pointerdown", (e) => {
-    pointerStart = [e.clientX, e.clientY];
-    if (e.button === 1 || e.button === 2) e.preventDefault();
-  });
-  el.addEventListener("pointerup", (e) => {
-    if (e.button !== 0 || Math.hypot(e.clientX - pointerStart[0], e.clientY - pointerStart[1]) > 5 || !camera || !plotGroup?.visible) return;
+  let pointerStart: [number, number] | null = null;
+  let hover: [number, number] | null = null;
+  let hoverDirty = false;
+  const ray = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  function aimAt(clientX: number, clientY: number) {
     const bounds = el.getBoundingClientRect();
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2((e.clientX - bounds.left) / bounds.width * 2 - 1, 1 - (e.clientY - bounds.top) / bounds.height * 2), camera);
+    if (!camera || !bounds.width || !bounds.height || clientX < bounds.left || clientX > bounds.right
+      || clientY < bounds.top || clientY > bounds.bottom) return false;
+    pointerNdc.set((clientX - bounds.left) / bounds.width * 2 - 1, 1 - (clientY - bounds.top) / bounds.height * 2);
+    camera.updateMatrixWorld();
+    ray.setFromCamera(pointerNdc, camera);
+    return true;
+  }
+  function terrainHit() {
+    return ray.intersectObjects(terrain.group.children, false).find(hit => hit.object.userData.terrainSurface);
+  }
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button === 0) pointerStart = [e.clientX, e.clientY];
+    if (e.button === 1 || e.button === 2) e.preventDefault();
+    if (e.button === 0 && props.terrainEditing) e.stopImmediatePropagation();
+  });
+  el.addEventListener("pointermove", (e) => {
+    hover = [e.clientX, e.clientY];
+    hoverDirty = true;
+  });
+  function clearBrushPointer() {
+    pointerStart = null;
+    hover = null;
+    hoverDirty = true;
+  }
+  el.addEventListener("pointerleave", clearBrushPointer);
+  el.addEventListener("pointercancel", clearBrushPointer);
+  el.addEventListener("pointerup", (e) => {
+    if (e.button !== 0) return;
+    const start = pointerStart;
+    pointerStart = null;
+    if (!start || Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 5) return;
+    if (!aimAt(e.clientX, e.clientY)) return;
+    if (props.terrainEditing) {
+      const hit = terrainHit();
+      if (hit) {
+        const point = sceneToMap(hit.point);
+        emit("terrainPoint", point.x, point.y);
+      }
+      return;
+    }
+    if (!plotGroup?.visible) return;
     const hit = ray.intersectObjects(plotGroup.children, true).find(h => h.object.userData.plotUid);
     if (hit) emit("selectPlot", hit.object.userData.plotUid);
   });
@@ -433,9 +478,14 @@ async function build(data: Region3DData) {
   controls.maxDistance = Math.max(30000, SPAN * 2.2);
   controls.target.copy(CTR);
   controls.saveState();
+  if (view) {
+    camera.position.copy(view.position);
+    controls.target.copy(view.target);
+    controls.update();
+  }
   controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
-    MIDDLE: THREE.MOUSE.PAN,
+    MIDDLE: THREE.MOUSE.ROTATE,
     RIGHT: THREE.MOUSE.PAN,
   };
 
@@ -460,6 +510,36 @@ async function build(data: Region3DData) {
     },
   );
   root.add(terrain.group);
+  const ringPositions = new THREE.BufferAttribute(new Float32Array(96 * 3), 3);
+  ringPositions.setUsage(THREE.DynamicDrawUsage);
+  const ringGeometry = new THREE.BufferGeometry().setAttribute("position", ringPositions);
+  const ring = new THREE.LineLoop(ringGeometry, new THREE.LineBasicMaterial({
+    color: 0xffd78b, depthTest: false, depthWrite: false, toneMapped: false,
+  }));
+  ring.frustumCulled = false;
+  ring.renderOrder = 100;
+  ring.visible = false;
+  root.add(ring);
+
+  function updateBrushRing(radius: number) {
+    const wasVisible = ring.visible;
+    ring.visible = false;
+    if (hover && radius > 0 && aimAt(...hover)) {
+      const hit = terrainHit();
+      if (hit) {
+        const center = sceneToMap(hit.point);
+        for (let i = 0; i < ringPositions.count; i++) {
+          const angle = i * Math.PI * 2 / ringPositions.count;
+          const x = center.x + Math.cos(angle) * radius;
+          const y = center.y + Math.sin(angle) * radius;
+          ringPositions.setXYZ(i, x, terrain.heightWorld(x, y) + 2, y);
+        }
+        ringPositions.needsUpdate = true;
+        ring.visible = true;
+      }
+    }
+    if (wasVisible || ring.visible) needsRenderFlag = true;
+  }
   setResource = terrain.setResource;
   setResource(props.activeResource ?? null, props.resourceOpacity ?? 0.75);
   const roadMask = roadPreviewMask(groundPx.data, S);
@@ -637,6 +717,7 @@ async function build(data: Region3DData) {
   });
   let lastLodTs = 0;
   let lastWaterTs = 0;
+  let lastBrushRadius = 0;
   const loop = () => {
     raf = requestAnimationFrame(loop);
     if (!renderer || !scene || !camera || !controls) return;
@@ -651,6 +732,12 @@ async function build(data: Region3DData) {
       }
     }
     const now = performance.now();
+    const brushRadius = props.terrainEditing ? props.brushRadius ?? 0 : 0;
+    if (hoverDirty || brushRadius !== lastBrushRadius || (brushRadius > 0 && moved)) {
+      updateBrushRing(brushRadius);
+      hoverDirty = false;
+      lastBrushRadius = brushRadius;
+    }
     if (water.mesh.visible && !document.hidden && now - lastWaterTs >= 1000 / 30) {
       lastWaterTs = now;
       water.update(now / 1000);
@@ -686,6 +773,7 @@ function disposeScene() {
   controls?.dispose();
   controls = null;
   renderer?.dispose();
+  renderer?.forceContextLoss();
   renderer?.domElement.remove();
   renderer = null;
   setResource = null;
@@ -732,9 +820,9 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => props.data,
-  (d) => {
-    if (d) void build(d);
+  () => [props.data, props.editedHeight] as const,
+  ([d], [previous]) => {
+    if (d) void build(d, d === previous);
     else { buildGeneration++; ready.value = false; disposeScene(); }
   },
 );
@@ -766,7 +854,7 @@ watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activ
 </script>
 
 <template>
-  <div ref="wrap" class="viewer3d">
+  <div ref="wrap" class="viewer3d" :class="{ 'terrain-editing': terrainEditing }">
     <div v-if="!data && !error" class="ph"></div>
     <div v-if="error" class="err">{{ error }}</div>
     <button
@@ -790,6 +878,7 @@ watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activ
 </template>
 
 <style scoped>
+.terrain-editing :deep(canvas) { cursor: crosshair; }
 .viewer3d {
   position: relative;
   width: 100%;

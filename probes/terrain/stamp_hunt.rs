@@ -31,7 +31,9 @@ fn main() {
     for (label, inst) in stamps {
         let mut found = false;
         for pkg in packages {
-            let Ok(p) = dbpf::Package::open(pkg) else { continue };
+            let Ok(p) = dbpf::Package::open(pkg) else {
+                continue;
+            };
             for e in p.entries() {
                 if e.id.instance != *inst {
                     continue;

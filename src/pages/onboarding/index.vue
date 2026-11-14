@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -8,52 +8,27 @@ import { isTauri, tauriApi } from "@/api";
 import type { GameDirectoryDetection } from "@/api/tauri";
 
 /**
- * 首次安装引导（全屏独立页）：依次确认
- * ① 文档工作区 ② 游戏安装目录 ③ 项目管理目录。
- * 绿色免安装版首次启动会自动路由到本页；完成写入 onboarding 标志。
+ * 首次安装引导（全屏独立页）：确认游戏安装目录。
+ * 文档工作区与模组根自 2026-10-29 起由启动自动落盘（internal_dirs），
+ * 引导只保留必须由用户指定的游戏目录。绿色免安装版首次启动自动路由到
+ * 本页；完成写入 onboarding 标志。
  */
 const router = useRouter();
 const { t } = useI18n();
 
-const TOTAL_STEPS = 3;
-const step = ref(1);
 const busy = ref(false);
 const error = ref("");
 const detection = ref<GameDirectoryDetection | null>(null);
-
-// 三条路径的本地表单值（进入下一步时才落库）
-const workspacePath = ref("");
-const workspaceOk = ref(false);
 const gamePath = ref("");
 const gameOk = ref(false);
-const modRootPath = ref("");
-const modRootOk = ref(false);
-
-const stepTitles = computed(() => [
-  t("onboarding.stepWorkspaceTitle"),
-  t("onboarding.stepGameTitle"),
-  t("onboarding.stepModRootTitle"),
-]);
-const stepDescriptions = computed(() => [
-  t("onboarding.stepWorkspaceDesc"),
-  t("onboarding.stepGameDesc"),
-  t("onboarding.stepModRootDesc"),
-]);
 
 onMounted(async () => {
   if (!isTauri()) return;
   try {
-    const [settings, workspace] = await Promise.all([
-      tauriApi.settings.get(),
-      tauriApi.workspace.get(),
-    ]);
-    workspacePath.value = workspace.rootPath ?? "";
-    workspaceOk.value = Boolean(workspace.rootPath);
+    const settings = await tauriApi.settings.get();
     gamePath.value = settings.gameDataPath ?? "";
     gameOk.value = Boolean(settings.gameDataPath);
-    const status = await tauriApi.studio.setupStatus();
-    modRootPath.value = status.modRoot.path ?? "";
-    modRootOk.value = status.modRoot.isDirectory;
+    void loadCandidates();
   } catch {
     // 首次启动读取失败按未配置处理
   }
@@ -65,28 +40,10 @@ function errorMessage(cause: unknown): string {
     : String(cause);
 }
 
-async function pickDirectory(): Promise<string | null> {
-  return tauriApi.workspace.pickDirectory(t("onboarding.pickTitle"));
-}
-
-async function chooseWorkspace() {
-  const path = await pickDirectory();
-  if (!path) return;
-  busy.value = true;
-  error.value = "";
-  try {
-    await tauriApi.workspace.setRoot(path);
-    workspacePath.value = path;
-    workspaceOk.value = true;
-  } catch (cause) {
-    error.value = errorMessage(cause);
-  } finally {
-    busy.value = false;
-  }
-}
-
 async function chooseGame() {
-  const path = await pickDirectory();
+  const path = await tauriApi.workspace.pickDirectory(
+    t("onboarding.pickTitle"),
+  );
   if (!path) return;
   busy.value = true;
   error.value = "";
@@ -94,22 +51,6 @@ async function chooseGame() {
     await tauriApi.settings.setGameDirectory(path);
     gamePath.value = path;
     gameOk.value = true;
-  } catch (cause) {
-    error.value = errorMessage(cause);
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function chooseModRoot() {
-  const path = await pickDirectory();
-  if (!path) return;
-  busy.value = true;
-  error.value = "";
-  try {
-    await tauriApi.studio.setModRoot(path);
-    modRootPath.value = path;
-    modRootOk.value = true;
   } catch (cause) {
     error.value = errorMessage(cause);
   } finally {
@@ -140,17 +81,6 @@ async function loadCandidates() {
   }
 }
 
-function next() {
-  error.value = "";
-  if (step.value === 2) void loadCandidates();
-  step.value += 1;
-}
-
-function back() {
-  error.value = "";
-  step.value = Math.max(1, step.value - 1);
-}
-
 async function finish() {
   try {
     await tauriApi.studio.completeOnboarding();
@@ -172,28 +102,15 @@ async function finish() {
         <p class="lead">{{ $t("onboarding.description") }}</p>
       </header>
 
-      <div class="step-rail" aria-hidden="true">
-        <span
-          v-for="index in TOTAL_STEPS"
-          :key="index"
-          class="dot"
-          :class="{ active: index === step, done: index < step }"
-        ></span>
-        <span class="step-count">{{
-          $t("onboarding.step", { n: step, total: TOTAL_STEPS })
-        }}</span>
-      </div>
-
       <article class="step-card">
-        <h2>{{ stepTitles[step - 1] }}</h2>
-        <p class="step-desc">{{ stepDescriptions[step - 1] }}</p>
+        <h2>{{ $t("onboarding.stepGameTitle") }}</h2>
+        <p class="step-desc">{{ $t("onboarding.stepGameDesc") }}</p>
 
-        <!-- 第 1 步：文档工作区 -->
-        <div v-if="step === 1" class="path-row">
-          <code class="path" :class="{ ok: workspaceOk }">{{
-            workspacePath || $t("onboarding.notConfigured")
+        <div class="path-row">
+          <code class="path" :class="{ ok: gameOk }">{{
+            gamePath || $t("onboarding.notConfigured")
           }}</code>
-          <span v-if="workspaceOk" class="ok-flag"
+          <span v-if="gameOk" class="ok-flag"
             ><FIcon name="CircleCheck" :size="14" aria-label="" />{{
               $t("onboarding.configured")
             }}</span
@@ -202,77 +119,31 @@ async function finish() {
             class="pick"
             type="button"
             :disabled="busy"
-            @click="chooseWorkspace"
+            @click="chooseGame"
           >
             <FIcon name="FolderOpen" :size="13" aria-label="" />
             {{ $t("onboarding.pick") }}
           </button>
         </div>
-
-        <!-- 第 2 步：游戏目录（含候选探测） -->
-        <template v-else-if="step === 2">
-          <div class="path-row">
-            <code class="path" :class="{ ok: gameOk }">{{
-              gamePath || $t("onboarding.notConfigured")
-            }}</code>
-            <span v-if="gameOk" class="ok-flag"
-              ><FIcon name="CircleCheck" :size="14" aria-label="" />{{
-                $t("onboarding.configured")
-              }}</span
-            >
-            <button
-              class="pick"
-              type="button"
-              :disabled="busy"
-              @click="chooseGame"
-            >
-              <FIcon name="FolderOpen" :size="13" aria-label="" />
-              {{ $t("onboarding.pick") }}
-            </button>
-          </div>
-          <div v-if="detection?.candidates.length" class="candidates">
-            <p class="candidates-label">
-              {{ $t("onboarding.gameCandidates") }}
-            </p>
-            <button
-              v-for="candidate in detection.candidates"
-              :key="candidate.path"
-              class="candidate"
-              type="button"
-              :disabled="!candidate.isDirectory"
-              @click="useCandidate(candidate.path)"
-            >
-              <FIcon
-                :name="candidate.hasPackageMarker ? 'CircleCheck' : 'Folder'"
-                :size="14"
-                aria-label=""
-              />
-              <code>{{ candidate.path }}</code>
-              <small v-if="!candidate.isDirectory">{{
-                $t("onboarding.candidateInvalid")
-              }}</small>
-            </button>
-          </div>
-        </template>
-
-        <!-- 第 3 步：项目管理目录 -->
-        <div v-else class="path-row">
-          <code class="path" :class="{ ok: modRootOk }">{{
-            modRootPath || $t("onboarding.notConfigured")
-          }}</code>
-          <span v-if="modRootOk" class="ok-flag"
-            ><FIcon name="CircleCheck" :size="14" aria-label="" />{{
-              $t("onboarding.configured")
-            }}</span
-          >
+        <div v-if="detection?.candidates.length" class="candidates">
+          <p class="candidates-label">{{ $t("onboarding.gameCandidates") }}</p>
           <button
-            class="pick"
+            v-for="candidate in detection.candidates"
+            :key="candidate.path"
+            class="candidate"
             type="button"
-            :disabled="busy"
-            @click="chooseModRoot"
+            :disabled="!candidate.isDirectory"
+            @click="useCandidate(candidate.path)"
           >
-            <FIcon name="FolderOpen" :size="13" aria-label="" />
-            {{ $t("onboarding.pick") }}
+            <FIcon
+              :name="candidate.hasPackageMarker ? 'CircleCheck' : 'Folder'"
+              :size="14"
+              aria-label=""
+            />
+            <code>{{ candidate.path }}</code>
+            <small v-if="!candidate.isDirectory">{{
+              $t("onboarding.candidateInvalid")
+            }}</small>
           </button>
         </div>
 
@@ -281,25 +152,8 @@ async function finish() {
       </article>
 
       <footer class="wizard-foot">
-        <button
-          class="ghost"
-          type="button"
-          :disabled="step === 1"
-          @click="back"
-        >
-          {{ $t("onboarding.back") }}
-        </button>
         <span class="spacer"></span>
-        <button
-          v-if="step < TOTAL_STEPS"
-          class="primary"
-          type="button"
-          @click="next"
-        >
-          {{ $t("onboarding.next") }}
-          <FIcon name="ArrowRight" :size="13" aria-label="" />
-        </button>
-        <button v-else class="primary" type="button" @click="finish">
+        <button class="primary" type="button" @click="finish">
           <FIcon name="Check" :size="13" aria-label="" />
           {{ $t("onboarding.finish") }}
         </button>

@@ -34,13 +34,12 @@ fn main() {
         if entry.id.type_id != SHADER_TYPE {
             continue;
         }
-        let Ok(raw) = package.read(entry) else { continue };
+        let Ok(raw) = package.read(entry) else {
+            continue;
+        };
         let text = String::from_utf8_lossy(&raw).to_string();
         let lower = text.to_lowercase();
-        if !keywords
-            .iter()
-            .all(|k| lower.contains(&k.to_lowercase()))
-        {
+        if !keywords.iter().all(|k| lower.contains(&k.to_lowercase())) {
             continue;
         }
         hits += 1;

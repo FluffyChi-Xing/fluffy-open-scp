@@ -15,6 +15,7 @@ import {
   type RasterRgbaResponse,
   type SaveRasterOverlayResult,
   type ModProjectGroup,
+  type ModProjectRepoSummary,
   type ModProjectStats,
   type ModProjectView,
   type OpenPackageResponse,
@@ -48,6 +49,9 @@ import {
   type ResourceAnnotation,
   type ResourceAnnotationInput,
   type AnnotationTopicStat,
+  type EffectAnnotation,
+  type EffectAnnotationInput,
+  type EffectTagStat,
   type PropertyResourceData,
   type DecalDictionaryData,
   type DecalImageData,
@@ -56,28 +60,25 @@ import {
   type ErzResourceData,
   type EcoGameResourceData,
   type Rw4SectionDetail,
-  type CaptureBaselineResponse,
-  type ChangesetDetailResponse,
-  type ChangesetSummary,
   type ResourcePage,
   type ResolvedResourceName,
   type RenderTelemetryEntry,
   type RenderTelemetrySummary,
-  type RollbackResult,
   type SettingsStatus,
   type GameProcessInfo,
   type DeployGameModResult,
   type SetupStatusResponse,
   type StudioConfigStatus,
   type TelemetryClearResult,
-  type VersionDeleteResult,
-  type VersionTargetSummary,
   type Tgi,
   type WorkspaceEntry,
   type WorkspaceStatus,
+  type LegacySyncOutcome,
+  type LegacySyncStatus,
   type ResolvedPropModel,
   type PropBinCatalogEntry,
   type PathEntrySummary,
+  type PathSourceSummary,
 } from "./tauri";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -120,6 +121,8 @@ export type {
   Tgi,
   WorkspaceEntry,
   WorkspaceStatus,
+  LegacySyncOutcome,
+  LegacySyncStatus,
 } from "./tauri";
 export const $request = axios.create({ baseURL: "/api/v1", timeout: 15_000 });
 registerInterceptors($request);
@@ -140,11 +143,19 @@ export const tauriApi = {
       command<StudioConfigStatus>("studio_set_mod_root", {
         request: { path },
       }),
+    legacyStatus: () => command<LegacySyncStatus>("studio_legacy_status"),
+    syncLegacy: () => command<LegacySyncOutcome>("studio_sync_legacy"),
     completeOnboarding: () =>
       command<StudioConfigStatus>("studio_complete_onboarding"),
     projects: {
       list: () => command<ModProjectView[]>("mod_project_list"),
-      create: (name: string, groupId?: number, description?: string, author?: string, modType?: string) =>
+      create: (
+        name: string,
+        groupId?: number,
+        description?: string,
+        author?: string,
+        modType?: string,
+      ) =>
         command<ModProjectView>("mod_project_create", {
           request: { name, groupId, description, author, modType },
         }),
@@ -162,6 +173,11 @@ export const tauriApi = {
         }),
       remove: (id: number) =>
         command<void>("mod_project_delete", { request: { id } }),
+      /** 详情页：Releases / Languages / package.json 元数据。 */
+      repoSummary: (project: string) =>
+        command<ModProjectRepoSummary>("mod_project_repo_summary", {
+          request: { project },
+        }),
     },
     groups: {
       list: () => command<ModProjectGroup[]>("mod_group_list"),
@@ -173,6 +189,30 @@ export const tauriApi = {
         command<void>("mod_group_delete", { request: { id } }),
     },
     stats: () => command<ModProjectStats>("mod_project_stats"),
+  },
+  // ── P2 构建队列(OpenSCP Actions 页) ──
+  buildQueue: {
+    enqueue: (project: string, schema: string, label?: string) =>
+      command<string>("build_queue_enqueue", { root: project, schema, label }),
+    /** 一键构建：自动发现 schema，并把工作台逻辑图编译进 semantics 后入队。 */
+    enqueueProject: (project: string, label?: string) =>
+      command<{
+        jobId: string;
+        schema: string;
+        logic?: {
+          menu: boolean;
+          labor: boolean;
+          behaviors: number;
+          warnings: string[];
+        } | null;
+      }>("build_queue_enqueue_project", { root: project, label }),
+    list: (project: string) =>
+      command<import("@/api/tauri").BuildJobDto[]>("build_queue_list", { root: project }),
+    detail: (project: string, jobId: string) =>
+      command<import("@/api/tauri").BuildJobDto | null>("build_queue_detail", {
+        root: project,
+        jobId,
+      }),
   },
   workspace: {
     get: () => command<WorkspaceStatus>("workspace_get"),
@@ -191,6 +231,8 @@ export const tauriApi = {
       ),
     setRoot: (path: string) =>
       command<WorkspaceStatus>("workspace_set_root", { request: { path } }),
+    legacyStatus: () => command<LegacySyncStatus>("workspace_legacy_status"),
+    syncLegacy: () => command<LegacySyncOutcome>("workspace_sync_legacy"),
     list: () => command<WorkspaceEntry[]>("workspace_list"),
     createFolder: (relativePath: string) =>
       command<WorkspaceEntry[]>("workspace_create_folder", {
@@ -236,6 +278,9 @@ export const tauriApi = {
       command<CodeTextDocument>("code_write_text", {
         request: { project, relativePath, content, expectedRevision },
       }),
+    /** 在系统资源管理器中打开项目根目录。 */
+    codeOpenInExplorer: (project: string) =>
+      command<void>("code_open_in_explorer", { request: { project } }),
     codeDeleteFile: (project: string, relativePath: string) =>
       command<void>("code_delete_file", {
         request: { project, relativePath },
@@ -243,6 +288,12 @@ export const tauriApi = {
     codePackageInfo: (project: string, relativePath: string) =>
       command<CodePackageInfo>("code_package_info", {
         request: { project, relativePath },
+      }),
+    /** 工作台文档 → package.json dependencies 同步（pathEntries 等）。 */
+    syncAssetDependencies: (project: string, document: string) =>
+      command<Record<string, unknown>>("sync_asset_dependencies", {
+        project,
+        document,
       }),
     codePackageEntries: (project: string, relativePath: string) =>
       command<CodePackageEntry[]>("code_package_entries", {
@@ -264,16 +315,34 @@ export const tauriApi = {
     codeManifest: (project: string) =>
       command<CodeManifestResponse>("code_manifest", { request: { project } }),
     deployGameMod: (project: string, artifact: string) =>
-      command<DeployGameModResult>("deploy_game_mod", { request: { project, artifact } }),
+      command<DeployGameModResult>("deploy_game_mod", {
+        request: { project, artifact },
+      }),
     deployUiOverlay: (dataBase64: string) =>
-      command<DeployGameModResult>("deploy_ui_overlay", { request: { dataBase64 } }),
+      command<DeployGameModResult>("deploy_ui_overlay", {
+        request: { dataBase64 },
+      }),
     gameProcesses: () => command<GameProcessInfo[]>("game_processes"),
     launchGame: () => command<GameProcessInfo>("launch_game"),
   },
   raster: {
-    readLotPreviewAtlases: () => command<{lotSurfacePng: string; lotNormalAtlasPng: string | null} | null>("read_lot_preview_atlases"),
-    catalog: (packageId: number, profile: string) => command<import("@/lib/raster-editor/catalog").RasterCatalogEntry[]>("list_raster_catalog", { packageId, profile }),
-    readSource: (packageId: number, tgi: Tgi, parameters = false) => command<{width:number; height:number; rgbaBase64:string|null; parameters: {cols:number; values:number[]}|null}>("read_raster_source", {packageId, tgi, parameters}),
+    readLotPreviewAtlases: () =>
+      command<{
+        lotSurfacePng: string;
+        lotNormalAtlasPng: string | null;
+      } | null>("read_lot_preview_atlases"),
+    catalog: (packageId: number, profile: string) =>
+      command<import("@/lib/raster-editor/catalog").RasterCatalogEntry[]>(
+        "list_raster_catalog",
+        { packageId, profile },
+      ),
+    readSource: (packageId: number, tgi: Tgi, parameters = false) =>
+      command<{
+        width: number;
+        height: number;
+        rgbaBase64: string | null;
+        parameters: { cols: number; values: number[] } | null;
+      }>("read_raster_source", { packageId, tgi, parameters }),
     readImageRgba: (path: string) =>
       command<ImageRgbaResponse>("read_image_rgba", { request: { path } }),
     readRgba: (packageId: number, tgi: Tgi) =>
@@ -289,8 +358,7 @@ export const tauriApi = {
       generateMips: boolean;
       /** 覆盖现有 lot 时填源 lot property，同包写入整份副本。 */
       companionProperty?: CompanionPropertyRef;
-    }) =>
-      command<SaveRasterOverlayResult>("save_raster_overlay", { request }),
+    }) => command<SaveRasterOverlayResult>("save_raster_overlay", { request }),
     listPropertyDocuments: (packageId: number, kind: "lot" | "decal") =>
       // 后端是裸参数（package_id, kind），不是 request 结构体——参数必须平铺。
       command<PropertyDocumentSummary[]>("list_property_documents", {
@@ -310,6 +378,10 @@ export const tauriApi = {
       entryId: Tgi;
       aspectRatio: number;
       colors: [number, number, number, number][];
+      baseTile?: number;
+      borderColors?: [number, number, number][];
+      borderPatternIndices?: number[];
+      borderWidths?: number[];
       replaceInstance?: number;
       outputPath: string;
     }) =>
@@ -324,6 +396,14 @@ export const tauriApi = {
       lotSize?: [number, number];
       /** LotColor1-4：sRGB RGB + 图集 tile 索引 0-15。 */
       colors: [number, number, number, number][];
+      /** 底图格索引（缺省由后端使用默认值）。 */
+      baseTile?: number;
+      /** LotBorderColor1-4。 */
+      borderColors?: [number, number, number][];
+      /** 边框带图案索引。 */
+      borderPatternIndices?: number[];
+      /** 边框带半宽。 */
+      borderWidths?: number[];
       outputPath: string;
     }) => command<CreateLotOverlayResult>("create_lot_overlay", { request }),
   },
@@ -392,9 +472,9 @@ export const tauriApi = {
       command<PropertyResourceData>("read_property_preview", {
         request: { packageId, tgi, lang },
       }),
-    readDecalDictionary: (packageId: number, tgi: Tgi) =>
+    readDecalDictionary: (packageId: number, tgi: Tgi, metadataOnly = false) =>
       command<DecalDictionaryData>("read_decal_dictionary", {
-        request: { packageId, tgi },
+        request: { packageId, tgi, metadataOnly },
       }),
     readDecalImages: (packageId: number, tgi: Tgi, indices: number[]) =>
       command<DecalImageData[]>("read_decal_images", {
@@ -408,6 +488,16 @@ export const tauriApi = {
       command<ArrayBuffer>("read_lot_model_meshes", {
         request: { packageId, tgi },
       }),
+    /** 导出 LOD 模型为可编辑 .blend（网格 + 六槽材质，贴图打包进文件）。 */
+    exportLotModelBlend: (
+      packageId: number,
+      tgi: Tgi,
+      path: string,
+      assetName?: string,
+    ) =>
+      command<void>("export_lot_model_blend", {
+        request: { packageId, tgi, path, assetName },
+      }),
     resolvePropModels: (resourceIds: number[]) =>
       command<{ resolutions: ResolvedPropModel[] }>("resolve_prop_models", {
         request: { resourceIds },
@@ -419,12 +509,20 @@ export const tauriApi = {
       command<{ schemaJson: string }>("build_pe_schema", { request }),
     listModelCatalog: () =>
       command<
-        { packageId: number; packagePath: string; instance: number; group: number; name: string; size: number }[]
+        {
+          packageId: number;
+          packagePath: string;
+          instance: number;
+          group: number;
+          name: string;
+          size: number;
+        }[]
       >("list_model_catalog", {}),
     listPropBinCatalog: () =>
       command<PropBinCatalogEntry[]>("list_prop_bin_catalog", {}),
-    listPathEntries: () =>
-      command<PathEntrySummary[]>("list_path_entries", {}),
+    listPathEntries: () => command<PathEntrySummary[]>("list_path_entries", {}),
+    listPathSources: (packageId: number) =>
+      command<PathSourceSummary[]>("list_path_sources", { packageId }),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi, channel },
@@ -497,6 +595,30 @@ export const tauriApi = {
       command<ResourceAnnotation[]>("annotations_list", { limit }),
     topicStats: () => command<AnnotationTopicStat[]>("annotation_topic_stats"),
   },
+  effectAnnotations: {
+    create: (input: EffectAnnotationInput) =>
+      command<EffectAnnotation>("effect_annotation_create", { input }),
+    remove: (id: number) => command<void>("effect_annotation_delete", { id }),
+    list: (limit = 1000) =>
+      command<EffectAnnotation[]>("effect_annotations_list", { limit }),
+    forEffect: (tgi: Tgi) =>
+      command<EffectAnnotation[]>("effect_annotations_for_effect", {
+        request: {
+          typeId: tgi.typeId,
+          groupId: tgi.group,
+          instance: tgi.instance,
+        },
+      }),
+    forSource: (tgi: Tgi) =>
+      command<EffectAnnotation[]>("effect_annotations_for_source", {
+        request: {
+          typeId: tgi.typeId,
+          groupId: tgi.group,
+          instance: tgi.instance,
+        },
+      }),
+    tagStats: () => command<EffectTagStat[]>("effect_annotation_tag_stats"),
+  },
   activity: {
     operations: (limit = 100) =>
       command<Operation[]>("activity_list_operations", { limit }),
@@ -511,29 +633,6 @@ export const tauriApi = {
     summary: (days = 7) =>
       command<RenderTelemetrySummary>("render_telemetry_summary", { days }),
     clear: () => command<TelemetryClearResult>("render_telemetry_clear"),
-  },
-  versions: {
-    targets: () => command<VersionTargetSummary[]>("version_list_targets"),
-    changesets: (targetPath?: string, limit = 100) =>
-      command<ChangesetSummary[]>("version_list_changesets", {
-        request: { targetPath, limit },
-      }),
-    detail: (changesetId: number) =>
-      command<ChangesetDetailResponse>("version_changeset_detail", {
-        request: { changesetId },
-      }),
-    captureBaseline: (targetPath: string) =>
-      command<CaptureBaselineResponse>("version_capture_baseline", {
-        request: { targetPath },
-      }),
-    rollback: (changesetId: number, force: boolean, outputPath?: string) =>
-      command<RollbackResult>("version_rollback", {
-        request: { changesetId, force, outputPath },
-      }),
-    remove: (changesetId: number) =>
-      command<VersionDeleteResult>("version_delete_changeset", {
-        request: { changesetId },
-      }),
   },
 };
 

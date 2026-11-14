@@ -19,18 +19,54 @@ import {
   unitsFromSchema,
 } from "@/pages/packages/components/property-editor/peSchemaDoc";
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
+import {
+  fnv1NameId,
+  suggestAnchorName,
+} from "@/pages/packages/components/unit-inspector/spawnerAnchor";
 import { createUnitEditLayer, mergeUnitOverrides } from "@/pages/packages/components/property-editor/unitEditLayer";
 import {
+  adoptOrphanPaths,
   nextPathId,
+  normalizeWorkbenchPath,
+  pathAutoTangent,
   recomputePathTangents,
   type Vec3,
   type WorkbenchPath,
-} from "./pathPlanning";
+  type WorkbenchPathSource,
+} from "./path-planning/pathModel";
+import { DEFAULT_PATH_TYPE, type PathTypeId } from "./path-planning/pathTypes";
+import {
+  cloneLogicParams,
+  emptyLogicGraph,
+  normalizeLogicGraph,
+  type LogicGraph,
+} from "./logicGraph";
+import {
+  DEFAULT_STREET_FACING,
+  normalizeStreetFacing,
+  streetFacingFromLegacyRotation,
+  type StreetFacingDegrees,
+} from "./streetFacing";
+import { nextIndexOfKind } from "./clipboard/unitClipboard";
 import {
   usePropertyEditorSession,
   type ModelState,
   type UnitGrouping,
 } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
+import { useGamePackagesStore } from "@/stores/gamePackages";
+import {
+  authoredAlbedoDataUrl,
+  authoredLotStyle,
+  type AuthoredLot,
+} from "@/lib/lot-ground/authored";
+import { loadAuthoredLot } from "./authoredLotStore";
+import { createPlacedDecal, restoreDecalSources, useWorkbenchDecals, writeDecalSources, type DecalSelection } from "./workbenchDecals";
+import { draftPropResourceIds, emptyDraftPropModels, loadDraftPropModels, loadPlacedPropModel } from "./workbenchPropModels";
+import {
+  emptyMenuBinding,
+  normalizeMenuBinding,
+  type WorkbenchMenuBinding,
+} from "./menuBinding";
 
 /**
  * Mod 资产工作台统一会话（Blender 式重构 2026-10-25）。
@@ -48,7 +84,8 @@ export type WorkbenchSourceKind = "none" | "glb" | "lotm" | "native";
 
 /** editor.workbench 扩展块：会话恢复所需的来源信息。 */
 interface WorkbenchSourceBlock {
-  source: "glb" | "lotm" | "native";
+  source: WorkbenchSourceKind;
+  modelRemoved?: boolean;
   assetPath?: string;
   packagePath?: string;
   tgi?: Tgi;
@@ -56,10 +93,22 @@ interface WorkbenchSourceBlock {
   menu?: WorkbenchMenuBinding;
   /** 路径实体（entry/scope/roadConnect + 有序点引用；几何在 pathPoint 单元）。 */
   paths?: WorkbenchPath[];
+  /** 本次会话编辑过的列族（delta 写回声明；与 schema.scene.writes 取并集）。 */
+  writes?: string[];
+  /** 逻辑编排图（建筑信息/行为聚合/行为叶子）；构建时编译成 semantics。 */
+  logic?: LogicGraph;
   /** 草稿模型伪单元变换（行主序 12 floats）。 */
   modelTransform?: number[] | null;
+  /** 临街吸附边（lot 本地角；与模型旋转无关）。 */
+  streetFacingDegrees?: number;
+  /** @deprecated 旧误用字段；加载时迁移为 streetFacingDegrees。 */
+  rotationDegrees?: number;
   /** 六槽材质绑定（项目内相对路径）。 */
   materialSlots?: MaterialSlotBinding | null;
+  /** Blender 原生导出：贴图由 Blender 绑定，工作台不再暴露六槽页。 */
+  nativeBlender?: boolean;
+  /** Blender 原生适配器产出的 LOTM（项目内相对路径），供打包器使用。 */
+  nativeLotm?: string;
   lotStyle?: {
     colors: [number, number, number, number][];
     colorsAuthored: boolean[];
@@ -71,14 +120,13 @@ interface WorkbenchSourceBlock {
     /** 来源 Lot 引用：恢复时重新拉取会话取回 mask/albedo/surface 等贴图
      * （贴图 base64 不入文档——code_write_text 有 4MiB 上限）。 */
     sourceLot?: LotPresetRef | null;
+    /** 地块绑定的是项目内自绘地面（assets/lot/authored/）。 */
+    authored?: boolean;
   };
 }
 
-export interface WorkbenchMenuBinding {
-  enabled: boolean;
-  label: string;
-  category: string;
-}
+/** 菜单绑定 v2 形态、迁移与 semantics.menu 推导见 menuBinding.ts（2026-11-06 菜单编辑节点组）。 */
+export type { WorkbenchMenuBinding };
 
 /** 六槽材质绑定：项目内资产相对路径（params.json + slot1..5.png）。 */
 export interface MaterialSlotBinding {
@@ -89,25 +137,48 @@ export interface MaterialSlotBinding {
   slot3?: string;
   slot4?: string;
   slot5?: string;
+  /**
+   * GLB 的 UV 契约（.blend 导入时由导入脚本探测写入）：
+   * - `native`：网格带逐顶点 matIndex（游戏资产导出），TEXCOORD_1 =
+   *   [matIndex, 0.5] 选参数列、TEXCOORD_2/3 = 基础/Top 立面域，走
+   *   游戏验证过的原生 tint 链（uvKind 2）；
+   * - `blender`：插件作者资产，TEXCOORD_1 = 基础域、TEXCOORD_3 = Top
+   *   域、参数列固定 0（TINT_BLENDER，uvKind 3）。
+   */
+  uvContract?: "native" | "blender";
   /** 外部 .blend 按 GLB 材质名保存的独立槽位。 */
   byMaterial?: Record<string, Omit<MaterialSlotBinding, "byMaterial">>;
 }
 
 /** 组件库拖放载荷（与 PropertyEditor 放置契约同构）。 */
 export interface PlacePayload {
-  kind: "light" | "prop" | "spawner" | "effect" | "pathPoint";
+  kind: "light" | "prop" | "spawner" | "effect" | "pathPoint" | "decal";
+  decal?: DecalSelection;
   lightType?: "Point" | "Spot" | "Line";
   packageId?: number;
   packagePath?: string;
   tgi?: Tgi;
   name?: string;
   template?: PropUnit;
+  /** prop bin 目录条目的脚本 resourceID（树/车等普查清单 id）——放置直写
+   * PROP_ID，缺省回落 modelTgi.instance（直挂模型，游戏不解析）。 */
+  resourceId?: number;
+  /** prop bin 目录条目的原生 bin（vanilla 车辆 0 / 树 9..12）。 */
+  bin?: number;
+  /** 生成器预设名字 id（引擎 FNV-1 哈希；null/缺省 = 未命名锚点）。 */
+  spawnerId?: number | null;
+  /** 效果目录卡携带的 effect TGI（语义 tag 目录）；缺省 = 空白效果。 */
+  effectId?: Tgi;
 }
 
 /** Lot 库应用载荷：Lot 资源位置。 */
 export interface LotPresetRef {
   packageId: number;
   tgi: Tgi;
+  /** 来源包路径——packageId 跨运行失效（PackageManager 每次启动重新编号，
+   * 持久化在 asset.lot.json 里的 id 冷启动必 miss）时按此重开重试；
+   * 缺省（旧文档）时套用失败仅丢 mask/albedo 贴图（fail-soft）。 */
+  packagePath?: string;
 }
 
 const DOCUMENT_PATH = "asset.lot.json";
@@ -189,21 +260,23 @@ function groupUnits(units: LotUnitDto[]): UnitGrouping {
 export function useWorkbenchAsset(project: string) {
   // ---- 会话状态（native / draft 二选一激活）----
   const sourceKind = ref<WorkbenchSourceKind>("none");
+  const draftSceneOpen = ref(false);
+  /** True when the last draft came from the native Blender adapter. */
+  const nativeBlender = ref(false);
+  const nativeLotmPath = ref("");
   const sourceLabel = ref("");
   const documentRevision = ref<string | undefined>(undefined);
   const savedDirty = ref(false);
   const restoring = ref(false);
 
-  const menu = reactive<WorkbenchMenuBinding>({
-    enabled: false,
-    label: "",
-    category: "",
-  });
+  const menu = reactive<WorkbenchMenuBinding>(emptyMenuBinding());
 
   // draft：GLB/LOTM 载荷 + bbox 推导的地块尺寸（用户可在"地块"页签改）
   const draftPayload = shallowRef<LotModelPayload | null>(null);
   const draftModelState = ref<ModelState>("pending");
   const draftLotSize = ref<[number, number] | null>(null);
+  /** 临街吸附边（写入 workbench.streetFacingDegrees；默认 +Y）。 */
+  const streetFacingDegrees = ref<StreetFacingDegrees>(DEFAULT_STREET_FACING);
   const draftLoading = ref(false);
   const draftError = ref("");
   /** 草稿地块分层样式：默认中性灰；Lot 库应用后替换为该 Lot 的配置。
@@ -212,6 +285,7 @@ export function useWorkbenchAsset(project: string) {
    * 【持久化口径】贴图本身不入文档（4MiB 写回上限），只存 sourceLot
    * 引用，恢复时经 applyLotPreset 重新拉取。 */
   const appliedLot = ref<LotPresetRef | null>(null);
+  const appliedAuthoredLot = ref(false);
   const draftStyle = reactive({
     colors: DRAFT_LOT_DEFAULTS.lotColors.map(
       (color) => [...color] as [number, number, number, number],
@@ -266,7 +340,7 @@ export function useWorkbenchAsset(project: string) {
     try {
       const base = draftPayload.value;
       if (!base) return;
-      let materials: LotModelPayload["materials"] = [];
+      const materials: LotModelPayload["materials"] = [];
       let meshUvKinds: number[] = [];
       if (binding.params || binding.slot1 || binding.byMaterial) {
         const [paramsBytes, materialParamsBytes] = await Promise.all([
@@ -368,11 +442,15 @@ export function useWorkbenchAsset(project: string) {
           });
         }
         if (materials.length) {
-          // Blender GLB 的 UV 语义不同于 LOTM：基础域在 TEXCOORD_1，
-          // 立面/Top 域在 TEXCOORD_3；每个 GLB 材质按名称选择自己的槽位。
-          // 用独立 uvKind 让视口选择 Blender shader 变体。
+          // UV 契约决定着色器变体：native（游戏资产导出，TEXCOORD_1 =
+          // [matIndex,.5] 选参数列、2/3 = 立面域）走游戏验证过的原生
+          // tint 链（uvKind 2）；blender（插件作者资产，TEXCOORD_1 =
+          // 基础域、3 = Top 域、列固定 0）走 TINT_BLENDER 变体（uvKind 3）。
+          // 每个 GLB 材质按名称选择自己的槽位。
           meshUvKinds = base.glbs.map(() =>
-            sourceKind.value === "glb" ? 3 : 2,
+            binding.uvContract === "native" || sourceKind.value === "lotm"
+              ? 2
+              : 3,
           );
         }
       }
@@ -434,12 +512,27 @@ export function useWorkbenchAsset(project: string) {
   const sourcePackagePath = ref("");
   /** native 会话的包 id（特效预览等需要）。 */
   const nativePackageId = ref<number | null>(null);
+  // effect 预览的包锚点:draft(lotm/GLB)模式无 nativePackageId——回退到
+  // 任一已打开游戏包(read_effect_preview 的 locate_effect_packages 会从
+  // 锚点出发定位真正的效果定义包,Game/App 均可作锚点)。
+  const gamePackages = useGamePackagesStore();
+  /** 地面贴图相对上次快照是否有变化(套用 preset 置脏,保存快照后清)。 */
+  const groundSnapshotDirty = ref(false);
+  const effectPreviewPackageId = computed(() => {
+    if (sourceKind.value === "native" && nativePackageId.value != null) {
+      return nativePackageId.value;
+    }
+    return gamePackages.opened[0]?.package.packageId ?? 0;
+  });
   /** 项目根绝对路径（.package 树项 → packages.open 需要绝对路径）。 */
   let projectRootPath = "";
+  /** 响应式镜像（画布菜单图片预览用）。 */
+  const projectRoot = ref("");
   async function resolveProjectRoot(): Promise<string> {
     if (projectRootPath) return projectRootPath;
     const tree = await tauriApi.workspace.codeTree(project);
     projectRootPath = tree.rootPath;
+    projectRoot.value = tree.rootPath;
     return projectRootPath;
   }
 
@@ -454,6 +547,7 @@ export function useWorkbenchAsset(project: string) {
   }
 
   let loadEpoch = 0;
+  const decalPreviews = useWorkbenchDecals();
   /** 六槽组装代数：连续绑定/解绑时旧组装不得覆盖新 payload。 */
   let slotComposeEpoch = 0;
 
@@ -468,6 +562,29 @@ export function useWorkbenchAsset(project: string) {
       draftEdit.overrides,
       draftEdit.fieldOverrides,
     ),
+  );
+  const draftProps = shallowRef(emptyDraftPropModels());
+  watch(
+    () => draftSceneOpen.value
+      ? draftPropResourceIds(draftEffectiveUnits.value).join(",")
+      : "",
+    async (key, _previous, onCleanup) => {
+      if (!key) {
+        draftProps.value = emptyDraftPropModels();
+        return;
+      }
+      let stale = false;
+      const epoch = loadEpoch;
+      onCleanup(() => { stale = true; });
+      try {
+        const models = await loadDraftPropModels(placementSource, key.split(",").map(Number));
+        if (!stale && epoch === loadEpoch) draftProps.value = models;
+      } catch (error) {
+        if (!stale && epoch === loadEpoch && import.meta.env.DEV) {
+          console.warn("[workbench] prop resource lookup failed:", error);
+        }
+      }
+    },
   );
 
   /** 当前激活的编辑面：模板/子组件统一从这里取数。 */
@@ -504,7 +621,7 @@ export function useWorkbenchAsset(project: string) {
         lotAlbedoPng: session.lotAlbedoPng.value,
         lotSurfacePng: session.lotSurfacePng.value,
         lotNormalAtlasPng: session.lotNormalAtlasPng.value,
-        decalTextures: session.session.value?.decalTextures ?? [],
+        decalTextures: decalPreviews.texturesFor(session.flatUnits.value, session.session.value?.decalTextures ?? []),
         decalLight: session.decalLight.value,
         propModels: session.propModels.value,
         propTreeIds: session.propTreeIds.value,
@@ -518,10 +635,11 @@ export function useWorkbenchAsset(project: string) {
         modelOrigin: null,
         materialSlots: null,
         modelTransform: null,
+        streetFacingDegrees: streetFacingDegrees.value,
         assetName: session.session.value?.assetName ?? sourceLabel.value,
       };
     }
-    if (sourceKind.value === "glb" || sourceKind.value === "lotm") {
+    if (draftSceneOpen.value) {
       const units = draftEffectiveUnits.value;
       return {
         editMode: "draft" as const,
@@ -556,13 +674,9 @@ export function useWorkbenchAsset(project: string) {
         lotAlbedoPng: draftStyle.albedoPng,
         lotSurfacePng: draftStyle.surfacePng,
         lotNormalAtlasPng: draftStyle.normalAtlasPng,
-        decalTextures: [],
+        decalTextures: decalPreviews.texturesFor(units, []),
         decalLight: null,
-        propModels: new Map<number, LotModelPayload>(),
-        propTreeIds: new Set<number>(),
-        treeModelPayloads: [],
-        treeAtlasPng: null,
-        referencedModels: [],
+        ...draftProps.value,
         selectedId: draftSelectedId,
         switchLod: () => {},
         toggleUnit: (unit: LotUnitDto, groupKey?: string) => {
@@ -580,6 +694,7 @@ export function useWorkbenchAsset(project: string) {
           draftGroupVisibility[name] = !draftGroupVisibility[name];
         },
         modelTransform: draftModelTransform.value,
+        streetFacingDegrees: streetFacingDegrees.value,
         assetName: sourceLabel.value,
       };
     }
@@ -614,9 +729,16 @@ export function useWorkbenchAsset(project: string) {
       hiddenUnitIds: [...current.hiddenUnits],
       groups: { ...current.groupVisibility },
     });
+    writeDecalSources(document, current.flatUnits);
     const editor = document.editor as Record<string, unknown>;
     editor.workbench = {
       source: sourceKind.value as WorkbenchSourceBlock["source"],
+      modelRemoved:
+        draftSceneOpen.value && sourceKind.value === "none" && !sourceAssetPath.value
+          ? true
+          : undefined,
+      nativeBlender: nativeBlender.value || undefined,
+      nativeLotm: nativeLotmPath.value || undefined,
       assetPath: sourceAssetPath.value || undefined,
       packagePath: sourcePackagePath.value || undefined,
       tgi:
@@ -624,6 +746,7 @@ export function useWorkbenchAsset(project: string) {
           ? nativeTgi.value
           : undefined,
       lotSize: sourceKind.value === "native" ? undefined : draftLotSize.value,
+      streetFacingDegrees: streetFacingDegrees.value,
       modelTransform:
         sourceKind.value === "native" ? undefined : draftModelTransform.value,
       materialSlots:
@@ -649,11 +772,25 @@ export function useWorkbenchAsset(project: string) {
               // 文档——code_write_text 有 4MiB 上限（用户实测 limit_exceeded）；
               // 持久化来源 Lot 引用，恢复时重新拉取会话数据。
               sourceLot: appliedLot.value ? { ...appliedLot.value } : null,
+              authored: appliedAuthoredLot.value || undefined,
             },
-      menu: { ...menu },
-      // 路径实体（2026-10-27 路径规划）：几何在 pathPoint 单元，这里存
-      // entry/scope/roadConnect 与有序点引用；恢复见 restoreUnits。
+      menu: {
+        ...menu,
+        entries: menu.entries.map((entry) => ({ ...entry })),
+      },
+      // 路径实体（2026-11-07 类型化）：几何在 pathPoint 单元，这里存
+      // type/entry/scope/roadConnect 与有序点引用；entry 由构建器按 type
+      // 换算，作者不接触。恢复见 restoreUnits。
       paths: draftPaths.value.map((path) => ({ ...path })),
+      // 编辑族声明（delta 写回 + delta-audit 的意图来源）。
+      writes: [...draftWrites.value].sort(),
+      // 逻辑编排图（构建时编译成 semantics.labor/behaviors）。
+      logic: {
+        nodes: draftLogic.value.nodes.map((node) => ({ ...node })),
+        edges: draftLogic.value.edges.map((edge) => ({ ...edge })),
+        // reactive proxy 不能进 structuredClone；参数是纯 JSON。
+        params: cloneLogicParams(draftLogic.value.params),
+      },
     } satisfies WorkbenchSourceBlock;
     return document;
   });
@@ -678,8 +815,12 @@ export function useWorkbenchAsset(project: string) {
 
   function resetEditState() {
     releaseLotModelCache();
+    decalPreviews.reset();
     draftEdit.reset();
+    draftWrites.value = new Set();
+    draftLogic.value = emptyLogicGraph();
     addedModelPayloads.value = new Map();
+    draftProps.value = emptyDraftPropModels();
     draftSelectedId.value = null;
     draftModelTransform.value = null;
     draftHiddenUnits.value = new Set();
@@ -699,6 +840,7 @@ export function useWorkbenchAsset(project: string) {
   // ---- native 打开：包路径 + TGI ----
   async function openNative(packagePath: string, tgi: Tgi) {
     const epoch = ++loadEpoch;
+    draftSceneOpen.value = false;
     nativeSession.value = null;
     nativeTgi.value = null;
     resetEditState();
@@ -707,9 +849,12 @@ export function useWorkbenchAsset(project: string) {
     draftLoading.value = false;
     draftError.value = "";
     draftLotSize.value = null;
+    streetFacingDegrees.value = DEFAULT_STREET_FACING;
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceKind.value = "none";
+    nativeBlender.value = false;
+    nativeLotmPath.value = "";
     // 树里来的相对路径 → 项目根绝对路径
     const absolute = /^[A-Za-z]:[\\/]|^[\\/]/.test(packagePath)
       ? packagePath
@@ -737,17 +882,27 @@ export function useWorkbenchAsset(project: string) {
   }
 
   // ---- draft 打开：项目内模型资产（import-asset 已落盘）----
-  async function openDraftAsset(assetRelativePath: string) {
+  async function openDraftAsset(
+    assetRelativePath: string,
+    options?: { nativeBlender?: boolean; nativeLotm?: string },
+  ) {
     const epoch = ++loadEpoch;
+    const keepScene = draftSceneOpen.value && sourceKind.value === "none";
     nativeSession.value = null;
     nativeTgi.value = null;
-    resetEditState();
+    if (!keepScene) resetEditState();
+    draftSceneOpen.value = keepScene;
     sourceKind.value = "none";
+    nativeBlender.value = options?.nativeBlender === true;
+    nativeLotmPath.value = options?.nativeLotm ?? "";
     draftLoading.value = true;
     draftError.value = "";
     draftPayload.value = null;
     draftModelState.value = "loading";
-    draftLotSize.value = null;
+    if (!keepScene) {
+      draftLotSize.value = null;
+      streetFacingDegrees.value = DEFAULT_STREET_FACING;
+    }
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceAssetPath.value = assetRelativePath;
@@ -800,11 +955,12 @@ export function useWorkbenchAsset(project: string) {
         return;
       }
       draftPayload.value = payload;
+      draftSceneOpen.value = true;
       draftModelState.value = "ready";
       sourceKind.value = lower.endsWith(".lotm") ? "lotm" : "glb";
       const footprint = await measureFootprint(payload);
       if (epoch !== loadEpoch) return;
-      draftLotSize.value = footprint.size;
+      draftLotSize.value ??= footprint.size;
       draftModelOrigin.value = footprint.origin;
       // 恢复已绑定的六槽材质（重开工作台/重载模型后仍生效）
       const binding = { ...draftMaterialSlots.value };
@@ -820,7 +976,7 @@ export function useWorkbenchAsset(project: string) {
         draftLoading.value = false;
         // 加载基线落定：待挂起的文档 watcher 刷过之后清脏
         void nextTick().then(() => {
-          if (epoch === loadEpoch) {
+          if (epoch === loadEpoch && !keepScene) {
             savedDirty.value = false;
             savedBaseline.value = schemaJson.value;
           }
@@ -877,11 +1033,7 @@ export function useWorkbenchAsset(project: string) {
 
   // ---- 组件放置（组件库 pointer 拖拽 → 视口落点）----
   function nextIndexOf(kind: string): number {
-    let max = -1;
-    for (const unit of ui.value?.flatUnits ?? []) {
-      if (unit.kind === kind && unit.index > max) max = unit.index;
-    }
-    return max + 1;
+    return nextIndexOfKind(ui.value?.flatUnits ?? [], kind);
   }
 
   // ---- 路径规划（2026-10-27）：路径为一等实体，几何挂在 pathPoint 单元 ----
@@ -890,6 +1042,56 @@ export function useWorkbenchAsset(project: string) {
   const activePathId = ref<string | null>(null);
   /** 聚焦路径：视口折线只画它（多路径防串线；冻结区视口改造前的前离方案）。 */
   const focusedPathId = ref<string | null>(null);
+
+  /** 逻辑编排图（2026-11-07）：画布唯一数据源，保存进文档 editor.workbench.logic。 */
+  const draftLogic = ref<LogicGraph>(emptyLogicGraph());
+  function setLogicGraph(graph: LogicGraph): void {
+    draftLogic.value = graph;
+  }
+
+  /**
+   * 本次会话实际编辑过的列族（`editor.workbench.writes`）：
+   * - 编辑器自己知道"用户只动了什么"，把它写进文档；
+   * - 构建器据此做 delta 写回（只碰这些列）并做 delta-audit（其它列必须
+   *   与参照 lot 逐列一致）——r10 事故的机制性修复：作者不再需要手写
+   *   `scene.writes`，构建器也不再整体重写 lot。
+   */
+  const draftWrites = ref<Set<string>>(new Set());
+  function markWrite(family: string): void {
+    if (draftWrites.value.has(family)) return;
+    draftWrites.value = new Set(draftWrites.value).add(family);
+  }
+  /** 就地编辑（变换/字段）→ 标记该单元所属列族（构建 delta 写回依据）。 */
+  function markUnitTouched(id: string): void {
+    const unit = ui.value?.flatUnits.find((candidate) => unitId(candidate) === id);
+    if (unit) markUnitFamily(unit);
+  }
+  /** 单元 → 列族（delta 写回的粒度单位）。 */
+  function markUnitFamily(unit: LotUnitDto): void {
+    const bin = (unit as unknown as { bin?: number }).bin ?? 0;
+    switch (unit.kind) {
+      case "light":
+        markWrite("lights");
+        break;
+      case "spawner":
+        markWrite("spawners");
+        break;
+      case "effect":
+        markWrite("effects");
+        break;
+      case "decal":
+        markWrite("decals");
+        break;
+      case "pathPoint":
+        markWrite("paths");
+        break;
+      case "prop":
+        markWrite(`props:${bin}`);
+        break;
+      default:
+        break;
+    }
+  }
 
   function pathById(id: string): WorkbenchPath | null {
     return draftPaths.value.find((path) => path.id === id) ?? null;
@@ -900,35 +1102,49 @@ export function useWorkbenchAsset(project: string) {
     return unit && unit.kind === "pathPoint" ? unit.point : null;
   }
 
-  /** 重算路径全点切线与 pointIndex（引擎要求点/切线等长；经字段 override 走
-   * 可撤销编辑层）。 */
-  function refreshPathGeometry(path: WorkbenchPath): void {
+  /** 追加式路径的派生几何（切线/pointIndex）直接写单元，不走命令栈——
+   * 否则每点 N 条字段命令会让 ctrl+z 第一下毫无视觉变化（"撤不掉"）。
+   * add/remove 各自只有一条 undo 命令（单元增删本身）。 */
+  function syncPathTails(path: WorkbenchPath): void {
     const edit = ui.value?.edit;
     if (!edit) return;
     const positions = path.pointIds.map((id) => unitPosition(id));
     const tangents = recomputePathTangents(positions);
-    path.pointIds.forEach((id, index) => {
-      edit.setUnitFields(id, {
-        tangent: tangents[index] ?? null,
-        pointIndex: index,
-      });
+    const touched = path.pointIds.slice(-2);
+    touched.forEach((id, offset) => {
+      const index = path.pointIds.length - touched.length + offset;
+      const unit = edit.addedUnits.find(
+        (candidate) => unitId(candidate) === id,
+      );
+      if (unit && unit.kind === "pathPoint") {
+        unit.tangent = tangents[index] ?? null;
+        unit.pointIndex = index;
+      }
     });
   }
 
-  function createPath(label?: string): string {
+  function createPath(options?: {
+    label?: string;
+    type?: PathTypeId;
+    entry?: string | null;
+    source?: WorkbenchPathSource;
+  }): string {
     const id = nextPathId(draftPaths.value.map((path) => path.id));
     const count = draftPaths.value.length + 1;
     draftPaths.value = [
       ...draftPaths.value,
       {
         id,
-        label: label ?? `#${count}`,
-        entry: null,
+        label: options?.label ?? `#${count}`,
+        type: options?.type ?? DEFAULT_PATH_TYPE,
+        entry: options?.entry ?? null,
         scope: "local",
         roadConnect: false,
         pointIds: [],
+        source: options?.source,
       },
     ];
+    markWrite("paths");
     activePathId.value = id;
     focusedPathId.value = id;
     return id;
@@ -944,18 +1160,22 @@ export function useWorkbenchAsset(project: string) {
       path = pathById(id);
     }
     if (!path) return null;
+    const prev = path.pointIds.length
+      ? unitPosition(path.pointIds[path.pointIds.length - 1])
+      : null;
     const unit: LotUnitDto = {
       kind: "pathPoint",
       index: nextIndexOf("pathPoint"),
       point: position,
-      tangent: null,
+      tangent: pathAutoTangent(prev, position, null),
       pointIndex: path.pointIds.length,
       fields: [],
     } as unknown as LotUnitDto;
     edit.addUnit(unit);
     const id = unitId(unit);
     path.pointIds.push(id);
-    refreshPathGeometry(path);
+    syncPathTails(path);
+    markWrite("paths");
     selectUnit(id);
     return id;
   }
@@ -966,7 +1186,8 @@ export function useWorkbenchAsset(project: string) {
     if (!path || !edit || !path.pointIds.length) return;
     const id = path.pointIds.pop()!;
     edit.removeUnit(id);
-    refreshPathGeometry(path);
+    syncPathTails(path);
+    markWrite("paths");
   }
 
   function finishPath(): void {
@@ -979,12 +1200,23 @@ export function useWorkbenchAsset(project: string) {
     draftPaths.value = draftPaths.value.map((candidate) =>
       candidate.id === id ? { ...candidate, ...patch } : candidate,
     );
+    // 只有语义字段变化才写 lot 列（label 只是编辑器展示）。
+    if (
+      "type" in patch ||
+      "entry" in patch ||
+      "scope" in patch ||
+      "roadConnect" in patch ||
+      "pointIds" in patch
+    ) {
+      markWrite("paths");
+    }
   }
 
   function deletePath(id: string): void {
     const path = pathById(id);
     const edit = ui.value?.edit;
     if (path && edit) for (const pointId of path.pointIds) edit.removeUnit(pointId);
+    if (path) markWrite("paths");
     draftPaths.value = draftPaths.value.filter((candidate) => candidate.id !== id);
     if (activePathId.value === id) activePathId.value = null;
     if (focusedPathId.value === id) focusedPathId.value = null;
@@ -1012,6 +1244,9 @@ export function useWorkbenchAsset(project: string) {
   ): string | null {
     const edit = ui.value?.edit;
     if (!edit) return null;
+    // 路径点只能由 addPathPoint 在 Draw 模式下创建。通用组件拖放
+    // 会绕过 activePathId，留下没有路径引用的孤立点。
+    if (payload.kind === "pathPoint") return null;
     const transform = {
       matrix: placementMatrix(position, 1),
     };
@@ -1024,18 +1259,24 @@ export function useWorkbenchAsset(project: string) {
       );
       unit.displayName = payload.name;
     } else if (payload.kind === "light") {
+      const lightType = payload.lightType ?? "Point";
       unit = {
         kind: "light",
         index: nextIndexOf("light"),
         transform,
-        lightType: payload.lightType ?? "Point",
+        lightType,
         color: [1, 1, 1],
-        outerRadius: 8,
+        // 8 m 灯具半径对 Spot 是 34° 的宽锥；圆柱段用 12 m，和游戏展馆
+        // 聚光灯的投射距离同量级。Length 缺失会让标记锥退化成 5 cm
+        // （旧实现 = 放置后看不见）。
+        outerRadius: lightType === "Point" ? 8 : 6,
         innerRadius: null,
         diffuse: null,
-        length: null,
+        length: lightType === "Point" ? null : 12,
         cullDistance: "Far",
-        isVolumetric: false,
+        // 聚光灯默认带体积光锥；点/线光源保持无体积。
+        isVolumetric: lightType === "Spot",
+        volumetricStrength: lightType === "Spot" ? 1 : 0,
         debugName: null,
         fields: [],
       } as LotUnitDto;
@@ -1047,8 +1288,12 @@ export function useWorkbenchAsset(project: string) {
       unit = {
         kind: "prop",
         index: nextIndexOf("prop"),
-        bin: 1,
-        resourceId: payload.tgi.instance,
+        // 目录条目带脚本 resourceID 时直写 PROP_ID（游戏按脚本资源表解析）；
+        // 缺省回落模型实例（直挂模型路径）。bin 同步取目录原生 bin
+        // （vanilla：车辆 0 / 树 9..12）——全塞 bin1 会被宿主建筑脚本的
+        // 资源 bin 数量语义误门控。
+        bin: payload.bin ?? 1,
+        resourceId: payload.resourceId ?? payload.tgi.instance,
         transform,
         slot: null,
         scale: null,
@@ -1059,11 +1304,19 @@ export function useWorkbenchAsset(project: string) {
         fields: [],
       } as unknown as LotUnitDto;
     } else if (payload.kind === "spawner") {
+      // 预设锚点带名字 id；未给预设时按当前 lot 生成不重复的可读名字，
+      // 保证「放下即有名字」——写入端已收紧为「无名字拒绝写」。
+      const presetId =
+        payload.spawnerId && payload.spawnerId > 0 ? payload.spawnerId : null;
+      const fallbackId = presetId
+        ? null
+        : fnv1NameId(suggestAnchorName(ui.value?.flatUnits ?? []));
+      const anchorId = presetId ?? fallbackId;
       unit = {
         kind: "spawner",
         index: nextIndexOf("spawner"),
         transform,
-        id: null,
+        id: anchorId ? { typeId: 0, group: 0, instance: anchorId } : null,
         count: null,
         countRandom: null,
         agent: null,
@@ -1074,22 +1327,16 @@ export function useWorkbenchAsset(project: string) {
         kind: "effect",
         index: nextIndexOf("effect"),
         transform,
-        effectId: null,
+        effectId: payload.effectId ?? null,
         externalId: null,
         enabled: true,
         fields: [],
       } as LotUnitDto;
     } else {
-      unit = {
-        kind: "pathPoint",
-        index: nextIndexOf("pathPoint"),
-        point: position,
-        tangent: null,
-        pointIndex: null,
-        fields: [],
-      } as LotUnitDto;
+      return null;
     }
     edit.addUnit(unit);
+    markUnitFamily(unit);
     selectUnit(unitId(unit));
     // 直挂 prop：异步取 LOTM 载荷入缓存（渲染器从此读取）
     if (
@@ -1102,9 +1349,11 @@ export function useWorkbenchAsset(project: string) {
         modelTgi: payload.tgi,
         modelPackageId: payload.packageId,
       });
+      const epoch = loadEpoch;
       placementSource
         .readLotModelMeshes(payload.packageId, payload.tgi)
         .then((buffer) => {
+          if (epoch !== loadEpoch) return;
           const next = new Map(addedModelPayloads.value);
           next.set(cacheKey, parseLotModelContainer(buffer));
           addedModelPayloads.value = next;
@@ -1116,10 +1365,38 @@ export function useWorkbenchAsset(project: string) {
     return unitId(unit);
   }
 
+  async function placeDecal(
+    decal: DecalSelection,
+    position: Vec3,
+    canPlace: () => boolean,
+  ): Promise<string | null> {
+    const epoch = loadEpoch;
+    const edit = ui.value?.edit;
+    if (!edit) return null;
+    const resolved = await decalPreviews.resolve(decal, true);
+    const current = ui.value;
+    if (!resolved.placement || !current || current.edit !== edit || epoch !== loadEpoch || !canPlace()) return null;
+    const unit = createPlacedDecal(decal.id, resolved.source, resolved.placement, nextIndexOf("decal"), position);
+    edit.addUnit(unit);
+    current.groupVisibility.decals = true;
+    markUnitFamily(unit);
+    selectUnit(unitId(unit));
+    return unitId(unit);
+  }
+
   function deleteUnit(id: string) {
     const edit = ui.value?.edit;
     if (!edit) return;
+    const removed = ui.value?.flatUnits.find((unit) => unitId(unit) === id);
+    if (removed) markUnitFamily(removed);
     edit.removeUnit(id);
+    // 路径实体同步摘除悬空点引用（否则校验/折线残留幽灵点）
+    for (const path of draftPaths.value) {
+      if (path.pointIds.includes(id)) {
+        path.pointIds = path.pointIds.filter((pointId) => pointId !== id);
+        syncPathTails(path);
+      }
+    }
     if (ui.value?.selectedId.value === id) selectUnit(null);
   }
 
@@ -1131,6 +1408,13 @@ export function useWorkbenchAsset(project: string) {
     ];
   }
 
+  /** 临街吸附边（地块页签四向选择 → 箭头指示；不旋转模型）。 */
+  function setStreetFacingDegrees(degrees: StreetFacingDegrees) {
+    streetFacingDegrees.value = normalizeStreetFacing(degrees);
+    // schemaDocument watcher 会置脏；显式再钉一次，避免漏保存。
+    savedDirty.value = true;
+  }
+
   /** Lot 库应用：读取该 Lot 会话并把尺寸/四色分层/边框带/底图格套用到
    * 草稿地块（仅外部导入模型；游戏包资产的地块来自 property，拒绝替换）。
    * 同时载入该 Lot 的 mask/反照率/地表/法线图集——没有这层数据地面只是
@@ -1138,13 +1422,27 @@ export function useWorkbenchAsset(project: string) {
   async function applyLotPreset(
     preset: LotPresetRef,
   ): Promise<[number, number] | null> {
-    if (sourceKind.value !== "glb" && sourceKind.value !== "lotm") {
+    if (!draftSceneOpen.value) {
       throw new Error("lot_apply_native");
     }
-    const session = await tauriApi.packages.readLotEditorSession(
-      preset.packageId,
-      preset.tgi,
-    );
+    let packageId = preset.packageId;
+    let session;
+    try {
+      session = await tauriApi.packages.readLotEditorSession(
+        packageId,
+        preset.tgi,
+      );
+    } catch (cause) {
+      // PackageManager 每次启动重新编号——持久化的 packageId 在冷启动后必
+      // miss。带路径时按路径重开重试；无路径（旧文档）原样抛给调用方。
+      if (!preset.packagePath) throw cause;
+      packageId = (await tauriApi.packages.open(preset.packagePath)).package
+        .packageId;
+      session = await tauriApi.packages.readLotEditorSession(
+        packageId,
+        preset.tgi,
+      );
+    }
     if (session.lotSize) {
       draftLotSize.value = [session.lotSize[0], session.lotSize[1]];
     }
@@ -1189,12 +1487,46 @@ export function useWorkbenchAsset(project: string) {
     draftStyle.normalAtlasPng = session.lotNormalAtlasPng
       ? `data:image/png;base64,${session.lotNormalAtlasPng}`
       : null;
-    appliedLot.value = { packageId: preset.packageId, tgi: preset.tgi };
+    appliedLot.value = {
+      packageId,
+      tgi: preset.tgi,
+      packagePath: preset.packagePath,
+    };
+    appliedAuthoredLot.value = false;
+    // 地面贴图标记为待快照:用户点击「保存」时才写入项目
+    // (2026-11-04 用户指令:套用不落盘,保存才快照且仅变化时)。
+    groundSnapshotDirty.value = true;
     return session.lotSize ?? null;
+  }
+
+  /** 绑定项目内自绘地面：尺寸/材质/遮罩来自存档，地表图集取游戏共享图集。 */
+  async function applyAuthoredLot(lot: AuthoredLot): Promise<[number, number]> {
+    if (!draftSceneOpen.value) {
+      throw new Error("lot_apply_native");
+    }
+    const { lotSize, ...style } = authoredLotStyle(lot);
+    const atlas = await tauriApi.raster.readLotPreviewAtlases().catch(() => null);
+    const dataUrl = (value?: string | null) => (value ? `data:image/png;base64,${value}` : null);
+    draftLotSize.value = lotSize;
+    Object.assign(draftStyle, style, {
+      // 默认渲染模式用 albedo 平面贴图；缺省会回退到 LC mask 并被 alphaTest 镂空。
+      albedoPng: authoredAlbedoDataUrl(lot),
+      surfacePng: dataUrl(atlas?.lotSurfacePng),
+      normalAtlasPng: dataUrl(atlas?.lotNormalAtlasPng),
+    });
+    // 自绘地面是库 lot（donor）骨架上的叠加：保留 donor 引用。构建管线
+    // （schema_discovery adapter / scene.ground_source / plan.reference）
+    // 都需要 sourceLot.tgi——2026-11-11 在此清空 donor 曾让 authored 文档
+    // 永远构建失败（sourceLot.tgi is required）。要脱离 donor 用
+    // resetDraftStyle() 显式解除。
+    appliedAuthoredLot.value = true;
+    groundSnapshotDirty.value = true;
+    return lotSize;
   }
 
   function resetDraftStyle() {
     appliedLot.value = null;
+    appliedAuthoredLot.value = false;
     draftStyle.colors = DRAFT_LOT_DEFAULTS.lotColors.map(
       (color) => [...color] as [number, number, number, number],
     );
@@ -1218,10 +1550,14 @@ export function useWorkbenchAsset(project: string) {
   }
 
   // ---- 会话恢复：把文档单元投影进 edit 层（与 PropertyEditor 同口径）----
-  function restoreUnits(document: Record<string, unknown>) {
+  async function restoreUnits(document: Record<string, unknown>) {
     const current = ui.value;
     if (!current) return;
+    const epoch = loadEpoch;
     const restored = unitsFromSchema(document);
+    restoreDecalSources(document, restored);
+    await decalPreviews.restore(restored);
+    if (epoch !== loadEpoch || current.edit !== ui.value?.edit) return;
     const baseUnits: LotUnitDto[] =
       current.editMode === "native"
         ? ((nativeSession.value?.session.value?.units ?? []) as LotUnitDto[])
@@ -1243,14 +1579,36 @@ export function useWorkbenchAsset(project: string) {
     const editor = document.editor as {
       groups?: Record<string, boolean>;
       unitVisibility?: Record<string, boolean>;
-      paths?: WorkbenchPath[];
+      workbench?: {
+        paths?: WorkbenchPath[];
+        writes?: string[];
+        logic?: unknown;
+      };
     };
     Object.assign(current.groupVisibility, editor?.groups ?? {});
+    draftWrites.value = new Set(editor?.workbench?.writes ?? []);
     if (current.editMode === "draft") {
-      draftPaths.value = (editor?.paths ?? []).map((path) => ({
-        ...path,
-        pointIds: [...path.pointIds],
-      }));
+      // 键位与 schemaDocument 写出侧一致：editor.workbench.paths
+      // 陈旧引用自愈 GC:坏会话保存的 pointIds(点已不存在)会永久卡死
+      // 构建校验——文档以可见单元为准(2026-11-04 s10 实证)
+      const restoredIds = new Set(restored.map((unit) => unitId(unit)));
+      draftPaths.value = (editor?.workbench?.paths ?? []).map((path) => {
+        const normalized = normalizeWorkbenchPath(path);
+        return {
+          ...normalized,
+          pointIds: normalized.pointIds.filter((pointId) =>
+            restoredIds.has(pointId),
+          ),
+        };
+      });
+      // 孤儿点收养：只有点没有路径实体的历史文档，按 pointIndex
+      // 自动建一条路径承接（幂等——已被引用的点不会再收）
+      const adopted = adoptOrphanPaths(draftPaths.value, restored);
+      if (adopted) draftPaths.value = adopted;
+      // 编辑族声明随文档恢复（旧文档没有该字段 → 由构建器按内容派生）。
+      // 逻辑编排图随文档恢复（旧文档无 logic → 空图，构建行为不变）。
+      draftLogic.value = normalizeLogicGraph(editor?.workbench?.logic);
+      void resolveProjectRoot();
       focusedPathId.value = null;
       activePathId.value = null;
     }
@@ -1273,38 +1631,47 @@ export function useWorkbenchAsset(project: string) {
     } catch {
       return;
     }
+    const epoch = loadEpoch;
+    const placed = new Map<string, PropUnit>();
     for (const unit of units) {
-      if (unit.kind !== "prop" || !unit.modelTgi) continue;
-      const row = unit as PropUnit & {
-        modelPackageId?: number;
-        modelPackagePath?: string;
-      };
-      const modelTgi = row.modelTgi;
-      if (!modelTgi) continue;
-      if (row.modelPackageId == null && !row.modelPackagePath) continue;
-      try {
-        const pkg = row.modelPackagePath
-          ? (await tauriApi.packages.open(row.modelPackagePath)).package
-              .packageId
-          : row.modelPackageId;
-        if (pkg == null) continue;
-        const bytes = await tauriApi.packages.readLotModelMeshes(pkg, modelTgi);
-        const next = new Map(addedModelPayloads.value);
-        next.set(
-          directModelKey({ modelTgi, modelPackageId: pkg }),
-          parseLotModelContainer(bytes),
-        );
-        addedModelPayloads.value = next;
-      } catch {
-        // 包缺席：标记锥兜底（渲染分支自处理）
+      if (unit.kind === "prop" && unit.modelTgi) placed.set(directModelKey(unit), unit);
+    }
+    const packages = new Map<string, ReturnType<typeof placementSource.openPackage>>();
+    const source = {
+      readLotModelMeshes: placementSource.readLotModelMeshes,
+      openPackage(path: string) {
+        let opened = packages.get(path);
+        if (!opened) {
+          opened = placementSource.openPackage(path);
+          packages.set(path, opened);
+        }
+        return opened;
+      },
+    };
+    const models = await Promise.allSettled(
+      [...placed.values()].map((unit) => loadPlacedPropModel(source, unit)),
+    );
+    if (epoch !== loadEpoch) return;
+    const next = new Map(addedModelPayloads.value);
+    for (const model of models) {
+      if (model.status === "fulfilled" && model.value) {
+        next.set(model.value.key, model.value.payload);
       }
     }
+    addedModelPayloads.value = next;
   }
 
   // ---- 文档持久化（项目内 asset.lot.json）----
+  /** 依赖清单同步失败（账本与文档不一致时由 UI 明确提示；不影响文档已保存）。 */
+  const dependencySyncError = ref<string | null>(null);
   async function saveDocument(): Promise<boolean> {
     const document = schemaDocument.value;
     if (!document) return false;
+    await persistDocument(document);
+    return true;
+  }
+
+  async function persistDocument(document: Record<string, unknown>): Promise<void> {
     const written = await tauriApi.workspace.codeWriteText(
       project,
       DOCUMENT_PATH,
@@ -1314,7 +1681,104 @@ export function useWorkbenchAsset(project: string) {
     documentRevision.value = written.revision;
     savedBaseline.value = JSON.stringify(document);
     savedDirty.value = false;
-    return true;
+    // package.json dependencies 同步（设计文档 §2.2/§6：画人行道即登记
+    // pathEntries）。文档是权威输入，账本同步失败不回滚文档，但必须可见。
+    dependencySyncError.value = null;
+    try {
+      await tauriApi.workspace.syncAssetDependencies(
+        project,
+        JSON.stringify(document),
+      );
+    } catch (cause) {
+      dependencySyncError.value = String(cause);
+      console.warn("[workbench] asset dependency sync failed:", cause);
+    }
+    // 地面贴图快照跟随文档保存:仅变化时写 assets/lot/*(fail-soft,
+    // 快照失败不影响文档保存结果)。
+    if (groundSnapshotDirty.value) {
+      try {
+        await persistGroundTextures();
+        groundSnapshotDirty.value = false;
+      } catch (cause) {
+        console.warn("[workbench] ground texture snapshot skipped:", cause);
+      }
+    }
+  }
+
+  const GROUND_TEXTURE_FILES: { file: string; styleKey: "maskPng" | "albedoPng" | "surfacePng" | "normalAtlasPng"; mime: string }[] = [
+    { file: "assets/lot/mask.png", styleKey: "maskPng", mime: "image/png" },
+    { file: "assets/lot/albedo.png", styleKey: "albedoPng", mime: "image/png" },
+    { file: "assets/lot/surface.png", styleKey: "surfacePng", mime: "image/png" },
+    { file: "assets/lot/normal.png", styleKey: "normalAtlasPng", mime: "image/png" },
+  ];
+  const GROUND_RGBA_FILE = "assets/lot/mask.rgba";
+
+  /** 从项目内读取持久化的地面贴图(离线;read-asset 缺文件即 null)。 */
+  async function loadProjectGroundTextures(): Promise<Partial<{
+    maskPng: string;
+    maskRawRgba: string | null;
+    albedoPng: string | null;
+    surfacePng: string | null;
+    normalAtlasPng: string | null;
+  }>> {
+    const out: Partial<{ maskPng: string; maskRawRgba: string | null; albedoPng: string | null; surfacePng: string | null; normalAtlasPng: string | null }> = {};
+    for (const item of GROUND_TEXTURE_FILES) {
+      try {
+        const value = await command("code_flow", {
+          request: {
+            project,
+            action: "read-asset",
+            payload: { asset: item.file },
+          },
+        });
+        const base64 =
+          (value as { base64?: string }).base64 ??
+          (value as { dataBase64?: string }).dataBase64;
+        if (!base64) continue;
+        out[item.styleKey] = `data:${item.mime};base64,${base64}`;
+      } catch {
+        // 缺文件 → 跳过
+      }
+    }
+    try {
+      const value = await command("code_flow", {
+        request: {
+          project,
+          action: "read-asset",
+          payload: { asset: GROUND_RGBA_FILE },
+        },
+      });
+      const base64 =
+        (value as { base64?: string }).base64 ??
+        (value as { dataBase64?: string }).dataBase64;
+      if (base64) out.maskRawRgba = base64;
+    } catch {
+      // 缺文件 → 跳过
+    }
+    return out;
+  }
+
+  /** 把当前地面贴图快照写入项目 assets/lot/*(冷启动离线恢复用)。 */
+  async function persistGroundTextures(): Promise<void> {
+    const strip = (dataUrl: string | null) =>
+      dataUrl?.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+    const items: [string, string | null][] = [
+      ["assets/lot/mask.png", strip(draftStyle.maskPng)],
+      ["assets/lot/albedo.png", strip(draftStyle.albedoPng)],
+      ["assets/lot/surface.png", strip(draftStyle.surfacePng)],
+      ["assets/lot/normal.png", strip(draftStyle.normalAtlasPng)],
+      ["assets/lot/mask.rgba", draftStyle.maskRawRgba],
+    ];
+    for (const [asset, data] of items) {
+      if (!data) continue;
+      await command("code_flow", {
+        request: {
+          project,
+          action: "write-asset",
+          payload: { asset, data },
+        },
+      });
+    }
   }
 
   /** 打开工作台时恢复上次会话（文档存在则按来源块重放）。 */
@@ -1330,24 +1794,46 @@ export function useWorkbenchAsset(project: string) {
       const workbench = (parsed.editor as Record<string, unknown> | undefined)
         ?.workbench as WorkbenchSourceBlock | undefined;
       if (!workbench) return false;
-      menu.enabled = workbench.menu?.enabled ?? false;
-      menu.label = workbench.menu?.label ?? "";
-      menu.category = workbench.menu?.category ?? "";
+      // 菜单绑定 v2（含旧 {enabled,label,category} 形态迁移）。
+      Object.assign(menu, normalizeMenuBinding(workbench.menu));
+      // openNative/openDraftAsset 会把 streetFacing 重置为默认 +Y，
+      // 必须在打开资产之后再套回文档值（否则 -Y 绑定一重进就丢）。
+      const restoredStreetFacing =
+        workbench.streetFacingDegrees != null
+          ? normalizeStreetFacing(workbench.streetFacingDegrees)
+          : workbench.rotationDegrees != null
+            ? streetFacingFromLegacyRotation(
+                normalizeStreetFacing(workbench.rotationDegrees),
+              )
+            : DEFAULT_STREET_FACING;
       if (
         workbench.source === "native" &&
         workbench.packagePath &&
         workbench.tgi
       ) {
         await openNative(workbench.packagePath, workbench.tgi);
-        restoreUnits(parsed);
+        streetFacingDegrees.value = restoredStreetFacing;
+        await restoreUnits(parsed);
         void restorePlacedPropModels(parsed);
         return true;
       }
       if (
-        (workbench.source === "glb" || workbench.source === "lotm") &&
-        workbench.assetPath
+        ((workbench.source === "glb" || workbench.source === "lotm") &&
+          workbench.assetPath) ||
+        workbench.modelRemoved === true
       ) {
-        await openDraftAsset(workbench.assetPath);
+        if (workbench.modelRemoved === true) {
+          draftSceneOpen.value = true;
+          draftModelState.value = "ready";
+          const meta = parsed.meta as { name?: unknown } | undefined;
+          sourceLabel.value = typeof meta?.name === "string" ? meta.name : "";
+        } else if (workbench.assetPath) {
+          await openDraftAsset(workbench.assetPath, {
+            nativeBlender: workbench.nativeBlender === true,
+            nativeLotm: workbench.nativeLotm,
+          });
+        }
+        streetFacingDegrees.value = restoredStreetFacing;
         if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
         draftModelTransform.value =
           workbench.modelTransform && workbench.modelTransform.length === 12
@@ -1375,14 +1861,55 @@ export function useWorkbenchAsset(project: string) {
             : null;
           // 来源 Lot 引用 → 重新拉取会话取回 mask/albedo/surface 等贴图
           // （贴图 base64 不入文档，见 lotStyle 持久化口径）
-          if (style.sourceLot) {
+          // 【2026-11-04 修复】地面贴图离线优先：项目内 assets/lot/* 的
+          // 持久化副本先恢复地面渲染（否则冷启动首开地面消失——
+          // applyLotPreset 依赖的 sourceLot.packageId 跨运行失效）；成功
+          // 后仍尝试 preset 刷新为权威版本（fail-soft）。
+          const projectTextures = await loadProjectGroundTextures();
+          if (projectTextures.maskPng) {
+            draftStyle.maskPng = projectTextures.maskPng;
+            draftStyle.maskRawRgba = projectTextures.maskRawRgba ?? null;
+            draftStyle.albedoPng = projectTextures.albedoPng ?? null;
+            draftStyle.surfacePng = projectTextures.surfacePng ?? null;
+            draftStyle.normalAtlasPng = projectTextures.normalAtlasPng ?? null;
+            // 项目文件 = 已持久化状态,恢复不置脏
+            groundSnapshotDirty.value = false;
+          }
+          if (style.authored) {
+            // donor 引用与 authored 标记并存（2026-11-11）：文档里保留了
+            // sourceLot 就一并恢复，否则构建管线拿不到 donor tgi。
+            if (style.sourceLot) appliedLot.value = { ...style.sourceLot };
+            appliedAuthoredLot.value = true;
+            try {
+              const authored = await loadAuthoredLot(project);
+              if (authored) {
+                await applyAuthoredLot(authored);
+                groundSnapshotDirty.value = false;
+              }
+              if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+            } catch (cause) {
+              console.warn("[workbench] authored lot restore skipped:", cause);
+            }
+          } else if (style.sourceLot) {
             appliedLot.value = { ...style.sourceLot };
-            await applyLotPreset({ ...style.sourceLot });
-            // 手动调过的尺寸以文档为准
-            if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+            // 【2026-11-03 修复】sourceLot.packageId 跨运行失效曾让
+            // applyLotPreset 抛错，被外层 catch 吞掉后 restoreUnits 直接被
+            // 跳过——首开只剩模型，lot/props/灯/生成器/路径全部丢失，
+            // 关闭项目重开（包管理器已被其它流程焐热）才恢复。贴图拉取是
+            // 装饰性步骤：失败仅丢 mask/albedo，绝不阻断单元重放。
+            try {
+              await applyLotPreset({ ...style.sourceLot });
+              // 手动调过的尺寸以文档为准
+              if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+            } catch (cause) {
+              console.warn(
+                "[workbench] lot preset textures skipped (stale packageId?):",
+                cause,
+              );
+            }
           }
         }
-        restoreUnits(parsed);
+        await restoreUnits(parsed);
         void restorePlacedPropModels(parsed);
         return true;
       }
@@ -1401,38 +1928,110 @@ export function useWorkbenchAsset(project: string) {
   /** 关闭当前资产（回到空态）。 */
   function closeAsset() {
     loadEpoch += 1;
+    draftSceneOpen.value = false;
     nativeSession.value = null;
     nativeTgi.value = null;
     resetEditState();
     draftPayload.value = null;
     draftModelState.value = "pending";
     draftLotSize.value = null;
+    streetFacingDegrees.value = DEFAULT_STREET_FACING;
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceKind.value = "none";
+    nativeBlender.value = false;
+    nativeLotmPath.value = "";
     sourceLabel.value = "";
     sourceAssetPath.value = "";
     sourcePackagePath.value = "";
     savedDirty.value = false;
   }
 
-  /** 移除当前资产：删除项目内文档与导入的模型文件（外部导入时），回到
-   * 空态——用户可重新上传/解析（用户指令 2026-10-25：删除要连文件一起）。 */
+  /** 移除当前模型文件并清空绑定；保留 asset.lot.json 里的菜单/地块/路径等
+   * 工作台数据。旧实现连文档一起删，重导后构建仍可能读到 schema 里的旧
+   * scene.model，或丢失整份场景编排。 */
   async function removeAsset(): Promise<void> {
     const assetPath = sourceAssetPath.value;
-    const hadDocument = Boolean(schemaDocument.value);
+    try {
+      const document = await tauriApi.workspace.codeReadText(
+        project,
+        DOCUMENT_PATH,
+      );
+      const parsed = JSON.parse(document.content) as Record<string, unknown>;
+      const editor = parsed.editor as Record<string, unknown> | undefined;
+      const workbench = editor?.workbench as Record<string, unknown> | undefined;
+      if (workbench) {
+        workbench.source = "none";
+        delete workbench.modelRemoved;
+        delete workbench.assetPath;
+        delete workbench.nativeLotm;
+        delete workbench.nativeBlender;
+        delete workbench.materialSlots;
+        delete workbench.modelTransform;
+        const written = await tauriApi.workspace.codeWriteText(
+          project,
+          DOCUMENT_PATH,
+          JSON.stringify(parsed, null, 2),
+          document.revision,
+        );
+        documentRevision.value = written.revision;
+      }
+    } catch {
+      // 文档不存在（从未保存）不算失败
+    }
     closeAsset();
-    // 先删文档再删模型；文档不存在（从未保存过）不算失败
-    if (hadDocument) {
-      await tauriApi.workspace.codeDeleteFile(project, DOCUMENT_PATH);
-    }
     if (assetPath) {
-      await tauriApi.workspace.codeDeleteFile(project, assetPath);
+      try {
+        await tauriApi.workspace.codeDeleteFile(project, assetPath);
+      } catch {
+        // 文件已不在盘上
+      }
     }
+  }
+
+  async function removeModel(): Promise<void> {
+    const current = schemaDocument.value;
+    if (!current || !draftSceneOpen.value || !draftPayload.value || draftLoading.value) return;
+    const epoch = loadEpoch;
+    const document = JSON.parse(JSON.stringify(current)) as Record<string, unknown>;
+    const paths = new Set([sourceAssetPath.value, nativeLotmPath.value]);
+    const editor = document.editor as { workbench: WorkbenchSourceBlock };
+    const workbench = editor.workbench;
+    workbench.source = "none";
+    workbench.modelRemoved = true;
+    delete workbench.assetPath;
+    delete workbench.nativeLotm;
+    delete workbench.nativeBlender;
+    delete workbench.materialSlots;
+    workbench.modelTransform = null;
+    await persistDocument(document);
+    if (epoch !== loadEpoch) throw new Error("workbench scene changed during model removal");
+
+    slotComposeEpoch += 1;
+    slotMaterialsComposing.value = false;
+    draftPayload.value = null;
+    draftModelOrigin.value = null;
+    draftModelTransform.value = null;
+    draftMaterialSlots.value = {};
+    draftSelectedId.value = null;
+    nativeBlender.value = false;
+    nativeLotmPath.value = "";
+    sourceAssetPath.value = "";
+    sourceKind.value = "none";
+    savedBaseline.value = schemaJson.value;
+    const deletions = [...paths]
+      .filter((path) => /\.(?:glb|lotm)$/i.test(path))
+      .map((path) => tauriApi.workspace.codeDeleteFile(project, path));
+    const failure = (await Promise.allSettled(deletions)).find(
+      (result) => result.status === "rejected",
+    );
+    if (failure) throw failure.reason;
   }
 
   return {
     sourceKind,
+    nativeBlender,
+    nativeLotmPath,
     sourceLabel,
     sourceAssetPath,
     sourcePackagePath,
@@ -1444,11 +2043,16 @@ export function useWorkbenchAsset(project: string) {
     addedModelPayloads,
     savedDirty,
     restoring,
+    effectPreviewPackageId,
+    groundSnapshotDirty,
+    persistGroundTextures,
     documentPath: DOCUMENT_PATH,
     draftLotSize,
+    streetFacingDegrees,
     openNative,
     openDraftAsset,
     placeUnit,
+    placeDecal,
     deleteUnit,
     selectUnit,
     draftPaths,
@@ -1464,18 +2068,27 @@ export function useWorkbenchAsset(project: string) {
       focusedPathId.value = id;
     },
     setDraftLotSize,
+    setStreetFacingDegrees,
     applyLotPreset,
+    applyAuthoredLot,
+    appliedAuthoredLot,
     setModelTransform,
     composeSlotMaterials,
     slotMaterialsComposing,
     draftMaterialSlots,
     setMenuBinding,
     saveDocument,
+    dependencySyncError,
+    markUnitTouched,
+    draftLogic,
+    setLogicGraph,
     restoreFromProject,
     closeAsset,
     removeAsset,
+    removeModel,
     resolveProjectRoot,
     joinProjectPath,
+    projectRoot,
   };
 }
 

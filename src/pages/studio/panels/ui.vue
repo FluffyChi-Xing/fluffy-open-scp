@@ -301,7 +301,7 @@ function removeDraft(): void {
     <div class="page-head-row">
       <RouterLink class="back-link" to="/studio">
         <FIcon name="ArrowLeft" :size="14" aria-label="" />
-        {{ t("version.backToStudio") }}
+        {{ t("studio.backToStudio") }}
       </RouterLink>
 
       <header class="page-header">

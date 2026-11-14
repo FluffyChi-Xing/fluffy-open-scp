@@ -21,10 +21,10 @@ function createObserver(config) {
     let stopped = false, interval = null, timeout = null, awaiting = false;
     const errorExamples = [];
     const channels = {};
-    for (const name of ['command', 'query', 'other', 'console', 'result', 'event', 'mutation', 'mutationResult', 'template', 'templateResult', 'region', 'regionResult']) {
+    for (const name of ['command', 'query', 'clock', 'clockResult', 'other', 'console', 'result', 'event', 'mutation', 'mutationResult', 'template', 'templateResult', 'region', 'regionResult']) {
         channels[name] = {queue: [], hits: 0, accepted: 0, dropped: 0, count: 0,
             start: Date.now(), limit: Math.min(config.channelMaxLimit || 100, Math.max(1,
-                (config.channelLimits || {})[name] || (name.startsWith('region') ? 4 : name.startsWith('template') ? 2 : name === 'query' ? 40 : 80)))};
+                (config.channelLimits || {})[name] || (name.startsWith('region') ? 4 : name.startsWith('template') ? 2 : name.startsWith('clock') ? 12 : name === 'query' ? 40 : 80)))};
     }
     const valueTable = webkit.base.add(config.valueVtableRva);
     function unknownHost(host) {
@@ -298,8 +298,9 @@ function createObserver(config) {
                     const mutation = name === 'RequestGameData' && mutations.has(request);
                     const template = name === 'RequestGameData' && request === 'RegionTemplates';
                     const region = name === 'RequestGameData' && regionRequests.has(request);
+                    const clock = request === 'periodTimes' || request === 'gamespeed';
                     const profile = template ? 'region-templates' : region ? 'region-lifecycle' : null;
-                    const channel = template ? 'template' : region ? 'region' : mutation ? 'mutation' : name === 'PostGameCommand' ? 'command' :
+                    const channel = clock ? 'clock' : template ? 'template' : region ? 'region' : mutation ? 'mutation' : name === 'PostGameCommand' ? 'command' :
                         name === 'RequestGameData' ? 'query' : 'other';
                     if (!admit(channel)) return;
                     const decoded = [];
@@ -307,8 +308,8 @@ function createObserver(config) {
                     const callSequence = append(channel, {channel: 'invoke', arguments: decoded, argumentsTruncated: count > 4, name, argumentCount: count, requestName: request, operationKind: mutation ? 'mutation' : undefined,
                             threadId: this.threadId, binding: binding.object, page: binding.page});
                     if (name === 'RequestGameData') this.queryResult = {
-                        resultChannel: template ? 'templateResult' : region ? 'regionResult' : mutation ? 'mutationResult' : 'result', requestName: request, mutation, profile,
-                        address: stack.add(16).readPointer(), callSequence, name,
+                        resultChannel: clock ? 'clockResult' : template ? 'templateResult' : region ? 'regionResult' : mutation ? 'mutationResult' : 'result', requestName: request, mutation, profile,
+                        address: stack.add(16).readPointer(), callSequence, name, requestPath: decoded[0]?.text,
                         binding: binding.object, page: binding.page};
                 } catch (error) { failed(error); }
             },
@@ -319,7 +320,7 @@ function createObserver(config) {
                     if (!admit(pending.resultChannel)) return;
                     const success = (retval.toUInt32() & 255) !== 0;
                     append(pending.resultChannel, {channel: 'result', name: pending.name, requestName: pending.requestName, operationKind: pending.mutation ? 'mutation' : undefined,
-                        callSequence: pending.callSequence, binding: pending.binding,
+                        callSequence: pending.callSequence, binding: pending.binding, requestPath: pending.requestPath,
                         page: pending.page, threadId: this.threadId, success,
                         result: success ? argument(pending.address, pending.profile) : {type: 'unavailable', reason: 'invoke_false'}});
                 } catch (error) { failed(error); }

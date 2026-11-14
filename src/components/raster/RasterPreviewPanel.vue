@@ -3,7 +3,7 @@ import { useI18n } from "vue-i18n";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
 import RasterDecalPreview from "./RasterDecalPreview.vue";
-import type { RasterSource } from "@/lib/raster-editor/schema";
+import type { RasterSource, RasterSchema } from "@/lib/raster-editor/schema";
 import { computed, onBeforeUnmount, shallowRef, watch } from "vue";
 import {
   PROFILE_BEHAVIOR,
@@ -21,6 +21,7 @@ import {
 import { composeGroundPixels } from "@/pages/packages/components/property-editor/groundCompose";
 const props = defineProps<{
   target: RasterSource | null;
+  material?: RasterSchema["lot"];
   metersPerPixel: number;
   doc: RasterDocument;
   version: number;
@@ -50,12 +51,14 @@ type LotSnapshot = {
   metersPerPixel: number;
   colors: [number, number, number, number][];
   target: RasterSource | null;
+  material?: RasterSchema["lot"];
   texture: boolean;
 };
 const lotSnapshot = shallowRef<LotSnapshot | null>(null);
 function refreshLotPreview() {
   const raw = rgbaToBase64(props.doc.pixels);
   lotSnapshot.value = {
+    material: props.material ? JSON.parse(JSON.stringify(props.material)) : undefined,
     raw,
     png: rgbaBase64ToPngDataUrl(raw, props.doc.width, props.doc.height),
     width: props.doc.width,
@@ -109,9 +112,9 @@ const currentLotAlbedoPng = computed(() => {
     },
     baseTile: null,
     lotColors: props.colors,
-    lotBorderColors: null,
-    lotBorderPatternIndices: null,
-    lotBorderWidths: null,
+    lotBorderColors: props.material?.borderColors ?? null,
+    lotBorderPatternIndices: props.material?.borderPatternIndices ?? null,
+    lotBorderWidths: props.material?.borderWidths ?? null,
     normalAtlas: null,
     tilesX: 1,
     tilesY: 1,
@@ -128,7 +131,9 @@ const currentLotAlbedoPng = computed(() => {
     <RasterPreviewCard
       :title="
         t(
-          PROFILE_BEHAVIOR[profile].dataChannels
+          profile === 'lot-mask'
+            ? 'rasterEditor.lotMaskPreview'
+            : PROFILE_BEHAVIOR[profile].dataChannels
             ? 'rasterEditor.dataRgb'
             : 'rasterEditor.raw',
         )
@@ -166,6 +171,7 @@ const currentLotAlbedoPng = computed(() => {
         :meters-per-pixel="metersPerPixel"
         :colors="colors"
         :target="target"
+        :material="material"
         :texture="profile === 'lot-texture'"
         :albedo-png="currentLotAlbedoPng"
         render-mode="default"
@@ -186,6 +192,7 @@ const currentLotAlbedoPng = computed(() => {
         :meters-per-pixel="lotSnapshot.metersPerPixel"
         :colors="lotSnapshot.colors"
         :target="lotSnapshot.target"
+        :material="lotSnapshot.material"
         :texture="lotSnapshot.texture"
         render-mode="refined"
       />

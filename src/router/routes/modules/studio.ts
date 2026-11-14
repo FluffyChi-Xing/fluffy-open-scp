@@ -14,6 +14,18 @@ export default {
       },
     },
     {
+      name: "studio-project-detail",
+      path: "studio/projects/:id",
+      component: () => import("@/pages/studio/project/detail.vue"),
+      meta: {
+        titleKey: "navigation.studioProject",
+        icon: "rocket",
+        groupKey: "navigation.modding",
+        order: 1,
+        hideInMenu: true,
+      },
+    },
+    {
       name: "studio-overview",
       path: "studio/overview",
       component: () => import("@/pages/studio/overview.vue"),
@@ -111,17 +123,6 @@ export default {
         icon: "image",
         groupKey: "navigation.modding",
         order: 52,
-      },
-    },
-    {
-      name: "studio-versions",
-      path: "studio/versions",
-      component: () => import("@/pages/studio/panels/versions.vue"),
-      meta: {
-        titleKey: "navigation.studioVersions",
-        icon: "history",
-        groupKey: "navigation.modding",
-        order: 55,
       },
     },
   ],

@@ -52,7 +52,9 @@ fn name_ids(file: &PropertyFile) -> Vec<u32> {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: unit_config_name_scan <package> [name-text-id]");
+    let path = args
+        .next()
+        .expect("usage: unit_config_name_scan <package> [name-text-id]");
     let want: Option<u32> = args
         .next()
         .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
@@ -62,8 +64,12 @@ fn main() {
         if entry.id.type_id != TYPE_PROPERTY || entry.id.group != GROUP_UNIT_CONFIG {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         let ids = name_ids(&file);
         if let Some(want) = want {
             if !ids.contains(&want) {
@@ -72,12 +78,23 @@ fn main() {
         }
         rows.insert(
             entry.id.instance,
-            (ids, i32_of(&file, HASH_COST).or(i32_of(&file, HASH_CONSTRUCTION)), i32_of(&file, HASH_MAINT)),
+            (
+                ids,
+                i32_of(&file, HASH_COST).or(i32_of(&file, HASH_CONSTRUCTION)),
+                i32_of(&file, HASH_MAINT),
+            ),
         );
     }
     for (instance, (ids, cost, maint)) in &rows {
-        let ids = ids.iter().map(|i| format!("{i:08X}")).collect::<Vec<_>>().join(",");
-        println!("{:08X}  cost={:?} maint={:?}  names=[{}]", instance, cost, maint, ids);
+        let ids = ids
+            .iter()
+            .map(|i| format!("{i:08X}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "{:08X}  cost={:?} maint={:?}  names=[{}]",
+            instance, cost, maint, ids
+        );
     }
     println!("-- 共 {} 条", rows.len());
 }

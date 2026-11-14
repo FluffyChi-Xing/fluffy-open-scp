@@ -23,7 +23,7 @@ import {
 } from "./diagnostics";
 import Workbench from "./DiagnosticWorkbench.vue";
 import QualityPanel from "./CaptureQuality.vue";
-import LogStream from "./LogStream.vue";
+import LogStream from "@/components/runtime-observer/LogStream.vue";
 import FSelect from "@/components/ui/FSelect.vue";
 
 describe("diagnostic evidence", () => {

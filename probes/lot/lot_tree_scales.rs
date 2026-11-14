@@ -9,9 +9,7 @@ fn basis_scale(matrix: &[f32]) -> f64 {
     if matrix.len() != 12 {
         return 1.0;
     }
-    let l = |x: f32, y: f32, z: f32| -> f64 {
-        f64::from((x * x + y * y + z * z).sqrt())
-    };
+    let l = |x: f32, y: f32, z: f32| -> f64 { f64::from((x * x + y * y + z * z).sqrt()) };
     (l(matrix[0], matrix[1], matrix[2])
         + l(matrix[3], matrix[4], matrix[5])
         + l(matrix[6], matrix[7], matrix[8]))
@@ -23,17 +21,20 @@ fn main() {
     let instance = u32::from_str_radix(args[0].trim_start_matches("0x"), 16).expect("hex");
     let trees: [u32; 4] = [0x1498_4C68, 0x1498_4C69, 0x1498_4C6A, 0x1498_4C6B];
     for path in &args[1..] {
-        let Ok(package) = Package::open(path) else { continue };
+        let Ok(package) = Package::open(path) else {
+            continue;
+        };
         for entry in package
             .entries()
             .iter()
             .filter(|e| e.id.instance == instance && e.id.type_id == 0x00B1_B104)
         {
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(properties) = PropertyFile::parse_with_limits(
-                &data,
-                sc_properties::ParseLimits::default(),
-            ) else {
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(properties) =
+                PropertyFile::parse_with_limits(&data, sc_properties::ParseLimits::default())
+            else {
                 continue;
             };
             let document = LotEditorDocument::from_property_file(properties);

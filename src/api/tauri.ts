@@ -492,9 +492,15 @@ export interface LightUnit {
   outerRadius: number | null;
   innerRadius: number | null;
   diffuse: number | null;
+  /** 高光/反射系数（游戏 params.y = Ks；编辑器旧版本未暴露）。 */
+  specular?: number | null;
+  /** 衰减起点（米）：游戏 params.z；0 = 从灯心开始衰减。 */
+  falloffStart?: number | null;
   length: number | null;
   cullDistance: "Near" | "Mid" | "Far" | "Max" | null;
   isVolumetric: boolean | null;
+  /** 体积光强度（0x0EC4567E）；null = 用默认 1。 */
+  volumetricStrength?: number | null;
   debugName: string | null;
   fields: UnitFieldDto[];
 }
@@ -527,6 +533,7 @@ export interface SwarmParticle {
   color: [number, number, number][];
   texture: { group: number; instance: number; drawMode: number };
   tileCount: [number, number];
+  alignMode?: number;
   frameStart: number;
   frameCount: number;
   frameRandom: number;
@@ -538,7 +545,11 @@ export interface SwarmParticle {
   drag: number;
 }
 export interface EffectEmitterData {
-  transform: { scale: number; rotation: number[]; offset: [number, number, number] };
+  transform: {
+    scale: number;
+    rotation: number[];
+    offset: [number, number, number];
+  };
   particle: SwarmParticle;
   emission: SwarmParticle | null;
   texturePngBase64: string | null;
@@ -548,6 +559,22 @@ export interface EffectDefinitionData {
   effectId: number;
   emitters: EffectEmitterData[];
   unsupportedBlocks: number;
+}
+export interface EffectBlockData {
+  blockType: number;
+  componentIndex: number;
+  offset: [number, number, number];
+  scale: number;
+}
+export interface EffectDetailData {
+  effectId: number;
+  collectionInstance: number;
+  collectionGroup: number;
+  visualIndex: number;
+  blocks: EffectBlockData[];
+  emitters: EffectEmitterData[];
+  unsupportedBlocks: number;
+  diagnostics: string[];
 }
 export interface EffectPreviewResponse {
   effects: EffectDefinitionData[];
@@ -561,7 +588,14 @@ export interface DecalUnit {
   scale: number | null;
   depth: number | null;
   materialData: [number, number, number] | null;
+  decalId?: Tgi;
+  decalSource?: WorkbenchDecalSource;
   fields: UnitFieldDto[];
+}
+export interface WorkbenchDecalSource {
+  packagePath: string;
+  atlas: Tgi;
+  rasterPackagePath?: string | null;
 }
 /** 精细渲染贴花纹理：decal 单元按 ID 解析 atlas 条目并四色解码（category+index 对应）。 */
 export interface DecalUnitTexture {
@@ -597,6 +631,10 @@ export interface PropUnit {
   slot: number | null;
   /** 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。 */
   scale: number | null;
+  /** 0x0C12EF50：槽位随机化（cUnitBinDrawSet::mRandomizeSlot）。 */
+  randomizeSlot?: boolean | null;
+  /** 0x0C12EF60：按资源百分比填充（cUnitBinDrawSet::mUseBinPercent）。 */
+  percentFill?: boolean | null;
   fields: UnitFieldDto[];
   /**
    * 放置的直挂模型扩展位（= pe_schema prop 白名单同名键）：拖拽放置的
@@ -757,6 +795,18 @@ export interface PathEntrySummary {
   parent: number | null;
   hasGeometry: boolean;
 }
+
+/** 带路径的 property 摘要（list_path_sources；目标建筑选择数据源）。 */
+export interface PathSourceSummary {
+  packageId: number;
+  typeId: number;
+  group: number;
+  instance: number;
+  name: string;
+  pathCount: number;
+  pointCount: number;
+  entryIds: number[];
+}
 /**
  * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v7）。
  * 容器（小端）：`magic("LOTM") | version=8 | mesh_count`，每 mesh
@@ -892,6 +942,35 @@ export interface AnnotationTopicStat {
   annotationCount: number;
   resourceCount: number;
 }
+/** Effect 语义批注：按 effect 资源 TGI 全局键控；source* 记录创建时的来源 lot 资源（可空）。 */
+export interface EffectAnnotation {
+  id: number;
+  typeId: number;
+  groupId: number;
+  instance: number;
+  tag: string;
+  note: string;
+  sourceTypeId: number | null;
+  sourceGroupId: number | null;
+  sourceInstanceId: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface EffectAnnotationInput {
+  typeId: number;
+  groupId: number;
+  instance: number;
+  tag: string;
+  note: string;
+  sourceTypeId: number | null;
+  sourceGroupId: number | null;
+  sourceInstanceId: number | null;
+}
+export interface EffectTagStat {
+  tag: string;
+  annotationCount: number;
+  effectCount: number;
+}
 export interface MediaTool {
   available: boolean;
   path?: string;
@@ -942,8 +1021,16 @@ export interface SettingsStatus {
   gameDirectory?: GameDirectoryStatus;
 }
 
-export interface GameProcessInfo { pid: number; name: string }
-export interface DeployGameModResult { artifact: string; destination: string; gameRunning: boolean; processes: GameProcessInfo[] }
+export interface GameProcessInfo {
+  pid: number;
+  name: string;
+}
+export interface DeployGameModResult {
+  artifact: string;
+  destination: string;
+  gameRunning: boolean;
+  processes: GameProcessInfo[];
+}
 export interface GameDirectoryDetection {
   candidates: GameDirectoryStatus[];
 }
@@ -1112,6 +1199,21 @@ export interface StudioConfigStatus {
   modRoot?: string;
   onboardingCompleted: boolean;
 }
+/**
+ * 内部目录迁移（2026-10-29 目录治理）：docs/mods 自动落在安装目录下，
+ * 历史手动配置的旧目录由「同步历史数据」按钮一次性拷入。legacyDir 与
+ * internalDir 相同（已迁移/全新安装）时前端隐藏按钮；canSync=false 置灰。
+ */
+export interface LegacySyncStatus {
+  internalDir: string;
+  legacyDir?: string | null;
+  canSync: boolean;
+  pendingCount: number;
+}
+export interface LegacySyncOutcome {
+  copiedCount: number;
+  status: LegacySyncStatus;
+}
 /** 模组项目：磁盘上是项目管理根下的子文件夹。 */
 export interface ModProject {
   id: number;
@@ -1155,6 +1257,31 @@ export interface ModProjectStats {
   groupCounts: ModGroupCount[];
   statusCounts: ModStatusCount[];
   recentActivity: ModDailyCount[];
+}
+/** 项目详情页 Releases：`.build/<hash>/packages/*.package`。 */
+export interface ModProjectRelease {
+  name: string;
+  relativePath: string;
+  buildHash: string;
+  size: number;
+  modifiedMs: number;
+}
+/** 项目源文件扩展名占比（已跳过 .build 等产物目录）。 */
+export interface ModProjectLanguageStat {
+  extension: string;
+  fileCount: number;
+  bytes: number;
+}
+/** `mod_project_repo_summary`：详情页侧栏 + Languages 条。 */
+export interface ModProjectRepoSummary {
+  author: string;
+  version: string;
+  modType: string;
+  description: string;
+  releases: ModProjectRelease[];
+  languages: ModProjectLanguageStat[];
+  languageTruncated: boolean;
+  totalSourceBytes: number;
 }
 export interface ExtensionStat {
   ext: string;
@@ -1255,62 +1382,44 @@ export interface WriteLocaleOverlayResponse {
   bytesWritten: number;
   /** 目标里来自既有文件、本次未被编辑因而原样保留的条目数。 */
   mergedKept: number;
-  /** 版本记录（best-effort；失败时为空，原因见 diagnostic）。 */
-  changesetId?: number;
-  revision?: number;
-  diagnostic?: string;
-}
-export interface ChangesetSummary {
-  id: number;
-  targetPath: string;
-  writer: string;
-  label?: string;
-  note?: string;
-  revision: number;
-  resourceCount: number;
-  bytesBefore: number;
-  bytesAfter: number;
-  fileDigest?: string;
-  restoredFrom?: number;
-  detail?: unknown;
-  createdAt: number;
-}
-export interface ChangeItemView {
-  typeId: number;
-  groupId: number;
-  instance: number;
-  /** "added" | "modified" | "removed" */
-  status: string;
-  beforeSize: number;
-  afterSize: number;
-}
-export interface ChangesetDetailResponse {
-  changeset: ChangesetSummary;
-  items: ChangeItemView[];
-}
-export interface VersionTargetSummary {
-  targetPath: string;
-  latestRevision: number;
-  changesetCount: number;
-  lastWrittenAt: number;
-}
-export interface CaptureBaselineResponse {
-  /** false = 该 target 已有版本线，幂等跳过。 */
-  created: boolean;
-  changeset: ChangesetSummary;
-}
-export interface RollbackResult {
-  outputPath: string;
-  targetRevision: number;
-  newChangeset: ChangesetSummary;
-  resourceCount: number;
-  bytesWritten: number;
-}
-export interface VersionDeleteResult {
-  changesets: number;
-  items: number;
-  blobsReclaimed: number;
 }
 
 export const activityEventName = "activity:event";
 export const exportProgressEventName = "export:progress";
+
+export const buildQueueEventName = "build-queue:event";
+
+export type BuildJobStatus = "queued" | "running" | "finished" | "failed";
+
+export interface StageEventDto {
+  stage: string;
+  kind: { type: "started" | "finished" | "failed" };
+  timestampMs: number;
+  durationMs: number | null;
+  detail: unknown;
+}
+
+export interface BuildJobDto {
+  id: string;
+  projectRoot: string;
+  schema: string;
+  status: BuildJobStatus;
+  submittedAtMs: number;
+  startedAtMs: number | null;
+  finishedAtMs: number | null;
+  durationMs: number | null;
+  label: string | null;
+  error: string | null;
+  events: StageEventDto[];
+  result: Record<string, unknown> | null;
+}
+
+export interface BuildQueueEventPayload {
+  jobId: string;
+  totalStages?: number;
+  status?: BuildJobStatus;
+  label?: string | null;
+  error?: string | null;
+  finishedAtMs?: number | null;
+  event?: StageEventDto;
+}

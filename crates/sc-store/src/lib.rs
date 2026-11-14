@@ -6,16 +6,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 6;
+pub const CURRENT_SCHEMA_VERSION: i32 = 7;
 pub const DEFAULT_LIST_LIMIT: usize = 100;
 pub const MAX_LIST_LIMIT: usize = 1_000;
 
-/// 单个资源负载上限（32 MiB）：超过即拒绝入版本库。
-pub const BLOB_MAX_BYTES: usize = 32 * 1024 * 1024;
-/// 版本库总占用上限（512 MiB）：超出后按最旧优先回收无引用 blob。
-pub const BLOB_STORE_MAX_BYTES: i64 = 512 * 1024 * 1024;
 /// 渲染遥测行数上限（滚动窗口）。
 pub const RENDER_TELEMETRY_MAX_ROWS: i64 = 10_000;
 /// 渲染遥测保留时长（30 天）。
@@ -37,16 +32,10 @@ pub enum StoreError {
     UnsupportedSchemaVersion(i32),
     #[error("operation {0} was not found")]
     OperationNotFound(i64),
-    #[error("changeset {0} was not found")]
-    ChangesetNotFound(i64),
     #[error("mod project {0} was not found")]
     ModProjectNotFound(i64),
     #[error("mod project group {0} was not found")]
     ModGroupNotFound(i64),
-    #[error("resource payload is {0} bytes, over the {BLOB_MAX_BYTES} byte limit")]
-    BlobTooLarge(usize),
-    #[error("version blob store is full ({0} bytes referenced)")]
-    BlobStoreFull(i64),
 }
 
 #[derive(Debug)]
@@ -494,8 +483,14 @@ impl Store {
             Some((root, flag, created_at)) => (root, flag != 0, created_at),
             None => (None, false, now),
         };
-        let mod_root = mod_root.map_or(current_root.as_deref(), Some).map(str::to_owned);
-        let onboarding = if onboarding_completed { true } else { current_onboarding };
+        let mod_root = mod_root
+            .map_or(current_root.as_deref(), Some)
+            .map(str::to_owned);
+        let onboarding = if onboarding_completed {
+            true
+        } else {
+            current_onboarding
+        };
         connection.execute(
             "INSERT INTO studio_config (id, mod_root, onboarding_completed, created_at, updated_at) VALUES (1, ?1, ?2, ?3, ?4)
              ON CONFLICT(id) DO UPDATE SET mod_root = excluded.mod_root, onboarding_completed = excluded.onboarding_completed, updated_at = excluded.updated_at",
@@ -661,9 +656,8 @@ impl Store {
     pub fn mod_project_aggregates(&self) -> Result<ModProjectAggregates> {
         let connection = self.connection.lock().expect("store mutex poisoned");
         let mut group_counts = {
-            let mut statement = connection.prepare(
-                "SELECT group_id, COUNT(*) FROM mod_projects GROUP BY group_id",
-            )?;
+            let mut statement = connection
+                .prepare("SELECT group_id, COUNT(*) FROM mod_projects GROUP BY group_id")?;
             let rows = statement.query_map([], |row| {
                 Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, i64>(1)?))
             })?;
@@ -680,8 +674,9 @@ impl Store {
             group_counts.push((None, 0));
         }
         let mut status_counts = {
-            let mut statement = connection
-                .prepare("SELECT status, COUNT(*) FROM mod_projects GROUP BY status ORDER BY status")?;
+            let mut statement = connection.prepare(
+                "SELECT status, COUNT(*) FROM mod_projects GROUP BY status ORDER BY status",
+            )?;
             let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
@@ -689,8 +684,8 @@ impl Store {
             status_counts.push(("active".into(), 0));
         }
         let timestamps = {
-            let mut statement = connection
-                .prepare("SELECT created_at, updated_at FROM mod_projects")?;
+            let mut statement =
+                connection.prepare("SELECT created_at, updated_at FROM mod_projects")?;
             let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
@@ -868,6 +863,7 @@ fn migrate(connection: &Connection) -> Result<()> {
         version = 4;
     }
     if version <= 4 {
+        // 保留历史迁移格式。版本控制台移除后，应用不再读写这些版本记录。
         connection.execute_batch(
             "BEGIN;
              CREATE TABLE changesets (
@@ -961,6 +957,32 @@ fn migrate(connection: &Connection) -> Result<()> {
              COMMIT;",
         )?;
     }
+    if version <= 6 {
+        connection.execute_batch(
+            "BEGIN;
+             CREATE TABLE effect_annotations (
+                 id INTEGER PRIMARY KEY,
+                 type_id INTEGER NOT NULL,
+                 group_id INTEGER NOT NULL,
+                 instance INTEGER NOT NULL,
+                 tag TEXT NOT NULL,
+                 note TEXT NOT NULL DEFAULT '',
+                 source_type_id INTEGER,
+                 source_group_id INTEGER,
+                 source_instance INTEGER,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX effect_annotations_tgi_idx
+                 ON effect_annotations(type_id, group_id, instance);
+             CREATE INDEX effect_annotations_tag_idx
+                 ON effect_annotations(tag);
+             CREATE INDEX effect_annotations_source_idx
+                 ON effect_annotations(source_type_id, source_group_id, source_instance);
+             PRAGMA user_version = 7;
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -999,88 +1021,44 @@ pub struct AnnotationTopicStat {
     pub resource_count: i64,
 }
 
-// ---------- 编辑版本管理 ----------
-
-/// 一条版本记录（同一 `target_path` 上一个单调递增的 `revision` = 「版本 N」）。
+/// Effect 语义批注：按 effect 资源 TGI 全局键控（跨资产复用，组件库按
+/// tag 分类），`source_*` 记录创建时的来源 lot 资源（批注 sheet 区域用，
+/// 在 draft 工作台创建时为空）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ChangesetSummary {
+pub struct EffectAnnotation {
     pub id: i64,
-    pub target_path: String,
-    pub writer: String,
-    pub label: Option<String>,
-    pub note: Option<String>,
-    pub revision: i64,
-    pub resource_count: i64,
-    pub bytes_before: i64,
-    pub bytes_after: i64,
-    /// 写出后整文件 sha256（仅元数据，用于外部漂移检测）。
-    pub file_digest: Option<String>,
-    /// 回滚产生时指向源 revision。
-    pub restored_from: Option<i64>,
-    pub detail: Option<Value>,
-    pub created_at: i64,
-}
-
-/// 写入一条 changeset 时，单个资源的前后字节。`None` 分别表示「新增」与「删除」。
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChangeItemInput {
     pub type_id: u32,
     pub group_id: u32,
     pub instance: u32,
-    pub before: Option<Vec<u8>>,
-    pub after: Option<Vec<u8>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChangesetInput {
-    pub target_path: String,
-    /// `'locale_overlay'` | `'property_overlay'` | `'baseline'` | `'rollback'`
-    pub writer: String,
-    pub label: Option<String>,
-    pub note: Option<String>,
-    pub file_digest: Option<String>,
-    pub restored_from: Option<i64>,
-    pub detail: Option<Value>,
-    pub items: Vec<ChangeItemInput>,
+    pub tag: String,
+    pub note: String,
+    pub source_type_id: Option<u32>,
+    pub source_group_id: Option<u32>,
+    pub source_instance: Option<u32>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ChangeItemRecord {
+pub struct EffectAnnotationInput {
     pub type_id: u32,
     pub group_id: u32,
     pub instance: u32,
-    pub before_digest: Option<String>,
-    pub after_digest: Option<String>,
-    pub before_size: i64,
-    pub after_size: i64,
+    pub tag: String,
+    pub note: String,
+    pub source_type_id: Option<u32>,
+    pub source_group_id: Option<u32>,
+    pub source_instance: Option<u32>,
 }
 
-/// 某 target 在某个 revision 上的一个资源（已解出字节，供回滚重建）。
-#[derive(Debug, Clone, PartialEq)]
-pub struct VersionResource {
-    pub type_id: u32,
-    pub group_id: u32,
-    pub instance: u32,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct VersionTargetSummary {
-    pub target_path: String,
-    pub latest_revision: i64,
-    pub changeset_count: i64,
-    pub last_written_at: i64,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct VersionDeleteResult {
-    pub changesets: usize,
-    pub items: usize,
-    pub blobs_reclaimed: usize,
+pub struct EffectTagStat {
+    pub tag: String,
+    pub annotation_count: i64,
+    pub effect_count: i64,
 }
 
 // ---------- 渲染遥测 ----------
@@ -1277,305 +1255,157 @@ impl Store {
 }
 
 impl Store {
-    // ---------- 编辑版本管理 ----------
+    // ---------- effect 语义批注 ----------
 
-    /// 内容寻址写入：相同字节只存一份，返回 sha256 十六进制摘要。
-    fn put_blob_conn(connection: &Connection, bytes: &[u8]) -> Result<String> {
-        if bytes.len() > BLOB_MAX_BYTES {
-            return Err(StoreError::BlobTooLarge(bytes.len()));
-        }
-        let digest = hex_digest(bytes);
-        connection.execute(
-            "INSERT OR IGNORE INTO resource_blobs (digest, bytes, size, created_at) \
-             VALUES (?1, ?2, ?3, ?4)",
-            params![digest, bytes, bytes.len() as i64, now_millis()],
-        )?;
-        Ok(digest)
-    }
-
-    pub fn load_blob(&self, digest: &str) -> Result<Option<Vec<u8>>> {
-        let connection = self.connection.lock().expect("store mutex poisoned");
-        connection
-            .query_row(
-                "SELECT bytes FROM resource_blobs WHERE digest = ?1",
-                params![digest],
-                |row| row.get::<_, Vec<u8>>(0),
-            )
-            .optional()
-            .map_err(StoreError::from)
-    }
-
-    /// 记录一条版本：单事务内取号（`MAX(revision)+1`）、落 blob、写 changesets + change_items。
-    pub fn record_changeset(&self, input: &ChangesetInput) -> Result<ChangesetSummary> {
-        struct Prepared {
-            type_id: u32,
-            group_id: u32,
-            instance: u32,
-            before: Option<String>,
-            after: Option<String>,
-            before_size: i64,
-            after_size: i64,
-        }
-
-        let mut connection = self.connection.lock().expect("store mutex poisoned");
-        let transaction = connection.transaction()?;
-        let revision: i64 = transaction.query_row(
-            "SELECT COALESCE(MAX(revision), 0) + 1 FROM changesets WHERE target_path = ?1",
-            params![input.target_path],
-            |row| row.get(0),
-        )?;
-        let created_at = now_millis();
-        let mut bytes_before = 0i64;
-        let mut bytes_after = 0i64;
-        let mut prepared = Vec::with_capacity(input.items.len());
-        for item in &input.items {
-            let before_size = item.before.as_ref().map(|b| b.len() as i64).unwrap_or(0);
-            let after_size = item.after.as_ref().map(|b| b.len() as i64).unwrap_or(0);
-            bytes_before += before_size;
-            bytes_after += after_size;
-            prepared.push(Prepared {
-                type_id: item.type_id,
-                group_id: item.group_id,
-                instance: item.instance,
-                before: item
-                    .before
-                    .as_deref()
-                    .map(|bytes| Self::put_blob_conn(&transaction, bytes))
-                    .transpose()?,
-                after: item
-                    .after
-                    .as_deref()
-                    .map(|bytes| Self::put_blob_conn(&transaction, bytes))
-                    .transpose()?,
-                before_size,
-                after_size,
-            });
-        }
-        let detail = input.detail.as_ref().map(serde_json::to_string).transpose()?;
-        transaction.execute(
-            "INSERT INTO changesets \
-             (target_path, writer, label, note, revision, resource_count, bytes_before, bytes_after, \
-              file_digest, restored_from, detail, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![
-                input.target_path,
-                input.writer,
-                input.label,
-                input.note,
-                revision,
-                prepared.len() as i64,
-                bytes_before,
-                bytes_after,
-                input.file_digest,
-                input.restored_from,
-                detail,
-                created_at
-            ],
-        )?;
-        let changeset_id = transaction.last_insert_rowid();
-        {
-            let mut statement = transaction.prepare(
-                "INSERT INTO change_items \
-                 (changeset_id, type_id, group_id, instance, before_digest, after_digest, \
-                  before_size, after_size) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            )?;
-            for row in &prepared {
-                statement.execute(params![
-                    changeset_id,
-                    row.type_id,
-                    row.group_id,
-                    row.instance,
-                    row.before,
-                    row.after,
-                    row.before_size,
-                    row.after_size
-                ])?;
-            }
-        }
-        transaction.commit()?;
-        Ok(ChangesetSummary {
-            id: changeset_id,
-            target_path: input.target_path.clone(),
-            writer: input.writer.clone(),
-            label: input.label.clone(),
-            note: input.note.clone(),
-            revision,
-            resource_count: prepared.len() as i64,
-            bytes_before,
-            bytes_after,
-            file_digest: input.file_digest.clone(),
-            restored_from: input.restored_from,
-            detail: input.detail.clone(),
-            created_at,
+    fn row_to_effect_annotation(row: &rusqlite::Row<'_>) -> rusqlite::Result<EffectAnnotation> {
+        Ok(EffectAnnotation {
+            id: row.get(0)?,
+            type_id: row.get::<_, i64>(1)? as u32,
+            group_id: row.get::<_, i64>(2)? as u32,
+            instance: row.get::<_, i64>(3)? as u32,
+            tag: row.get(4)?,
+            note: row.get(5)?,
+            source_type_id: row.get::<_, Option<i64>>(6)?.map(|value| value as u32),
+            source_group_id: row.get::<_, Option<i64>>(7)?.map(|value| value as u32),
+            source_instance: row.get::<_, Option<i64>>(8)?.map(|value| value as u32),
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
         })
     }
 
-    pub fn list_version_targets(&self) -> Result<Vec<VersionTargetSummary>> {
+    pub fn create_effect_annotation(
+        &self,
+        input: &EffectAnnotationInput,
+    ) -> Result<EffectAnnotation> {
+        let now = now_millis();
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        connection.execute(
+            "INSERT INTO effect_annotations
+                 (type_id, group_id, instance, tag, note, source_type_id,
+                  source_group_id, source_instance, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            params![
+                input.type_id as i64,
+                input.group_id as i64,
+                input.instance as i64,
+                input.tag.trim(),
+                input.note,
+                input.source_type_id.map(|value| value as i64),
+                input.source_group_id.map(|value| value as i64),
+                input.source_instance.map(|value| value as i64),
+                now
+            ],
+        )?;
+        let id = connection.last_insert_rowid();
+        Ok(EffectAnnotation {
+            id,
+            type_id: input.type_id,
+            group_id: input.group_id,
+            instance: input.instance,
+            tag: input.tag.trim().to_string(),
+            note: input.note.clone(),
+            source_type_id: input.source_type_id,
+            source_group_id: input.source_group_id,
+            source_instance: input.source_instance,
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    pub fn delete_effect_annotation(&self, id: i64) -> Result<()> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let changed =
+            connection.execute("DELETE FROM effect_annotations WHERE id = ?1", params![id])?;
+        if changed == 0 {
+            return Err(StoreError::OperationNotFound(id));
+        }
+        Ok(())
+    }
+
+    pub fn list_effect_annotations(&self, limit: usize) -> Result<Vec<EffectAnnotation>> {
         let connection = self.connection.lock().expect("store mutex poisoned");
         let mut statement = connection.prepare(
-            "SELECT target_path, MAX(revision), COUNT(*), MAX(created_at) \
-             FROM changesets GROUP BY target_path ORDER BY MAX(created_at) DESC",
+            "SELECT id, type_id, group_id, instance, tag, note, source_type_id, \
+                    source_group_id, source_instance, created_at, updated_at
+             FROM effect_annotations ORDER BY updated_at DESC LIMIT ?1",
+        )?;
+        let rows = statement
+            .query_map(
+                params![bounded_limit(limit) as i64],
+                Self::row_to_effect_annotation,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn list_effect_annotations_for_effect(
+        &self,
+        type_id: u32,
+        group_id: u32,
+        instance: u32,
+    ) -> Result<Vec<EffectAnnotation>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, type_id, group_id, instance, tag, note, source_type_id, \
+                    source_group_id, source_instance, created_at, updated_at
+             FROM effect_annotations
+             WHERE type_id = ?1 AND group_id = ?2 AND instance = ?3
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = statement
+            .query_map(
+                params![type_id as i64, group_id as i64, instance as i64],
+                Self::row_to_effect_annotation,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn list_effect_annotations_for_source(
+        &self,
+        type_id: u32,
+        group_id: u32,
+        instance: u32,
+    ) -> Result<Vec<EffectAnnotation>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, type_id, group_id, instance, tag, note, source_type_id, \
+                    source_group_id, source_instance, created_at, updated_at
+             FROM effect_annotations
+             WHERE source_type_id = ?1 AND source_group_id = ?2 AND source_instance = ?3
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = statement
+            .query_map(
+                params![type_id as i64, group_id as i64, instance as i64],
+                Self::row_to_effect_annotation,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn effect_annotation_tag_stats(&self) -> Result<Vec<EffectTagStat>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT tag,
+                    COUNT(*) AS annotation_count,
+                    COUNT(DISTINCT type_id || ':' || group_id || ':' || instance) AS effect_count
+             FROM effect_annotations GROUP BY tag ORDER BY annotation_count DESC",
         )?;
         let rows = statement
             .query_map([], |row| {
-                Ok(VersionTargetSummary {
-                    target_path: row.get(0)?,
-                    latest_revision: row.get(1)?,
-                    changeset_count: row.get(2)?,
-                    last_written_at: row.get(3)?,
+                Ok(EffectTagStat {
+                    tag: row.get(0)?,
+                    annotation_count: row.get(1)?,
+                    effect_count: row.get(2)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
+}
 
-    pub fn list_changesets(
-        &self,
-        target_path: Option<&str>,
-        limit: usize,
-    ) -> Result<Vec<ChangesetSummary>> {
-        let limit = bounded_limit(limit) as i64;
-        let connection = self.connection.lock().expect("store mutex poisoned");
-        let mut statement = connection.prepare(
-            "SELECT id, target_path, writer, label, note, revision, resource_count, bytes_before, \
-                    bytes_after, file_digest, restored_from, detail, created_at \
-             FROM changesets \
-             WHERE (?1 IS NULL OR target_path = ?1) \
-             ORDER BY created_at DESC, id DESC LIMIT ?2",
-        )?;
-        let rows = statement
-            .query_map(params![target_path, limit], changeset_from_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
-    }
-
-    pub fn changeset_detail(
-        &self,
-        changeset_id: i64,
-    ) -> Result<(ChangesetSummary, Vec<ChangeItemRecord>)> {
-        let connection = self.connection.lock().expect("store mutex poisoned");
-        let summary = connection
-            .query_row(
-                "SELECT id, target_path, writer, label, note, revision, resource_count, bytes_before, \
-                        bytes_after, file_digest, restored_from, detail, created_at \
-                 FROM changesets WHERE id = ?1",
-                params![changeset_id],
-                changeset_from_row,
-            )
-            .optional()?
-            .ok_or(StoreError::ChangesetNotFound(changeset_id))?;
-        let mut statement = connection.prepare(
-            "SELECT type_id, group_id, instance, before_digest, after_digest, before_size, after_size \
-             FROM change_items WHERE changeset_id = ?1 \
-             ORDER BY type_id, group_id, instance",
-        )?;
-        let items = statement
-            .query_map(params![changeset_id], |row| {
-                Ok(ChangeItemRecord {
-                    type_id: row.get(0)?,
-                    group_id: row.get(1)?,
-                    instance: row.get(2)?,
-                    before_digest: row.get(3)?,
-                    after_digest: row.get(4)?,
-                    before_size: row.get(5)?,
-                    after_size: row.get(6)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok((summary, items))
-    }
-
-    /// 某 target 在 revision N 的资源集：每个 TGI 取 `revision <= N` 里最大的那条的 after；
-    /// 该版本已被删除（after 为 NULL）的资源不返回。
-    pub fn resource_states_at_revision(
-        &self,
-        target_path: &str,
-        revision: i64,
-    ) -> Result<Vec<VersionResource>> {
-        let connection = self.connection.lock().expect("store mutex poisoned");
-        let mut statement = connection.prepare(
-            "SELECT ci.type_id, ci.group_id, ci.instance, b.bytes \
-             FROM change_items ci \
-             JOIN changesets c ON c.id = ci.changeset_id \
-             JOIN resource_blobs b ON b.digest = ci.after_digest \
-             WHERE c.target_path = ?1 \
-               AND c.revision = ( \
-                   SELECT MAX(c2.revision) FROM change_items ci2 \
-                   JOIN changesets c2 ON c2.id = ci2.changeset_id \
-                   WHERE c2.target_path = ?1 AND c2.revision <= ?2 \
-                     AND ci2.type_id = ci.type_id \
-                     AND ci2.group_id = ci.group_id \
-                     AND ci2.instance = ci.instance) \
-             ORDER BY ci.type_id, ci.group_id, ci.instance",
-        )?;
-        let rows = statement
-            .query_map(params![target_path, revision], |row| {
-                Ok(VersionResource {
-                    type_id: row.get(0)?,
-                    group_id: row.get(1)?,
-                    instance: row.get(2)?,
-                    bytes: row.get(3)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
-    }
-
-    /// 删除一条版本记录（只删元数据与 items，**绝不动磁盘文件**），随后回收无引用 blob。
-    pub fn delete_changeset(&self, changeset_id: i64) -> Result<VersionDeleteResult> {
-        let mut connection = self.connection.lock().expect("store mutex poisoned");
-        let transaction = connection.transaction()?;
-        let exists: Option<i64> = transaction
-            .query_row(
-                "SELECT id FROM changesets WHERE id = ?1",
-                params![changeset_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if exists.is_none() {
-            return Err(StoreError::ChangesetNotFound(changeset_id));
-        }
-        let items = transaction.execute(
-            "DELETE FROM change_items WHERE changeset_id = ?1",
-            params![changeset_id],
-        )?;
-        transaction.execute("DELETE FROM changesets WHERE id = ?1", params![changeset_id])?;
-        transaction.commit()?;
-        let blobs_reclaimed = Self::gc_unreferenced_blobs(&connection)?;
-        Ok(VersionDeleteResult {
-            changesets: 1,
-            items,
-            blobs_reclaimed,
-        })
-    }
-
-    /// 回收没有任何 change_items 引用的 blob。返回删除条数。
-    fn gc_unreferenced_blobs(connection: &Connection) -> Result<usize> {
-        let removed = connection.execute(
-            "DELETE FROM resource_blobs WHERE digest NOT IN ( \
-                 SELECT before_digest FROM change_items WHERE before_digest IS NOT NULL \
-                 UNION SELECT after_digest FROM change_items WHERE after_digest IS NOT NULL)",
-            [],
-        )?;
-        Ok(removed)
-    }
-
-    /// 该 target 最新版本记录的整文件摘要（外部漂移检测用）。
-    pub fn latest_target_digest(&self, target_path: &str) -> Result<Option<String>> {
-        let connection = self.connection.lock().expect("store mutex poisoned");
-        connection
-            .query_row(
-                "SELECT file_digest FROM changesets WHERE target_path = ?1 \
-                 ORDER BY revision DESC LIMIT 1",
-                params![target_path],
-                |row| row.get::<_, Option<String>>(0),
-            )
-            .optional()
-            .map(|value| value.flatten())
-            .map_err(StoreError::from)
-    }
-
+impl Store {
     // ---------- 渲染遥测 ----------
 
     /// 批量写入渲染遥测；按间隔触发滚动窗口裁剪。
@@ -1593,7 +1423,11 @@ impl Store {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?;
             for entry in entries {
-                let metadata = entry.metadata.as_ref().map(serde_json::to_string).transpose()?;
+                let metadata = entry
+                    .metadata
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?;
                 statement.execute(params![
                     entry.session_key,
                     entry.stage,
@@ -1704,15 +1538,6 @@ impl Store {
     }
 }
 
-fn hex_digest(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut out = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
-}
-
 /// 最近秩（nearest-rank）分位数，`sorted` 必须已升序。
 fn percentile(sorted: &[f64], q: f64) -> f64 {
     if sorted.is_empty() {
@@ -1720,25 +1545,6 @@ fn percentile(sorted: &[f64], q: f64) -> f64 {
     }
     let rank = (q * (sorted.len() - 1) as f64).round() as usize;
     sorted[rank.min(sorted.len() - 1)]
-}
-
-fn changeset_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ChangesetSummary> {
-    Ok(ChangesetSummary {
-        id: row.get(0)?,
-        target_path: row.get(1)?,
-        writer: row.get(2)?,
-        label: row.get(3)?,
-        note: row.get(4)?,
-        revision: row.get(5)?,
-        resource_count: row.get(6)?,
-        bytes_before: row.get(7)?,
-        bytes_after: row.get(8)?,
-        file_digest: row.get(9)?,
-        restored_from: row.get(10)?,
-        detail: parse_json(row.get(11)?)
-            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?,
-        created_at: row.get(12)?,
-    })
 }
 
 fn bounded_limit(limit: usize) -> usize {
@@ -1998,56 +1804,6 @@ mod tests {
         clean(&path);
     }
 
-    // ---------- v5: 编辑版本管理 ----------
-
-    fn changeset_input(target: &str, items: Vec<ChangeItemInput>) -> ChangesetInput {
-        ChangesetInput {
-            target_path: target.into(),
-            writer: "test".into(),
-            label: None,
-            note: None,
-            file_digest: None,
-            restored_from: None,
-            detail: None,
-            items,
-        }
-    }
-
-    fn change_item(instance: u32, before: Option<&[u8]>, after: Option<&[u8]>) -> ChangeItemInput {
-        ChangeItemInput {
-            type_id: 0x00B1_B104,
-            group_id: 0x0987_8A01,
-            instance,
-            before: before.map(<[u8]>::to_vec),
-            after: after.map(<[u8]>::to_vec),
-        }
-    }
-
-    /// 纯 Rust fold —— 作为 `resource_states_at_revision`（SQL 路径）的可读对照。
-    fn fold_at(
-        history: &[(i64, Vec<ChangeItemInput>)],
-        revision: i64,
-    ) -> std::collections::BTreeMap<(u32, u32, u32), Vec<u8>> {
-        let mut state = std::collections::BTreeMap::new();
-        for (rev, items) in history {
-            if *rev > revision {
-                continue;
-            }
-            for item in items {
-                let key = (item.type_id, item.group_id, item.instance);
-                match &item.after {
-                    Some(bytes) => {
-                        state.insert(key, bytes.clone());
-                    }
-                    None => {
-                        state.remove(&key);
-                    }
-                }
-            }
-        }
-        state
-    }
-
     #[test]
     fn fresh_database_reaches_current_version_on_first_open() {
         // 守 migrate() 阶梯修复：旧实现首次打开只到 v3，v4/v5 要第二次 open 才建。
@@ -2086,12 +1842,13 @@ mod tests {
                     content: "c".into(),
                 })
                 .unwrap();
-            // 人为降级到 v4：删掉 v5/v6 的表并回写 user_version
+            // 人为降级到 v4：删掉 v5/v6/v7 的表并回写 user_version
             {
                 let connection = store.connection.lock().unwrap();
                 connection
                     .execute_batch(
                         "BEGIN;
+                         DROP TABLE effect_annotations;
                          DROP TABLE studio_config;
                          DROP TABLE mod_projects;
                          DROP TABLE mod_project_groups;
@@ -2117,7 +1874,95 @@ mod tests {
         let annotations = store.list_annotations(100).unwrap();
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].id, annotation_id);
-        assert_eq!(store.list_version_targets().unwrap(), Vec::new());
+        drop(store);
+        clean(&path);
+    }
+
+    #[test]
+    fn effect_annotations_crud_tag_stats_and_source_query() {
+        let path = temp_path("effect-annotations");
+        clean(&path);
+        let store = Store::open(&path).unwrap();
+        let first = store
+            .create_effect_annotation(&EffectAnnotationInput {
+                type_id: 0,
+                group_id: 0,
+                instance: 0x622b_9cd7,
+                tag: "烟雾".into(),
+                note: "烟囱烟雾".into(),
+                source_type_id: Some(0x00b1_b104),
+                source_group_id: Some(0x43e1_c090),
+                source_instance: Some(0x9a3d_1c76),
+            })
+            .unwrap();
+        store
+            .create_effect_annotation(&EffectAnnotationInput {
+                type_id: 0,
+                group_id: 0,
+                instance: 0xfa37_82d1,
+                tag: "烟雾".into(),
+                note: String::new(),
+                source_type_id: None,
+                source_group_id: None,
+                source_instance: None,
+            })
+            .unwrap();
+        store
+            .create_effect_annotation(&EffectAnnotationInput {
+                type_id: 0,
+                group_id: 0,
+                instance: 0x1122_3344,
+                tag: "火焰".into(),
+                note: String::new(),
+                source_type_id: None,
+                source_group_id: None,
+                source_instance: None,
+            })
+            .unwrap();
+
+        // 同一 effect 再标一个 tag：多对多，全局键控
+        store
+            .create_effect_annotation(&EffectAnnotationInput {
+                type_id: 0,
+                group_id: 0,
+                instance: 0x622b_9cd7,
+                tag: "工业".into(),
+                note: String::new(),
+                source_type_id: None,
+                source_group_id: None,
+                source_instance: None,
+            })
+            .unwrap();
+
+        let all = store.list_effect_annotations(100).unwrap();
+        assert_eq!(all.len(), 4);
+
+        let per_effect = store
+            .list_effect_annotations_for_effect(0, 0, 0x622b_9cd7)
+            .unwrap();
+        assert_eq!(per_effect.len(), 2);
+
+        let per_source = store
+            .list_effect_annotations_for_source(0x00b1_b104, 0x43e1_c090, 0x9a3d_1c76)
+            .unwrap();
+        assert_eq!(per_source.len(), 1);
+        assert_eq!(per_source[0].tag, "烟雾");
+
+        let mut stats = store.effect_annotation_tag_stats().unwrap();
+        stats.sort_by(|a, b| a.tag.cmp(&b.tag));
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[2].tag, "烟雾"); // annotation_count=2, 排序后最后
+        assert_eq!(stats[2].annotation_count, 2);
+        assert_eq!(stats[2].effect_count, 2);
+
+        store.delete_effect_annotation(first.id).unwrap();
+        assert!(
+            store
+                .list_effect_annotations_for_effect(0, 0, 0x622b_9cd7)
+                .unwrap()
+                .iter()
+                .all(|item| item.tag != "烟雾")
+        );
         drop(store);
         clean(&path);
     }
@@ -2126,37 +1971,87 @@ mod tests {
     fn v5_database_migrates_to_v6_keeping_changesets() {
         let path = temp_path("v5-to-v6");
         clean(&path);
-        let target = {
+        {
             let store = Store::open(&path).unwrap();
-            let recorded = store
-                .record_changeset(&changeset_input(
-                    "C:/a.package",
-                    vec![change_item(1, None, Some(b"one"))],
-                ))
-                .unwrap();
-            // 人为降级到 v5：删掉 v6 的表并回写 user_version
+            // 人为降级到 v5：删掉 v6/v7 的表并回写 user_version
             {
                 let connection = store.connection.lock().unwrap();
                 connection
                     .execute_batch(
                         "BEGIN;
+                         DROP TABLE effect_annotations;
                          DROP TABLE studio_config;
                          DROP TABLE mod_projects;
                          DROP TABLE mod_project_groups;
+                         INSERT INTO changesets
+                             (target_path, writer, revision, resource_count, created_at)
+                             VALUES ('C:/a.package', 'test', 1, 0, 1);
                          PRAGMA user_version = 5;
                          COMMIT;",
                     )
                     .unwrap();
             }
-            recorded.target_path.clone()
-        };
+        }
         let store = Store::open(&path).unwrap();
+        let target: String = store
+            .connection
+            .lock()
+            .unwrap()
+            .query_row("SELECT target_path FROM changesets", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(target, "C:/a.package");
-        assert_eq!(store.list_version_targets().unwrap().len(), 1);
         // v6 表当场可用
         let config = store.studio_config().unwrap();
         assert!(!config.onboarding_completed);
         assert_eq!(config.mod_root, None);
+        drop(store);
+        clean(&path);
+    }
+
+    #[test]
+    fn v6_database_migrates_to_v7_keeping_annotations() {
+        let path = temp_path("v6-to-v7");
+        clean(&path);
+        {
+            let store = Store::open(&path).unwrap();
+            store
+                .create_annotation(&ResourceAnnotationInput {
+                    package_path: "C:/p.package".into(),
+                    type_id: 1,
+                    group_id: 2,
+                    instance: 3,
+                    topic: "t".into(),
+                    title: "T".into(),
+                    content: "c".into(),
+                })
+                .unwrap();
+            // 人为降级到 v6：删掉 v7 的表并回写 user_version
+            {
+                let connection = store.connection.lock().unwrap();
+                connection
+                    .execute_batch(
+                        "BEGIN;
+                         DROP TABLE effect_annotations;
+                         PRAGMA user_version = 6;
+                         COMMIT;",
+                    )
+                    .unwrap();
+            }
+        }
+        let store = Store::open(&path).unwrap();
+        {
+            let connection = store.connection.lock().unwrap();
+            let version: i32 = connection
+                .query_row("PRAGMA user_version", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        }
+        assert_eq!(store.list_annotations(100).unwrap().len(), 1);
+        // v7 表当场可用
+        assert_eq!(
+            store.list_effect_annotations(100).unwrap(),
+            Vec::<EffectAnnotation>::new()
+        );
         drop(store);
         clean(&path);
     }
@@ -2204,14 +2099,14 @@ mod tests {
             .unwrap();
         assert_eq!(renamed.name, "地铁Mod2");
         assert_eq!(renamed.rel_path, "metro-mod-2");
-        let moved = store.mod_project_set_group(created.id, Some(group2.id)).unwrap();
+        let moved = store
+            .mod_project_set_group(created.id, Some(group2.id))
+            .unwrap();
         assert_eq!(moved.group_id, Some(group2.id));
         store
             .mod_project_set_status(created.id, "released")
             .unwrap();
-        let described = store
-            .mod_project_set_description(created.id, None)
-            .unwrap();
+        let described = store.mod_project_set_description(created.id, None).unwrap();
         assert_eq!(described.description, None);
         assert_eq!(store.mod_project_list().unwrap().len(), 1);
 
@@ -2234,189 +2129,6 @@ mod tests {
         drop(store);
         clean(&path);
     }
-
-    #[test]
-    fn changeset_revision_is_monotonic_per_target() {
-        let path = temp_path("changeset-revision");
-        clean(&path);
-        let store = Store::open(&path).unwrap();
-        let first = store
-            .record_changeset(&changeset_input("C:/a.package", vec![change_item(1, None, Some(b"one"))]))
-            .unwrap();
-        let second = store
-            .record_changeset(&changeset_input(
-                "C:/a.package",
-                vec![change_item(1, Some(b"one"), Some(b"two"))],
-            ))
-            .unwrap();
-        let other = store
-            .record_changeset(&changeset_input("C:/b.package", vec![change_item(9, None, Some(b"x"))]))
-            .unwrap();
-        assert_eq!(first.revision, 1);
-        assert_eq!(second.revision, 2);
-        // 版本号按 target 各自独立
-        assert_eq!(other.revision, 1);
-        assert_eq!(first.bytes_before, 0);
-        assert_eq!(first.bytes_after, 3);
-        assert_eq!(second.bytes_before, 3);
-        assert_eq!(second.bytes_after, 3);
-
-        let targets = store.list_version_targets().unwrap();
-        assert_eq!(targets.len(), 2);
-        let a = targets.iter().find(|t| t.target_path == "C:/a.package").unwrap();
-        assert_eq!(a.latest_revision, 2);
-        assert_eq!(a.changeset_count, 2);
-
-        let listed = store.list_changesets(Some("C:/a.package"), 100).unwrap();
-        assert_eq!(listed.len(), 2);
-        assert_eq!(listed[0].revision, 2); // 倒序
-        drop(store);
-        clean(&path);
-    }
-
-    #[test]
-    fn blob_is_deduplicated_across_changesets() {
-        let path = temp_path("blob-dedup");
-        clean(&path);
-        let store = Store::open(&path).unwrap();
-        let payload = vec![7u8; 4096];
-        store
-            .record_changeset(&changeset_input(
-                "C:/a.package",
-                vec![change_item(1, None, Some(&payload))],
-            ))
-            .unwrap();
-        // 第二次写出同样的字节 -> 只应存在一份 blob
-        store
-            .record_changeset(&changeset_input(
-                "C:/a.package",
-                vec![change_item(2, None, Some(&payload))],
-            ))
-            .unwrap();
-        let connection = store.connection.lock().unwrap();
-        let blobs: i64 = connection
-            .query_row("SELECT COUNT(*) FROM resource_blobs", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(blobs, 1, "相同字节必须去重");
-        drop(connection);
-        drop(store);
-        clean(&path);
-    }
-
-    #[test]
-    fn delete_changeset_cascades_and_reclaims_blobs() {
-        let path = temp_path("changeset-delete");
-        clean(&path);
-        let store = Store::open(&path).unwrap();
-        let first = store
-            .record_changeset(&changeset_input("C:/a.package", vec![change_item(1, None, Some(b"one"))]))
-            .unwrap();
-        let second = store
-            .record_changeset(&changeset_input(
-                "C:/a.package",
-                vec![change_item(1, Some(b"one"), Some(b"two"))],
-            ))
-            .unwrap();
-        // 删第一条："one" 仍被第二条的 before 引用 -> 不回收
-        let result = store.delete_changeset(first.id).unwrap();
-        assert_eq!(result.changesets, 1);
-        assert_eq!(result.items, 1);
-        assert_eq!(result.blobs_reclaimed, 0, "仍被引用的 blob 不能回收");
-        {
-            let connection = store.connection.lock().unwrap();
-            let items: i64 = connection
-                .query_row("SELECT COUNT(*) FROM change_items", [], |row| row.get(0))
-                .unwrap();
-            assert_eq!(items, 1, "change_items 必须级联删除");
-        }
-        // 再删第二条：两条 blob 都失去引用 -> 全部回收
-        let result = store.delete_changeset(second.id).unwrap();
-        assert_eq!(result.blobs_reclaimed, 2);
-        {
-            let connection = store.connection.lock().unwrap();
-            let blobs: i64 = connection
-                .query_row("SELECT COUNT(*) FROM resource_blobs", [], |row| row.get(0))
-                .unwrap();
-            assert_eq!(blobs, 0, "无引用 blob 应被回收");
-        }
-        // 删过的 id 再删 -> not found
-        assert!(matches!(
-            store.delete_changeset(first.id),
-            Err(StoreError::ChangesetNotFound(_))
-        ));
-        drop(store);
-        clean(&path);
-    }
-
-    #[test]
-    fn resource_states_at_revision_handles_add_then_remove() {
-        let path = temp_path("states-at-revision");
-        clean(&path);
-        let store = Store::open(&path).unwrap();
-        // rev1 新增 1、2；rev2 改 1；rev3 删 2；rev4 再加 2
-        let history: Vec<(i64, Vec<ChangeItemInput>)> = vec![
-            (1, vec![change_item(1, None, Some(b"v1-1")), change_item(2, None, Some(b"v1-2"))]),
-            (2, vec![change_item(1, Some(b"v1-1"), Some(b"v2-1"))]),
-            (3, vec![change_item(2, Some(b"v1-2"), None)]),
-            (4, vec![change_item(2, None, Some(b"v4-2"))]),
-        ];
-        for (_, items) in &history {
-            store
-                .record_changeset(&changeset_input("C:/a.package", items.clone()))
-                .unwrap();
-        }
-        for revision in 1..=4 {
-            let rows = store.resource_states_at_revision("C:/a.package", revision).unwrap();
-            let actual: std::collections::BTreeMap<_, _> = rows
-                .iter()
-                .map(|r| {
-                    (
-                        (r.type_id, r.group_id, r.instance),
-                        r.bytes.clone(),
-                    )
-                })
-                .collect();
-            let expected = fold_at(&history, revision);
-            assert_eq!(actual, expected, "revision {revision} 的 SQL 重建必须与 fold 一致");
-        }
-        // rev2 期望：1 -> v2-1，2 -> v1-2
-        let at_two = store.resource_states_at_revision("C:/a.package", 2).unwrap();
-        assert_eq!(at_two.len(), 2);
-        // rev3：2 被删
-        let at_three = store.resource_states_at_revision("C:/a.package", 3).unwrap();
-        assert_eq!(at_three.len(), 1);
-        assert_eq!(at_three[0].instance, 1);
-        drop(store);
-        clean(&path);
-    }
-
-    #[test]
-    fn changeset_detail_reports_before_after() {
-        let path = temp_path("changeset-detail");
-        clean(&path);
-        let store = Store::open(&path).unwrap();
-        let created = store
-            .record_changeset(&changeset_input(
-                "C:/a.package",
-                vec![change_item(1, Some(b"old"), Some(b"newer"))],
-            ))
-            .unwrap();
-        let (summary, items) = store.changeset_detail(created.id).unwrap();
-        assert_eq!(summary.id, created.id);
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].before_size, 3);
-        assert_eq!(items[0].after_size, 5);
-        assert!(items[0].before_digest.is_some());
-        assert!(items[0].after_digest.is_some());
-        assert!(matches!(
-            store.changeset_detail(999_999),
-            Err(StoreError::ChangesetNotFound(_))
-        ));
-        drop(store);
-        clean(&path);
-    }
-
-    // ---------- v5: 渲染遥测 ----------
 
     fn telemetry(stage: &str, duration_ms: f64) -> RenderTelemetryInput {
         RenderTelemetryInput {
@@ -2486,7 +2198,9 @@ mod tests {
         assert_eq!(removed, 50);
         let connection = store.connection.lock().unwrap();
         let rows: i64 = connection
-            .query_row("SELECT COUNT(*) FROM render_telemetry", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM render_telemetry", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(rows, RENDER_TELEMETRY_MAX_ROWS);
         drop(connection);
@@ -2498,7 +2212,7 @@ mod tests {
 
     /// 性能报告（项目约定：每阶段测试附耗时）。运行：`cargo test -p sc-store -- --nocapture perf_`
     #[test]
-    fn perf_migrate_and_record_changeset() {
+    fn perf_migrate_and_summarize_telemetry() {
         use std::time::Instant;
 
         let path = temp_path("perf");
@@ -2506,19 +2220,6 @@ mod tests {
         let start = Instant::now();
         let store = Store::open(&path).unwrap();
         let migrate_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-        // 100 条 8 KB 负载
-        let payload = vec![0xABu8; 8 * 1024];
-        let items: Vec<ChangeItemInput> = (0..100)
-            .map(|index| change_item(index as u32, None, Some(&payload)))
-            .collect();
-        let start = Instant::now();
-        for _ in 0..5 {
-            store
-                .record_changeset(&changeset_input("C:/perf.package", items.clone()))
-                .unwrap();
-        }
-        let record_ms = start.elapsed().as_secs_f64() * 1000.0 / 5.0;
 
         // 1 万行遥测的汇总
         let entries: Vec<RenderTelemetryInput> = (0..10_000)
@@ -2530,13 +2231,12 @@ mod tests {
         let summary_ms = start.elapsed().as_secs_f64() * 1000.0;
 
         println!(
-            "[perf sc-store] migrate(首次)={migrate_ms:.2}ms  record_changeset(100×8KB)={record_ms:.2}ms  \
+            "[perf sc-store] migrate(首次)={migrate_ms:.2}ms  \
              summary({} 行)={summary_ms:.2}ms",
             summary.total_count
         );
 
         assert!(migrate_ms < 500.0, "migrate 过慢：{migrate_ms}ms");
-        assert!(record_ms < 300.0, "record_changeset 过慢：{record_ms}ms");
         assert!(summary_ms < 200.0, "summary 过慢：{summary_ms}ms");
         drop(store);
         clean(&path);

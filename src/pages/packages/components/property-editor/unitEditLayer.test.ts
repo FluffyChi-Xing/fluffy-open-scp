@@ -157,4 +157,25 @@ describe("mergeUnitOverrides", () => {
     const units = [] as LotUnitDto[];
     expect(mergeUnitOverrides(units, new Map())).toBe(units);
   });
+
+  it("persists pathPoint position through field overrides", () => {
+    const point = {
+      kind: "pathPoint",
+      index: 2,
+      point: [1, 2, 3],
+      tangent: null,
+      pointIndex: 0,
+      fields: [],
+    } as LotUnitDto;
+    const fields = new Map([
+      ["pathPoint:2", { point: [7, 8, 9] }],
+    ]);
+    const merged = mergeUnitOverrides([point], new Map(), fields);
+    expect(merged[0]).not.toBe(point);
+    expect((merged[0] as Extract<LotUnitDto, { kind: "pathPoint" }>).point).toEqual([
+      7,
+      8,
+      9,
+    ]);
+  });
 });

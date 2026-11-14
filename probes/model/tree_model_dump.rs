@@ -48,8 +48,12 @@ fn main() {
             }
         }
         for (i, tex) in file.sections_of_type(rw4::SectionType::TEXTURE).enumerate() {
-            let Ok(t) = file.decode_texture(&data, tex.number) else { continue };
-            let Ok(px) = t.decode_top_mip_rgba() else { continue };
+            let Ok(t) = file.decode_texture(&data, tex.number) else {
+                continue;
+            };
+            let Ok(px) = t.decode_top_mip_rgba() else {
+                continue;
+            };
             let (tw, th) = (t.width as usize, t.height as usize);
             let mut a_min = 255u8;
             let mut a_max = 0u8;

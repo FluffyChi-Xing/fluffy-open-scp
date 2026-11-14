@@ -26,7 +26,9 @@ fn main() {
             if entry.id.type_id != PROPERTY_TYPE {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
             let Ok(file) = sc_properties::PropertyFile::parse_with_limits(
                 &data,
                 sc_properties::ParseLimits::default(),

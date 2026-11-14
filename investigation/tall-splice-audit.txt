@@ -1,0 +1,73 @@
+== package identity ==
+base 0098d572433f505cdd688a11dc06f50bfb67e2e362836b3dcf0203efb677e8e2 17 {'menu': '00B1B104:09878A01:AFB4A86E', 'unit': '00B1B104:40E0C000:AFB4A86E', 'asset': '00B1B104:40E1C000:AFB4A86E', 'lods': ['2F4E681B:00000000:A8C18017', '2F4E681B:00000000:A8C18016', '2F4E681B:00000000:A8C18015', '2F4E681B:00000000:A8C18014'], 'mask': '2F4E681C:00000000:E6B71466', 'locale': '0A98EAF0:02FABF01:B51F2306'}
+splice 50ec8c71b3647ebe3ef8409f3259664c731127641293cbff317bd2ce52398530 17 {'menu': '00B1B104:09878A01:4C0E8889', 'unit': '00B1B104:40E0C000:4C0E8889', 'asset': '00B1B104:40E1C000:4C0E8889', 'lods': ['2F4E681B:00000000:16A11E98', '2F4E681B:00000000:16A11E99', '2F4E681B:00000000:16A11E9A', '2F4E681B:00000000:16A11E9B'], 'mask': '2F4E681C:00000000:8A518597', 'locale': '0A98EAF0:02FABF01:B49D953D'}
+
+== model payload comparison ==
+base LOD hashes ['74854c22b37e2168d3ef500f3dbf0a75fde22c1eb9cb8a914963768a5127e5ea']
+splice LOD hashes ['fa02194f4b50852ef7776cf1e2d255311d1658388cdb1fdf841aaa48a4cc8e26']
+identical LOD payloads False
+base LOD0 sections 12 meshes 1 vertices 231887 triangles 115158 bounds [[-41.45245361328125, -41.04334259033203, -8.151346264639869e-10, 41.45245361328125, 41.04334259033203, 284.8039245605469]]
+splice LOD0 sections 12 meshes 1 vertices 231887 triangles 115158 bounds [[-41.45245361328125, -41.04334259033203, -8.151346264639869e-10, 41.45245361328125, 41.04334259033203, 284.8039245605469]]
+
+== property differences: splice versus base ==
+menu baseFields 46 spliceFields 48 onlyBase [] onlySplice ['0EB1FC05', '0EB1FC22']
+unit baseFields 173 spliceFields 175 onlyBase ['0AD7FAC9', '0B98804E', '0B988051', '0B988054', '0B988057', '0B98805A', '0B98805D', '0B988060', '0B988063'] onlySplice ['0AD93A77', '0B9880C6', '0B9880C9', '0B9880CC', '0B9880CF', '0B9880D2', '0B9880D5', '0B9880D8', '0B9880DB', '0C0F2290', '0DA69D6F']
+asset baseFields 81 spliceFields 125 onlyBase ['0E2E4B86'] onlySplice ['02A907B5', '02A907B6', '02A907B9', '02A907BB', '02A907BC', '0C12EF20', '0C12EF21', '0C12EF2C', '0C12EF30', '0C12EF31', '0C12EF3C', '0C12EF40', '0C12EF41', '0C12EF4C', '0C12EF50', '0C12EF5C', '0C12EF60', '0C12EF6C', '0CAA680D', '0CAA6832', '0CAA6841', '0CAA8F10', '0CAA8F11', '0CAA8F12', '0CAA8F13', '0CAA8F14', '0CAA8F15', '0CAA8F16', '0CAA8F17', '0CB00ED8', '0CC8FE7A', '0CE71B10', '0CE71B11', '0CE71B12', '0CE71B13', '0D4C96B4', '0D4CAD23', '0D9A4E54', '0D9AA2BB', '0E01200F', '0E1BAC61', '0E1BAC62', '0E4DF244', '0E98D445', '0EC4567E']
+
+== property differences: splice versus s31 ==
+menu s31Fields 48 spliceFields 48
+ * 09756955 s31= [796721156, 1088431104, 3189299757] splice= [796721156, 1088431104, 1276020873]
+ * 09756956 s31= [796721156, 1088431104, 3189299757] splice= [796721156, 1088431104, 1276020873]
+ * 09756957 s31= [796721156, 1088431104, 3189299757] splice= [796721156, 1088431104, 1276020873]
+ * 09756958 s31= [796721156, 1088431104, 3189299757] splice= [796721156, 1088431104, 1276020873]
+ * 09756959 s31= [796721156, 1088431104, 3189299757] splice= [796721156, 1088431104, 1276020873]
+ * 0975695A s31= [796721156, 1088431104, 3189299757] splice= [796721156, 1088431104, 1276020873]
+ * 0975695F s31= [0, 0, 3189299757] splice= [0, 0, 1276020873]
+ * 0977AA8F s31= [796721156, 1088431104, 3189299757] splice= [796721156, 1088431104, 1276020873]
+ * 0A09F5FA s31= [{'table': 3189299757, 'id': 1}] splice= [{'table': 3030226237, 'id': 1}]
+ * 0A09F5FB s31= [{'table': 3189299757, 'id': 2}] splice= [{'table': 3030226237, 'id': 2}]
+ * 0C65D729 s31= [796721156, 1088431104, 3189299757] splice= [796721156, 1088431104, 1276020873]
+ * 0DC1E3E0 s31= [1700] splice= [1700, 1700, 1700]
+ * 0DDEEE56 s31= [1065771754, 0, 3189299757] splice= [1065771754, 0, 1276020873]
+unit s31Fields 176 spliceFields 175
+ - 00B2CCCB 32 [11645188, 1222688768, 2118883813]
+ * 08E17ED7 s31= [11645188, 1088536576, 3189299757] splice= [11645188, 1088536576, 1276020873]
+ * 09FB78CB s31= [{'table': 3189299757, 'id': 1}] splice= [{'table': 3030226237, 'id': 1}]
+asset s31Fields 126 spliceFields 125
+ - 00B2CCCB 32 [11645188, 1088536576, 2118883813]
+ * 00F9EFBA s31= [[-58.8100700378418, -25.31749725341797, -0.2947055697441101, 39.7066764831543, 43.46476745605469, 50.61147689819336]] splice= [[-41.45245361328125, -41.04334259033203, -8.151346264639869e-10, 41.45245361328125, 41.04334259033203, 284.8039245605469]]
+ * 00F9EFBB s31= [793667611, 0, 1225153700] splice= [793667611, 0, 379657880]
+ * 00F9EFBC s31= [793667611, 0, 1225153701] splice= [793667611, 0, 379657881]
+ * 00F9EFBD s31= [793667611, 0, 1225153702] splice= [793667611, 0, 379657882]
+ * 00F9EFBE s31= [793667611, 0, 1225153703] splice= [793667611, 0, 379657883]
+ * 09FB78CB s31= [{'table': 3189299757, 'id': 1}] splice= [{'table': 3030226237, 'id': 1}]
+ * 0BBBCDED s31= 192.0 splice= 96.0
+ * 0CCB7FC8 s31= [192.0, 96.0] splice= [96.0, 96.0]
+ * 0CCB7FD5 s31= [793667612, 0, 25566777] splice= [793667612, 0, 2320598423]
+ * 0CCB7FD6 s31= 13 splice= 7
+ * 0FE01484 s31= [[-96.0, -48.0, 0.0, 96.0, 48.0, 50.61147689819336]] splice= [[-48.0, -48.0, 0.0, 48.0, 48.0, 284.8039245605469]]
+
+== scene resource families ==
+s31 {'00B1B104': 4, '0A98EAF0': 1, '2F4E681B': 9, '2F4E681C': 4, '2F7D0004': 1, '3F8662EA': 1}
+ extra property 00B1B104:09878A01:BE18DA2D 968
+ extra property 00B1B104:40E0C000:BE18DA2D 3233
+ extra property 00B1B104:40E0C400:03106C2E 132
+ extra property 00B1B104:40E1C000:BE18DA2D 6775
+base {'00B1B104': 3, '0A98EAF0': 1, '2F4E681B': 7, '2F4E681C': 4, '2F7D0004': 1, '3F8662EA': 1}
+splice {'00B1B104': 3, '0A98EAF0': 1, '2F4E681B': 7, '2F4E681C': 4, '2F7D0004': 1, '3F8662EA': 1}
+
+== locale ==
+base 0A98EAF0:02FABF01:B51F2306  {
+    "0x00000001": "tall_test",
+    "0x00000002": "E2E proof of the migrated SC5 Asset Packager route: tall_test.lotm -> verified package.",
+    "0xffffffff": "0xffffffff"
+}
+splice 0A98EAF0:02FABF01:B49D953D  {
+    "0x00000001": "大学建筑测试包 s31 形制（拆接）",
+    "0x00000002": "OpenSCP splice: s31 GOLDEN property recipe + SC5 Asset Packager model route.",
+    "0xffffffff": "0xffffffff"
+}
+
+== material slots ==
+base {"profile": "project-native-single-v1", "materialRows": 112, "opaque": false, "interiorProjectionEnabled": true, "nightEmissionEnabled": true, "slots": [{"slot": 0, "tgi": "2F4E681B:00000000:B69F6509", "bytes": 8564, "sha256": "a94f505921bc39ccc5872578e936c61d2b9296f50944aa9d228320ce01e4e091"}, {"slot": 1, "tgi": "2F4E681C:00000000:B69F6508", "bytes": 89478560, "sha256": "19bcc5c43f912c76d22b10f56370e354cf1e7254d7701b4fd27dc69b13f52bac"}, {"slot": 2, "tgi": "2F4E681C:00000000:B69F650B", "bytes": 89478560, "sha256": "00bfda04d7146d7b0ade92dcb0c836683294a08febdec67ca4abf496ffcb26c1"}, {"slot": 3, "tgi": "2F4E681C:00000000:B69F650A", "bytes": 89478560, "sha256": "9c2ed2dbf6274ace96ad203ae32b21c29251e513e399cf31c2bd03144f3b1b5e"}, {"slot": 4, "tgi": "2F4E681B:00000000:B69F650D", "bytes": 33140, "sha256": "150caa010bf9b6841b7268e85cbc680174b91df8f007f6d92844ba4beaba3d9c"}, {"slot": 5, "tgi": "2F4E681B:00000000:B69F650C", "bytes": 16777588, "sha256": "86eb37875a486220e4c937a3310d15c7fcf28834ea711837d0fa28fe292af28d"}], "notes": ["61 LOTM groups preserved; native maps tiled, not display RGB baked", "Day/night content comes from source asset; game behavior requires testing", "Source tangent handedness recorded; Building40 profile retains native packed tangent convention"], "sourceGroups": 112, "parameterWidth": 128}
+splice {"profile": "openscp-splice-single-v1", "materialRows": 61, "opaque": false, "interiorProjectionEnabled": true, "nightEmissionEnabled": true, "slots": [{"slot": 0, "tgi": "2F4E681B:00000000:7EC2E70C", "bytes": 8564, "sha256": "a94f505921bc39ccc5872578e936c61d2b9296f50944aa9d228320ce01e4e091"}, {"slot": 1, "tgi": "2F4E681C:00000000:7EC2E70D", "bytes": 89478560, "sha256": "19bcc5c43f912c76d22b10f56370e354cf1e7254d7701b4fd27dc69b13f52bac"}, {"slot": 2, "tgi": "2F4E681C:00000000:7EC2E70E", "bytes": 89478560, "sha256": "00bfda04d7146d7b0ade92dcb0c836683294a08febdec67ca4abf496ffcb26c1"}, {"slot": 3, "tgi": "2F4E681C:00000000:7EC2E70F", "bytes": 89478560, "sha256": "9c2ed2dbf6274ace96ad203ae32b21c29251e513e399cf31c2bd03144f3b1b5e"}, {"slot": 4, "tgi": "2F4E681B:00000000:7EC2E708", "bytes": 33140, "sha256": "150caa010bf9b6841b7268e85cbc680174b91df8f007f6d92844ba4beaba3d9c"}, {"slot": 5, "tgi": "2F4E681B:00000000:7EC2E709", "bytes": 16777588, "sha256": "86eb37875a486220e4c937a3310d15c7fcf28834ea711837d0fa28fe292af28d"}], "notes": ["61 LOTM groups preserved; native maps tiled, not display RGB baked", "Day/night content comes from source asset; game behavior requires testing", "Source tangent handedness recorded; Building40 profile retains native packed tangent convention"], "parameterWidth": 128}

@@ -6,6 +6,14 @@
 > 解析实现：`crates/dbpf/src/erz.rs`（AEB 结构解析，三文件精确消耗验证）。
 > 姊妹文档：[`glassbox-engine.md`](../glassbox-engine.md)、
 > [`saves-exploration.md`](../saves-exploration.md)、[`file-formats.md`](../file-formats.md)。
+>
+> **2026-10-30 重大更新**：GlassBox 规则名哈希已破解 =
+> **FNV-1(lowercase(name))**（与资源系统 HashName32 同算法；H&V Rosetta
+> 对齐 324/332 实证）。dev-beta PDB 伪码给出全部记录权威字段名；
+> retail(5,2,14) unit rule = 144+12×T 字节、(4,2,13) = 160+12×T；
+> §4 的"伴随哈希"、段 A/B/C 身份（= map/binset/zone 规则）、
+> "hashifier: %x"字符串记录、`set`↔常量表推断均被修正或撤回。
+> 详见 [`pdb-sample-four-questions-20261029.md`](../../re/pdb-sample-four-questions-20261029.md)。
 
 ---
 
@@ -164,11 +172,13 @@ D 段外层计数在流中出现两次同值（1716）非巧合：常量与 D �
 | `rate/applyCount/priority` | 条件/动作对与 f32 字段（待逐位对照） |
 | `onSuccess/onFail/chain` | 子条目数组（hash+2×u32） |
 
-哈希函数未破解：FNV-1/FNV-1a/CRC32/Jenkins/djb2 全家桶对已知规则名
-**不命中**（含 s3db `kRuleID*` 表——注意该表 ID 是顺序分配与哈希混排，
-`kRuleIDSCPlayerRuleOnExitBox=0x83FF7538` 恰为 FNV-1(小写) 属巧合）。
-exe 内 `hashifier: %x` 字符串无静态引用（死代码/仅调试）。
-查名唯一现实路径仍是 s3db Properties 表 + property 键面。
+~~哈希函数未破解~~ → **2026-10-30 已破解：规则名哈希 =
+FNV-1(lowercase(name))**，与资源系统 `HashName32` 同算法（H&V Rosetta
+对齐 324/332 实证；旧"全家桶不命中"是没试小写化，
+`kRuleIDSCPlayerRuleOnExitBox=0x83FF7538` 也确系 FNV-1(小写) 而非巧合）。
+~~exe 内 `hashifier: %x` 字符串~~ 不可复现（retail/dev exe 与两份 PDB
+均无此串，原记录撤回）。查名现在可离线计算；s3db Properties 表仍适用于
+property 键面。
 
 ## 5. EcoGame 脚本包加载机制（exe 证据链）
 

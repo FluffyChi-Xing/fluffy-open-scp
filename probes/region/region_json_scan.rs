@@ -14,12 +14,12 @@ fn main() {
         b"257368209",
     ];
     for pkg in packages {
-        let Ok(p) = dbpf::Package::open(pkg) else { continue };
+        let Ok(p) = dbpf::Package::open(pkg) else {
+            continue;
+        };
         for e in p.entries() {
             let Ok(d) = p.read(e) else { continue };
-            if needles.iter().any(|n| {
-                d.windows(n.len()).any(|w| w == *n)
-            }) {
+            if needles.iter().any(|n| d.windows(n.len()).any(|w| w == *n)) {
                 println!(
                     "命中 {} TGI {:08X}:{:08X}:{:08X} 解压 {} B",
                     pkg,
@@ -30,8 +30,7 @@ fn main() {
                 );
                 let out = format!(
                     "tmp/js/region_res_{:08X}_{:08X}.bin",
-                    e.id.type_id,
-                    e.id.instance
+                    e.id.type_id, e.id.instance
                 );
                 std::fs::write(&out, &d).ok();
             }

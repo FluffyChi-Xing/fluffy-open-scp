@@ -8,7 +8,7 @@
 //! 打包）消费同一 JSON，解析引擎按 version 分发。
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 
 /// TGI → 十六进制字符串对象（文档 §3：域内惯例，解析器同时接受十进制）。
@@ -160,6 +160,17 @@ fn unit_id(kind: &str, bin: Option<i64>, category: Option<i64>, index: i64) -> S
     }
 }
 
+/// 生成器名字 id 规范化：只保留 instance，type/group 恒 0（引擎残缺 TGI 约定）。
+/// 非对象或 instance 非法时返回 `None`（该锚点视为未命名）。
+fn normalize_spawner_key(value: &Value) -> Option<Value> {
+    let instance = value
+        .get("instance")
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok())
+        .filter(|v| *v != 0)?;
+    Some(json!({"typeId": 0, "group": 0, "instance": instance}))
+}
+
 /// kind → schema 单元对象（文档 §7 字段映射；fields 透传位含属性行）。
 fn unit_json(
     unit: &UnitInput,
@@ -176,10 +187,7 @@ fn unit_json(
         .and_then(|edit| edit.matrix.as_ref())
         .or_else(|| unit.transform.as_ref().map(|t| &t.matrix));
     if let Some(matrix) = matrix {
-        object.insert(
-            "transform".into(),
-            json!({"matrix": matrix, "flags": 15}),
-        );
+        object.insert("transform".into(), json!({"matrix": matrix, "flags": 15}));
     }
     // kind 特有字段（tauri.ts LotUnitDto 逐字映射）
     let extra = &unit.extra;
@@ -191,6 +199,8 @@ fn unit_json(
                 "outerRadius",
                 "innerRadius",
                 "diffuse",
+                "specular",
+                "falloffStart",
                 "length",
                 "cullDistance",
                 "isVolumetric",
@@ -242,9 +252,21 @@ fn unit_json(
             }
         }
         "spawner" => {
+            // 生成器锚点 = UnitLocation 命名锚点：只有「名字 id + 局部变换」两个
+            // 真实字段（docs/re/spawner-render-and-assembly-20261101.md §1）。
+            // 名字 id 在引擎里是「残缺 TGI」——type/group 恒 0，这里规范化输出，
+            // 避免写回时把非零 type/group 带进 lot 属性。
             for key in ["id", "count", "countRandom", "agent"] {
                 if let Some(value) = extra.get(key) {
-                    object.insert(if key == "id" { "spawnerId" } else { key }.to_string(), value.clone());
+                    let target = if key == "id" { "spawnerId" } else { key };
+                    let value = if key == "id" {
+                        normalize_spawner_key(value)
+                    } else {
+                        Some(value.clone())
+                    };
+                    if let Some(value) = value {
+                        object.insert(target.to_string(), value);
+                    }
                 }
             }
         }
@@ -281,8 +303,7 @@ pub fn build_schema(request: &BuildPeSchemaRequest) -> String {
     }
     let hidden: std::collections::HashSet<&String> = request.hidden_unit_ids.iter().collect();
 
-    let deleted: std::collections::HashSet<&String> =
-        request.deleted_unit_ids.iter().collect();
+    let deleted: std::collections::HashSet<&String> = request.deleted_unit_ids.iter().collect();
     let mut units: Vec<Value> = session
         .units
         .iter()
@@ -426,7 +447,8 @@ mod tests {
             ],
             "hiddenUnitIds": ["prop:1:3"],
             "groups": {"decals": false}
-        })).expect("request deserialized");
+        }))
+        .expect("request deserialized");
 
         let schema = build_schema(&request);
         let value: Value = serde_json::from_str(&schema).expect("schema 是合法 JSON");
@@ -434,10 +456,7 @@ mod tests {
         assert_eq!(value["$schema"], "openscp.lot-asset/1");
         assert_eq!(value["version"], 1);
         assert_eq!(value["meta"]["name"], "消防局");
-        assert_eq!(
-            value["meta"]["source"]["tgi"]["typeId"],
-            "0x00B1B104"
-        );
+        assert_eq!(value["meta"]["source"]["tgi"]["typeId"], "0x00B1B104");
         assert_eq!(value["lot"]["size"], json!([48.0, 96.0]));
         assert_eq!(value["lot"]["colors"][0]["authored"], true);
         // LOD 引用 hex 化 + 缺失级 = null
@@ -459,5 +478,48 @@ mod tests {
         assert_eq!(units[1]["visible"], false);
         // editor 视图状态
         assert_eq!(value["editor"]["groups"]["decals"], false);
+    }
+
+    /// 生成器名字 id 规范化：只保留 instance，type/group 恒 0；instance=0 视为未命名。
+    #[test]
+    fn normalizes_spawner_name_key_to_instance_only() {
+        assert_eq!(
+            normalize_spawner_key(&json!({"typeId": 5, "group": 7, "instance": 0x141EED53u32})),
+            Some(json!({"typeId": 0, "group": 0, "instance": 0x141EED53u32}))
+        );
+        assert_eq!(
+            normalize_spawner_key(&json!({"typeId": 0, "group": 0, "instance": 0})),
+            None
+        );
+        assert_eq!(normalize_spawner_key(&json!(null)), None);
+        assert_eq!(normalize_spawner_key(&json!({"group": 1})), None);
+    }
+
+    /// 生成器单元进 schema 时名字 id 已规范化（写回端再做一次防御）。
+    #[test]
+    fn spawner_unit_json_forces_zero_type_and_group() {
+        let request: BuildPeSchemaRequest = serde_json::from_value(json!({
+            "session": {
+                "assetName": "大学",
+                "tgi": {"typeId": 0x00B1B104u32, "group": 1, "instance": 2},
+                "modelLods": [],
+                "lotColors": [],
+                "lotColorsAuthored": [],
+                "lotBorderColors": [],
+                "lotBorderWidths": [],
+                "lotBorderPatternIndices": [],
+                "units": [{
+                    "kind": "spawner", "index": 0,
+                    "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 1,2,3]},
+                    "id": {"typeId": 9, "group": 9, "instance": 0x141EED53u32}
+                }]
+            }
+        }))
+        .expect("request");
+        let value: Value = serde_json::from_str(&build_schema(&request)).expect("json");
+        assert_eq!(
+            value["units"][0]["spawnerId"],
+            json!({"typeId": 0, "group": 0, "instance": 0x141EED53u32})
+        );
     }
 }

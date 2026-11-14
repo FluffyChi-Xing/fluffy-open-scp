@@ -14,7 +14,9 @@ const HASH_PARENT: u32 = 0x00B2_CCCB;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: menu_survey <package> [--cat=0x...]");
+    let path = args
+        .first()
+        .expect("usage: menu_survey <package> [--cat=0x...]");
     let filter: Option<u32> = args
         .iter()
         .find_map(|a| a.strip_prefix("--cat="))
@@ -36,8 +38,12 @@ fn main() {
         if instance_type != 0x8A01 && instance_type != 0xC900 {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         let category = key_instance(&file, HASH_TOOL_CATEGORY);
         let ui = key_instance(&file, HASH_UI_TOOL_CATEGORY);
         let title = text_id(&file, HASH_TITLE);

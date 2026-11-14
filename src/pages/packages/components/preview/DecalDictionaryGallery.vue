@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   computed,
-  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -19,7 +18,14 @@ import type {
 } from "@/api/tauri";
 import DecalImageViewerSheet from "./DecalImageViewerSheet.vue";
 
-const props = defineProps<{ packageId: number; tgi: Tgi }>();
+const props = defineProps<{
+  packageId: number;
+  tgi: Tgi;
+  compact?: boolean;
+  placeable?: boolean;
+  scrollRoot?: HTMLElement | null;
+}>();
+const emit = defineEmits<{ place: [entry: DecalEntryMeta] }>();
 
 const source = createDataSource();
 const loading = ref(true);
@@ -33,14 +39,19 @@ const viewerIndex = ref(0);
 const images = reactive(new Map<number, DecalImageData>());
 /** 已请求过的下标，避免重复 IPC。 */
 const requested = new Set<number>();
-const pending = new Set<number>();
+const visible = new Set<number>();
+let viewerRequest: number | undefined;
+let inFlight = false;
+let disposed = false;
 let flushTimer: number | undefined;
+let revision = 0;
 let observer: IntersectionObserver | null = null;
 const gridRef = ref<HTMLElement | null>(null);
 
 const BATCH_SIZE = 8;
 
 const entries = computed(() => dictionary.value?.entries ?? []);
+const entriesByIndex = computed(() => new Map(entries.value.map((entry) => [entry.index, entry])));
 
 const filtered = computed(() => {
   const needle = normalize(search.value);
@@ -134,54 +145,73 @@ function errorMessage(cause: unknown): string {
 }
 
 async function load() {
+  const current = ++revision;
   loading.value = true;
   error.value = null;
   images.clear();
   requested.clear();
-  pending.clear();
+  visible.clear();
+  viewerRequest = undefined;
+  if (flushTimer !== undefined) window.clearTimeout(flushTimer);
+  flushTimer = undefined;
   observer?.disconnect();
   observer = null;
   try {
-    dictionary.value = await source.readDecalDictionary(
+    const loaded = await source.readDecalDictionary(
       props.packageId,
       props.tgi,
+      props.compact,
     );
+    if (current === revision) dictionary.value = loaded;
   } catch (cause) {
-    dictionary.value = null;
-    error.value = errorMessage(cause);
+    if (current === revision) {
+      dictionary.value = null;
+      error.value = errorMessage(cause);
+    }
   } finally {
-    loading.value = false;
-    await nextTick();
-    observeCells();
+    if (current === revision) {
+      loading.value = false;
+    }
   }
 }
 
-/** 只请求可解码条目；不可解码的单元格直接显示占位与原因。 */
-function queue(index: number) {
-  const entry = entries.value.find((item) => item.index === index);
-  if (!entry?.rasterStatus.decodable) return;
-  if (images.has(index) || requested.has(index)) return;
-  requested.add(index);
-  pending.add(index);
-  if (flushTimer !== undefined) window.clearTimeout(flushTimer);
+function needsImage(index: number) {
+  return entriesByIndex.value.get(index)?.rasterStatus.decodable && !requested.has(index);
+}
+
+function scheduleFlush() {
+  if (disposed || inFlight || flushTimer !== undefined) return;
+  if (viewerRequest === undefined && ![...visible].some(needsImage)) return;
   flushTimer = window.setTimeout(() => void flush(), 50);
 }
 
+function requestViewerImage(index: number) {
+  viewerRequest = needsImage(index) ? index : undefined;
+  scheduleFlush();
+}
+
 async function flush() {
+  const current = revision;
   flushTimer = undefined;
-  const batch = [...pending].slice(0, BATCH_SIZE);
-  if (!batch.length) return;
-  for (const index of batch) pending.delete(index);
+  const indices = [...new Set([viewerRequest, ...visible])]
+    .filter((index): index is number => index !== undefined && !!needsImage(index))
+    .slice(0, BATCH_SIZE);
+  viewerRequest = undefined;
+  if (!indices.length) return;
+  for (const index of indices) requested.add(index);
+  inFlight = true;
   try {
     const results = await source.readDecalImages(
       props.packageId,
       props.tgi,
-      batch,
+      indices,
     );
+    if (current !== revision) return;
     for (const result of results) images.set(result.index, result);
   } catch (cause) {
+    if (current !== revision) return;
     const message = errorMessage(cause) || "decal preview request failed";
-    for (const index of batch) {
+    for (const index of indices) {
       images.set(index, {
         index,
         error: message,
@@ -190,32 +220,41 @@ async function flush() {
         pngBase64: null,
       });
     }
+  } finally {
+    inFlight = false;
+    scheduleFlush();
   }
-  if (pending.size) flushTimer = window.setTimeout(() => void flush(), 50);
 }
 
 function observeCells() {
   observer?.disconnect();
   observer = null;
+  visible.clear();
   const root = gridRef.value;
   if (!root) return;
 
   if (typeof IntersectionObserver === "undefined") {
-    for (const entry of filtered.value) queue(entry.index);
+    if (!props.compact) {
+      for (const entry of filtered.value) visible.add(entry.index);
+      scheduleFlush();
+    }
     return;
   }
 
-  observer = new IntersectionObserver(
+  const nextObserver = new IntersectionObserver(
     (records) => {
+      if (observer !== nextObserver) return;
       for (const record of records) {
-        if (!record.isIntersecting) continue;
         const index = Number((record.target as HTMLElement).dataset.decalIndex);
-        if (Number.isFinite(index)) queue(index);
-        observer?.unobserve(record.target);
+        if (!Number.isFinite(index)) continue;
+        if (record.isIntersecting) visible.add(index);
+        else visible.delete(index);
       }
+      scheduleFlush();
     },
-    { root, rootMargin: "200px 0px" },
+    { root: props.compact ? props.scrollRoot ?? null : root },
   );
+  observer = nextObserver;
   root
     .querySelectorAll<HTMLElement>("[data-decal-index]")
     .forEach((cell) => observer?.observe(cell));
@@ -224,12 +263,20 @@ function observeCells() {
 function openViewer(index: number) {
   viewerIndex.value = index;
   viewerOpen.value = true;
-  queue(index);
+  requestViewerImage(index);
+}
+
+function pickForPlacement(event: PointerEvent, entry: DecalEntryMeta): void {
+  if (props.placeable && event.button === 0 && entry.id?.instance && entry.rasterStatus.decodable) {
+    emit("place", entry);
+  }
 }
 
 onMounted(() => void load());
 
 onBeforeUnmount(() => {
+  disposed = true;
+  revision += 1;
   observer?.disconnect();
   observer = null;
   if (flushTimer !== undefined) window.clearTimeout(flushTimer);
@@ -241,19 +288,17 @@ watch(
     props.tgi.typeId,
     props.tgi.group,
     props.tgi.instance,
+    props.compact,
   ],
   () => void load(),
 );
 
-watch(filtered, async () => {
-  await nextTick();
-  observeCells();
-});
+watch([gridRef, filtered, () => props.scrollRoot], observeCells, { flush: "post" });
 </script>
 
 <template>
-  <div class="decal-gallery">
-    <div v-if="dictionary" class="decal-meta">
+  <div class="decal-gallery" :class="{ 'decal-gallery-compact': compact }">
+    <div v-if="dictionary && !compact" class="decal-meta">
       <div class="decal-meta-item">
         <span>{{ $t("decal.material") }}</span>
         <code>{{ hex(dictionary.material?.instance) }}</code>
@@ -277,7 +322,7 @@ watch(filtered, async () => {
       {{ $t(key) }}
     </p>
 
-    <p v-if="dictionary && entries.length" class="decal-stats">
+    <p v-if="dictionary && entries.length && !compact" class="decal-stats">
       {{
         $t("decal.stats", {
           decodable: stats.decodable,
@@ -287,7 +332,7 @@ watch(filtered, async () => {
       }}
     </p>
 
-    <div class="decal-search">
+    <div v-if="!compact" class="decal-search">
       <FIcon name="Search" :size="13" aria-label="" />
       <input
         v-model="search"
@@ -317,7 +362,7 @@ watch(filtered, async () => {
       status="warning"
       icon-name="FileQuestion"
       :title="$t('decal.previewUnavailable')"
-      :desc="error"
+      :desc="compact ? undefined : error"
     />
     <FEmpty
       v-else-if="!entries.length"
@@ -329,15 +374,21 @@ watch(filtered, async () => {
     <FEmpty v-else-if="!filtered.length" variant="compact" icon-name="SearchX" :title="$t('decal.noResults')" />
 
     <div v-else class="decal-grid-wrap">
-      <div ref="gridRef" class="decal-grid" role="list">
+      <div ref="gridRef" class="decal-grid" :role="compact ? undefined : 'list'">
         <button
           v-for="entry in filtered"
           :key="entry.index"
           type="button"
-          role="listitem"
+          :role="compact ? undefined : 'listitem'"
           class="decal-cell"
           :data-decal-index="entry.index"
-          :title="entry.rasterStatus.reason ?? undefined"
+          :class="{ 'decal-cell-placeable': placeable && entry.id?.instance && entry.rasterStatus.decodable }"
+          :title="images.get(entry.index)?.error
+            ? $t('decal.previewUnavailable')
+            : placeable && entry.rasterStatus.decodable
+              ? $t('studio.assetWorkbench.decalDragHint')
+              : (entry.rasterStatus.reason ?? undefined)"
+          @pointerdown="pickForPlacement($event, entry)"
           @click="openViewer(entry.index)"
         >
           <span class="decal-cell-thumb">
@@ -346,19 +397,19 @@ watch(filtered, async () => {
               :src="thumb(entry.index)"
               :alt="hex(entry.id?.instance)"
               loading="lazy"
+              draggable="false"
             />
             <FIcon
-              v-else-if="!entry.rasterStatus.decodable"
+              v-else-if="!entry.rasterStatus.decodable || images.get(entry.index)?.error"
               name="TriangleAlert"
               :size="16"
               aria-label=""
             />
             <FIcon
               v-else
-              name="LoaderCircle"
+              name="Image"
               :size="16"
               aria-label=""
-              class="decal-spin"
             />
           </span>
           <span class="decal-cell-label">{{ hex(entry.id?.instance) }}</span>
@@ -382,7 +433,7 @@ watch(filtered, async () => {
       :entries="filtered"
       :images="images"
       :start-index="viewerIndex"
-      @request="queue"
+      @request="requestViewerImage"
     />
   </div>
 </template>
@@ -393,6 +444,14 @@ watch(filtered, async () => {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+.decal-gallery-compact .decal-grid {
+  max-height: none;
+  overflow: visible;
+}
+.decal-grid .decal-cell-placeable {
+  cursor: grab;
+  touch-action: none;
 }
 .decal-meta {
   display: flex;
@@ -539,14 +598,6 @@ watch(filtered, async () => {
   height: 8px;
   width: 8px;
 }
-.decal-spin {
-  animation: decal-spin 900ms linear infinite;
-}
-@keyframes decal-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .decal-skeleton-grid {
   display: grid;
   gap: 8px;
@@ -571,7 +622,6 @@ watch(filtered, async () => {
   text-align: center;
 }
 @media (prefers-reduced-motion: reduce) {
-  .decal-spin,
   .decal-skeleton {
     animation: none;
   }

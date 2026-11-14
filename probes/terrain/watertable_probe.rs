@@ -19,14 +19,24 @@ fn main() {
                 continue;
             }
             let Ok(data) = p.read(e) else { continue };
-            let Ok(pf) = PropertyFile::parse(&data) else { continue };
-            let Some(Some(name)) = pf.values.iter().find(|pr| pr.hash == 0x00B2_CCCA).map(|pr| match &pr.kind {
-                Kind::Scalar(Value::String8(s)) => Some(s.clone()),
-                _ => None,
-            }) else { continue };
+            let Ok(pf) = PropertyFile::parse(&data) else {
+                continue;
+            };
+            let Some(Some(name)) = pf
+                .values
+                .iter()
+                .find(|pr| pr.hash == 0x00B2_CCCA)
+                .map(|pr| match &pr.kind {
+                    Kind::Scalar(Value::String8(s)) => Some(s.clone()),
+                    _ => None,
+                })
+            else {
+                continue;
+            };
             if name == "waterTableEcoMapBrushes" {
                 if let Some(sc_properties::Property {
-                    kind: Kind::Array(vs), ..
+                    kind: Kind::Array(vs),
+                    ..
                 }) = pf.get(0x02A9_07B5)
                 {
                     if let Some(Value::Key(k)) = vs.first() {
@@ -105,12 +115,14 @@ fn main() {
             *f0_insts.entry(e.id.instance).or_default() += 1;
         }
     }
-    let mip0: std::collections::HashSet<u32> =
-        SHARED_TILE_GRID.iter().flatten().copied().collect();
+    let mip0: std::collections::HashSet<u32> = SHARED_TILE_GRID.iter().flatten().copied().collect();
     let extra: Vec<u32> = f0_insts
         .keys()
         .filter(|i| !mip0.contains(i))
         .copied()
         .collect();
-    println!("\nF0 非 mip0 槽 instance: {extra:?}（每槽条目数 {:?}）", extra.iter().map(|i| f0_insts[i]).collect::<Vec<_>>());
+    println!(
+        "\nF0 非 mip0 槽 instance: {extra:?}（每槽条目数 {:?}）",
+        extra.iter().map(|i| f0_insts[i]).collect::<Vec<_>>()
+    );
 }

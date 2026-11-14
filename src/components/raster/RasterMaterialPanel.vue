@@ -150,78 +150,17 @@ const label = (s: RasterSource | null) =>
   s?.tgi
     ? `0x${s.tgi.instance.toString(16).toUpperCase()}`
     : t("rasterEditor.text048");
-function colorHex(c: number[]) {
-  return (
-    "#" +
-    c
-      .slice(0, 3)
-      .map((n) => n.toString(16).padStart(2, "0"))
-      .join("")
-  );
-}
-function setLotColor(i: number, hex: string) {
-  const colors = lot.value.colors.map(
-    (c) => [...c] as [number, number, number, number],
-  );
-  colors[i] = [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-    colors[i][3],
-  ];
-  lot.value = { ...lot.value, colors };
-  emit("changed");
-}
-function setTile(i: number, tile: number) {
-  const colors = lot.value.colors.map(
-    (c) => [...c] as [number, number, number, number],
-  );
-  colors[i][3] = tile;
-  lot.value = { ...lot.value, colors };
-  emit("changed");
-}
 </script>
 <template>
   <section class="material-panel">
     <h3>{{ t("rasterEditor.text049") }}</h3>
     <fieldset :disabled="disabled" @change="emit('changed')">
       <label
+        v-if="isDecal"
         ><Switch v-model="sampling.generateMips" :aria-label="t('rasterEditor.text050')" />
         {{ t("rasterEditor.text050") }}
       </label>
-      <p>{{ t("rasterEditor.text051") }}</p>
       <template v-if="profile === 'lot-mask'">
-        <label>
-          {{ t("rasterEditor.text052") }}
-          <input
-            v-model.number="sampling.metersPerPixel"
-            type="number"
-            min="0.001"
-            step="0.01"
-        /></label>
-        <div v-for="(c, i) in lot.colors" :key="i" class="color-row">
-          <label
-            >LC{{ i + 1
-            }}<input
-              :disabled="!!lot.target"
-              :value="colorHex(c)"
-              type="color"
-              @input="
-                setLotColor(i, ($event.target as HTMLInputElement).value)
-              " /></label
-          ><label>
-            {{ t("rasterEditor.text053") }}
-            <input
-              :disabled="!!lot.target"
-              :value="c[3]"
-              type="number"
-              min="0"
-              max="15"
-              @change="
-                setTile(i, Number(($event.target as HTMLInputElement).value))
-              "
-          /></label>
-        </div>
         <p v-if="lot.target">{{ t("rasterEditor.text054") }}</p>
         <p>{{ t("rasterEditor.text055") }} {{ label(lot.target) }}</p>
         <button

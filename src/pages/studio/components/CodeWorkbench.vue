@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/resizable";
 import { isTauri, tauriApi } from "@/api";
 import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useBuildActivityStore } from "@/stores/buildActivity";
 import { useToast } from "@/composables/useToast";
 import {
   classifyCodeFile,
@@ -36,6 +37,7 @@ import ModFlowWorkbench from './mod-flow/ModFlowWorkbench.vue';
 import FlowInitializeSheet from './mod-flow/FlowInitializeSheet.vue';
 import { isEngineManifest } from './mod-flow/contracts';
 import StandardModEditorPanel from './StandardModEditorPanel.vue';
+import RoadAssetWorkbench from "./road/RoadAssetWorkbench.vue";
 import ModAssetWorkbench from './asset/ModAssetWorkbench.vue';
 
 /**
@@ -50,7 +52,14 @@ import ModAssetWorkbench from './asset/ModAssetWorkbench.vue';
  * 元信息（含 DBPF 统计），笔记按钮打开模组笔记 sheet；打开时
  * package.json 缺失则自动扫描生成。
  */
-const props = defineProps<{ project: ModProjectView }>();
+const props = withDefaults(
+  defineProps<{
+    project: ModProjectView;
+    /** 嵌在项目详情 Develop tab：隐藏与 repo 标题重复的页眉。 */
+    embedded?: boolean;
+  }>(),
+  { embedded: false },
+);
 const emit = defineEmits<{ close: [] }>();
 
 const { t, locale } = useI18n();
@@ -112,6 +121,62 @@ const standardModKind = computed(() => {
   const workflow = projectManifest.value.workflow;
   return workflow === "map" || workflow === "whole-region" || workflow === "generated" ? "map" : "assets";
 });
+
+/**
+ * M1 资产打包后台构建：资产项目统一进入 build_queue_enqueue_project，
+ * 由后端选择已有 openscp.asset schema 或 Asset Editor workbench adapter。
+ * 入队后可关闭工作台；进度进消息栏 + OpenSCP Actions。
+ * Flow 项目仍使用独立的构建/部署按钮。
+ */
+const buildBusy = ref(false);
+const roadWorkbench = ref<InstanceType<typeof RoadAssetWorkbench> | null>(null);
+const buildActivity = useBuildActivityStore();
+
+async function buildM1InBackground(): Promise<boolean> {
+  const root = props.project.folderPath?.trim() ?? "";
+  if (!root || buildBusy.value) return false;
+  buildBusy.value = true;
+  try {
+    if (isRoadProject.value && !(await roadWorkbench.value?.save())) return false;
+    const submitted = await tauriApi.buildQueue.enqueueProject(
+      root,
+      props.project.name,
+    );
+    buildActivity.rememberProject(root, props.project.name, submitted.jobId);
+    // 入队成功：toast 即时反馈；消息栏由全局 build-queue:event 监听写入。
+    toast.info(
+      t("studio.assetWorkbench.buildQueued", { jobId: submitted.jobId }),
+    );
+    return true;
+  } catch (cause) {
+    const message =
+      cause &&
+      typeof cause === "object" &&
+      "message" in cause &&
+      typeof (cause as { message: unknown }).message === "string"
+        ? (cause as { message: string }).message
+        : cause instanceof Error
+          ? cause.message
+          : String(cause);
+    buildActivity.pushNotice({
+      titleKey: "notification.buildEnqueueFailed",
+      detail: message,
+      tone: "error",
+      projectRoot: root,
+      projectLabel: props.project.name,
+    });
+    toast.error(t("studio.assetWorkbench.buildEnqueueFailed", { error: message }));
+    return false;
+  } finally {
+    buildBusy.value = false;
+  }
+}
+
+const isRoadProject = computed(() => engineEnabled.value && standardModKind.value === "road");
+
+const projectBuildAvailable = computed(
+  () => (standardModKind.value === "assets" || isRoadProject.value) && Boolean(props.project.folderPath),
+);
 
 async function buildDeployAndLaunch() {
   if (!engineReady.value || deployBusy.value) return;
@@ -325,8 +390,10 @@ function onEntrySearch(event: Event) {
 }
 
 onBeforeUnmount(() => {
+  window.clearTimeout(searchTimer);
   // 离开工作台时释放模组包句柄（保持全局包管理器干净）。
   if (workbenchPackageId.value !== null) {
+    void explorer.applyFilter("");
     void explorer.closePackage(workbenchPackageId.value);
   }
 });
@@ -403,21 +470,31 @@ watch(
 </script>
 
 <template>
-  <section class="code-page">
-    <header class="page-heading">
-      <div>
+  <section class="code-page" :class="{ embedded }">
+    <header class="page-heading" :class="{ compact: embedded }">
+      <div v-if="!embedded">
         <p class="eyebrow">{{ $t("studio.code.sheetTitle") }}</p>
         <FTypography :header="1" spacing="none">{{ project.name }}</FTypography>
         <p v-if="tree" class="root-path">{{ tree.rootPath }}</p>
       </div>
       <div class="heading-actions">
         <span v-if="projectManifest.origin" class="tree-stats">{{ t(projectManifest.origin === 'openscp' ? 'flow.standard' : 'flow.community') }}</span>
-        <button v-if="engineEnabled" class="refresh-button" :disabled="!engineReady || deployBusy" :title="t(engineReady ? 'flow.ready' : 'flow.blocked')" @click="flowPanel?.build()">{{ t('flow.build') }}</button>
-        <button v-if="engineEnabled" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
+        <button
+          v-if="projectBuildAvailable"
+          class="refresh-button"
+          type="button"
+          :disabled="deployBusy || buildBusy"
+          :title="t('studio.assetWorkbench.buildButtonHint')"
+          @click="buildM1InBackground"
+        >
+          <FIcon :name="buildBusy ? 'Loader2' : 'Hammer'" :size="13" aria-label="" />
+          {{ t(buildBusy ? 'studio.assetWorkbench.buildEnqueueing' : 'flow.build') }}
+        </button>
+        <button v-if="engineEnabled && !isRoadProject" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
           <FIcon :name="deployBusy ? 'Loader2' : 'Play'" :size="13" aria-label="" />
           {{ t(deployBusy ? 'flow.buildDeploying' : 'flow.buildDeploy') }}
         </button>
-        <button v-else class="refresh-button" :disabled="loading || !tree" @click="initializeOpen = true">{{ t('flow.initialize') }}</button>
+        <button v-else-if="!engineEnabled" class="refresh-button" :disabled="loading || !tree" @click="initializeOpen = true">{{ t('flow.initialize') }}</button>
         <span v-if="tree" class="tree-stats">
           {{
             $t("studio.code.stats", {
@@ -436,6 +513,7 @@ watch(
           {{ $t("studio.code.refresh") }}
         </button>
         <button
+          v-if="!embedded"
           class="refresh-button close"
           type="button"
           :aria-label="$t('common.close')"
@@ -447,7 +525,7 @@ watch(
       </div>
     </header>
 
-    <p class="code-hint">{{ $t(engineEnabled ? 'flow.fileHint' : 'studio.code.hint') }}</p>
+    <p v-if="!embedded" class="code-hint">{{ $t(engineEnabled ? 'flow.fileHint' : 'studio.code.hint') }}</p>
     <FlowInitializeSheet v-if="initializeOpen" v-model:open="initializeOpen" :project="project.relPath" :manifest="projectManifest" @initialized="loadTree(true)" />
 
     <p v-if="!isTauri()" class="web-hint">{{ $t("studio.raster.webHint") }}</p>
@@ -456,6 +534,15 @@ watch(
       <FIcon name="FolderOpen" :size="20" aria-label="" />
       <p>{{ fatalMessage }}</p>
     </div>
+
+    <RoadAssetWorkbench
+      v-else-if="isRoadProject"
+      ref="roadWorkbench"
+      :key="project.relPath"
+      :project="project.relPath"
+      :manifest="projectManifest"
+      class="asset-workbench-host"
+    />
 
     <!-- 资产 Mod：整栏 Blender 式工作台（自带文件树，不套 Code 外壳左右分栏） -->
     <ModAssetWorkbench
@@ -831,10 +918,19 @@ watch(
   min-height: 0;
   padding: 16px 18px;
 }
+.code-page.embedded {
+  padding: 0;
+  gap: 8px;
+}
 .page-heading {
   align-items: flex-start;
   display: flex;
   justify-content: space-between;
+}
+.page-heading.compact {
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 36px;
 }
 .page-heading :deep(h1) {
   margin: 0;

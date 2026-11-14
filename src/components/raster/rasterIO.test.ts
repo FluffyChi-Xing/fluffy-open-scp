@@ -18,6 +18,15 @@ beforeEach(() => {
   vi.mocked(tauriApi.packages.saveFile).mockResolvedValue("copy.package");
 });
 describe("native Raster copy adapters", () => {
+  it("does not save a marquee draft as a package without its animation settings", async () => {
+    const session = useRasterSession();
+    session.changeProfile("decal-sign");
+    session.create(1, 1);
+    session.decal.value.sign = { effect: "marquee", axis: "horizontal", speed: 1 };
+    await expect(saveRasterCopy(session.snapshot(), "decal")).rejects.toThrow(/JSON/);
+    expect(tauriApi.packages.saveFile).not.toHaveBeenCalled();
+    expect(tauriApi.raster.registerDecalEntry).not.toHaveBeenCalled();
+  });
   it("copies Property Editor colors and pattern indices instead of debug defaults", async () => {
     const colors = [
       [110, 120, 130, 3],

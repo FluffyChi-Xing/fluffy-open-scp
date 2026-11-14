@@ -15,7 +15,10 @@ fn main() {
     }
     // 城市组 → 区域（36B property 的 Key.group）
     for e in p.entries() {
-        if e.id.type_id != 0x00B1_B104 || e.compressed_size > 60 || !city_region.contains_key(&e.id.group) {
+        if e.id.type_id != 0x00B1_B104
+            || e.compressed_size > 60
+            || !city_region.contains_key(&e.id.group)
+        {
             continue;
         }
         if let Ok(data) = p.read(e) {
@@ -46,7 +49,10 @@ fn main() {
         }
         let mut top: Vec<(u16, usize)> = hist.into_iter().collect();
         top.sort_by(|a, b| b.1.cmp(&a.1));
-        by_region.entry(city_region[&e.id.group]).or_default().push(e.id.group);
+        by_region
+            .entry(city_region[&e.id.group])
+            .or_default()
+            .push(e.id.group);
         if [0xD01F_A985u32, 0xBEAF_0510].contains(&city_region[&e.id.group]) {
             println!(
                 "城 {} (区域 {:08X}): top5 {:?}",

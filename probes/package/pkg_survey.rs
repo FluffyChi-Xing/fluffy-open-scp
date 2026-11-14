@@ -2,7 +2,8 @@
 fn main() {
     for path in std::env::args().skip(1) {
         let p = dbpf::Package::open(&path).unwrap();
-        let mut hist: std::collections::HashMap<u32, (usize, u64)> = std::collections::HashMap::new();
+        let mut hist: std::collections::HashMap<u32, (usize, u64)> =
+            std::collections::HashMap::new();
         for e in p.entries() {
             let h = hist.entry(e.id.type_id).or_default();
             h.0 += 1;

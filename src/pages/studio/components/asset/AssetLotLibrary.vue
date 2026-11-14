@@ -7,11 +7,15 @@ import { tauriApi } from "@/api";
 import type { PropertyDocumentSummary, Tgi } from "@/api/tauri";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import AssetLotDiagram from "./AssetLotDiagram.vue";
+import AssetAuthoredLotSection from "./AssetAuthoredLotSection.vue";
+import type { AuthoredLot } from "@/lib/lot-ground/authored";
 
 /** 应用载荷：Lot 资源位置（会话层据此读取并套用尺寸/四色分层）。 */
 export interface LotPresetRef {
   packageId: number;
   tgi: Tgi;
+  /** 来源包全路径：packageId 跨运行失效时按此重开（见 useWorkbenchAsset）。 */
+  packagePath?: string;
 }
 
 /**
@@ -20,10 +24,17 @@ export interface LotPresetRef {
  * 草稿模式下可一键把该 Lot 的尺寸与四色分层应用到当前地块。
  */
 const props = defineProps<{
+  project: string;
   editEnabled: boolean;
   editMode: "native" | "draft";
+  /** 当前地块绑定的是自绘地面。 */
+  authoredBound: boolean;
 }>();
-const emit = defineEmits<{ apply: [preset: LotPresetRef] }>();
+const emit = defineEmits<{
+  apply: [preset: LotPresetRef];
+  applyAuthored: [lot: AuthoredLot];
+  authoredSaved: [lot: AuthoredLot];
+}>();
 
 const { t } = useI18n();
 const packages = useGamePackagesStore();
@@ -40,16 +51,6 @@ interface LotEntry {
 }
 const groups = shallowRef<{ name: string; entries: LotEntry[] }[]>([]);
 const PER_GROUP_CAP = 48;
-
-const packageNames = computed(() => {
-  const names = new Map<number, string>();
-  for (const opened of packages.opened)
-    names.set(
-      opened.package.packageId,
-      opened.package.path.split(/[\\/]/).pop() ?? opened.package.path,
-    );
-  return names;
-});
 
 async function scan() {
   if (busy.value) return;
@@ -130,13 +131,36 @@ function lotKey(entry: LotEntry) {
 
 const appliedKey = ref("");
 function apply(entry: LotEntry) {
-  emit("apply", { packageId: entry.packageId, tgi: entry.tgi });
+  // 带上来源包全路径：持久化后 packageId 跨运行失效时可按路径重开
+  // （PackageManager 每次启动重新编号，冷启动恢复必 miss——2026-11-03）。
+  const source = packages.opened.find(
+    (opened) => opened.package.packageId === entry.packageId,
+  );
+  emit("apply", {
+    packageId: entry.packageId,
+    tgi: entry.tgi,
+    packagePath: source?.package.path,
+  });
   appliedKey.value = lotKey(entry);
 }
+watch(
+  () => props.authoredBound,
+  (bound) => {
+    if (bound) appliedKey.value = "";
+  },
+);
 </script>
 
 <template>
   <div class="lot-library" :aria-label="t('studio.assetWorkbench.lotLibraryTab')">
+    <AssetAuthoredLotSection
+      :project="project"
+      :edit-enabled="editEnabled"
+      :edit-mode="editMode"
+      :bound="authoredBound"
+      @apply="emit('applyAuthored', $event)"
+      @saved="emit('authoredSaved', $event)"
+    />
     <p v-if="!packages.opened.length" class="library-note">
       {{ t("studio.assetWorkbench.lotLibraryNeedPackages") }}
     </p>

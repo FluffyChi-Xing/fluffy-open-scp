@@ -53,6 +53,14 @@ export interface ProjectAsset {
   size: number;
   base64?: string;
   resources?: import("@/api/tauri").Tgi[];
+  /** Present for .blend imports handled by the internal Blender service. */
+  source?: "blend" | "blend-native";
+  lotm?: string;
+  cache?: "hit";
+  nativeAdapter?: {
+    status: "native" | "unsupported-b4" | "unavailable" | "failed";
+    detail?: string;
+  };
 }
 export function assetBytes(asset: ProjectAsset): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(asset.base64 ?? ""), (c) => c.charCodeAt(0));

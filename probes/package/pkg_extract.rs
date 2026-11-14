@@ -10,7 +10,13 @@ fn parse_hex(s: &str) -> u32 {
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let (path, t, g, i, out) = match a.as_slice() {
-        [p, t, g, i, o] => (p.clone(), parse_hex(t), parse_hex(g), parse_hex(i), o.clone()),
+        [p, t, g, i, o] => (
+            p.clone(),
+            parse_hex(t),
+            parse_hex(g),
+            parse_hex(i),
+            o.clone(),
+        ),
         _ => panic!("用法: pkg_extract <pkg> <type> <group> <instance> <out>"),
     };
     let pkg = Package::open(&path).expect("open");

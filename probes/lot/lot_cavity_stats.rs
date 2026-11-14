@@ -17,7 +17,10 @@ const MAX_SAMPLES: usize = 400;
 
 fn main() {
     let packages: Vec<String> = std::env::args().skip(1).collect();
-    assert!(!packages.is_empty(), "usage: lot_cavity_stats <package> [more...]");
+    assert!(
+        !packages.is_empty(),
+        "usage: lot_cavity_stats <package> [more...]"
+    );
     let mut opened = Vec::new();
     for path in &packages {
         opened.push(Package::open(path).expect("open package"));
@@ -29,12 +32,20 @@ fn main() {
     let mut skipped = 0usize;
 
     'outer: for package in &opened {
-        for entry in package.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for entry in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             if samples.len() >= MAX_SAMPLES {
                 break 'outer;
             }
-            let Ok(raw) = package.read(entry) else { continue };
-            let Ok(file) = sc_properties::PropertyFile::parse(&raw) else { continue };
+            let Ok(raw) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = sc_properties::PropertyFile::parse(&raw) else {
+                continue;
+            };
             let doc = LotEditorDocument::from_property_file(file);
             let (Some(size), Some(mask_key)) = (doc.lot_size, doc.lot_mask) else {
                 skipped += 1;
@@ -56,9 +67,9 @@ fn main() {
                 let pixels = raster.decode_top_mip_rgba().ok()?;
                 Some((pixels, raster.width as usize, raster.height as usize))
             };
-            let Some((pixels, w, h)) = search(package).or_else(|| {
-                opened.iter().find_map(|source| search(source))
-            }) else {
+            let Some((pixels, w, h)) =
+                search(package).or_else(|| opened.iter().find_map(|source| search(source)))
+            else {
                 skipped += 1;
                 continue;
             };
@@ -70,7 +81,10 @@ fn main() {
             for y in 0..h {
                 for x in 0..w {
                     let at = (y * w + x) * 4;
-                    let covered = pixels[at] > 16 || pixels[at + 1] > 16 || pixels[at + 2] > 16 || pixels[at + 3] > 16;
+                    let covered = pixels[at] > 16
+                        || pixels[at + 1] > 16
+                        || pixels[at + 2] > 16
+                        || pixels[at + 3] > 16;
                     if !covered {
                         sum_x += x as f64;
                         sum_y += y as f64;
@@ -93,14 +107,15 @@ fn main() {
                 .and_then(|p| p.array())
                 .and_then(|values| values.first())
                 .and_then(|value| match value {
-                    Value::BoundingBox { min, max } => Some([
-                        (min[0] + max[0]) / 2.0,
-                        (min[1] + max[1]) / 2.0,
-                    ]),
+                    Value::BoundingBox { min, max } => {
+                        Some([(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0])
+                    }
                     _ => None,
                 });
             let d1 = match bbox_center {
-                Some(center) => ((cx - center[0] as f64).powi(2) + (cy - center[1] as f64).powi(2)).sqrt(),
+                Some(center) => {
+                    ((cx - center[0] as f64).powi(2) + (cy - center[1] as f64).powi(2)).sqrt()
+                }
                 None => d0, // 无 bbox 的 lot：模型即居中锚点
             };
             // LotColor1-4 的 A（tile 索引）分布直方图数据
@@ -144,7 +159,8 @@ fn main() {
     let d0s: Vec<f64> = samples.iter().map(|s| s.0).collect();
     let d1s: Vec<f64> = samples.iter().map(|s| s.1).collect();
     let covs: Vec<f64> = samples.iter().map(|s| s.2).collect();
-    let (mut d0s_sorted, mut d1s_sorted, mut covs_sorted) = (d0s.clone(), d1s.clone(), covs.clone());
+    let (mut d0s_sorted, mut d1s_sorted, mut covs_sorted) =
+        (d0s.clone(), d1s.clone(), covs.clone());
     d0s_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
     d1s_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
     covs_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());

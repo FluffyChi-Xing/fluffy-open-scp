@@ -1,0 +1,309 @@
+ 53           0 RESUME                   0
+
+ 59           2 LOAD_FAST                1 (diagnostic)
+              4 LOAD_ATTR                1 (NULL|self + get)
+             24 LOAD_CONST               1 ('nativeControlProfile')
+             26 CALL                     1
+             34 LOAD_CONST               2 ('native-room-states-transparent-top-v3')
+             36 COMPARE_OP              55 (!=)
+             40 POP_JUMP_IF_FALSE        4 (to 50)
+             42 LOAD_FAST                0 (room)
+             44 LOAD_CONST               3 (False)
+             46 BUILD_TUPLE              2
+             48 RETURN_VALUE
+
+ 60     >>   50 LOAD_FAST                0 (room)
+             52 LOAD_ATTR                3 (NULL|self + copy)
+             72 CALL                     0
+             80 STORE_FAST               2 (result)
+             82 LOAD_FAST                2 (result)
+             84 LOAD_CONST               4 (None)
+             86 LOAD_CONST               4 (None)
+             88 BUILD_SLICE              2
+             90 LOAD_CONST               4 (None)
+             92 LOAD_CONST               4 (None)
+             94 BUILD_SLICE              2
+             96 LOAD_CONST               4 (None)
+             98 LOAD_CONST               5 (3)
+            100 BUILD_SLICE              2
+            102 BUILD_TUPLE              3
+            104 BINARY_SUBSCR
+            108 LOAD_ATTR                5 (NULL|self + astype)
+            128 LOAD_GLOBAL              6 (np)
+            138 LOAD_ATTR                8 (float64)
+            158 CALL                     1
+            166 LOAD_CONST               6 (255)
+            168 BINARY_OP               11 (/)
+            172 STORE_FAST               3 (a)
+
+ 61         174 LOAD_GLOBAL              7 (NULL + np)
+            184 LOAD_ATTR               10 (where)
+            204 LOAD_FAST                3 (a)
+            206 LOAD_CONST               7 (0.04045)
+            208 COMPARE_OP              26 (<=)
+            212 LOAD_FAST                3 (a)
+            214 LOAD_CONST               8 (12.92)
+            216 BINARY_OP               11 (/)
+            220 LOAD_FAST                3 (a)
+            222 LOAD_CONST               9 (0.055)
+            224 BINARY_OP                0 (+)
+            228 LOAD_CONST              10 (1.055)
+            230 BINARY_OP               11 (/)
+            234 LOAD_CONST              11 (2.4)
+            236 BINARY_OP                8 (**)
+            240 CALL                     3
+            248 STORE_FAST               4 (linear)
+
+ 62         250 LOAD_GLOBAL              7 (NULL + np)
+            260 LOAD_ATTR               12 (clip)
+            280 LOAD_GLOBAL              7 (NULL + np)
+            290 LOAD_ATTR               14 (round)
+            310 LOAD_FAST                4 (linear)
+            312 LOAD_CONST               6 (255)
+            314 BINARY_OP                5 (*)
+            318 CALL                     1
+            326 LOAD_CONST              12 (0)
+            328 LOAD_CONST               6 (255)
+            330 CALL                     3
+            338 LOAD_ATTR                5 (NULL|self + astype)
+            358 LOAD_GLOBAL              6 (np)
+            368 LOAD_ATTR               16 (uint8)
+            388 CALL                     1
+            396 LOAD_FAST                2 (result)
+            398 LOAD_CONST               4 (None)
+            400 LOAD_CONST               4 (None)
+            402 BUILD_SLICE              2
+            404 LOAD_CONST               4 (None)
+            406 LOAD_CONST               4 (None)
+            408 BUILD_SLICE              2
+            410 LOAD_CONST               4 (None)
+            412 LOAD_CONST               5 (3)
+            414 BUILD_SLICE              2
+            416 BUILD_TUPLE              3
+            418 STORE_SUBSCR
+
+ 63         422 LOAD_FAST                2 (result)
+            424 LOAD_CONST              13 (True)
+            426 BUILD_TUPLE              2
+            428 RETURN_VALUE
+---ROOM STRIP---
+ 29           0 RESUME                   0
+
+ 35           2 LOAD_FAST                0 (room)
+              4 LOAD_ATTR                0 (shape)
+             24 LOAD_CONST               1 (None)
+             26 LOAD_CONST               2 (2)
+             28 BINARY_SLICE
+             30 UNPACK_SEQUENCE          2
+             34 STORE_FAST               4 (h)
+             36 STORE_FAST               5 (w)
+
+ 36          38 LOAD_GLOBAL              3 (NULL + np)
+             48 LOAD_ATTR                4 (arange)
+             68 LOAD_CONST               3 (64)
+             70 CALL                     1
+             78 LOAD_CONST               4 (0.5)
+             80 BINARY_OP                0 (+)
+             84 LOAD_CONST               3 (64)
+             86 BINARY_OP               11 (/)
+             90 STORE_FAST               6 (u)
+
+ 37          92 LOAD_GLOBAL              3 (NULL + np)
+            102 LOAD_ATTR                6 (floor)
+            122 LOAD_GLOBAL              3 (NULL + np)
+            132 LOAD_ATTR                8 (mod)
+            152 LOAD_FAST                6 (u)
+            154 LOAD_FAST                1 (scale)
+            156 BINARY_OP                5 (*)
+            160 LOAD_FAST                2 (offset)
+            162 BINARY_OP                0 (+)
+            166 LOAD_CONST               5 (1)
+            168 CALL                     2
+            176 LOAD_FAST                4 (h)
+            178 BINARY_OP                5 (*)
+            182 CALL                     1
+            190 LOAD_ATTR               11 (NULL|self + astype)
+            210 LOAD_GLOBAL             12 (int)
+            220 CALL                     1
+            228 STORE_FAST               7 (yy)
+
+ 38         230 BUILD_LIST               0
+            232 BUILD_LIST               0
+            234 STORE_FAST               9 (evidence)
+            236 STORE_FAST               8 (tiles)
+
+ 39         238 LOAD_GLOBAL             15 (NULL + range)
+            248 LOAD_CONST               6 (16)
+            250 CALL                     1
+            258 GET_ITER
+        >>  260 EXTENDED_ARG             1
+            262 FOR_ITER               329 (to 924)
+            266 STORE_FAST              10 (state)
+
+ 40         268 LOAD_GLOBAL              3 (NULL + np)
+            278 LOAD_ATTR                6 (floor)
+            298 LOAD_GLOBAL              3 (NULL + np)
+            308 LOAD_ATTR                8 (mod)
+            328 LOAD_FAST                6 (u)
+            330 LOAD_FAST               10 (state)
+            332 BINARY_OP                0 (+)
+            336 LOAD_FAST                1 (scale)
+            338 BINARY_OP                5 (*)
+            342 LOAD_CONST               5 (1)
+            344 CALL                     2
+            352 LOAD_FAST                5 (w)
+            354 BINARY_OP                5 (*)
+            358 CALL                     1
+            366 LOAD_ATTR               11 (NULL|self + astype)
+            386 LOAD_GLOBAL             12 (int)
+            396 CALL                     1
+            404 STORE_FAST              11 (xx)
+
+ 41         406 LOAD_FAST                0 (room)
+            408 LOAD_FAST                7 (yy)
+            410 LOAD_CONST               1 (None)
+            412 LOAD_CONST               1 (None)
+            414 BUILD_SLICE              2
+            416 LOAD_CONST               1 (None)
+            418 BUILD_TUPLE              2
+            420 BINARY_SUBSCR
+            424 LOAD_FAST               11 (xx)
+            426 LOAD_CONST               1 (None)
+            428 LOAD_CONST               1 (None)
+            430 LOAD_CONST               1 (None)
+            432 BUILD_SLICE              2
+            434 BUILD_TUPLE              2
+            436 BINARY_SUBSCR
+            440 BUILD_TUPLE              2
+            442 BINARY_SUBSCR
+            446 STORE_FAST              12 (original)
+
+ 42         448 LOAD_FAST               12 (original)
+            450 LOAD_ATTR               17 (NULL|self + copy)
+            470 CALL                     0
+            478 STORE_FAST              13 (tile)
+
+ 43         480 LOAD_FAST                3 (night_only)
+            482 POP_JUMP_IF_FALSE       20 (to 524)
+            484 LOAD_FAST               10 (state)
+            486 LOAD_CONST               7 (4)
+            488 BINARY_OP                6 (%)
+            492 LOAD_CONST               5 (1)
+            494 COMPARE_OP              55 (!=)
+            498 POP_JUMP_IF_FALSE       12 (to 524)
+
+ 44         500 LOAD_CONST               8 (0)
+            502 LOAD_FAST               13 (tile)
+            504 LOAD_CONST               1 (None)
+            506 LOAD_CONST               1 (None)
+            508 BUILD_SLICE              2
+            510 LOAD_CONST               1 (None)
+            512 LOAD_CONST               1 (None)
+            514 BUILD_SLICE              2
+            516 LOAD_CONST               9 (3)
+            518 BUILD_TUPLE              3
+            520 STORE_SUBSCR
+
+ 45     >>  524 LOAD_FAST                8 (tiles)
+            526 LOAD_ATTR               19 (NULL|self + append)
+            546 LOAD_FAST               13 (tile)
+            548 CALL                     1
+            556 POP_TOP
+
+ 46         558 LOAD_FAST                9 (evidence)
+            560 LOAD_ATTR               19 (NULL|self + append)
+            580 LOAD_FAST               10 (state)
+            582 LOAD_GLOBAL             13 (NULL + int)
+            592 LOAD_FAST               12 (original)
+            594 LOAD_CONST               1 (None)
+            596 LOAD_CONST               1 (None)
+            598 BUILD_SLICE              2
+            600 LOAD_CONST               1 (None)
+            602 LOAD_CONST               1 (None)
+            604 BUILD_SLICE              2
+            606 LOAD_CONST               9 (3)
+            608 BUILD_TUPLE              3
+            610 BINARY_SUBSCR
+            614 LOAD_ATTR               21 (NULL|self + sum)
+            634 CALL                     0
+            642 CALL                     1
+
+ 47         650 LOAD_GLOBAL             13 (NULL + int)
+            660 LOAD_FAST               13 (tile)
+            662 LOAD_CONST               1 (None)
+            664 LOAD_CONST               1 (None)
+            666 BUILD_SLICE              2
+            668 LOAD_CONST               1 (None)
+            670 LOAD_CONST               1 (None)
+            672 BUILD_SLICE              2
+            674 LOAD_CONST               9 (3)
+            676 BUILD_TUPLE              3
+            678 BINARY_SUBSCR
+            682 LOAD_ATTR               21 (NULL|self + sum)
+            702 CALL                     0
+            710 CALL                     1
+
+ 48         718 LOAD_GLOBAL             23 (NULL + bool)
+            728 LOAD_GLOBAL              3 (NULL + np)
+            738 LOAD_ATTR               24 (array_equal)
+            758 LOAD_FAST               12 (original)
+            760 LOAD_CONST               1 (None)
+            762 LOAD_CONST               1 (None)
+            764 BUILD_SLICE              2
+            766 LOAD_CONST               1 (None)
+            768 LOAD_CONST               1 (None)
+            770 BUILD_SLICE              2
+            772 LOAD_CONST               1 (None)
+            774 LOAD_CONST               9 (3)
+            776 BUILD_SLICE              2
+            778 BUILD_TUPLE              3
+            780 BINARY_SUBSCR
+            784 LOAD_FAST               13 (tile)
+            786 LOAD_CONST               1 (None)
+            788 LOAD_CONST               1 (None)
+            790 BUILD_SLICE              2
+            792 LOAD_CONST               1 (None)
+            794 LOAD_CONST               1 (None)
+            796 BUILD_SLICE              2
+            798 LOAD_CONST               1 (None)
+            800 LOAD_CONST               9 (3)
+            802 BUILD_SLICE              2
+            804 BUILD_TUPLE              3
+            806 BINARY_SUBSCR
+            810 CALL                     2
+            818 CALL                     1
+
+ 49         826 LOAD_FAST               10 (state)
+            828 LOAD_CONST               7 (4)
+            830 BINARY_OP                6 (%)
+            834 LOAD_CONST               5 (1)
+            836 COMPARE_OP              40 (==)
+            840 POP_JUMP_IF_FALSE       31 (to 904)
+            842 LOAD_GLOBAL             23 (NULL + bool)
+            852 LOAD_GLOBAL              3 (NULL + np)
+            862 LOAD_ATTR               24 (array_equal)
+            882 LOAD_FAST               12 (original)
+            884 LOAD_FAST               13 (tile)
+            886 CALL                     2
+            894 CALL                     1
+            902 JUMP_FORWARD             1 (to 906)
+        >>  904 LOAD_CONST               1 (None)
+
+ 46     >>  906 LOAD_CONST              10 (('state', 'alphaBefore', 'alphaAfter', 'rgbUnchanged', 'nightUnchanged'))
+            908 BUILD_CONST_KEY_MAP      5
+            910 CALL                     1
+            918 POP_TOP
+            920 EXTENDED_ARG             1
+            922 JUMP_BACKWARD          332 (to 260)
+
+ 39     >>  924 END_FOR
+
+ 50         926 LOAD_GLOBAL              3 (NULL + np)
+            936 LOAD_ATTR               26 (concatenate)
+            956 LOAD_FAST                8 (tiles)
+            958 LOAD_CONST               5 (1)
+            960 KW_NAMES                11 (('axis',))
+            962 CALL                     2
+            970 LOAD_FAST                9 (evidence)
+            972 BUILD_TUPLE              2
+            974 RETURN_VALUE

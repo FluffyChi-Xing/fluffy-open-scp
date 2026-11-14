@@ -9,7 +9,10 @@ fn main() {
     let mut type_filter: Option<u32> = None;
     let mut paths = Vec::new();
     for a in args {
-        if let Some(t) = a.strip_prefix("--type=0x").or_else(|| a.strip_prefix("--type=0X")) {
+        if let Some(t) = a
+            .strip_prefix("--type=0x")
+            .or_else(|| a.strip_prefix("--type=0X"))
+        {
             type_filter = u32::from_str_radix(t, 16).ok();
         } else if let Some(t) = a.strip_prefix("--type=") {
             type_filter = t.parse().ok();
@@ -29,9 +32,16 @@ fn main() {
         let mut by_type: BTreeMap<u32, Vec<(u32, u32, usize)>> = BTreeMap::new();
         for e in pkg.entries() {
             let size = e.compressed_size as usize;
-            by_type.entry(e.id.type_id).or_default().push((e.id.group, e.id.instance, size));
+            by_type
+                .entry(e.id.type_id)
+                .or_default()
+                .push((e.id.group, e.id.instance, size));
         }
-        println!("### {name}: {} 类型 / {} 条目", by_type.len(), pkg.entries().len());
+        println!(
+            "### {name}: {} 类型 / {} 条目",
+            by_type.len(),
+            pkg.entries().len()
+        );
         for (t, items) in &by_type {
             if let Some(f) = type_filter {
                 if *t != f {
@@ -39,11 +49,7 @@ fn main() {
                 }
             }
             let total: usize = items.iter().map(|s| s.2).sum();
-            println!(
-                "  type {t:08X}: {} 条 / {} bytes",
-                items.len(),
-                total
-            );
+            println!("  type {t:08X}: {} 条 / {} bytes", items.len(), total);
             if let Some(f) = type_filter {
                 if *t == f {
                     for (g, i, sz) in items {

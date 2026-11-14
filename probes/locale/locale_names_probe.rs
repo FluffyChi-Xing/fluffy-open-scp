@@ -2,11 +2,16 @@
 //! Inspect content: some installations swap locale directory contents.
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    assert!(args.len() >= 3, "<Game.package> <output.json> <locale.package> [...]");
+    assert!(
+        args.len() >= 3,
+        "<Game.package> <output.json> <locale.package> [...]"
+    );
     let game = dbpf::Package::open(&args[0]).unwrap();
     let registry = sc_properties::region_3d::parse_template_registry(&game);
-    let ids: std::collections::HashSet<u32> = registry.values()
-        .flat_map(|(region, cities)| std::iter::once(*region).chain(cities.values().copied())).collect();
+    let ids: std::collections::HashSet<u32> = registry
+        .values()
+        .flat_map(|(region, cities)| std::iter::once(*region).chain(cities.values().copied()))
+        .collect();
     let mut out = std::collections::BTreeMap::new();
     for path in &args[2..] {
         let package = dbpf::Package::open(path).unwrap();

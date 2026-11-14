@@ -22,7 +22,8 @@ fn fnv1(name: &str) -> u32 {
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().expect("package");
-    let group = u32::from_str_radix(&args.next().expect("group").trim_start_matches("0x"), 16).unwrap();
+    let group =
+        u32::from_str_radix(&args.next().expect("group").trim_start_matches("0x"), 16).unwrap();
     let ty = args
         .next()
         .map(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).unwrap())
@@ -38,7 +39,11 @@ fn main() {
             }
         }
     }
-    println!("group insts: {}, all-type insts: {}", group_insts.len(), all_insts.len());
+    println!(
+        "group insts: {}, all-type insts: {}",
+        group_insts.len(),
+        all_insts.len()
+    );
 
     let prefixes = ["heightmap", "ecomap"];
     let lo = -(64i32);
@@ -62,7 +67,10 @@ fn main() {
                                 if set.contains(&h) {
                                     println!("HIT[{tag}/{label}] {name} -> 0x{h:08X}");
                                     hits += 1;
-                                    if hits > 40 { println!("..."); return; }
+                                    if hits > 40 {
+                                        println!("...");
+                                        return;
+                                    }
                                 }
                             }
                         }

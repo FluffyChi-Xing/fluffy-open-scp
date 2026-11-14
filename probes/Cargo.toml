@@ -187,6 +187,14 @@ name = "prop_dump"
 path = "property/prop_dump.rs"
 
 [[example]]
+name = "rci_building_census"
+path = "property/rci_building_census.rs"
+
+[[example]]
+name = "behavior_census"
+path = "property/behavior_census.rs"
+
+[[example]]
 name = "prop_fixture"
 path = "property/prop_fixture.rs"
 
@@ -209,6 +217,14 @@ path = "property/semantic_gap_probe.rs"
 [[example]]
 name = "unit_prop_dump"
 path = "property/unit_prop_dump.rs"
+
+[[example]]
+name = "ref_add_entries"
+path = "package/ref_add_entries.rs"
+
+[[example]]
+name = "light_columns_dump"
+path = "property/light_columns_dump.rs"
 
 # locale —— 字符串表（0x0A98EAF0）
 [[example]]
@@ -801,6 +817,18 @@ name = "path_prop_scan"
 path = "road/path_prop_scan.rs"
 
 [[example]]
+name = "path_census"
+path = "path/path_census.rs"
+
+[[example]]
+name = "plop_behavior_map"
+path = "menu/plop_behavior_map.rs"
+
+[[example]]
+name = "family_loop_census"
+path = "menu/family_loop_census.rs"
+
+[[example]]
 name = "path_reconstruct_probe"
 path = "road/path_reconstruct_probe.rs"
 
@@ -1132,6 +1160,14 @@ path = "effect/effect_resource_find.rs"
 name = "effect_units"
 path = "effect/effect_units.rs"
 
+[[example]]
+name = "effect_swarm_dump"
+path = "effect/effect_swarm_dump.rs"
+
+[[example]]
+name = "effect_texture_dump"
+path = "effect/effect_texture_dump.rs"
+
 # zone —— 分区颜色与图标
 [[example]]
 name = "zone_color_dump"
@@ -1165,3 +1201,55 @@ path = "registry/type_lookup.rs"
 [[example]]
 name = "tent_bulldozer_overlay"
 path = "menu/tent_bulldozer_overlay.rs"
+
+
+# spawner / sim 外观取证（2026-11-01）
+[[example]]
+name = "spawner_names"
+path = "lot/spawner_names.rs"
+
+[[example]]
+name = "spawner_refscan"
+path = "lot/spawner_refscan.rs"
+
+[[example]]
+name = "vignette_bind_probe"
+path = "lot/vignette_bind_probe.rs"
+
+[[example]]
+name = "vignette_resolve_probe"
+path = "lot/vignette_resolve_probe.rs"
+
+[[example]]
+name = "simm_transport_probe"
+path = "property/simm_transport_probe.rs"
+
+[[example]]
+name = "simm_transport_dump"
+path = "property/simm_transport_dump.rs"
+
+[[example]]
+name = "simm_appearance_dump"
+path = "property/simm_appearance_dump.rs"
+
+[[example]]
+name = "locale_lookup"
+path = "locale/locale_lookup.rs"
+
+
+# map - map contracts: PlayArea / coordinate frames / camera bounds / light alignment
+[[example]]
+name = "map_scalars_probe"
+path = "map/map_scalars_probe.rs"
+
+[[example]]
+name = "light_table_dump"
+path = "map/light_table_dump.rs"
+
+[[example]]
+name = "map_contract_probe"
+path = "map/map_contract_probe.rs"
+
+[[example]]
+name = "light_align_probe"
+path = "map/light_align_probe.rs"

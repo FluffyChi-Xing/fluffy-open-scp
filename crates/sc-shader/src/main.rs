@@ -59,7 +59,11 @@ fn sc_cli() -> Result<()> {
             }
             println!("共 {} 个命名片段：", all.len());
             for (name, size) in &all {
-                let cleaned = if fragments::get(name).is_some() { "✓清理版" } else { "" };
+                let cleaned = if fragments::get(name).is_some() {
+                    "✓清理版"
+                } else {
+                    ""
+                };
                 println!("  {name} ({size}B) {cleaned}");
             }
             let core = fragments::CORE_FRAGMENTS.len();
@@ -71,7 +75,10 @@ fn sc_cli() -> Result<()> {
             if missing.is_empty() {
                 println!("清理表 {core} 条全部在容器中命中");
             } else {
-                println!("⚠ 清理表中 {} 条未在容器命中（人工重建片段，属预期）：{missing:?}", missing.len());
+                println!(
+                    "⚠ 清理表中 {} 条未在容器命中（人工重建片段，属预期）：{missing:?}",
+                    missing.len()
+                );
             }
         }
         Cmd::Emit { out, manifest } => {
@@ -87,11 +94,15 @@ fn sc_cli() -> Result<()> {
                 println!("写出 {} / {}", vs_path.display(), ps_path.display());
                 manifest_obj.insert(
                     format!("{base}.vert"),
-                    serde_json::Value::String(vs_path.file_name().unwrap().to_string_lossy().into()),
+                    serde_json::Value::String(
+                        vs_path.file_name().unwrap().to_string_lossy().into(),
+                    ),
                 );
                 manifest_obj.insert(
                     format!("{base}.frag"),
-                    serde_json::Value::String(ps_path.file_name().unwrap().to_string_lossy().into()),
+                    serde_json::Value::String(
+                        ps_path.file_name().unwrap().to_string_lossy().into(),
+                    ),
                 );
             }
             if manifest {

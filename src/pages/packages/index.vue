@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
+import { motion } from "motion-v";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
@@ -146,6 +147,11 @@ function contextMenuCopyTgi() {
 // TGI 搜索（0x 前缀 / t:g:i 分段 / 十进制均可，服务端匹配）
 const searchText = shallowRef("");
 let searchTimer: number | undefined;
+function clearSearch() {
+  window.clearTimeout(searchTimer);
+  searchText.value = "";
+  void explorer.applyFilter("");
+}
 function onSearchInput(event: Event) {
   const value = (event.target as HTMLInputElement).value;
   searchText.value = value;
@@ -157,9 +163,11 @@ function onSearchInput(event: Event) {
 
 // 进入页面即按持久化的游戏目录设置初始化目录树（store 内部有幂等保护）
 onMounted(() => {
+  clearSearch();
   void explorer.initFromSettings();
   void refreshNotesCounts();
 });
+onBeforeUnmount(clearSearch);
 watch(activePage, () => void refreshNotesCounts());
 const detailMode = shallowRef<"hex" | "preview">("hex");
 const copied = shallowRef(false);
@@ -432,27 +440,33 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 class="package-tabs-scroll"
                 @scroll.passive="updatePackageTabScroll"
               >
-                <button
+                <div
                   v-for="item in opened"
                   :key="item.package.packageId"
                   class="package-tab"
                   :class="{
                     active: item.package.packageId === activePackageId,
                   }"
-                  type="button"
-                  role="tab"
-                  :aria-selected="item.package.packageId === activePackageId"
-                  @click="explorer.choosePackage(item.package.packageId)"
                 >
-                  <FIcon name="Package" :size="14" aria-label="" /><span>{{
-                    item.package.path.split(/[\\/]/).pop()
-                  }}</span
-                  ><span
-                    class="tab-close"
-                    @click.stop="explorer.closePackage(item.package.packageId)"
-                    >×</span
+                  <button
+                    class="package-tab-select"
+                    type="button"
+                    role="tab"
+                    :aria-selected="item.package.packageId === activePackageId"
+                    @click="explorer.choosePackage(item.package.packageId)"
                   >
-                </button>
+                    <FIcon name="Package" :size="14" aria-label="" />
+                    <span>{{ item.package.path.split(/[\\/]/).pop() }}</span>
+                  </button>
+                  <button
+                    class="tab-close"
+                    type="button"
+                    :aria-label="$t('package.closeNamedTab', { name: item.package.path.split(/[\\/]/).pop() })"
+                    @click="explorer.closePackage(item.package.packageId)"
+                  >
+                    <FIcon name="X" :size="12" aria-label="" />
+                  </button>
+                </div>
               </div>
               <button
                 class="tab-scroll-button"
@@ -512,6 +526,11 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 >
                   <span>{{ item.label }}</span>
                   <span>{{ item.count }}</span>
+                  <motion.span
+                    v-if="category === item.key"
+                    class="category-indicator"
+                    layout-id="package-category-tab"
+                  />
                 </button>
               </div>
               <button
@@ -539,10 +558,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 class="resource-search-clear"
                 type="button"
                 :aria-label="$t('package.clearSearch')"
-                @click="
-                  searchText = '';
-                  explorer.applyFilter('');
-                "
+                @click="clearSearch"
               >
                 <FIcon name="X" :size="13" aria-label="" />
               </button>
@@ -769,6 +785,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
             </div>
             <ResourcePreview
               v-else
+              fill
               :preview="preview"
               :type-name="selected ? explorer.typeNameOf(selected) : ''"
               :loading="previewLoading"
@@ -818,10 +835,50 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 </template>
 
 <style scoped>
+/* 页面锁定在视口剩余高度（用户口径 2026-11-05）：整页不产生纵向滚动，
+   资源列表与详情列各自内部滚动。layout 的 shell-body 只有 min-height，
+   这里用 :has() 给祖先链补上确定高度，避免分页/切换 package 时高度漂移。 */
+:global(.shell-body:has(.packages-page)) {
+  height: calc(100vh - 56px);
+  min-height: 0;
+  overflow: hidden;
+}
+/* 侧栏导航条目多于视口高度；锁定页面后由侧栏自己滚动，避免它把
+   shell-body 撑高、进而给整页带出纵向滚动条。 */
+:global(.shell-body:has(.packages-page) > .sidebar) {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+:global(.no-navbar .shell-body:has(.packages-page)) {
+  height: 100vh;
+}
+:global(.shell-body:has(.packages-page) > .page-content) {
+  min-height: 0;
+}
+:global(.shell-body:has(.packages-page) .content-frame) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+:global(.shell-body:has(.packages-page) .route-page) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
 .packages-page {
-  display: grid;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 18px;
   min-height: 0;
+}
+.page-heading,
+.explorer-toolbar {
+  flex: none;
 }
 .page-heading {
   align-items: flex-start;
@@ -905,11 +962,22 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   display: flex;
-  height: min(720px, calc(100vh - 300px));
-  max-height: 720px;
-  min-height: 520px;
+  /* 撑满剩余视口而不是取固定值：移除 min-height 520px（小视口下它会
+     撑破页面造成纵向溢出），也不再用 calc 猜页头高度。 */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   width: 100%;
+  /* 兜底：不支持 :has() 的旧 WebView 里祖先没有确定高度，按视口估算
+     一个上限，行为与改动前一致。 */
+  height: min(720px, calc(100vh - 300px));
+  max-height: 720px;
+}
+@supports selector(:has(*)) {
+  .ide-shell {
+    height: auto;
+    max-height: none;
+  }
 }
 .tree-column,
 .work-column,
@@ -925,8 +993,13 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   overflow: hidden;
 }
 .detail-column {
+  /* 稳定滚动槽：选中 property 时内容高度变化会让滚动条出现/消失，
+     没有 gutter 时整列宽度抖动，观感就是"闪一下"。 */
+  display: flex;
+  flex-direction: column;
   overflow: auto;
   padding: 14px;
+  scrollbar-gutter: stable;
 }
 .tabs-hint {
   align-items: center;
@@ -968,13 +1041,12 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   border: 0;
   border-inline-end: 1px solid var(--border);
   color: var(--muted-foreground);
-  cursor: pointer;
   display: flex;
+  flex: 0 0 auto;
   font: inherit;
   font-size: 12px;
-  gap: 7px;
   max-width: 210px;
-  padding: 0 11px;
+  padding-inline-end: 5px;
   transition:
     background-color 140ms ease,
     color 140ms ease;
@@ -989,16 +1061,34 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   color: var(--foreground);
   font-weight: 700;
 }
-.package-tab span:nth-child(2) {
+.package-tab-select {
+  align-items: center;
+  align-self: stretch;
+  cursor: pointer;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  padding-inline: 11px 4px;
+  scale: none;
+}
+.package-tab-select svg {
+  flex: none;
+}
+.package-tab-select span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .tab-close {
+  align-items: center;
   border-radius: 4px;
-  font-size: 16px;
-  line-height: 1;
-  padding: 2px;
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: 24px;
+  justify-content: center;
+  scale: none;
+  width: 24px;
 }
 .tab-close:hover {
   background: var(--surface-hover);
@@ -1075,6 +1165,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   font: inherit;
   font-size: 11px;
   padding: 10px 8px;
+  position: relative;
   white-space: nowrap;
 }
 .category-tab:hover,
@@ -1082,8 +1173,17 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   color: var(--foreground);
 }
 .category-tab.active {
-  border-bottom-color: var(--primary);
   font-weight: 700;
+}
+/* 选中下划线由 motion-v 的 layout-id 在标签间滑动（见模板）。 */
+.category-indicator {
+  background: var(--primary);
+  border-radius: 2px;
+  bottom: 0;
+  height: 2px;
+  left: 4px;
+  position: absolute;
+  right: 4px;
 }
 .category-tab span:last-child {
   background: var(--surface-hover);
@@ -1140,6 +1240,8 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   min-height: 0;
   overflow: auto;
   padding: 0 14px 14px;
+  /* 翻页时行数变化会切换滚动条；固定 gutter 保持列宽不动。 */
+  scrollbar-gutter: stable;
 }
 .resource-table {
   border-collapse: collapse;
@@ -1295,11 +1397,13 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .detail-heading {
   align-items: flex-start;
   display: flex;
+  flex: none;
   justify-content: space-between;
 }
 .detail-tabs {
   border-bottom: 1px solid var(--border);
   display: flex;
+  flex: none;
   gap: 14px;
   margin-top: 20px;
 }
@@ -1317,21 +1421,11 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   color: var(--foreground);
   font-weight: 700;
 }
-.hex-view {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font:
-    11px/1.7 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  margin-top: 14px;
-  min-height: 180px;
-  overflow: auto;
-  padding: 12px;
-  white-space: pre-wrap;
+.detail-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 .work-empty {
   align-items: center;

@@ -19,7 +19,11 @@ export function useFloatingMenu(
     const flip = below < Math.min(320, panel.value?.scrollHeight ?? 320) && above > below
     const available = Math.min(320, flip ? above : below)
     const style: CSSProperties = {
-      maxHeight: `${available}px`, overflowY: 'auto', overscrollBehavior: 'contain',
+      maxHeight: `${available}px`,
+      // 只允许纵向滚动；禁止横向以免与面板内容再叠出一条底栏滚动条。
+      overflowX: 'hidden',
+      overflowY: 'auto',
+      overscrollBehavior: 'contain',
       ...(flip ? { bottom: `${window.innerHeight - rect.top + gap}px` } : { top: `${rect.bottom + gap}px` }),
     }
     if (rect.left + panelWidth <= window.innerWidth - gap) {

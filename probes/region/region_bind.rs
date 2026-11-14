@@ -18,8 +18,14 @@ fn main() {
         if e.id.type_id != 0x00B1_B104 || e.compressed_size > 60 {
             continue;
         }
-        let Ok(pf) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
-        if let Some(sc_properties::Property { kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(k)), .. }) = pf.get(0xC194_9C4D) {
+        let Ok(pf) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else {
+            continue;
+        };
+        if let Some(sc_properties::Property {
+            kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(k)),
+            ..
+        }) = pf.get(0xC194_9C4D)
+        {
             if k.instance == 0x51E7_A18D {
                 city_region.insert(e.id.group, k.group);
             }
@@ -37,18 +43,32 @@ fn main() {
         if e.id.type_id != 0x00B1_B104 || e.id.instance != 0x2B9C_480C {
             continue;
         }
-        let Ok(pt) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
+        let Ok(pt) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else {
+            continue;
+        };
         let ids: Vec<u32> = match pt.get(0x16B7_B1EF) {
-            Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) => vs
+            Some(sc_properties::Property {
+                kind: sc_properties::Kind::Array(vs),
+                ..
+            }) => vs
                 .iter()
-                .filter_map(|v| match v { sc_properties::Value::UInt32(x) => Some(*x), _ => None })
+                .filter_map(|v| match v {
+                    sc_properties::Value::UInt32(x) => Some(*x),
+                    _ => None,
+                })
                 .collect(),
             _ => continue,
         };
         let tpl: Vec<u32> = match pt.get(0x9F2F_9B65) {
-            Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) => vs
+            Some(sc_properties::Property {
+                kind: sc_properties::Kind::Array(vs),
+                ..
+            }) => vs
                 .iter()
-                .filter_map(|v| match v { sc_properties::Value::Key(k) => Some(k.instance), _ => None })
+                .filter_map(|v| match v {
+                    sc_properties::Value::Key(k) => Some(k.instance),
+                    _ => None,
+                })
                 .collect(),
             _ => vec![],
         };
@@ -56,11 +76,16 @@ fn main() {
     }
     for (g, ids, tpl) in &tables {
         let mut tpl_counts: HashMap<u32, usize> = HashMap::new();
-        for t in tpl { *tpl_counts.entry(*t).or_default() += 1; }
+        for t in tpl {
+            *tpl_counts.entry(*t).or_default() += 1;
+        }
         println!(
             "table {g:08X}: {} ids, templates {:?}",
             ids.len(),
-            tpl_counts.iter().map(|(k, n)| format!("{k:08X}×{n}")).collect::<Vec<_>>()
+            tpl_counts
+                .iter()
+                .map(|(k, n)| format!("{k:08X}×{n}"))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -81,7 +106,9 @@ fn main() {
         if let Some((ov, tg, tl)) = best {
             println!(
                 "region {r:08X}: cities={} best-table {tg:08X} overlap {ov}/{} (table {} plots)",
-                cities.len(), tl, tl
+                cities.len(),
+                tl,
+                tl
             );
         }
     }

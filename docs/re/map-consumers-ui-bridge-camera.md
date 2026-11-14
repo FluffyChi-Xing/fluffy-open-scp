@@ -89,6 +89,8 @@ Frida 历史失败已经有具体记录：大量候选 hook、把内部 COM/垃�
 
 ## 摄像机限制：已定位多层，不能只改缩放
 
+2026-11-12 复核。下文的固定 `±1024/±1020` 分支来自开发版。当前离线零售版已确认 `cCameraControllerGlide` 的实际钳制公式和调用点，见[零售 Glide 对拍](#2026-11-12-零售-glide-对拍)。
+
 开发版 `cCameraControllerBase` 的证据：
 
 1. `ConstrainTarget`（959721 行；开发版 VA `00791830`）取当前 Game 的边界，将 `mLerpSubject.mTarget` 的 x/y/z 夹在最小值与最大值之间。反编译此处仍显示虚调用，需要在零售版确认具体接口。
@@ -124,6 +126,63 @@ Frida 历史失败已经有具体记录：大量候选 hook、把内部 COM/垃�
 RVA `0x25B6E0` 是当前相机 glide/update 候选；它在不同状态分支更新目标值，并通过 `0x259D80` 同类的边界处理链。开发版反编译还显示 relative move 分支会先按 Game 边界夹取，再进行高度检测；零售版不能直接假设保留开发版的 ±1020 常量。解除区域边框的最小安全修改面应是确认 `0x259D80` 输入边界的来源后替换相机专用 bounds，保留高度检测、插值和裁剪；不能扩大全局 PlayArea，也不能只禁用移动开始/停止事件。
 
 目前没有写入补丁或运行时修改；已有样本中用户操作期间相机移动事件正常产生，观察器注入几乎无感且无明显卡顿。
+
+### 2026-10-30 新样本：`regionedit` 只改变相机模式，不解除边界
+
+新样本的 source-tree/PDB 把“区域编辑相机是否天然自由”回答得更具体：
+
+1. `kRegionEditCameraID` 的初始化函数（RVA `0x79D030`）只是对字符串
+   `regionedit` 做 FNV1 hash。`cTerrainSystem::SetRegionAuthoringActive`（RVA
+   `0x405140`）激活时调用 CameraManager 的切换接口，并关闭 `SCMain` renderer 的
+   `dof` 与 `motionBlur`。函数没有清空 bounds、替换 controller 或跳过约束。
+2. `cToolRegion::FillFromProps`（RVA `0x47C580`）从 Property `0x08E48E67` 读取
+   `mRegionCameraID`，缺省值是 `0x2D89FF4A`；`Activate`（RVA `0x47AF30`）保存
+   原相机、切到这个 ID，并在退出时恢复。也就是说这是一个可配置的 controller 选择，
+   不是“解除限制”开关。
+3. 基类 `cCameraControllerBase::Update`（RVA `0x395B90`）在每帧更新末尾调用
+   虚函数 `ConstrainTarget`。基类实现（RVA `0x391830`）从 `Game()->PlayArea()`
+   取得六个边界值，对 `mLerpSubject.mTarget` 的 x/y/z 做 min/max 夹取；切换到
+   `regionedit` 并不会绕过这条调用。
+4. `Update` 的 `mRelativeMove` 分支在调用 `ConstrainTarget` 前已经做了一次 Game
+   bounds 夹取，随后对 x/y 再执行 `[-1024,1024]` 检查，越界值改为 `±1020`。因此只
+   放宽 `ConstrainTarget` 仍可能在键盘、拖拽或边缘滚动时卡在第二道限制。
+5. `CameraEyeConstraints`（RVA `0x393530`）使用 `PlayArea` 判断视线采样点是否在
+   城市盒内；界外改用 `PointSampleHeightInRegion`，并据此调整相机高度/俯仰。这是防
+   穿地逻辑，不能为了越界而整段禁用。
+
+这带来一个可操作的解除方案分层：
+
+| 层 | 解除动作 | 必须保留 |
+| --- | --- | --- |
+| 活动相机 | 只验证/选择 `regionedit` 或自定义 controller | CameraDirector 的切换、恢复和过渡 |
+| XY 目标约束 | 将 `ConstrainTarget` 的 bounds 源换成相机专用有效区域 | z 约束、插值、跟随和事件状态 |
+| 相对移动 | 将 `mRelativeMove` 的 ±1024/±1020 改为同一 bounds 契约 | 高度检测和 `CheckForGroundFromPoint` |
+| 视线/地面 | 允许 `CameraEyeConstraints` 继续采样区域地形 | `PointSampleHeightInRegion`、pitch 修正 |
+| 视觉参数 | 通过 camera Property 调整 zoom/FOV/near/far/pitch 数组 | 不把 zoom/far clip 当作 XY 解锁 |
+
+最小验证应在同一城市内记录每帧 `targetBeforeClamp`、`bounds`、`targetAfterClamp`、
+`relativeMove` 和地面采样结果。四种输入（拖拽、键盘、边缘滚动、跟随/过渡）都必须
+通过相同 bounds；否则只能称为“部分解锁”。
+
+### 2026-11-12 零售 Glide 对拍
+
+样本为离线 `SimCity.exe` SHA-256 `2b0aff527baa3aa536aca6c68332c208d1dbd904695f0f985d17d56b128d48ab`，以下地址均为 VA，映像基址 `0x400000`。MSVC RTTI 指向 Glide 主虚表 `0xD1DE04`，`+0x40` 是 `0x65B6E0`，因此旧的实机事件反查入口确实属于 `cCameraControllerGlide::Update`。Region controller 的主虚表是 `0xD1DBEC`，同一槽为 `0x6582E0`，须独立评估。
+
+`0x659D80` 的第一个参数指向待夹取 XYZ，第二个参数经虚表 `+0x34` 取游戏接口，再经该接口虚表 `+0xAC` 取六个边界浮点值。已定位 EcoGame 虚表 `0xD1B2F0` 的 `+0xAC` 为 `0x5E3A60`，返回 `this+0x41C`。`0x5E8772–0x5E877F` 把 `0x07E0AC05` 的 bounding box 写入同一成员，后续以它算模拟网格。故对这个 EcoGame 实现，零售相机的边界源是模拟 `PlayArea`。当前没有活动对象的运行时采样。
+
+`0x659D80` 对每轴先求中点 `m=(min+max)/2`，再用 `m+(edge−m)*0.9959999919` 缩边，最后夹取 XYZ。常量位于 `0xD1DD80`，零售 `.text` 中还有 `0x844D30` 引用同一地址。对 XY 为 `[-1024,1024]` 的输入，这条路径的上界是 `1019.90399`，无需假设开发版的固定常量分支仍在。扩大传入 AABB 会按同一比例扩大这条路径的有效范围。
+
+| 零售路径 | 本轮核对 |
+| --- | --- |
+| Glide 键盘平移 | Update 在 `0x65B915` 或 `0x65BB4C` 调 `0x65A2F0`。该函数读取方向标志 `+0x42C…+0x42F`，在 `0x65A50A` 夹取新目标，继而做地面修正。 |
+| Glide 拖拽/摇杆更新 | `0x65B9B8` 按状态选择鼠标位移或摇杆量，在 `0x65BAF9` 夹取新目标，`0x65BB11` 修正地面后发出 `0x0101B537`。 |
+| Glide 屏幕边缘滚动 | Update 的 `0x65B949` 调 `0x790A20`，该函数比较屏幕边距，随后在 `0x790CC1` 夹取并做地面修正，再发送 `0x0101B534`。 |
+| Glide 鼠标点选定位 | `0x65A278` 得到世界命中点，`0x65A28A` 夹取，再发送 `0x0101B534`。 |
+| 跟随及直接发目标消息 | 已找到 `0x789D40` 从目标对象位置发出 `0x0101B534`。这个发送点没有上述 helper，接收后是否还有约束与城市切换后的行为需继续核对。 |
+
+地面修正函数 `0x78FFA0` 先经游戏接口 `+0x5C` 试地面查询。失败且有地形对象时，`0x790006` 调用已核对的区域高度采样 `0xBEBFE0`，成功则更新 Z。已找到的平移路径先做 XY 夹取，再调用这个地面函数。
+
+以[白水谷 1027 样条盒外锚点](region-city-coordinate-sync-and-placement-alignment.md#2026-11-12-白水谷原包跨界对拍)为输入，局部 `(1038.0480,-544.2923)` 经本轮所用 `±1024` 盒静态计算后为 `(1019.9040,-544.2923)`。加回槽位原点 `(1024,760)`，区域 X 从目标的 `2062.0480` 变成 `2043.9040`，因此会被夹回区域 tile `(8,8)`，无法到达预定 `(9,8)`。仅考虑这个 helper，要放过该锚点，相机专用正 X 半幅至少需要 `1038.0480/0.996≈1042.22` 米。可用 1056 米作为小幅验证范围，并保留原 Z 上下界与地面采样。验证应限于相机路径，避免修改 EcoGame `PlayArea` 或同时改动共享常量的其他引用。当前只完成静态定位与数值计算，未写补丁、启动游戏或验证运行时镜头行为。
 
 ## 接下来优先抓取的最小证据
 

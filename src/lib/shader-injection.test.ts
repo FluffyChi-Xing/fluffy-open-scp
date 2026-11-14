@@ -43,10 +43,17 @@ describe("tint 注入 GLSL sc* 标识符审计", () => {
     "src/pages/packages/components/property-editor/refinedRender.ts",
     "utf8",
   );
+  // 浮雕 GLSL 已抽到 exec/three/reliefShader（${RELIEF_GLSL} 注入），审计需同时读取。
+  const reliefSource = readFileSync(
+    "src/render/exec/three/reliefShader.ts",
+    "utf8",
+  );
   // 模板字符串即注入块（判定：包含 #include 或 GLSL 类型关键字）。
-  const chunks = [...source.matchAll(/`([^`]*)`/gs)]
-    .map((m) => m[1])
-    .filter((s) => s.includes("#include") || /\b(?:vec[234]|float|mat[234])\s+\w/.test(s));
+  const chunks = [source, reliefSource].flatMap((text) =>
+    [...text.matchAll(/`([^`]*)`/gs)]
+      .map((m) => m[1])
+      .filter((s) => s.includes("#include") || /\b(?:vec[234]|float|mat[234])\s+\w/.test(s)),
+  );
   it("抽取到注入块（防正则失效静默通过）", () => {
     expect(chunks.length).toBeGreaterThanOrEqual(4);
   });

@@ -6,9 +6,15 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     for path in &args {
         let package = Package::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
-        for e in package.entries().iter().filter(|e| e.id.type_id == 0x2F4E_681B) {
+        for e in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == 0x2F4E_681B)
+        {
             let Ok(data) = package.read(e) else { continue };
-            let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+            let Ok(file) = rw4::Rw4File::parse(&data) else {
+                continue;
+            };
             let Some(bbox) = file.sections_of_type(rw4::SectionType::BBOX).next() else {
                 continue;
             };
@@ -21,7 +27,8 @@ fn main() {
                 f32::from_le_bytes(payload[off..off + 4].try_into().unwrap())
             };
             // 布局探测：min=(0,4,8) max=(12,16,20) 或 min=(0..) 打印候选
-            let (minx, miny, minz, maxx, maxy, maxz) = (rd(0), rd(4), rd(8), rd(12), rd(16), rd(20));
+            let (minx, miny, minz, maxx, maxy, maxz) =
+                (rd(0), rd(4), rd(8), rd(12), rd(16), rd(20));
             if !minx.is_finite() || !maxz.is_finite() {
                 continue;
             }

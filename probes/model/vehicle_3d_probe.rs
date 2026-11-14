@@ -9,9 +9,11 @@ const MESH_SECTION: u32 = 0x20_009;
 const KEY_VEHICLE_MODELS: u32 = 0x0D8_97169;
 
 fn main() {
-    let path = r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\SimCity_Game.package";
+    let path =
+        r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\SimCity_Game.package";
     let package = Package::open(path).expect("open game package");
-    let registry = sc_registry::Registry::open("src-tauri/resources/database_main.s3db").expect("registry");
+    let registry =
+        sc_registry::Registry::open("src-tauri/resources/database_main.s3db").expect("registry");
 
     // 取 8 个有名字的 Agent 资源验证。
     let mut checked = 0;
@@ -26,9 +28,15 @@ fn main() {
         if name.starts_with("0x") {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
-        let Some(property) = file.get(KEY_VEHICLE_MODELS) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
+        let Some(property) = file.get(KEY_VEHICLE_MODELS) else {
+            continue;
+        };
         let mut models: Vec<(u32, u32, u32)> = Vec::new();
         let mut scan = |v: &Value| {
             if let Value::Key(k) = v {
@@ -52,12 +60,18 @@ fn main() {
         checked += 1;
         println!("--- {name} ({} 个模型)", models.len());
         for (t, g, i) in models.iter().take(3) {
-            let tgi = dbpf::ResourceId { type_id: *t, group: *g, instance: *i };
+            let tgi = dbpf::ResourceId {
+                type_id: *t,
+                group: *g,
+                instance: *i,
+            };
             let Some(model_entry) = package.entry(tgi) else {
                 println!("    模型 {:08X}: 不在 Game 包内（跨包）", i);
                 continue;
             };
-            let Ok(model_data) = package.read(model_entry) else { continue };
+            let Ok(model_data) = package.read(model_entry) else {
+                continue;
+            };
             let Ok(rw4) = rw4::Rw4File::parse(&model_data) else {
                 println!("    模型 {:08X}: RW4 解析失败", i);
                 continue;

@@ -2,14 +2,22 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FEmpty from "@/components/extensions/FEmpty.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { tauriApi } from "@/api";
-import type { PropBinCatalogEntry, PropUnit, Tgi } from "@/api/tauri";
+import type {
+  EffectAnnotation,
+  PropBinCatalogEntry,
+  PropUnit,
+  Tgi,
+} from "@/api/tauri";
 import {
   CATEGORY_LABEL_KEYS,
   propSemanticCategory,
   type AssetCategory,
 } from "@/pages/packages/components/property-editor/assetCategories";
+import SpawnerLibraryPanel from "@/pages/packages/components/unit-inspector/SpawnerLibraryPanel.vue";
+import AssetDecalLibrary from "./AssetDecalLibrary.vue";
 import type { PlacePayload } from "./useWorkbenchAsset";
 
 /**
@@ -31,8 +39,15 @@ const props = defineProps<{
   propTreeIds: Set<number>;
   /** 按 resourceId 查引用 prop 模板（放置继承引擎参数）。 */
   templateOf: (resourceId: number) => PropUnit | undefined;
+  /** 当前 lot 全部单元（生成器页签列出锚点并做重名统计）。 */
+  units?: readonly import("@/api/tauri").LotUnitDto[];
+  /** 当前选中单元 id（生成器页签高亮）。 */
+  selectedUnitId?: string | null;
 }>();
-const emit = defineEmits<{ place: [payload: PlacePayload] }>();
+const emit = defineEmits<{
+  place: [payload: PlacePayload];
+  select: [unitId: string];
+}>();
 
 const { t } = useI18n();
 const loading = ref(false);
@@ -51,6 +66,7 @@ const collapsed = ref(new Set<string>());
 
 const TABS = [
   { id: "props", icon: "Box", label: "package.groupProps" },
+  { id: "decals", icon: "Image", label: "package.groupDecals" },
   { id: "spawners", icon: "MapPin", label: "package.groupSpawners" },
   { id: "effects", icon: "Zap", label: "package.groupEffects" },
   { id: "paths", icon: "Spline", label: "package.groupPaths" },
@@ -85,6 +101,79 @@ watch(
   },
 );
 
+// ---- 效果页签：按用户创建的 effect 语义 tag 分类的目录 ----
+
+interface EffectCatalogEntry {
+  typeId: number;
+  group: number;
+  instance: number;
+  tag: string;
+  note: string;
+}
+
+const effectCatalog = ref<EffectAnnotation[]>([]);
+const effectLoading = ref(false);
+
+async function loadEffectCatalog() {
+  if (effectLoading.value) return;
+  effectLoading.value = true;
+  try {
+    effectCatalog.value = await tauriApi.effectAnnotations.list();
+  } catch {
+    effectCatalog.value = [];
+  } finally {
+    effectLoading.value = false;
+  }
+}
+
+function effectHex(value: number) {
+  return value.toString(16).padStart(8, "0").toUpperCase();
+}
+
+/** tag 分组目录：同 tag 下按 effect TGI 去重（多条批注保留最新一条的 note）。 */
+const effectTagGroups = computed<{ name: string; entries: EffectCatalogEntry[] }[]>(
+  () => {
+    const keyword = search.value.trim().toLowerCase();
+    const groups = new Map<string, EffectCatalogEntry[]>();
+    for (const item of effectCatalog.value) {
+      if (keyword) {
+        const haystack = [item.tag, item.note, effectHex(item.instance)];
+        if (!haystack.some((field) => field.toLowerCase().includes(keyword)))
+          continue;
+      }
+      const key = `${item.typeId}:${item.groupId}:${item.instance}`;
+      const entries = groups.get(item.tag) ?? [];
+      const existing = entries.find(
+        (entry) =>
+          `${entry.typeId}:${entry.group}:${entry.instance}` === key,
+      );
+      if (existing) {
+        if (item.note) existing.note = item.note;
+        continue;
+      }
+      entries.push({
+        typeId: item.typeId,
+        group: item.groupId,
+        instance: item.instance,
+        tag: item.tag,
+        note: item.note,
+      });
+      groups.set(item.tag, entries);
+    }
+    return [...groups.entries()]
+      .map(([name, entries]) => ({ name, entries }))
+      .sort(
+        (a, b) =>
+          b.entries.length - a.entries.length || a.name.localeCompare(b.name),
+      );
+  },
+);
+
+/** 效果页签每次激活都刷新（属性查看器里新建的 tag 即时出现）。 */
+watch(activeTab, (tab) => {
+  if (tab === "effects") void loadEffectCatalog();
+});
+
 interface CatalogEntry {
   packageId: number;
   packagePath?: string;
@@ -108,6 +197,22 @@ const BIN_CATEGORY_ORDER: PropBinCatalogEntry["category"][] = [
   "misc",
 ];
 const binCatalog = ref<PropBinCatalogEntry[]>([]);
+
+/** 普查权威清单的 vanilla bin（2026-11-05 tree_hunt/car_census 锚点）：
+ * 树按树种 lod 9..12（双路同 bin）、车辆全 0。缺省条目回落放置默认 bin。 */
+const CENSUS_PROP_BINS: Record<number, number> = {
+  0x14984c6b: 9,
+  0x41c2d443: 9,
+  0x14984c6a: 10,
+  0xc8b42548: 10,
+  0x14984c69: 11,
+  0xc8b4254b: 11,
+  0x14984c68: 12,
+  0xc8b4254a: 12,
+  0x0ab4dfe1: 0,
+  0x0ab4dfe2: 0,
+  0x0ab4dfe3: 0,
+};
 
 const propGroups = computed<{ name: string; entries: CatalogEntry[] }[]>(() => {
   const keyword = search.value.trim().toLowerCase();
@@ -213,13 +318,6 @@ const LIGHT_PRESETS: {
   { lightType: "Line", icon: "Minus", label: "package.lightLine" },
 ];
 
-/** 非 prop 类预设（页面/载荷 kind 分离）。 */
-const PLACE_PRESETS: { tab: TabId; icon: string; label: string }[] = [
-  { tab: "spawners", icon: "MapPin", label: "package.groupSpawners" },
-  { tab: "effects", icon: "Zap", label: "package.groupEffects" },
-  { tab: "paths", icon: "Spline", label: "package.groupPaths" },
-];
-
 function toggleCollapse(name: string) {
   const next = new Set(collapsed.value);
   if (next.has(name)) next.delete(name);
@@ -239,6 +337,14 @@ function beginPropDrag(event: PointerEvent, entry: CatalogEntry) {
       group: entry.group,
       instance: entry.instance,
     } satisfies Tgi,
+    // 语义目录条目直写脚本 resourceID（游戏可解析）；旧命名目录条目无此
+    // 字段，走直挂模型兜底。bin 取普查清单的 vanilla bin（树按树种 9..12、
+    // 车辆 0——2026-11-05 car_census 锚点口径），其余类别沿用默认。
+    resourceId: entry.binResourceId,
+    bin:
+      entry.binResourceId != null
+        ? CENSUS_PROP_BINS[entry.binResourceId]
+        : undefined,
     name: entry.name,
     template: entry.template,
   });
@@ -253,9 +359,27 @@ function beginLightDrag(event: PointerEvent, lightType: "Point" | "Spot" | "Line
 function beginPresetDrag(event: PointerEvent, tab: TabId) {
   if (!props.editEnabled) return;
   event.preventDefault();
-  const kind =
-    tab === "spawners" ? "spawner" : tab === "effects" ? "effect" : "pathPoint";
-  emit("place", { kind });
+  // 路径点必须通过 Path 面板的 Draw 模式追加到 activePath；
+  // 不再把路径页签的兜底卡片接入通用组件放置管线。
+  if (tab === "effects") emit("place", { kind: "effect" });
+}
+
+/** 效果目录卡：拖出即放置带 TGI 的 effect 单元（语义 tag 目录）。 */
+function beginEffectDrag(event: PointerEvent, entry: EffectCatalogEntry) {
+  if (!props.editEnabled) return;
+  event.preventDefault();
+  emit("place", {
+    kind: "effect",
+    effectId: {
+      typeId: entry.typeId,
+      group: entry.group,
+      instance: entry.instance,
+    } satisfies Tgi,
+  });
+}
+
+function onSpawnerPlace() {
+  emit("place", { kind: "spawner" });
 }
 </script>
 
@@ -277,17 +401,30 @@ function beginPresetDrag(event: PointerEvent, tab: TabId) {
       </button>
     </div>
 
-    <p v-if="!editEnabled" class="library-locked">
+    <AssetDecalLibrary
+      v-if="activeTab === 'decals'"
+      :edit-enabled="editEnabled"
+      @place="decal => emit('place', { kind: 'decal', decal })"
+    />
+    <p v-else-if="!editEnabled" class="library-locked">
       {{ t("studio.assetWorkbench.unlockFirst") }}
     </p>
     <template v-else>
       <input
-        v-if="activeTab === 'props'"
+        v-if="activeTab === 'props' || activeTab === 'effects'"
         v-model="search"
         type="search"
         class="library-search"
-        :placeholder="t('package.materialsSearch')"
-        :aria-label="t('package.materialsSearch')"
+        :placeholder="
+          activeTab === 'effects'
+            ? t('effectTags.librarySearch')
+            : t('package.materialsSearch')
+        "
+        :aria-label="
+          activeTab === 'effects'
+            ? t('effectTags.librarySearch')
+            : t('package.materialsSearch')
+        "
       />
       <p v-if="loading" class="library-note">
         <FSpinner size="sm" :label="t('common.loading')" />
@@ -335,6 +472,16 @@ function beginPresetDrag(event: PointerEvent, tab: TabId) {
         </div>
       </div>
 
+      <div v-else-if="activeTab === 'spawners'" class="library-groups">
+        <SpawnerLibraryPanel
+          :units="units ?? []"
+          :edit-enabled="editEnabled"
+          :selected-unit-id="selectedUnitId ?? null"
+          @place="onSpawnerPlace"
+          @select="(id) => emit('select', id)"
+        />
+      </div>
+
       <div v-else-if="activeTab === 'paths'" class="library-groups">
         <!-- 路径页签：规划面板由工作台壳注入（路径实体状态在 useWorkbenchAsset） -->
         <slot name="paths">
@@ -351,18 +498,44 @@ function beginPresetDrag(event: PointerEvent, tab: TabId) {
       </div>
 
       <div v-else class="library-groups">
-        <div class="library-grid">
-          <div
-            v-for="preset in PLACE_PRESETS"
-            v-show="activeTab === preset.tab"
-            :key="preset.tab"
-            class="library-entry"
-            @pointerdown.stop.prevent="beginPresetDrag($event, preset.tab)"
-          >
-            <FIcon :name="preset.icon" :size="18" aria-label="" />
-            <span>{{ t(preset.label) }}</span>
+        <!-- 效果页签：按用户创建的语义 tag 分类；没有 tag 时必须先去属性查看器创建 -->
+        <p v-if="effectLoading" class="library-note">
+          <FSpinner size="sm" :label="t('common.loading')" />
+        </p>
+        <FEmpty
+          v-else-if="!effectCatalog.length"
+          icon-name="Zap"
+          variant="compact"
+          :title="t('effectTags.libraryEmptyTitle')"
+          :desc="t('effectTags.libraryEmptyDesc')"
+        />
+        <template v-else>
+          <div v-for="group in effectTagGroups" :key="group.name" class="library-group">
+            <button
+              type="button"
+              class="library-group-head"
+              @click="toggleCollapse(group.name)"
+            >
+              <span>{{ group.name }}</span>
+              <span class="library-count">{{ group.entries.length }}</span>
+            </button>
+            <div v-show="!collapsed.has(group.name)" class="library-grid">
+              <div
+                v-for="entry in group.entries"
+                :key="`${entry.typeId}:${entry.group}:${entry.instance}`"
+                class="library-entry"
+                :title="entry.note || `T ${effectHex(entry.typeId)} · G ${effectHex(entry.group)} · I ${effectHex(entry.instance)}`"
+                @pointerdown.stop.prevent="beginEffectDrag($event, entry)"
+              >
+                <FIcon name="Zap" :size="18" aria-label="" />
+                <span>0x{{ effectHex(entry.instance) }}</span>
+              </div>
+            </div>
           </div>
-        </div>
+          <p v-if="!effectTagGroups.length" class="library-note">
+            {{ t("effectTags.libraryNoMatches") }}
+          </p>
+        </template>
       </div>
     </template>
   </div>

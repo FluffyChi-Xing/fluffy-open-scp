@@ -6,66 +6,62 @@
 
 # OpenSCP
 
-> A SimCity (2013) `.package` resource browser and modding toolchain built with Rust + Tauri 2 + Vue 3 — browse resource structures, preview models and textures, edit property lists, export to glTF/OBJ/audio/video, and progressively build a declarative Modding Suite.
+OpenSCP is a SimCity (2013) desktop resource browser and modding workbench built with Rust, Tauri 2, and Vue 3. It continues the resource browsing workflow of [SimCityPak](https://github.com/altinctrl/SimCityPak) and adds 3D asset previews, scene editing, and building mod packaging.
 
-## What This Project Is / Goals
-
-OpenSCP is a modern rewrite of the classic C#/WPF tool [SimCityPak](https://github.com/altinctrl/SimCityPak), but it aims to be more than "a rewritten browser". The goals come in three layers:
-
-1. **Reliable format foundation (P0)**: precise parsing and fidelity-preserving write-back for the DBPF container, RefPack decompression, RenderWare4 (RW4) models/textures/skeletons/animations, and property lists. All parsers are pure Rust crates (`crates/`) with no Tauri dependency, so they can be tested and reused independently.
-2. **A usable resource workbench (in progress)**: package structure tree (TGI browsing), syntax-highlighted text viewing (Shiki), RW4 3D model preview (with material channels), texture/property-list/audio/video previews, Lot editor sessions (lights/decals/props/path units), and a home dashboard (extension counts/capacity share, recognized-type coverage).
-3. **Mod workflow orchestration (P1)**: a declarative `openscp.mod.toml` project, OBJ import with LOD management, dependency resolution, automatic validation, and deterministic overlay package builds. See [docs/roadmap/modding-suite.md](docs/roadmap/modding-suite.md).
+**Current version 0.12.0**. This update includes scene-driven building builds, project detail and build history, terrain brushes with overlay export, and game runtime logs with asset diagnostics.
 
 ## Screenshots
 
-**Source parsing** — browse game folders, packages and resources like an IDE: file tree + tabs, TGI filtering/search/pagination, type categories and semantic property previews.
+### Resource map
 
-![Source parsing](docs/assets/publicity/source-parsing.png)
+Review resource types, decompressed sizes, compression ratios, and recognized-type coverage across opened packages, and jump to the runtime log console.
 
-**Property Editor · refined render** — real material channels with time-of-day and powered state; the unit tree covers lights/decals/props/effects/spawners/paths.
+![Resource map](docs/assets/publicity/en-US/overview.png)
 
-![Property Editor refined render](docs/assets/publicity/rendering-1.png)
+### Source parsing
 
-**Property Editor · close-up** — multi-texture materials (tint palette, normals, interior atlas) with in-viewport unit markers.
+Browse DBPF packages in a file tree and tabs. Filter by type, search by name or TGI, and open a hex view or a resource preview.
 
-![Property Editor close-up](docs/assets/publicity/rendering-2.png)
+![Source parsing](docs/assets/publicity/en-US/source-parsing.png)
 
-**Map panel** — region terrain composite preview: 341-tile pyramid + global water plane, city plot frames and 9 resource layers (oil/ore/watertable/soil/forest/coal, etc.).
+### Asset Viewer
 
-![Map panel](docs/assets/publicity/map-review.png)
+Inspect the building model, lot, and dimensions in 3D. Toggle lights, props, decals, and paths, and adjust the time of day and power state.
 
-**Raster paint** — four-channel LotMask pixel canvas (brush/flood-fill/parking-line brushes), lot surface & decal previews, saved as an overlay package.
+![Asset Viewer](docs/assets/publicity/en-US/asset-viewer.png)
 
-![Raster paint](docs/assets/publicity/raster-paint.png)
+### Map panel
 
-## Usage
+Inspect regional terrain, resource layers, city plots, and Great Work sites. Use terrain brushes to raise, level, or lower the surface and export an overlay package.
 
-### Install & Launch
-
-1. Download an installer (MSI / NSIS) from the releases page, or build from source (see Development below);
-2. On first launch, point **Settings → Game directory** at your SimCity install location (usually the folder containing `SimCityData\`, e.g. `D:\ea-games\SimCity`). OpenSCP scans it automatically and lists every `.package`;
-3. You can also double-click any `.package` in the package list to open it directly, no configuration required.
-
-### Everyday Operations
-
-- **Browse**: the left-hand resource tree lists packages by folder; once open, filter/search/page resources by TGI (Type/Group/Instance) — smooth even on huge packages thanks to virtualized rendering. The directory comes from the persisted game folder in Settings; open packages, page numbers and filters all survive page switches;
-- **Preview**: clicking a resource auto-detects its type — models (RW4 3D viewport with materials/LODs), textures (PNG/JPG/TGA/DDS/Raster), property lists (readable key-values + editing), text (JSON/HTML/JS syntax highlighting), audio (Wwise → WAV playback), video (VP6 → MP4 playback), binary (hex view);
-- **Lot editor**: open a Lot resource to inspect the ground map (LotMask four-channel quantization), the model LOD chain, and light/decal/prop units with their transform matrices;
-- **Export**: models → glTF 2.0 (`.glb`, with materials/skeleton/animations) or Wavefront `.obj`; textures → PNG/JPG/TGA/DDS; property lists → JSON/TXT; audio → WAV; video → MP4;
-- **Home dashboard**: extension-count share (donut chart), capacity share (bar chart) and recognized-type coverage across previously opened packages, with per-package breakdowns.
+![Map panel](docs/assets/publicity/en-US/map-panel.png)
 
 ### Mod Studio
 
-Under the "Modding / Asset Creation" nav group, entry `/studio` — panels organized along a **parse → edit → build → validate** pipeline:
+Create and group mod projects, review recent activity, and start or track background builds in OpenSCP Actions.
 
-| Panel | Status | Capabilities |
-|---|---|---|
-| **TGI override scan** | Available | Scans all package indices in the game + mod directories, groups by TGI to flag overridden resources, shows the override chain (vanilla → mod1 → mod2) with content diffs; the default directory comes from Settings, with automatic and manual scans |
-| **Locale text editor** | Available | stringID → translation two-pane table with dirty marks / per-line revert / filtering; exports a **deterministic overlay package** (same TGI, uncompressed, stable ordering) — drop it into the game's mod folder to override vanilla text. This is the write-back touchstone shared by all editing panels |
-| **UI preview** | Preview | Global carousel of 54 in-game screens; the `assembleGameUiHtml` pipeline rebuilds game UI windows inside an iframe sandbox using real locale strings (FNV-1 screen-name mapping) + game CSS + sampled images; the editing sheet lands in WP3 |
-| Property editor / Raster paint / Asset panel | Scheduled | See `docs/roadmap/workspace-panels.md` |
+![Mod Studio](docs/assets/publicity/en-US/mod-studio.png)
 
-Static game-UI assets (CSS/locale tables/manifests) are unpacked to `public/game-ui/` (images are gitignored for size; regenerate with `cargo run -p probes --example ui_assets -- <SimCityData> --extract public/game-ui`).
+### Project detail
+
+Browse source files and build artifacts, and open the Develop, Actions, Settings, or Log Capture views for a project.
+
+![Project detail](docs/assets/publicity/en-US/project-detail.png)
+
+### Scene workbench
+
+Arrange building and lot components in 3D, then configure building behavior and menu entries in the node graph. The Rust Building40 builder reads `openscp.asset` under `schemas/` and generates a `.package`.
+
+![Scene workbench](docs/assets/publicity/en-US/scene-workbench.png)
+
+## Usage
+
+1. Download a Windows installer (MSI or NSIS) from the project releases page, or build from source using the commands below.
+2. In **Settings → Game directory**, choose the installation folder containing `SimCityData`, or open a `.package` directly from Source parsing.
+3. Find resources by TGI (Type / Group / Instance) and preview models, textures, property lists, or media. Export models as glTF (`.glb`) or OBJ and property lists as JSON or TXT.
+4. Create a mod project in Mod Studio, open its Develop view, and use **OpenSCP Actions → Build project** to generate a package and inspect the result.
+
+The workbench also includes TGI override scanning, locale and property editing, [Raster paint](docs/assets/publicity/raster-paint.png), and game UI previews.
 
 ### ⚠️ Audio/Video Transcoding Requires Manual External Tools
 
@@ -97,15 +93,12 @@ fluffy-open-scp/
     └── roadmap/            # Migration & Modding Suite planning
 ```
 
-## Roadmap
+## Further reading
 
-- **P0 foundation** (mostly done): reliable parsing and write-back for DBPF/RefPack, RW4 and property lists; OBJ import, overlay packages, precise errors and roundtrip tests
-- **Mod Studio delivered**: TGI override scan (WP0), Locale editing + overlay write-back pipeline (WP2), game-UI reconstruction preview (WP3 preview); every panel's status is honestly labeled on the `/studio` hub
-- **In progress**: Property editor (WP1), UI editing (layout JSON → assembly pipeline), preview polish (model viewport material channels, day-night cycle / powered-state rendering)
-- **P1 Modding Suite**: declarative `openscp.mod.toml` projects, one-click builds, LOD/dependency management, automatic validation, actionable diagnostics, preview + file watching
-- **P2/P3**: advanced material/LOD/skeleton editing, game integration, dependency ecosystem and plugin capabilities
-
-Detailed planning: [docs/roadmap/modding-suite.md](docs/roadmap/modding-suite.md); foundation migration progress: [docs/roadmap/migration.md](docs/roadmap/migration.md); domain knowledge entries: [docs/overview/rendering-pipeline.md](docs/overview/rendering-pipeline.md), [docs/overview/file-formats.md](docs/overview/file-formats.md), [docs/overview/ui-rendering-and-development.md](docs/overview/ui-rendering-and-development.md), [docs/overview/glassbox-engine.md](docs/overview/glassbox-engine.md).
+- [Rust format migration](docs/roadmap/migration.md)
+- [Map workbench roadmap](docs/roadmap/map-workbench.md)
+- [GlassBox engine notes](docs/overview/glass-box/README.md)
+- [Rendering pipeline research](docs/rendering.md)
 
 ## Development
 

@@ -124,7 +124,9 @@ fn main() {
 
     // Path selector: retain a complete path property shell and swap its
     // native action. The selector factory is present in the retail binary.
-    let path_shell = base.read(entry(&base, PATH_SHELL)).expect("read path shell");
+    let path_shell = base
+        .read(entry(&base, PATH_SHELL))
+        .expect("read path shell");
     let mut path = patch_key(&path_shell, PATH_ACTION_OLD, PATH_TARGET, HASH_ACTION);
     path = patch_text(&path, PATH_TITLE_OLD, PATH_TITLE, HASH_TITLE);
     path = patch_text(&path, PATH_DESC_OLD, PATH_DESC, HASH_DESC);
@@ -134,9 +136,16 @@ fn main() {
     // Homeless tents: use a complete visible ploppable shell so the game has
     // all icon, marquee, category and position fields, then redirect only the
     // Unit and localized strings.
-    let plop_shell = base.read(entry(&base, PLOP_SHELL)).expect("read plop shell");
+    let plop_shell = base
+        .read(entry(&base, PLOP_SHELL))
+        .expect("read plop shell");
     for (offset, (target, title, desc)) in HOMELESS.iter().enumerate() {
-        let mut data = patch_key(&plop_shell, PLOP_MENU_UNIT_OLD, HOMELESS_UNIT, HASH_MENU_UNIT);
+        let mut data = patch_key(
+            &plop_shell,
+            PLOP_MENU_UNIT_OLD,
+            HOMELESS_UNIT,
+            HASH_MENU_UNIT,
+        );
         data = patch_text(&data, 0x7C9A_0071, *title, HASH_TITLE);
         data = patch_text(&data, 0xD8A3_9C91, *desc, HASH_DESC);
         data = patch_key(&data, 0x9D2E_F585, ROAD_CATEGORY, HASH_UI_CATEGORY);
@@ -155,7 +164,5 @@ fn main() {
         start + 1,
         start + HOMELESS.len() as i32
     );
-    println!(
-        "path action C741981F -> cToolPathSelector; homeless Unit 40E1C000:EB415C8F"
-    );
+    println!("path action C741981F -> cToolPathSelector; homeless Unit 40E1C000:EB415C8F");
 }

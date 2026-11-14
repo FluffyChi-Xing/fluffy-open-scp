@@ -27,7 +27,11 @@ fn main() {
             println!("打不开 {pkg_path}");
             continue;
         };
-        let name = Path::new(pkg_path).file_name().unwrap().to_string_lossy().to_string();
+        let name = Path::new(pkg_path)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let mut hits = 0usize;
         for e in p.entries() {
             let Ok(d) = p.read(e) else { continue };
@@ -36,9 +40,10 @@ fn main() {
             }
             // 快速预筛：转小写搜（直接在字节上做 ASCII 小写化）
             let lower: Vec<u8> = d.iter().map(|b| b.to_ascii_lowercase()).collect();
-            let Some(pos) = needles.iter().find_map(|n| {
-                lower.windows(n.len()).position(|w| w == n.as_bytes())
-            }) else {
+            let Some(pos) = needles
+                .iter()
+                .find_map(|n| lower.windows(n.len()).position(|w| w == n.as_bytes()))
+            else {
                 continue;
             };
             hits += 1;
@@ -46,7 +51,13 @@ fn main() {
             let ctx = &d[pos.saturating_sub(120)..(pos + 160).min(d.len())];
             let ctx_text: String = ctx
                 .iter()
-                .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { ' ' })
+                .map(|&b| {
+                    if (0x20..0x7f).contains(&b) {
+                        b as char
+                    } else {
+                        ' '
+                    }
+                })
                 .collect();
             println!(
                 "{name} TGI {:08X}:{:08X}:{:08X} size={} 命中@{}: …{}…",

@@ -11,7 +11,9 @@ fn main() {
         "D:/ea-games/SimCity/SimCityData/SimCity_DLC0.package",
     ];
     for pkg in packages {
-        let Ok(p) = dbpf::Package::open(pkg) else { continue };
+        let Ok(p) = dbpf::Package::open(pkg) else {
+            continue;
+        };
         for e in p.entries() {
             if targets.contains(&e.id.instance) {
                 let d = p.read(e).unwrap_or_default();
@@ -30,8 +32,10 @@ fn main() {
                     let body = &d[20..];
                     let n16 = body.len() / 2;
                     if n16 > 0 {
-                        let px: Vec<u16> =
-                            body.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+                        let px: Vec<u16> = body
+                            .chunks_exact(2)
+                            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                            .collect();
                         let mut mn = u16::MAX;
                         let mut mx = 0u16;
                         let mut sum = 0u64;

@@ -13,7 +13,9 @@ struct MatTex {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (path, rest) = args.split_first().expect("usage: <package> [上限] [跨包...]");
+    let (path, rest) = args
+        .split_first()
+        .expect("usage: <package> [上限] [跨包...]");
     let cap = rest
         .first()
         .and_then(|s| s.parse::<usize>().ok())
@@ -29,7 +31,9 @@ fn main() {
             if let Some(e) = pkg
                 .entries()
                 .iter()
-                .find(|e| e.id.instance == inst && (e.id.type_id == types[0] || e.id.type_id == types[1]))
+                .find(|e| {
+                    e.id.instance == inst && (e.id.type_id == types[0] || e.id.type_id == types[1])
+                })
                 .cloned()
             {
                 return Some((pkg, e));
@@ -56,8 +60,12 @@ fn main() {
     let stride = entries.len().div_ceil(cap).max(1);
 
     for entry in entries.into_iter().step_by(stride) {
-        let Ok(data) = package.read(&entry) else { continue };
-        let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
+        let Ok(file) = rw4::Rw4File::parse(&data) else {
+            continue;
+        };
         let bindings = file.decode_mesh_material_bindings(&data);
         if bindings.is_empty() {
             continue;
@@ -68,7 +76,10 @@ fn main() {
             if cache.contains_key(&b.material_section) {
                 continue;
             }
-            let mut t = MatTex { params: None, tint: None };
+            let mut t = MatTex {
+                params: None,
+                tint: None,
+            };
             if let Ok(rw4::MaterialSection::Decoded(mat)) =
                 file.decode_material(&data, b.material_section)
             {
@@ -81,8 +92,7 @@ fn main() {
                                 {
                                     if let Ok(tex) = tf.decode_texture(&bytes, sec.number) {
                                         if let Ok(px) = tex.decode_palette_f32() {
-                                            t.params =
-                                                Some((px, usize::from(tex.width)));
+                                            t.params = Some((px, usize::from(tex.width)));
                                         }
                                     }
                                 }
@@ -96,9 +106,7 @@ fn main() {
                             let rgba = if e.id.type_id == RASTER_IMAGE {
                                 rw4::RasterImage::parse(&bytes)
                                     .and_then(|r| r.decode_top_mip_rgba())
-                                    .map(|p| {
-                                        (p, r_width(&bytes), r_height(&bytes))
-                                    })
+                                    .map(|p| (p, r_width(&bytes), r_height(&bytes)))
                             } else {
                                 rw4::Rw4File::parse(&bytes).and_then(|tf| {
                                     let sec = tf
@@ -132,7 +140,9 @@ fn main() {
         let mut any_kind2 = false;
         let mut unresolvable = false;
         for section in file.sections_of_type(rw4::SectionType::MESH) {
-            let Ok(mesh) = file.decode_mesh(&data, section.number) else { continue };
+            let Ok(mesh) = file.decode_mesh(&data, section.number) else {
+                continue;
+            };
             if !mesh.is_exportable() {
                 continue;
             }
@@ -170,7 +180,9 @@ fn main() {
                 .find(|b| b.mesh_section == section.number)
                 .map(|b| b.material_section);
             let Some(mat_sec) = mat_sec else { continue };
-            let Some(t) = cache.get(&mat_sec) else { continue };
+            let Some(t) = cache.get(&mat_sec) else {
+                continue;
+            };
             let (Some((params, cols)), Some((tint_rgba, tw, th))) =
                 (t.params.as_ref(), t.tint.as_ref())
             else {
@@ -178,7 +190,9 @@ fn main() {
                 continue;
             };
             let m = usize::from(g0.unwrap_or(0));
-            let Some(xform) = params.get(cols + m).copied() else { continue };
+            let Some(xform) = params.get(cols + m).copied() else {
+                continue;
+            };
             let tuv = [xform[2], xform[3]];
             let tx = ((tuv[0] - tuv[0].floor()).clamp(0.0, 0.999) * *tw as f32) as usize;
             let ty = ((tuv[1] - tuv[1].floor()).clamp(0.0, 0.999) * *th as f32) as usize;
@@ -212,11 +226,19 @@ fn main() {
         kind_counts[0],
         kind_counts[1],
         kind_counts[2],
-        if total_mesh > 0 { kind_counts[2] as f64 / total_mesh as f64 * 100.0 } else { 0.0 }
+        if total_mesh > 0 {
+            kind_counts[2] as f64 / total_mesh as f64 * 100.0
+        } else {
+            0.0
+        }
     );
     println!(
         "  含 kind2 模型 {models_kind2}；kind2 mesh {kind2_meshes}，其中前端预测整 mesh discard {kind2_discarded}（{:.1}%）",
-        if kind2_meshes > 0 { kind2_discarded as f64 / kind2_meshes as f64 * 100.0 } else { 0.0 }
+        if kind2_meshes > 0 {
+            kind2_discarded as f64 / kind2_meshes as f64 * 100.0
+        } else {
+            0.0
+        }
     );
     println!(
         "  非 discard 的 kind2 中：发绿特征（G>R+60 且 G>B+60）{green_tint}，发暗特征（b<0.25）{dark_tint}"
@@ -225,9 +247,19 @@ fn main() {
 }
 
 fn r_width(bytes: &[u8]) -> u32 {
-    u32::from_be_bytes([bytes.get(4).copied().unwrap_or(0), bytes.get(5).copied().unwrap_or(0), bytes.get(6).copied().unwrap_or(0), bytes.get(7).copied().unwrap_or(0)])
+    u32::from_be_bytes([
+        bytes.get(4).copied().unwrap_or(0),
+        bytes.get(5).copied().unwrap_or(0),
+        bytes.get(6).copied().unwrap_or(0),
+        bytes.get(7).copied().unwrap_or(0),
+    ])
 }
 
 fn r_height(bytes: &[u8]) -> u32 {
-    u32::from_be_bytes([bytes.get(8).copied().unwrap_or(0), bytes.get(9).copied().unwrap_or(0), bytes.get(10).copied().unwrap_or(0), bytes.get(11).copied().unwrap_or(0)])
+    u32::from_be_bytes([
+        bytes.get(8).copied().unwrap_or(0),
+        bytes.get(9).copied().unwrap_or(0),
+        bytes.get(10).copied().unwrap_or(0),
+        bytes.get(11).copied().unwrap_or(0),
+    ])
 }

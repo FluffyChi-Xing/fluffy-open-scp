@@ -50,3 +50,32 @@ tmp/
 __pycache__/
 /terrain_instances.json
 /water_objs/
+
+# SC5 Asset Packager 解包参考材料（作者二进制，禁止入库）
+/SC5 Asset Packager.exe_extracted/
+
+# 0.8.0 反汇编工作区（PYZ 解包 + .dis 转储）
+/tmp_re/
+
+# SC5 Asset Editor 源码（离线对拍）
+/src-tauri/resources/blender/ny_facade/
+
+# Rust Blend 导入使用的本地图集数据（打包资源）
+/src-tauri/resources/blend-atlas/
+
+# tools/ 是本地临时工作区（迁移工具运行时、流水线脚本等），不入库 2026-11-08
+tools/
+
+# investigation/ 是本地逆向调查工作区（反汇编转储、第三方打包器解包源码、对拍图片等），
+# 全部只保留在本地，不入库 2026-11-09
+/investigation/
+
+# 本地商业版构建输出
+/commercial-build.json
+/commercial-build.log
+
+# Local SC5 Packager references
+/reference/
+
+# build staging temp (hope/material/mask intermediates)
+.tmp-build/

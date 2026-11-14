@@ -1,0 +1,58 @@
+=== backend_compile ===
+functions/classes at module level: progress, compile_project
+imports (top-level -> full names):
+  PIL: PIL
+  __future__: __future__
+  asset_transforms: asset_transforms
+  authored_materials: authored_materials
+  behavior_profiles: behavior_profiles
+  build_candidate: build_candidate
+  compile_tower_asset: compile_tower_asset
+  effect_contract: effect_contract
+  geometry_policy: geometry_policy
+  ground_contract: ground_contract
+  hashlib: hashlib
+  inspect_park_route: inspect_park_route
+  interactive_park_profile: interactive_park_profile
+  json: json
+  light_contract: light_contract
+  math: math
+  menu_icons: menu_icons
+  menu_locations: menu_locations
+  native_property_codec: native_property_codec
+  numpy: numpy
+  package_io: package_io
+  path_contract: path_contract
+  pathlib: pathlib
+  power_layout: power_layout
+  prepare_asset: prepare_asset
+  preview_images: preview_images
+  probe_tower: probe_tower
+  prop_contract: prop_contract
+  runpy: runpy
+  rw4_bridge: rw4_bridge
+  sc5_packager: sc5_packager
+  shutil: shutil
+  struct: struct
+  sys: sys
+  traceback: traceback
+  uuid: uuid
+  visitor_access: visitor_access
+hex-key-like constants (10): 09AE19D7, 0A0209A4, 0A8A41DA, 0CCB7FC8, 0CCB7FC9, 0CCB7FD0, 0CCB7FD5, 0CCB7FD6, 0DB9FC63, 0DC1E3E0
+
+=== sc5_packager ===
+functions/classes at module level: sha256, now, load_project, open_asset_folder, inspect_inputs, init_project, inspect_project, build_project, main
+imports (top-level -> full names):
+  __future__: __future__
+  argparse: argparse
+  behavior_profiles: behavior_profiles
+  datetime: datetime
+  hashlib: hashlib
+  json: json
+  menu_locations: menu_locations
+  pathlib: pathlib
+  subprocess: subprocess
+  sys: sys
+  typing: typing
+hex-key-like constants (0): 
+

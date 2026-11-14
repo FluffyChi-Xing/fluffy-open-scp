@@ -29,6 +29,7 @@ cargo run -p probes --release --example <名称> -- <参数...>
 | [`locale/`] | 字符串表（0x0A98EAF0） | 11 |
 | [`decal/`] | 贴花 / 地面覆盖 / 招牌 | 27 |
 | [`lot/`] | 地块（LotMask / 合成 / prop 槽位） | 23 |
+| [`map/`] | 地图契约（PlayArea / 坐标帧 / 相机边界 / 灯光对齐） | 4 |
 | [`menu/`] | 菜单 / 工具条目 / 分类 / 图标 / 造价 | 14 |
 | [`region/`] | 区域 / 城市 / tile 金字塔 / 引导 / 状态 | 59 |
 | [`road/`] | 道路 / 路径 / curve | 6 |
@@ -183,6 +184,13 @@ cargo run -p probes --release --example <名称> -- <参数...>
 - [`prop_chain_probe`]（sc-properties）：探针：找含 Prop 槽列（0x0C12EF40..）的 lot 属性文件，dump 全部 hash +
 - [`refined_replay`]（sc-exporter）：离线重放前端 refinedGround 的合成算法（阈值+优先级链+frac 平铺），
 - [`spawner_probe`]（sc-properties）：探针：扫描含 Spawner 列的 lot，dump spawner 全列值并尝试解析 agent 引用
+
+## map —— 地图契约（PlayArea / 坐标帧 / 相机边界 / 灯光对齐）
+
+- [`light_align_probe`]（sc-properties）：盒外灯对齐审计：解析真实灯光表、按 unit 变换算世界位置、三假设判定坐标系。
+- [`light_table_dump`]（sc-properties）：灯光表逐列转储（`0x0CAA8F10..0x0CAA8F17` 列语义确认）。
+- [`map_contract_probe`]（sc-properties）：区域实测：flatScale 证据、城市局部 PlayArea、相机可达半幅、9 点回环、扩展问题清单。
+- [`map_scalars_probe`]（sc-properties）：反查 `flatScale` / 高度缩放 / 偏差与灯光表普查。
 
 ## menu —— 菜单 / 工具条目 / 分类 / 图标 / 造价
 

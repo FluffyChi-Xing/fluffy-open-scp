@@ -35,14 +35,22 @@ fn key_instance(file: &PropertyFile, hash: u32) -> Option<u32> {
 fn main() {
     let paths: Vec<String> = std::env::args().skip(1).collect();
     for path in &paths {
-        let Ok(package) = dbpf::Package::open(path) else { continue };
+        let Ok(package) = dbpf::Package::open(path) else {
+            continue;
+        };
         for entry in package.entries() {
             if entry.id.type_id != TYPE_PROPERTY {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
-            let Some(cost) = float_of(&file, HASH_PATH_COST) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
+            let Some(cost) = float_of(&file, HASH_PATH_COST) else {
+                continue;
+            };
             println!(
                 "group={:08X} instance={:08X} pathCost={} costResource={:?}",
                 entry.id.group,

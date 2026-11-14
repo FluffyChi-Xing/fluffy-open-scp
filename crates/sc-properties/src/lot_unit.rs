@@ -41,7 +41,11 @@ pub const CULL_MAX: u32 = 0x3E7E_124D;
 // ---- Effect ----
 pub const EFFECT_IDS: u32 = 0x02A9_07B5;
 pub const EFFECT_TRANSFORMS: u32 = 0x02A9_07B6;
-pub const EFFECT_ALWAYS_ZERO: u32 = 0x02A9_07B9;
+/// effectWorlds(效果所属 world 键数组)——旧名 EFFECT_ALWAYS_ZERO 为
+/// 误名(dev 源码 AddAttachments 实证,unit-props 文档 §2)。
+pub const EFFECT_WORLDS: u32 = 0x02A9_07B9;
+/// 兼容旧名。
+pub const EFFECT_ALWAYS_ZERO: u32 = EFFECT_WORLDS;
 pub const EFFECT_REF_IDS: u32 = 0x02A9_07BB;
 pub const EFFECT_ENABLED: u32 = 0x02A9_07BC;
 
@@ -125,6 +129,8 @@ pub enum LotUnit {
         length: Option<f32>,
         cull_distance: Option<&'static str>,
         is_volumetric: Option<bool>,
+        /// 体积光强度（0x0EC4567E）；None = 引擎/编辑器默认 1。
+        volumetric_strength: Option<f32>,
         debug_name: Option<String>,
         fields: Vec<UnitField>,
     },
@@ -162,6 +168,10 @@ pub enum LotUnit {
         slot: Option<i32>,
         /// 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。
         scale: Option<f32>,
+        /// Bool：槽位随机化（0x0C12EF50，cUnitBinDrawSet::mRandomizeSlot）。
+        randomize_slot: Option<bool>,
+        /// Bool：按资源百分比填充（0x0C12EF60，cUnitBinDrawSet::mUseBinPercent）。
+        percent_fill: Option<bool>,
         fields: Vec<UnitField>,
     },
     #[serde(rename_all = "camelCase")]
@@ -430,6 +440,7 @@ fn assemble_lights(file: &PropertyFile, out: &mut LotUnits) {
             length: unit_float(file, LIGHT_LENGTHS, index),
             cull_distance,
             is_volumetric: unit_bool(file, LIGHT_IS_VOLUMETRIC, index),
+            volumetric_strength: unit_float(file, LIGHT_VOL_STRENGTHS, index),
             debug_name,
             fields: collect_fields(file, &LIGHT_COLUMN_HASHES, index),
         });
@@ -540,6 +551,8 @@ fn assemble_props(file: &PropertyFile, out: &mut LotUnits) {
                 transform: unit_transform(file, transform_hash, index, &mut out.diagnostics),
                 slot: unit_i32(file, slot_hash, index),
                 scale: unit_transform_scale(file, transform_hash, index),
+                randomize_slot: unit_bool(file, randomize_hash, index),
+                percent_fill: unit_bool(file, percent_hash, index),
                 fields: collect_fields(file, &hashes, index),
             });
         }

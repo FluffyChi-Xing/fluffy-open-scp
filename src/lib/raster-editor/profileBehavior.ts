@@ -1,4 +1,5 @@
 import type { Channel, RasterProfile } from "./schema";
+import { lotRegion, LOT_PAINT_CHANNELS } from "./lotPaint";
 import type { Rgba } from "./tools";
 
 interface ProfileBehavior {
@@ -118,11 +119,12 @@ export function pickedLayer(
   profile: RasterProfile,
   pixel: Rgba,
 ): number | null {
-  const order =
-    PROFILE_BEHAVIOR[profile].layers === "lot" ? [3, 0, 1, 2] : [3, 2, 1, 0];
+  if (PROFILE_BEHAVIOR[profile].layers === "lot") {
+    const region = lotRegion(pixel);
+    return region < 0 ? null : LOT_PAINT_CHANNELS.indexOf(Math.floor(region / 2) as 0 | 1 | 2 | 3);
+  }
+  const order = [3, 2, 1, 0];
   const channel = order.find((index) => pixel[index] >= 128);
   if (channel == null) return null;
-  return PROFILE_BEHAVIOR[profile].layers === "lot"
-    ? [3, 0, 1, 2].indexOf(channel)
-    : channel;
+  return channel;
 }

@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as monaco from "monaco-editor";
+import { registerEr2 } from "./er2-language";
 
-const props = withDefaults(defineProps<{ value: string; language?: string; readOnly?: boolean; fill?: boolean }>(), {
+const props = withDefaults(defineProps<{ value: string; language?: string; fill?: boolean; editable?: boolean }>(), {
   language: "plaintext",
-  readOnly: true,
   fill: false,
+  editable: false,
 });
+const emit = defineEmits<{ "update:value": [string] }>();
 const host = ref<HTMLElement | null>(null);
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;
 let model: monaco.editor.ITextModel | null = null;
 let themeObserver: MutationObserver | undefined;
+/** 程序化 setValue 也会触发 onDidChangeModelContent——标记以免回环。 */
+let applyingExternalValue = false;
 
 function defineThemes() {
   monaco.editor.defineTheme("openscp-light", {
@@ -28,26 +32,8 @@ function syncTheme() {
 }
 
 function monacoLanguage(language: string): string {
-  if (language === "er2") return "er2";
   if (language === "text") return "plaintext";
   return language;
-}
-
-function registerEr2() {
-  if (monaco.languages.getLanguages().some((item) => item.id === "er2")) return;
-  monaco.languages.register({ id: "er2", extensions: [".er2"] });
-  monaco.languages.setMonarchTokensProvider("er2", {
-    tokenizer: {
-      root: [
-        [/\/\/.*$/, "comment"],
-        [/[{}()[\],;]/, "delimiter"],
-        [/[a-zA-Z_][\w-]*/, { cases: { "@keywords": "keyword", "@default": "identifier" } }],
-        [/\d+(?:\.\d+)?/, "number"],
-        [/"(?:[^"\\]|\\.)*"/, "string"],
-      ],
-    },
-    keywords: ["unitRule", "globalRule", "define", "create", "set", "rate", "applyCount", "onSuccess", "onFail", "chain"],
-  });
 }
 
 onMounted(async () => {
@@ -57,15 +43,15 @@ onMounted(async () => {
   syncTheme();
   themeObserver = new MutationObserver(syncTheme);
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  registerEr2();
+  registerEr2(monaco.languages);
   model = monaco.editor.createModel(props.value, monacoLanguage(props.language));
   editor = monaco.editor.create(host.value, {
     model,
-    // Source parsing is a preview surface. Keep it read-only even if a caller
-    // accidentally passes a falsey value while reusing this component.
-    readOnly: true,
-    domReadOnly: true,
-    contextmenu: false,
+    // Default remains a read-only preview surface; editing is an explicit
+    // opt-in (`editable`) that also enables the `update:value` stream.
+    readOnly: !props.editable,
+    domReadOnly: !props.editable,
+    contextmenu: props.editable,
     dragAndDrop: false,
     automaticLayout: true,
     minimap: { enabled: false },
@@ -76,13 +62,23 @@ onMounted(async () => {
     renderWhitespace: "selection",
     wordWrap: "off",
   });
+  editor.onDidChangeModelContent(() => {
+    if (!applyingExternalValue) emit("update:value", model?.getValue() ?? "");
+  });
 });
 
 watch(() => props.value, (value) => {
-  if (model && model.getValue() !== value) model.setValue(value);
+  if (model && model.getValue() !== value) {
+    applyingExternalValue = true;
+    model.setValue(value);
+    applyingExternalValue = false;
+  }
 });
 watch(() => props.language, (value) => {
   if (model) monaco.editor.setModelLanguage(model, monacoLanguage(value));
+});
+watch(() => props.editable, (editable) => {
+  editor?.updateOptions({ readOnly: !editable, domReadOnly: !editable, contextmenu: editable });
 });
 
 onBeforeUnmount(() => {

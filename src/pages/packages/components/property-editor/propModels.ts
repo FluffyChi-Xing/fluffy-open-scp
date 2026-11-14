@@ -85,7 +85,10 @@ async function loadTexture(
   if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
   texture.flipY = false;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.anisotropy = 4;
+  // Matches the game's sampler setup: MAXANISOTROPY=8 when anisotropic is
+  // enabled (Update.c / D3D9SamplerStateDispatch). Vehicles/boats use plain
+  // UV diffuse maps, so this path must not inherit a lower hardcoded value.
+  texture.anisotropy = 8;
   return texture;
 }
 
@@ -441,7 +444,7 @@ export async function getPropModelObject(
     const tintSets = await loadTintTextures(
       THREE,
       payload.materials ?? [],
-      4,
+      8,
       urls,
     );
     // 该材质是否有 mesh 以 uvKind=2 使用（与建筑装配同判据）
@@ -477,6 +480,10 @@ export async function getPropModelObject(
           false,
         );
         if (standard.map) standard.color.set(0xffffff);
+        // 不做贴图 alpha 启发式裁剪（2026-10-31 回退：车辆漫反射图带玻璃
+        // alpha，被整壳裁穿）。cutout 属于树渲染器的材质语义，按 prop
+        // 解析分支（ResolvedPropModel.source）分发，见
+        // docs/re/prop-semantic-renderer-decomposition-20261031.md。
         standard.needsUpdate = true;
       }),
     );

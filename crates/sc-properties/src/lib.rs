@@ -24,22 +24,28 @@
 //! }
 //! ```
 
+pub mod camera_bounds;
 mod combine;
 pub mod debug_tools;
 pub mod decal;
 mod error;
 pub mod inherit;
+pub mod light_alignment;
 pub mod locale;
 mod lot;
-mod lot_unit;
+pub mod lot_unit;
 pub mod map_assets;
+pub mod map_contract;
+pub mod map_frames;
 mod model;
+pub mod play_area;
 pub mod region_3d;
 pub mod region_bootstrap;
 pub mod region_city;
 pub mod region_map;
 pub mod region_state;
 pub mod region_write;
+pub mod terrain_brush;
 pub mod semantic;
 pub mod swarm;
 pub mod swarm_material;
@@ -58,8 +64,8 @@ pub use locale::{
     parse_string_table,
 };
 pub use lot::{
-    LOD1_MODEL_HASH, LOT_MASK_HASH, LOT_PLACEMENT_HASH, LOT_SIZE_HASH, LotEditorDocument,
-    PROPERTY_RESOURCE_TYPE,
+    LOD_MODEL_HASHES, LOD1_MODEL_HASH, LOT_MASK_HASH, LOT_OVERLAY_OFFSET_HASH, LOT_PLACEMENT_HASH,
+    LOT_SIZE_HASH, LotEditorDocument, PROPERTY_RESOURCE_TYPE,
 };
 pub use lot_unit::{LotUnit, LotUnits, UnitField, UnitKey, UnitTransform, assemble_units};
 pub use model::{Key, Kind, PropType, Property, PropertyEncoding, Text, Transform, Value};
@@ -222,6 +228,57 @@ impl PropertyFile {
     pub fn get(&self, hash: u32) -> Option<&Property> {
         self.values.iter().find(|p| p.hash == hash)
     }
+
+    /// Fail-closed layout gate: every array property must declare the legal
+    /// stride for its type. The game loader trusts the declared step — a wrong
+    /// stride poisons the whole property file (2026-10-19 Text=8 实证菜单 ***；
+    /// 2026-11-07 Transform=0 实证整个 lot 拒载 s25/s26/s27)。
+    ///
+    /// 合法表来自本体全量标定（examples/scan_strides.rs，2385 文件、
+    /// 31653 个 Transform 数组，每个类型恰好一个合法步长、零例外）。
+    pub fn validate_declared_strides(&self) -> Result<()> {
+        for property in &self.values {
+            let Kind::Array(values) = &property.kind else {
+                continue;
+            };
+            if values.is_empty() {
+                return Err(Error::EmptyArrayProperty {
+                    hash: property.hash,
+                });
+            }
+            let Some(legal) = legal_declared_stride(property.prop_type) else {
+                continue;
+            };
+            let declared = property.encoding.array_item_size.unwrap_or(0);
+            if declared != legal {
+                return Err(Error::InvalidDeclaredStride {
+                    hash: property.hash,
+                    prop_type: property.prop_type,
+                    declared,
+                    expected: legal,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// 全游戏标定的合法声明步长（scan_strides.rs 2026-11-07）。
+/// `None` = 类型从未以数组形态出现在 vanilla 属性文件中（暂不设限）。
+pub fn legal_declared_stride(prop_type: PropType) -> Option<i32> {
+    Some(match prop_type {
+        PropType::Bool => 1,
+        PropType::Int32 | PropType::UInt32 | PropType::Float => 4,
+        PropType::Key | PropType::Vector3 | PropType::ColorRgb => 12,
+        PropType::Vector2 => 8,
+        PropType::Vector4 | PropType::ColorRgba => 16,
+        PropType::String8 => 16,
+        // String16 数组在 vanilla 属性文件中不存在，暂不设限
+        PropType::Text => TEXT_ARRAY_ITEM_SIZE,
+        PropType::Transform => 56,
+        PropType::BoundingBox => 24,
+        PropType::String16 => return None,
+    })
 }
 
 impl fmt::Display for PropertyFile {
@@ -258,10 +315,21 @@ impl fmt::Display for PropertyFile {
 }
 
 fn canonical_flags(property: &Property) -> Result<u16> {
+    // 游戏加载器要求每个条目带 0x8000 有效位；数组为 0x10 位，定长元素
+    // 数组再带 0x80（原版实测：Key/数值/Transform/Vector 数组 0x809c，
+    // Text/BoundingBox 数组 0x801c；标量一律 0x8000）。输入 flags==0
+    // （程序新建的属性）按此合成；非 0 输入逐位透传（保持对既有文件的
+    // 字节级兼容）。2026-10-30 实证：flags=0 的 Menu2 在游戏里整条不可见。
     let flags = match &property.kind {
-        Kind::Scalar(_) if property.encoding.flags == 0 => 0,
-        Kind::Array(_) if property.encoding.flags == 0 => 0x30,
-        Kind::Empty if property.encoding.flags == 0 => 0x70,
+        Kind::Scalar(_) if property.encoding.flags == 0 => 0x8000,
+        Kind::Array(_) if property.encoding.flags == 0 => {
+            let class = match property.prop_type {
+                PropType::Text | PropType::BoundingBox => 0x001c,
+                _ => 0x009c,
+            };
+            0x8000 | class
+        }
+        Kind::Empty if property.encoding.flags == 0 => 0x8000 | 0x70,
         _ => property.encoding.flags,
     };
     let valid = match &property.kind {

@@ -37,6 +37,7 @@ pub struct ParticleComponent {
     pub color: Vec<[f32; 3]>,
     pub texture: TextureRef,
     pub tile_count: [u8; 2],
+    pub align_mode: u8,
     pub frame_start: u8,
     pub frame_count: u8,
     pub frame_random: u8,
@@ -110,7 +111,7 @@ pub fn decode_meta_particle_components(
         } else {
             None
         };
-        r.skip(1)?; // alignment
+        emitter.align_mode = r.u8()?;
         emitter.direction_force = r.f32_triple_le()?;
         r.skip(12)?; // global forces
         emitter.wind_strength = r.f32()?;
@@ -268,6 +269,7 @@ fn read_common(
             draw_mode: 15,
         },
         tile_count: [1, 1],
+        align_mode: 0,
         frame_start: 0,
         frame_count: 1,
         frame_random: 0,
@@ -309,7 +311,7 @@ fn read_particle(r: &mut Reader<'_>) -> Result<ParticleComponent, SwarmError> {
     p.texture = read_texture(r)?;
     r.skip(2)?; // physics type and override set
     p.tile_count = [r.u8()?, r.u8()?];
-    r.skip(1)?; // align mode
+    p.align_mode = r.u8()?;
     p.frame_start = r.u8()?;
     p.frame_count = r.u8()?;
     p.frame_random = r.u8()?;

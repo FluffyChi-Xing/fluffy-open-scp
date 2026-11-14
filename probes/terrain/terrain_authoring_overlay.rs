@@ -14,7 +14,7 @@
 use std::path::PathBuf;
 
 use dbpf::{OverlayEntry, Package};
-use sc_properties::{debug_tools, Kind, PropertyFile, Value};
+use sc_properties::{Kind, PropertyFile, Value, debug_tools};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 const ENVIRONMENT_INSTANCE: u32 = 0x494F_8678;
@@ -63,8 +63,14 @@ fn main() {
         Some(Kind::Scalar(Value::Key(key))) => *key,
         _ => panic!("environment property has no region key"),
     };
-    assert_eq!(region.group, region_group, "region key points to another group");
-    assert_eq!(region.instance, REGION_INSTANCE, "unexpected region key instance");
+    assert_eq!(
+        region.group, region_group,
+        "region key points to another group"
+    );
+    assert_eq!(
+        region.instance, REGION_INSTANCE,
+        "unexpected region key instance"
+    );
     if enabled {
         eprintln!("environment is already enabled; refusing a no-op overlay");
         std::process::exit(3);

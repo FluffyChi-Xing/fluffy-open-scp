@@ -41,6 +41,10 @@ OBSERVATIONS = {
     'building:school': {'scope': 'building', 'target': 'school'},
     'building:omegaco': {'scope': 'building', 'target': 'omegaco'},
     'agent:police': {'scope': 'agent', 'target': 'police'},
+    'agent:fire': {'scope': 'agent', 'target': 'fire'},
+    'agent:ambulance': {'scope': 'agent', 'target': 'ambulance'},
+    'agent:bus': {'scope': 'agent', 'target': 'bus'},
+    'agent:garbage': {'scope': 'agent', 'target': 'garbage'},
 }
 
 

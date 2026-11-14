@@ -40,6 +40,7 @@ mod section;
 mod skeleton;
 pub mod texture;
 mod vertex;
+pub mod writer;
 
 #[cfg(test)]
 mod tests;
@@ -58,9 +59,7 @@ pub use mesh::{
     VertexArrayHeader,
 };
 pub use model::{FileType, Rw4File};
-pub use raster::{
-    DEFAULT_QUANTIZED_COLORS, RASTER_PIXEL_FORMAT_A8R8G8B8, RasterImage, RasterView,
-};
+pub use raster::{DEFAULT_QUANTIZED_COLORS, RASTER_PIXEL_FORMAT_A8R8G8B8, RasterImage, RasterView};
 pub use section::{Section, SectionType};
 pub use skeleton::{DecodedSkeleton, Hierarchy, Joint};
 pub use texture::{
@@ -68,3 +67,4 @@ pub use texture::{
     TEXTURE_TYPE_RAW_BGRA, TextureFormat, decode_dxt1, decode_dxt5,
 };
 pub use vertex::{ComponentValue, DeclarationType, DeclarationUsage, VertexElement, VertexFormat};
+pub use writer::{SectionSpec, build as build_file, section as writer_section};

@@ -156,9 +156,11 @@ export function curveChains(records: CurveRecord[]): CurveRecord[][] {
   }
   return chains;
 }
+export type NativeRoadSceneData = Pick<Region3DData, "staticLayers" | "roadAssets" | "size" | "metersPerPixel" | "originWorld">;
+
 /** Source splines and ribbon width/UV/offsets, never raster-derived centerlines. */
 export function createNativeRoads(
-  data: Region3DData,
+  data: NativeRoadSceneData,
   pixels: Record<string, ImageData>,
   height: (x: number, y: number) => number,
 ): THREE.Group {
@@ -197,6 +199,13 @@ export function createNativeRoads(
         };
         batches.set(component.texture, batch);
         const width = component.worldSize[0] * component.scale[0];
+        // GenerateExtrusionRibbon offsets each edge along the component's
+        // transformed X axis before applying the spline frame.
+        const pitch = ((component.rotation?.[1] ?? 0) * Math.PI) / 180;
+        const yaw = ((component.rotation?.[2] ?? 0) * Math.PI) / 180;
+        const across = width * Math.cos(pitch) * Math.cos(yaw);
+        const along = width * Math.cos(pitch) * Math.sin(yaw);
+        const up = -width * Math.sin(pitch);
         const period = Math.max(
           0.01,
           // GenerateExtrusionRibbon repeats by worldSize.y, without scale.y.
@@ -223,11 +232,13 @@ export function createNativeRoads(
             const nx = tangent.y / norm,
               ny = -tangent.x / norm;
             for (let side = 0; side < 2; side++) {
-              const offset = component.offset[0] + (side - 0.5) * width;
+              const edge = side - 0.5;
+              const offset = component.offset[0] + edge * across;
+              const forward = edge * along;
               batch.positions.push(
-                p.x + nx * offset,
-                p.z + component.offset[2] + 0.12,
-                p.y + ny * offset,
+                p.x + nx * offset - ny * forward,
+                p.z + component.offset[2] + 0.12 + edge * up,
+                p.y + ny * offset + nx * forward,
               );
               batch.uvs.push(
                 side ? component.uvEnd[0] : component.uvStart[0],
@@ -275,7 +286,7 @@ export function createNativeRoads(
 
 function appendRegionalJunctions(
   group: THREE.Group,
-  data: Region3DData,
+  data: NativeRoadSceneData,
   pixels: Record<string, ImageData>,
 ) {
   for (const instance of data.roadAssets?.instances ?? []) {
@@ -320,7 +331,7 @@ function appendRegionalJunctions(
 
 function appendModelSweeps(
   group: THREE.Group,
-  data: Region3DData,
+  data: NativeRoadSceneData,
   pixels: Record<string, ImageData>,
   height: (x: number, y: number) => number,
 ) {

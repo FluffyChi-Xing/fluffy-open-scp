@@ -1,0 +1,412 @@
+  0           0 RESUME                   0
+
+  1           2 LOAD_CONST               0 ("Conservative, opt-in removal of exporter-generated 1 mm reverse triangles.\n\nThis is a geometry experiment, not a proven fix for the game's occlusion.\n")
+              4 STORE_NAME               0 (__doc__)
+
+  5           6 LOAD_CONST               1 (0)
+              8 LOAD_CONST               2 (None)
+             10 IMPORT_NAME              1 (numpy)
+             12 STORE_NAME               2 (np)
+
+  7          14 LOAD_CONST               3 ('preserve')
+             16 STORE_NAME               3 (PRESERVE)
+
+  8          18 LOAD_CONST               4 ('omit-verified-body-backs-v1')
+             20 STORE_NAME               4 (REDUCE)
+
+ 11          22 LOAD_NAME                3 (PRESERVE)
+             24 BUILD_TUPLE              1
+             26 LOAD_CONST               5 (<code object filter_body_backs at 0x000001C30B35FEC0, file "C:\Users\thunderobot\Desktop\# 软件\建筑资产\SC5 Asset Packager\geometry_policy.py", line 11>)
+             28 MAKE_FUNCTION            1 (defaults)
+             30 STORE_NAME               5 (filter_body_backs)
+             32 RETURN_CONST             2 (None)
+
+Disassembly of <code object filter_body_backs at 0x000001C30B35FEC0, file "C:\Users\thunderobot\Desktop\# 软件\建筑资产\SC5 Asset Packager\geometry_policy.py", line 11>:
+              0 MAKE_CELL               16 (a)
+              2 MAKE_CELL               17 (b)
+
+ 11           4 RESUME                   0
+
+ 12           6 LOAD_FAST                5 (policy)
+              8 LOAD_GLOBAL              0 (PRESERVE)
+             18 LOAD_GLOBAL              2 (REDUCE)
+             28 BUILD_TUPLE              2
+             30 CONTAINS_OP              1
+             32 POP_JUMP_IF_FALSE       23 (to 80)
+
+ 13          34 LOAD_GLOBAL              5 (NULL + ValueError)
+             44 LOAD_CONST               1 ('未知背面策略：')
+             46 LOAD_GLOBAL              7 (NULL + str)
+             56 LOAD_FAST                5 (policy)
+             58 CALL                     1
+             66 BINARY_OP                0 (+)
+             70 CALL                     1
+             78 RAISE_VARARGS            1
+
+ 14     >>   80 LOAD_GLOBAL              9 (NULL + np)
+             90 LOAD_ATTR               10 (asarray)
+            110 LOAD_FAST                2 (triangles)
+            112 CALL                     1
+            120 STORE_FAST               2 (triangles)
+
+ 15         122 LOAD_FAST                5 (policy)
+            124 LOAD_GLOBAL             13 (NULL + len)
+            134 LOAD_FAST                2 (triangles)
+            136 CALL                     1
+
+ 16         144 LOAD_CONST               2 (0)
+            146 BUILD_LIST               0
+
+ 15         148 LOAD_CONST               3 (('policy', 'inputTriangles', 'removedTriangles', 'examples'))
+            150 BUILD_CONST_KEY_MAP      4
+            152 STORE_FAST               6 (evidence)
+
+ 17         154 LOAD_FAST                5 (policy)
+            156 LOAD_GLOBAL              0 (PRESERVE)
+            166 COMPARE_OP              40 (==)
+            170 POP_JUMP_IF_FALSE        4 (to 180)
+
+ 18         172 LOAD_FAST                2 (triangles)
+            174 LOAD_FAST                6 (evidence)
+            176 BUILD_TUPLE              2
+            178 RETURN_VALUE
+
+ 19     >>  180 LOAD_FAST                4 (diagnostic)
+            182 LOAD_ATTR               15 (NULL|self + get)
+            202 LOAD_CONST               4 ('bodyBackfaceMode')
+            204 CALL                     1
+            212 LOAD_CONST               5 ('inset-1mm')
+            214 COMPARE_OP              55 (!=)
+            218 POP_JUMP_IF_FALSE       11 (to 242)
+
+ 20         220 LOAD_GLOBAL              5 (NULL + ValueError)
+            230 LOAD_CONST               6 ('阴影对照模式仅支持明确标记 inset-1mm 的插件导出资产')
+            232 CALL                     1
+            240 RAISE_VARARGS            1
+
+ 21     >>  242 LOAD_GLOBAL              9 (NULL + np)
+            252 LOAD_ATTR               10 (asarray)
+            272 LOAD_FAST                0 (positions)
+            274 LOAD_GLOBAL              8 (np)
+            284 LOAD_ATTR               16 (float64)
+            304 KW_NAMES                 7 (('dtype',))
+            306 CALL                     2
+            314 STORE_FAST               7 (p)
+
+ 22         316 LOAD_GLOBAL              9 (NULL + np)
+            326 LOAD_ATTR               10 (asarray)
+            346 LOAD_FAST                1 (normals)
+            348 LOAD_GLOBAL              8 (np)
+            358 LOAD_ATTR               16 (float64)
+            378 KW_NAMES                 7 (('dtype',))
+            380 CALL                     2
+            388 STORE_FAST               8 (n)
+
+ 23         390 LOAD_GLOBAL              9 (NULL + np)
+            400 LOAD_ATTR               18 (ones)
+            420 LOAD_GLOBAL             13 (NULL + len)
+            430 LOAD_FAST                2 (triangles)
+            432 CALL                     1
+            440 LOAD_GLOBAL             20 (bool)
+            450 KW_NAMES                 7 (('dtype',))
+            452 CALL                     2
+            460 STORE_FAST               9 (keep)
+
+ 25         462 LOAD_GLOBAL             23 (NULL + min)
+            472 LOAD_CONST               8 (0.0002)
+            474 LOAD_GLOBAL             25 (NULL + max)
+            484 LOAD_CONST               9 (2e-06)
+            486 LOAD_GLOBAL             27 (NULL + float)
+            496 LOAD_GLOBAL              9 (NULL + np)
+            506 LOAD_ATTR               24 (max)
+            526 LOAD_GLOBAL              9 (NULL + np)
+            536 LOAD_ATTR               28 (abs)
+            556 LOAD_FAST                7 (p)
+            558 CALL                     1
+            566 LOAD_CONST               2 (0)
+            568 KW_NAMES                10 (('initial',))
+            570 CALL                     2
+            578 CALL                     1
+            586 LOAD_CONST              11 (2.384185791015625e-07)
+            588 BINARY_OP                5 (*)
+            592 CALL                     2
+            600 CALL                     2
+            608 STORE_FAST              10 (tol)
+
+ 26         610 LOAD_CONST               2 (0)
+            612 STORE_FAST              11 (i)
+
+ 27         614 LOAD_FAST               11 (i)
+            616 LOAD_CONST              12 (1)
+            618 BINARY_OP                0 (+)
+            622 LOAD_GLOBAL             13 (NULL + len)
+            632 LOAD_FAST                2 (triangles)
+            634 CALL                     1
+            642 COMPARE_OP               2 (<)
+            646 EXTENDED_ARG             1
+            648 POP_JUMP_IF_FALSE      424 (to 1498)
+
+ 28     >>  650 LOAD_FAST                2 (triangles)
+            652 LOAD_FAST               11 (i)
+            654 BINARY_SUBSCR
+            658 LOAD_ATTR               31 (NULL|self + astype)
+            678 LOAD_GLOBAL             32 (int)
+            688 CALL                     1
+            696 STORE_DEREF             16 (a)
+
+ 29         698 LOAD_FAST                2 (triangles)
+            700 LOAD_FAST               11 (i)
+            702 LOAD_CONST              12 (1)
+            704 BINARY_OP                0 (+)
+            708 BINARY_SUBSCR
+            712 LOAD_CONST               0 (None)
+            714 LOAD_CONST               0 (None)
+            716 LOAD_CONST              13 (-1)
+            718 BUILD_SLICE              3
+            720 BINARY_SUBSCR
+            724 LOAD_ATTR               31 (NULL|self + astype)
+            744 LOAD_GLOBAL             32 (int)
+            754 CALL                     1
+            762 STORE_DEREF             17 (b)
+
+ 30         764 LOAD_FAST                8 (n)
+            766 LOAD_DEREF              16 (a)
+            768 BINARY_SUBSCR
+            772 STORE_FAST              12 (na)
+
+ 31         774 LOAD_GLOBAL              8 (np)
+            784 LOAD_ATTR               34 (linalg)
+            804 LOAD_ATTR               37 (NULL|self + norm)
+            824 LOAD_FAST               12 (na)
+            826 LOAD_CONST              12 (1)
+            828 KW_NAMES                14 (('axis',))
+            830 CALL                     2
+            838 STORE_FAST              13 (lengths)
+
+ 32         840 LOAD_GLOBAL             21 (NULL + bool)
+            850 LOAD_GLOBAL              9 (NULL + np)
+            860 LOAD_ATTR               38 (all)
+            880 LOAD_FAST               13 (lengths)
+            882 LOAD_CONST              15 (0.99)
+            884 COMPARE_OP              68 (>)
+            888 CALL                     1
+            896 COPY                     1
+            898 POP_JUMP_IF_FALSE       24 (to 948)
+            900 POP_TOP
+            902 LOAD_GLOBAL              9 (NULL + np)
+            912 LOAD_ATTR               38 (all)
+            932 LOAD_FAST               13 (lengths)
+            934 LOAD_CONST              16 (1.01)
+            936 COMPARE_OP               2 (<)
+            940 CALL                     1
+        >>  948 CALL                     1
+            956 STORE_FAST              14 (valid)
+
+ 33         958 LOAD_FAST               14 (valid)
+            960 POP_JUMP_IF_FALSE       86 (to 1134)
+
+ 34         962 LOAD_GLOBAL              9 (NULL + np)
+            972 LOAD_ATTR               40 (cross)
+            992 LOAD_FAST                7 (p)
+            994 LOAD_DEREF              16 (a)
+            996 LOAD_CONST              12 (1)
+            998 BINARY_SUBSCR
+           1002 BINARY_SUBSCR
+           1006 LOAD_FAST                7 (p)
+           1008 LOAD_DEREF              16 (a)
+           1010 LOAD_CONST               2 (0)
+           1012 BINARY_SUBSCR
+           1016 BINARY_SUBSCR
+           1020 BINARY_OP               10 (-)
+           1024 LOAD_FAST                7 (p)
+           1026 LOAD_DEREF              16 (a)
+           1028 LOAD_CONST              17 (2)
+           1030 BINARY_SUBSCR
+           1034 BINARY_SUBSCR
+           1038 LOAD_FAST                7 (p)
+           1040 LOAD_DEREF              16 (a)
+           1042 LOAD_CONST               2 (0)
+           1044 BINARY_SUBSCR
+           1048 BINARY_SUBSCR
+           1052 BINARY_OP               10 (-)
+           1056 CALL                     2
+           1064 STORE_FAST              15 (cross)
+
+ 35        1066 LOAD_GLOBAL             21 (NULL + bool)
+           1076 LOAD_GLOBAL              9 (NULL + np)
+           1086 LOAD_ATTR               42 (dot)
+           1106 LOAD_FAST               15 (cross)
+           1108 LOAD_FAST               15 (cross)
+           1110 CALL                     2
+           1118 LOAD_CONST              18 (1e-20)
+           1120 COMPARE_OP              68 (>)
+           1124 CALL                     1
+           1132 STORE_FAST              14 (valid)
+
+ 36     >> 1134 LOAD_FAST               14 (valid)
+           1136 POP_JUMP_IF_FALSE      100 (to 1338)
+
+ 37        1138 LOAD_GLOBAL             21 (NULL + bool)
+           1148 LOAD_GLOBAL              9 (NULL + np)
+           1158 LOAD_ATTR               44 (allclose)
+           1178 LOAD_FAST                8 (n)
+           1180 LOAD_DEREF              17 (b)
+           1182 BINARY_SUBSCR
+           1186 LOAD_FAST               12 (na)
+           1188 UNARY_NEGATIVE
+           1190 LOAD_CONST               2 (0)
+           1192 LOAD_CONST              19 (1e-05)
+           1194 KW_NAMES                20 (('rtol', 'atol'))
+           1196 CALL                     4
+           1204 COPY                     1
+           1206 POP_JUMP_IF_FALSE       60 (to 1328)
+           1208 POP_TOP
+
+ 38        1210 LOAD_GLOBAL              9 (NULL + np)
+           1220 LOAD_ATTR               44 (allclose)
+           1240 LOAD_FAST                7 (p)
+           1242 LOAD_DEREF              17 (b)
+           1244 BINARY_SUBSCR
+           1248 LOAD_FAST                7 (p)
+           1250 LOAD_DEREF              16 (a)
+           1252 BINARY_SUBSCR
+           1256 LOAD_FAST               12 (na)
+           1258 LOAD_CONST              21 (0.001)
+           1260 BINARY_OP                5 (*)
+           1264 BINARY_OP               10 (-)
+           1268 LOAD_CONST               2 (0)
+           1270 LOAD_FAST               10 (tol)
+           1272 KW_NAMES                20 (('rtol', 'atol'))
+           1274 CALL                     4
+
+ 37        1282 COPY                     1
+           1284 POP_JUMP_IF_FALSE       21 (to 1328)
+           1286 POP_TOP
+
+ 39        1288 LOAD_GLOBAL             39 (NULL + all)
+           1298 LOAD_CLOSURE            16 (a)
+           1300 LOAD_CLOSURE            17 (b)
+           1302 BUILD_TUPLE              2
+           1304 LOAD_CONST              22 (<code object <genexpr> at 0x000001C30B27C030, file "C:\Users\thunderobot\Desktop\# 软件\建筑资产\SC5 Asset Packager\geometry_policy.py", line 39>)
+           1306 MAKE_FUNCTION            8 (closure)
+
+ 40        1308 LOAD_FAST                3 (attributes)
+           1310 GET_ITER
+
+ 39        1312 CALL                     0
+           1320 CALL                     1
+
+ 37     >> 1328 CALL                     1
+           1336 STORE_FAST              14 (valid)
+
+ 41     >> 1338 LOAD_FAST               14 (valid)
+           1340 POP_JUMP_IF_FALSE       54 (to 1450)
+
+ 42        1342 LOAD_CONST              23 (False)
+           1344 LOAD_FAST                9 (keep)
+           1346 LOAD_FAST               11 (i)
+           1348 LOAD_CONST              12 (1)
+           1350 BINARY_OP                0 (+)
+           1354 STORE_SUBSCR
+
+ 43        1358 LOAD_GLOBAL             13 (NULL + len)
+           1368 LOAD_FAST                6 (evidence)
+           1370 LOAD_CONST              24 ('examples')
+           1372 BINARY_SUBSCR
+           1376 CALL                     1
+           1384 LOAD_CONST              25 (8)
+           1386 COMPARE_OP               2 (<)
+           1390 POP_JUMP_IF_FALSE       23 (to 1438)
+
+ 44        1392 LOAD_FAST                6 (evidence)
+           1394 LOAD_CONST              24 ('examples')
+           1396 BINARY_SUBSCR
+           1400 LOAD_ATTR               47 (NULL|self + append)
+           1420 LOAD_FAST               11 (i)
+           1422 LOAD_CONST              12 (1)
+           1424 BINARY_OP                0 (+)
+           1428 CALL                     1
+           1436 POP_TOP
+
+ 45     >> 1438 LOAD_FAST               11 (i)
+           1440 LOAD_CONST              17 (2)
+           1442 BINARY_OP               13 (+=)
+           1446 STORE_FAST              11 (i)
+           1448 JUMP_FORWARD             5 (to 1460)
+
+ 47     >> 1450 LOAD_FAST               11 (i)
+           1452 LOAD_CONST              12 (1)
+           1454 BINARY_OP               13 (+=)
+           1458 STORE_FAST              11 (i)
+
+ 27     >> 1460 LOAD_FAST               11 (i)
+           1462 LOAD_CONST              12 (1)
+           1464 BINARY_OP                0 (+)
+           1468 LOAD_GLOBAL             13 (NULL + len)
+           1478 LOAD_FAST                2 (triangles)
+           1480 CALL                     1
+           1488 COMPARE_OP               2 (<)
+           1492 POP_JUMP_IF_FALSE        2 (to 1498)
+           1494 EXTENDED_ARG             1
+           1496 JUMP_BACKWARD          424 (to 650)
+
+ 48     >> 1498 LOAD_GLOBAL             33 (NULL + int)
+           1508 LOAD_GLOBAL              9 (NULL + np)
+           1518 LOAD_ATTR               48 (count_nonzero)
+           1538 LOAD_FAST                9 (keep)
+           1540 UNARY_INVERT
+           1542 CALL                     1
+           1550 CALL                     1
+           1558 LOAD_FAST                6 (evidence)
+           1560 LOAD_CONST              26 ('removedTriangles')
+           1562 STORE_SUBSCR
+
+ 49        1566 LOAD_FAST               10 (tol)
+           1568 LOAD_FAST                6 (evidence)
+           1570 LOAD_CONST              27 ('positionToleranceMeters')
+           1572 STORE_SUBSCR
+
+ 50        1576 LOAD_FAST                2 (triangles)
+           1578 LOAD_FAST                9 (keep)
+           1580 BINARY_SUBSCR
+           1584 LOAD_FAST                6 (evidence)
+           1586 BUILD_TUPLE              2
+           1588 RETURN_VALUE
+
+Disassembly of <code object <genexpr> at 0x000001C30B27C030, file "C:\Users\thunderobot\Desktop\# 软件\建筑资产\SC5 Asset Packager\geometry_policy.py", line 39>:
+              0 COPY_FREE_VARS           2
+
+ 39           2 RETURN_GENERATOR
+              4 POP_TOP
+              6 RESUME                   0
+              8 LOAD_FAST                0 (.0)
+
+ 40     >>   10 FOR_ITER                70 (to 154)
+             14 STORE_FAST               1 (v)
+
+ 39          16 LOAD_GLOBAL              1 (NULL + np)
+             26 LOAD_ATTR                2 (array_equal)
+             46 LOAD_GLOBAL              1 (NULL + np)
+             56 LOAD_ATTR                4 (asarray)
+             76 LOAD_FAST                1 (v)
+             78 CALL                     1
+             86 LOAD_DEREF               2 (a)
+             88 BINARY_SUBSCR
+             92 LOAD_GLOBAL              1 (NULL + np)
+            102 LOAD_ATTR                4 (asarray)
+            122 LOAD_FAST                1 (v)
+            124 CALL                     1
+            132 LOAD_DEREF               3 (b)
+            134 BINARY_SUBSCR
+            138 CALL                     2
+            146 YIELD_VALUE              1
+            148 RESUME                   1
+            150 POP_TOP
+            152 JUMP_BACKWARD           72 (to 10)
+
+ 40     >>  154 END_FOR
+            156 RETURN_CONST             0 (None)
+        >>  158 CALL_INTRINSIC_1         3 (INTRINSIC_STOPITERATION_ERROR)
+            160 RERAISE                  1
+ExceptionTable:
+  6 to 156 -> 158 [0] lasti

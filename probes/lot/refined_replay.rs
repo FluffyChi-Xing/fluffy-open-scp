@@ -50,7 +50,14 @@ fn main() {
         .iter()
         .map(|hash| {
             color_at(&file, *hash)
-                .map(|c| [srgb(c[0]), srgb(c[1]), srgb(c[2]), c[3].clamp(0.0, 15.0) as u8])
+                .map(|c| {
+                    [
+                        srgb(c[0]),
+                        srgb(c[1]),
+                        srgb(c[2]),
+                        c[3].clamp(0.0, 15.0) as u8,
+                    ]
+                })
                 .unwrap_or([0, 0, 0, 0])
         })
         .collect();
@@ -91,7 +98,11 @@ fn main() {
             .unwrap_or_default()
     };
     let atlas_w = if atlas.is_empty() { 0 } else { 1024 };
-    let cell = if atlas.is_empty() { 64 } else { atlas_w / ATLAS_COLS };
+    let cell = if atlas.is_empty() {
+        64
+    } else {
+        atlas_w / ATLAS_COLS
+    };
     // 占位 tile：src/assets/ground/<n>.png（与前端 tile() 回退一致），预加载 16 格。
     let placeholder_dir = "src/assets/ground";
     let placeholders: Vec<Option<(usize, usize, Vec<u8>)>> = (0..16)
@@ -180,9 +191,7 @@ fn main() {
         args.lot_instance
     );
     let image = image::RgbaImage::from_raw(out_w as u32, out_h as u32, out).unwrap();
-    image
-        .save(format!("{}/{}", args.out_dir, name))
-        .unwrap();
+    image.save(format!("{}/{}", args.out_dir, name)).unwrap();
     println!("saved {}/{}", args.out_dir, name);
 
     // 区域裁决图（mask 原分辨率）：R=LC1 G=LC2 B=LC3 A=LC4，白=未覆盖。

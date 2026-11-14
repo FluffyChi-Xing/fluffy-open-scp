@@ -43,7 +43,9 @@ fn sdbm(data: &[u8]) -> u32 {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (path, targets) = args.split_first().expect("usage: shader_name_hash <package> [target...]");
+    let (path, targets) = args
+        .split_first()
+        .expect("usage: shader_name_hash <package> [target...]");
     let targets: Vec<u32> = targets
         .iter()
         .filter_map(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok())
@@ -58,7 +60,9 @@ fn main() {
         }
         cpp_count += 1;
         let entry = entry.clone();
-        let Ok(data) = package.read(&entry) else { continue };
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
         // 抽取 \0 结尾的标识符串（3~40 字符，字母/数字/下划线开头为字母）
         let mut start: Option<usize> = None;
         for (i, &b) in data.iter().enumerate() {
@@ -81,23 +85,43 @@ fn main() {
             }
         }
     }
-    println!("cpp resources: {cpp_count}, unique identifier strings: {}", names.len());
+    println!(
+        "cpp resources: {cpp_count}, unique identifier strings: {}",
+        names.len()
+    );
 
     // 找含投影/UV 数学关键字的 shader 源码并落盘
-    let keywords = ["frac(", "TEXCOORD", "worldToClip", "atlas", "Pallast", "facade"];
+    let keywords = [
+        "frac(",
+        "TEXCOORD",
+        "worldToClip",
+        "atlas",
+        "Pallast",
+        "facade",
+    ];
     let mut dumped = 0usize;
     for entry in package.entries() {
         if entry.id.type_id != CPP_TYPE {
             continue;
         }
         let entry = entry.clone();
-        let Ok(data) = package.read(&entry) else { continue };
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
         let text = String::from_utf8_lossy(&data);
-        let hits: Vec<&str> = keywords.iter().filter(|k| text.contains(*k)).copied().collect();
+        let hits: Vec<&str> = keywords
+            .iter()
+            .filter(|k| text.contains(*k))
+            .copied()
+            .collect();
         if hits.is_empty() {
             continue;
         }
-        let name = format!("cpp_0x{:08X}_{}.txt", entry.id.instance, hits.join("-").replace('(', ""));
+        let name = format!(
+            "cpp_0x{:08X}_{}.txt",
+            entry.id.instance,
+            hits.join("-").replace('(', "")
+        );
         std::fs::write(format!("tmp/shaders/{name}"), text.as_bytes()).ok();
         println!(
             "cpp 0x{:08X}: {} bytes, keywords [{}]",

@@ -5,13 +5,17 @@
 //! 用法：cargo run -p probes --release --example locale_own_table --
 //!   <in.package> <out.package>
 use dbpf::{OverlayEntry, Package, ResourceId};
-use sc_properties::locale::OPENSCP_LOCALE_TABLE;
 use sc_properties::locale::LOCALE_RESOURCE_TYPE;
+use sc_properties::locale::OPENSCP_LOCALE_TABLE;
 
 const VANILLA_TABLES: [u32; 3] = [0x4B54_417A, 0x50AA_0BEA, 0x6C96_9DEE];
 /// 这 5 个自定义串 ID 的表字段要改指；其余引用（原版串）一律不动。
 const CUSTOM_IDS: [u32; 5] = [
-    0x0494_EEC2, 0xBFCB_5E74, 0x32F3_974A, 0x7A43_0858, 0xC839_C746,
+    0x0494_EEC2,
+    0xBFCB_5E74,
+    0x32F3_974A,
+    0x7A43_0858,
+    0xC839_C746,
 ];
 
 fn patch_property(blob: &mut [u8]) -> usize {
@@ -61,7 +65,10 @@ fn main() {
         let mut data = data;
         if e.id.type_id == 0x00B1_B104 {
             let n = patch_property(&mut data);
-            println!("属性 {:08X}:{:08X}: 改指自有表 {} 处", e.id.type_id, e.id.instance, n);
+            println!(
+                "属性 {:08X}:{:08X}: 改指自有表 {} 处",
+                e.id.type_id, e.id.instance, n
+            );
         }
         entries.push(OverlayEntry::new(e.id, data));
     }
@@ -77,11 +84,7 @@ fn main() {
         ));
     }
     body.push('}');
-    println!(
-        "自有表 {:08X}: {} 词条",
-        OPENSCP_LOCALE_TABLE,
-        merged.len()
-    );
+    println!("自有表 {:08X}: {} 词条", OPENSCP_LOCALE_TABLE, merged.len());
     entries.push(OverlayEntry::new(
         ResourceId {
             type_id: LOCALE_RESOURCE_TYPE,

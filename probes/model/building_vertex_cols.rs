@@ -50,10 +50,18 @@ fn main() {
         }
     }
 
-    let mut csv = String::from("tri,x0,y0,z0,x1,y1,z1,x2,y2,z2,u0,v0,u1,v1,u2,v2,w0,z0_,w1,z1_,w2,z2_,col0,col1,col2\n");
+    let mut csv = String::from(
+        "tri,x0,y0,z0,x1,y1,z1,x2,y2,z2,u0,v0,u1,v1,u2,v2,w0,z0_,w1,z1_,w2,z2_,col0,col1,col2\n",
+    );
     for (i, tri) in mesh.triangles.iter().enumerate() {
-        let vs: Vec<_> = tri.iter().map(|&vi| &mesh.vertices[usize::from(vi)]).collect();
-        let pos: Vec<[f32; 3]> = vs.iter().map(|v| v.position().unwrap_or([0.0; 3])).collect();
+        let vs: Vec<_> = tri
+            .iter()
+            .map(|&vi| &mesh.vertices[usize::from(vi)])
+            .collect();
+        let pos: Vec<[f32; 3]> = vs
+            .iter()
+            .map(|v| v.position().unwrap_or([0.0; 3]))
+            .collect();
         let uv: Vec<[f32; 2]> = vs.iter().map(|v| v.uv().unwrap_or([0.0; 2])).collect();
         // uv2 = FLOAT4 TexCoord 的 zw（Top 层域，引擎 In.texcoord<t0>.zw）
         let uv2: Vec<[f32; 2]> = vs

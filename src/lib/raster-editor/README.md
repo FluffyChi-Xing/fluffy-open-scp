@@ -1,6 +1,11 @@
 # Raster 编辑契约
 
-独立菜单 `pages/studio/panels/raster.vue` 只组合 `components/raster/RasterEditor.vue`。
+独立菜单 `pages/studio/panels/raster.vue` 使用 `components/raster/RasterEditor.vue`，
+支持地面绘制（`lot-mask`）和贴花绘制（`decal-sign`）。
+贴花页首期开放招牌 / 广告牌。普通发光使用四色招牌 Shader，跑马灯使用 SDF
+Shader 的 `decalLightBackground` 扫光参数，依据 `docs/re/decal-engine-alignment.md` §十五。
+招牌草稿以可选的 `decal.sign` 保存效果、速度和扫光轴，旧草稿默认普通发光。
+跑马灯可导出 JSON 草稿和原始四色遮罩 PNG。游戏内播放还需要在 Lot 的贴花材质数据中写入动画速度。
 工作台 `RasterFlowTool.vue` 使用同一编辑器，以 `mode="flow"` 接收 `schema` 事件；
 将文档序列化到现有 `FlowSchema.config.document`，由父级 `save-node` 持久化。
 `asset` 继续保留原文件引用，编辑草稿优先于原文件参与建筑预览。
@@ -9,12 +14,14 @@
 
 | 模块 | 输入 / 输出与职责 |
 | --- | --- |
-| RasterProfilePicker | 用途值 → update:modelValue；建筑、Lot、Decal 分组 |
 | RasterSourcePanel | profile → create/image/schema/parameters；载入数据，不拥有编辑文档 |
 | RasterToolbar | 工具配置 v-model、undo/redo；通道与画笔参数 |
 | RasterCanvas | document/history → change/pick-color；像素事务与撤销 |
 | RasterParameterTable | 参数表 → update:modelValue；4 行 × N 列 float4 |
 | RasterMaterialPanel | lot/decal/sampling v-model → loadLot/loadDecal/changed |
+| DecalTypeTabs | 展示贴花类别及当前可用入口 |
+| RasterSignControls | 灯层、颜色、文字和发光设置 → 编辑动作 |
+| RasterDecalPreview | 贴花文档与发光设置 → 普通发光及扫光预览 |
 | RasterPreviewPanel | 只读 document/version/channel；原始通道与 Lot 染色示意 |
 | RasterPreviewCard | 预览标题、全屏 Sheet、焦点恢复与键盘关闭 |
 | RasterLotPreview | 当前原始 RGBA 与 Lot 配色 → PropertyEditorViewport 精细地面渲染；共享游戏地表/法线图集 |
@@ -33,6 +40,9 @@ JSON 包含用途、Lot 四组 RGB+tile、Decal 颜色/比例/字典/Entry ID、
 - slot1–5 为颜色控制、法线/AO、Shader Map、调色板、室内图集；不把车辆/其他 shader 自动视为 building4。
 - Lot 遮罩原始 A/R/G/B 分别映射 LC4/LC3/LC2/LC1，不能把 A 一概当透明度。
 - LotColor 的 Alpha 是 0–15 图案索引，不是覆盖率；地表图集是单独用途。
+- Lot 地面的用户模型（`src/lib/lot-ground/ground.ts`）只有"底图 + 最多 4 种材质（图集格 + 颜色）+ 米制尺寸"：
+  材质槽下标 = 遮罩通道 R/G/B/A，画笔只写 one-hot 通道，橡皮擦清空全部通道（露出底图）；
+  `lot.slots` 记录哪些槽已绑定材质，缺省时按遮罩覆盖推断。尺寸按 0.75 m/px 换算，保存时把 `lot.size` 作为 `lotSize` 传给后端。
 - Decal 用途是编辑语义，不会重写字典 MaterialId，也不生成 SDF 或配置投影/动画。
 - 独立通道绘制在记录历史之前恢复其他三个通道；通道预览不改原始像素。
 - PNG 使用 `png.ts` 直接编码；避免 Canvas 预乘 Alpha 抹掉透明像素里的 RGB 数据。

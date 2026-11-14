@@ -53,6 +53,8 @@ pub struct TriangleArrayHeader {
     pub unknown1: u32,
     pub index_count: u32,
     pub data_section: u32,
+    /// D3DFMT：101 = INDEX16，102 = INDEX32（社区工具产出；2026-10-31 Dalian 包实证）
+    pub index_format: u32,
 }
 
 /// VertexArray section 头（7×u32，有效字段 5 个）。
@@ -169,9 +171,9 @@ impl DecodedVertex {
 
     /// 是否带 FLOAT2 纹理坐标（真 UV；FLOAT4 世界投影坐标不算）。
     pub fn has_float2_uv(&self) -> bool {
-        self.components
-            .iter()
-            .any(|(e, v)| e.usage == DeclarationUsage::TexCoord && matches!(v, ComponentValue::Float2(_)))
+        self.components.iter().any(|(e, v)| {
+            e.usage == DeclarationUsage::TexCoord && matches!(v, ComponentValue::Float2(_))
+        })
     }
 
     /// D3DCOLOR 的 G 通道（调色板列号，C# AdvancedCollada 协议）。
@@ -200,7 +202,9 @@ impl DecodedVertex {
 pub struct DecodedMesh {
     pub number: u32,
     pub header: MeshHeader,
-    pub triangles: Vec<[u16; 3]>,
+    /// 三角形顶点 id。u32：原版大模型（Dalian 塔 105414 顶点，TA 标志 102）
+    /// 用 4 字节索引，超出 u16 范围。
+    pub triangles: Vec<[u32; 3]>,
     pub vertices: Vec<DecodedVertex>,
 }
 
@@ -248,7 +252,7 @@ impl Rw4File {
                         remap[pool_index] = vertices.len() as u32;
                         vertices.push(entry.clone());
                     }
-                    tri[k] = remap[pool_index] as u16;
+                    tri[k] = remap[pool_index];
                 }
             }
             triangles = remapped;
@@ -271,7 +275,7 @@ impl Rw4File {
         tri_section: u32,
         start_index: u32,
         index_count: u32,
-    ) -> Result<Vec<[u16; 3]>> {
+    ) -> Result<Vec<[u32; 3]>> {
         self.section_for(tri_section, "TA000", SectionType::TRIANGLE_ARRAY)?;
         let header = parse_triangle_array_header(self.payload(data, tri_section)?)?;
 
@@ -292,8 +296,11 @@ impl Rw4File {
         }
 
         let blob = self.blob_payload(data, header.data_section, "TA100")?;
-        let byte_from = start_index as usize * 2;
-        let needed = index_count as usize * 2;
+        let (index_size, byte_from, needed) = if header.index_format == 102 {
+            (4usize, start_index as usize * 4, index_count as usize * 4)
+        } else {
+            (2usize, start_index as usize * 2, index_count as usize * 2)
+        };
         if blob.len() < byte_from + needed {
             return Err(Error::InsufficientPayload {
                 check: "TA101",
@@ -301,13 +308,22 @@ impl Rw4File {
                 actual: blob.len(),
             });
         }
+        let read_index = |byte: usize| -> u32 {
+            if index_size == 4 {
+                u32::from_le_bytes(blob[byte..byte + 4].try_into().unwrap())
+            } else {
+                u16::from_le_bytes(blob[byte..byte + 2].try_into().unwrap()) as u32
+            }
+        };
         let mut triangles = Vec::with_capacity(index_count as usize / 3);
-        for tri in blob[byte_from..byte_from + needed].as_chunks::<6>().0 {
+        let mut cursor = byte_from;
+        for _ in 0..index_count as usize / 3 {
             triangles.push([
-                u16::from_le_bytes([tri[0], tri[1]]),
-                u16::from_le_bytes([tri[2], tri[3]]),
-                u16::from_le_bytes([tri[4], tri[5]]),
+                read_index(cursor),
+                read_index(cursor + index_size),
+                read_index(cursor + index_size * 2),
             ]);
+            cursor += index_size * 3;
         }
         Ok(triangles)
     }
@@ -442,13 +458,21 @@ pub(crate) fn parse_triangle_array_header(payload: &[u8]) -> Result<TriangleArra
     r.expect_u32(0, "TA001")?;
     let index_count = r.u32("TA_index_count")?;
     r.expect_u32(8, "TA002")?;
-    r.expect_u32(101, "TA003")?;
+    let index_format = r.u32("TA003")?;
+    if index_format != 101 && index_format != 102 {
+        return Err(Error::UnexpectedValue {
+            check: "TA003",
+            expected: 101,
+            actual: u64::from(index_format),
+        });
+    }
     r.expect_u32(4, "TA004")?;
     let data_section = read_section_ref(&mut r, "TA_section")?;
     Ok(TriangleArrayHeader {
         unknown1,
         index_count,
         data_section,
+        index_format,
     })
 }
 
@@ -475,7 +499,11 @@ mod tests {
     use super::*;
     use crate::vertex::DeclarationType;
 
-    fn vertex(usage: DeclarationUsage, decl_type: DeclarationType, value: ComponentValue) -> DecodedVertex {
+    fn vertex(
+        usage: DeclarationUsage,
+        decl_type: DeclarationType,
+        value: ComponentValue,
+    ) -> DecodedVertex {
         DecodedVertex {
             components: vec![(
                 VertexElement {

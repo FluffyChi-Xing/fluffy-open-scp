@@ -1,6 +1,15 @@
 import type * as ThreeNamespace from "three";
 import { isSharedGeometry } from "@/lib/three-gltf";
 import { createDepthOfFieldController } from "./viewerDepthOfField";
+import { DeferredDisposalQueue } from "./deferred-disposal";
+import { framePerf } from "./framePerf";
+import { buildOutlineHull } from "./viewerOutline";
+import { installLineLightPass } from "@/render/exec/three/lineLightPass";
+import {
+  primeAllTextures,
+  primeTexturesInBackground as primeTexturesBatched,
+  type TexturePrimingHost,
+} from "./viewerTexturePriming";
 
 export interface ViewerTapHit {
   /** 命中对象；null = 点在空白处（未命中任何内容）——编辑器据此取消选中。 */
@@ -133,31 +142,45 @@ export class ThreeViewer {
   private lastX = 0;
   private lastY = 0;
   private moved = 0;
+  /** 最近一次 hover 射线时间（30 Hz 节流；pointermove 在 WebView2 里可
+   *  远超帧率，逐事件递归 raycast 会吃掉整个相机帧的预算）。 */
+  private lastHoverAt = 0;
+  /** 是否已进入相机交互质量档（拖拽超过阈值才进，避免单击闪烁）。 */
+  private interactionActive = false;
+  /** 容器 CSS 尺寸缓存（ResizeObserver 维护）。worldToScreen 每帧被标签/
+   *  尺度标注调用多次，绝不能在投影里再读 getBoundingClientRect——那会
+   *  在写完 style.left 后强制同步布局（相机拖动的主要 CPU 抖动源）。 */
+  private containerWidth = 1;
+  private containerHeight = 1;
   /** 按需渲染脏标记：无变化不进 GPU（编辑器形态天然低频，rebuild 期间
    * 也不再与装配争抢主线程/GPU）。任何视觉变更都必须走 invalidate()。 */
   private needsRender = true;
   /** 摄像机工作台景深(仅 cameraControlled 链路;未启用 = 直渲,零开销)。 */
   private dof: ReturnType<typeof createDepthOfFieldController>;
   private assemblingScene = false;
+  private readonly deferredDisposals = new DeferredDisposalQueue(disposeObject);
+  /** 上一真实出画帧的时间戳（帧间隔 → 实测 FPS）。 */
+  private lastRenderAt = 0;
 
-  /** Do not compile/draw transient material and light combinations during assembly. */
   setSceneAssembling(value: boolean) {
     this.assemblingScene = value;
-    if (!value) this.invalidate();
+    if (!value) {
+      // 每轮装配收尾更新一次光源计数：快照里能看到"光源数 ↔ 帧成本"。
+      let lights = 0;
+      this.scene.traverse((object) => {
+        if ((object as ThreeNamespace.Light).isLight) lights += 1;
+      });
+      framePerf.setLights(lights);
+      this.invalidate();
+    }
   }
   /** 已预热纹理（initTexture 一次性上传去重）。 */
   private readonly primedTextures = new WeakSet<ThreeNamespace.Texture>();
 
-  /** 请求下一帧重绘（视觉变更后调用；相机/灯光等 viewer 内部方法已自带）。 */
   invalidate() {
     this.needsRender = true;
   }
 
-  /**
-   * 单纹理提前上传 GPU（initTexture）：首次 draw 不再承担该纹理的上传
-   * +mipmap 生成整帧冻结。大纹理（地面合成 2048²、facade 图集）在所属
-   * 装配线内调用 = 上传与其它线并发，不占汇合后的首帧。
-   */
   primeTexture(texture: ThreeNamespace.Texture): void {
     if (this.primedTextures.has(texture)) return;
     this.primedTextures.add(texture);
@@ -168,29 +191,24 @@ export class ThreeViewer {
     }
   }
 
-  /**
-   * 场景全量纹理预热（装配收尾调用）：遍历收集全部未上传纹理逐个
-   * initTexture——上传成本在放行首帧前一次性付清，首帧 draw 只剩 draw。
-   */
+  /** 纹理预热宿主（场景/已预热集合/单纹理上传的显式注入面）。 */
+  private textureHost(): TexturePrimingHost {
+    return {
+      scene: this.scene,
+      isPrimed: (texture) => this.primedTextures.has(texture),
+      primeTexture: (texture) => this.primeTexture(texture),
+      isDisposed: () => this.disposed,
+    };
+  }
+
+  /** 同步全量预热（保留给截图/测试等明确需要一次性上传的路径）。 */
   primeTextures(): void {
-    const materials: ThreeNamespace.Material[] = [];
-    this.scene.traverse((object) => {
-      const mesh = object as ThreeNamespace.Mesh;
-      if (!mesh.isMesh && !(object as ThreeNamespace.Sprite).isSprite) return;
-      const material = mesh.material as
-        | ThreeNamespace.Material
-        | ThreeNamespace.Material[]
-        | undefined;
-      if (!material) return;
-      if (Array.isArray(material)) materials.push(...material);
-      else materials.push(material);
-    });
-    for (const material of materials) {
-      for (const value of Object.values(material as unknown as Record<string, unknown>)) {
-        const texture = value as ThreeNamespace.Texture;
-        if (texture?.isTexture) this.primeTexture(texture);
-      }
-    }
+    primeAllTextures(this.textureHost());
+  }
+
+  /** 预算化后台预热（首帧后按 idle 切片补传，见 viewerTexturePriming）。 */
+  primeTexturesInBackground(isStale: () => boolean = () => false): void {
+    primeTexturesBatched(this.textureHost(), isStale);
   }
 
   /**
@@ -203,27 +221,23 @@ export class ThreeViewer {
    * "reading 'isReady'" 且 **promise 永不 settle**，管线（invalidate/
    * assembling 旗）随之挂死，场景冻在半成品帧（用户观测：部分建筑
    * 贴图乱码 + 控制台 isReady 报错）。故与 stale 看门狗 + 兜底超时
-   * race：过期调用不再阻塞场景；dispose 另外等待真实编译结束，
-   * 防止关闭/重开编辑 Sheet 时提前销毁轮询引用的材质。
+   * race：过期调用不再阻塞场景。
    */
-  private readonly pendingCompilations = new Set<Promise<unknown>>();
   private disposed = false;
-
   async prepareShaders(
     isStale: () => boolean = () => false,
     objects: ThreeNamespace.Object3D = this.scene,
   ): Promise<void> {
     if (this.disposed || isStale()) return;
-    // compileAsync in recent Three versions keeps an internal promise polling
-    // materialProperties.currentProgram. Rebuilding a Property Editor scene can
-    // dispose that material during the poll, producing an uncaught `isReady` read.
-    // The synchronous compiler is safe across scene generations; the watchdog and
-    // timeout still keep the rebuild responsive on slow drivers.
-    const compilation = Promise.resolve().then(() => {
-      if (!this.disposed && !isStale()) this.renderer.compile(objects, this.camera, this.scene);
-    }).catch(() => {});
-    this.pendingCompilations.add(compilation);
-    void compilation.finally(() => this.pendingCompilations.delete(compilation));
+    const compilation = new Promise<void>((resolve) => {
+      const run = () => {
+        if (!this.disposed && !isStale()) try { this.renderer.compile(objects, this.camera, this.scene); } catch { /* lazy draw fallback */ }
+        resolve();
+      };
+      const idle = (window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+      if (idle) idle(run, { timeout: 1000 });
+      else setTimeout(run, 32);
+    });
     let settled = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -258,9 +272,6 @@ export class ThreeViewer {
     }
     return this.prepareShaders(isStale, root);
   }
-
-  /** 主题色描边（品牌色 #0878FE，与 UI --brand 一致）。 */
-  private static readonly OUTLINE_COLOR = 0x0878fe;
 
   private hoverOutline: { target: ThreeNamespace.Object3D; hull: ThreeNamespace.Object3D } | null =
     null;
@@ -297,7 +308,7 @@ export class ThreeViewer {
       });
     }
     const entry = target
-      ? { target, hull: this.buildOutlineHull(target, kind) }
+      ? { target, hull: buildOutlineHull(this.THREE, target, kind, this.frameRadius) }
       : null;
     if (entry && target) target.add(entry.hull);
     if (kind === "hover") this.hoverOutline = entry;
@@ -305,95 +316,6 @@ export class ThreeViewer {
     this.needsRender = true;
   }
 
-  /** 轮廓壳构建：克隆目标子树的 mesh/group（跳过光源等非网格），共用几何。 */
-  private buildOutlineHull(
-    target: ThreeNamespace.Object3D,
-    kind: "hover" | "selected",
-  ): ThreeNamespace.Object3D {
-    const dashed = kind === "hover";
-    // 壳厚随取景半径缩放（近似恒定屏幕厚度）
-    const width = Math.max(this.frameRadius, 1) * (dashed ? 0.005 : 0.01);
-    // 壳体逐 mesh 构建以继承各自的漫反射贴图——alpha 镂空网格（树叶卡）
-    // 的壳体须同步 alphaTest 抠透，否则描边色从镂空缝隙整面透出
-    //（真机：树冠蓝色棋盘格，2026-10-06）。
-    const shellMaterial = (mesh: ThreeNamespace.Mesh) => {
-      const srcMaterial = Array.isArray(mesh.material)
-        ? mesh.material[0]
-        : mesh.material;
-      const map =
-        (srcMaterial as ThreeNamespace.MeshStandardMaterial | undefined)?.map ??
-        null;
-      return new this.THREE.ShaderMaterial({
-        uniforms: {
-          uColor: { value: new this.THREE.Color(ThreeViewer.OUTLINE_COLOR) },
-          uWidth: { value: width },
-          uDash: { value: dashed ? 1 : 0 },
-          uMap: { value: map },
-          uHasMap: { value: map ? 1 : 0 },
-        },
-        vertexShader: `
-          varying vec2 vUv;
-          uniform float uWidth;
-          void main() {
-            vUv = uv;
-            vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            vec3 n = normalize(normalMatrix * normal);
-            mv.xyz += n * uWidth;
-            gl_Position = projectionMatrix * mv;
-          }`,
-        fragmentShader: `
-          varying vec2 vUv;
-          uniform vec3 uColor;
-          uniform float uDash;
-          uniform sampler2D uMap;
-          uniform float uHasMap;
-          void main() {
-            if (uHasMap > 0.5 && texture2D(uMap, vUv).a < 0.5) discard;
-            if (uDash > 0.5 && mod(floor(gl_FragCoord.x / 9.0) + floor(gl_FragCoord.y / 9.0), 2.0) < 1.0) discard;
-            gl_FragColor = vec4(uColor, 1.0);
-          }`,
-        side: this.THREE.BackSide,
-      });
-    };
-    const shellFor = (mesh: ThreeNamespace.Mesh, inheritTransform: boolean) => {
-      const shell = new this.THREE.Mesh(mesh.geometry, shellMaterial(mesh));
-      if (inheritTransform) {
-        shell.position.copy(mesh.position);
-        shell.quaternion.copy(mesh.quaternion);
-        shell.scale.copy(mesh.scale);
-      }
-      return shell;
-    };
-    const hull = new this.THREE.Group();
-    hull.name = "__outlineHull";
-    // 目标本身是 Mesh（锥体/占位人形等 buildUnitObject 直出）：壳挂恒等
-    // 变换——hull 已是 target 子级，target 自带变换；再复制本地变换会双重
-    // 叠加（真机：轮廓偏移到两倍位置）。
-    if ((target as ThreeNamespace.Mesh).isMesh) {
-      hull.add(shellFor(target as ThreeNamespace.Mesh, false));
-      return hull;
-    }
-    const walk = (src: ThreeNamespace.Object3D, dst: ThreeNamespace.Object3D) => {
-      for (const child of [...src.children]) {
-        const mesh = child as ThreeNamespace.Mesh;
-        if (mesh.isMesh) {
-          dst.add(shellFor(mesh, true));
-        } else if (
-          (child as ThreeNamespace.Object3D & { isGroup?: boolean }).isGroup
-        ) {
-          const group = new this.THREE.Group();
-          group.position.copy(child.position);
-          group.quaternion.copy(child.quaternion);
-          group.scale.copy(child.scale);
-          dst.add(group);
-          walk(child, group);
-        }
-        // 光源/线条等其他类型跳过（路径线无轮廓语义）
-      }
-    };
-    walk(target, hull);
-    return hull;
-  }
 
   /** 登记悬停拾取目标（unit 图层组根）；空数组关闭 hover 拾取。 */
   setHoverTargets(targets: ThreeNamespace.Object3D[]) {
@@ -434,10 +356,9 @@ export class ThreeViewer {
     vector: ThreeNamespace.Vector3,
   ): { x: number; y: number; behind: boolean } {
     const projected = vector.clone().project(this.camera);
-    const rect = this.container.getBoundingClientRect();
     return {
-      x: ((projected.x + 1) / 2) * rect.width,
-      y: ((1 - projected.y) / 2) * rect.height,
+      x: ((projected.x + 1) / 2) * this.containerWidth,
+      y: ((1 - projected.y) / 2) * this.containerHeight,
       behind: projected.z > 1 || projected.z < -1,
     };
   }
@@ -466,10 +387,21 @@ export class ThreeViewer {
       alpha: true,
       powerPreference: "high-performance",
     });
+    installLineLightPass(THREE, this.scene, this.renderer, () => this.groups.get("lights"));
     // 默认限制高 DPR 屏的片元成本；精细编辑器可显式提高上限。
     this.renderer.setPixelRatio(
       Math.min(window.devicePixelRatio, options.maxPixelRatio ?? 1.5),
     );
+    try {
+      const gl = this.renderer.getContext();
+      const ext = gl.getExtension("WEBGL_debug_renderer_info");
+      const label = ext
+        ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)
+        : gl.getParameter(gl.RENDERER);
+      framePerf.setGpu(String(label ?? "unknown"));
+    } catch {
+      framePerf.setGpu("unknown");
+    }
     container.appendChild(this.renderer.domElement);
 
     // 三灯白模布光：key 跟随滑杆，fill/rim 固定相对方向，保证无贴图也有立体感。
@@ -512,6 +444,7 @@ export class ThreeViewer {
     container.addEventListener("pointerup", this.onPointerUp);
     container.addEventListener("pointercancel", this.onPointerUp);
     container.addEventListener("wheel", this.onWheel, { passive: false });
+    container.addEventListener("contextmenu", this.onContextMenu);
     // 中键默认触发 Chromium/WebView2 自动滚动，需在 mousedown 阶段拦截。
     container.addEventListener("mousedown", this.onMouseDown);
     this.observer = new ResizeObserver(() => this.resize());
@@ -537,7 +470,7 @@ export class ThreeViewer {
     if (!group) return;
     for (const child of [...group.children]) {
       group.remove(child);
-      disposeObject(child);
+      this.deferredDisposals.enqueue(child);
     }
   }
 
@@ -727,8 +660,13 @@ export class ThreeViewer {
    * 重建后重调只为给新网格补 castShadow 标；材质重编译仅在状态切换时。
    */
   setShadowsEnabled(enabled: boolean) {
+    if (!enabled) {
+      this.interactionShadowState = false;
+      this.renderer.shadowMap.autoUpdate = true;
+    }
     const changed = this.renderer.shadowMap.enabled !== enabled;
     this.renderer.shadowMap.enabled = enabled;
+    if (enabled) this.renderer.shadowMap.autoUpdate = true;
     // PCFSoft 已被 three 弃用（内部直接转 PCF，还刷弃用告警）——直用 PCF
     this.renderer.shadowMap.type = this.THREE.PCFShadowMap;
     this.keyLight.castShadow = enabled;
@@ -750,7 +688,6 @@ export class ThreeViewer {
     this.needsRender = true;
   }
 
-  /** 环境亮度倍率（日/夜模拟）：0 ≈ 夜、1 = 默认观感、2 ≈ 正午。 */
   setEnvironmentBrightness(brightness: number) {
     const scale = Math.max(0, brightness);
     this.keyLight.intensity = KEY_LIGHT_INTENSITY * scale;
@@ -783,14 +720,12 @@ export class ThreeViewer {
   }
 
   private orbit(dx: number, dy: number) {
-    this.beginCameraInteraction();
     this.orbitTheta -= (dx * Math.PI) / 180 * 0.6;
     this.orbitPhi -= (dy * Math.PI) / 180 * 0.6;
     this.applyCamera();
   }
 
   private pan(dx: number, dy: number) {
-    this.beginCameraInteraction();
     // 沿相机 right/up 平移轨道目标，步长随相机距离缩放。
     const scale = this.cameraDistance * 0.0016;
     const right = new this.THREE.Vector3().setFromMatrixColumn(
@@ -817,9 +752,6 @@ export class ThreeViewer {
 
   private onPointerDown = (event: PointerEvent) => {
     if (this.pointerActive) return;
-    // 覆盖层 UI（name-tag 删除钮等）按下不启动轨道/指针捕获——容器
-    // setPointerCapture 会把后续 pointerup 重定位到容器，click 落在
-    // 公共祖先=容器上，按钮收不到（真机：删除钮失效，2026-10-06）。
     if (event.target !== this.renderer.domElement) return;
     if (!this.orbitEnabled) return;
     this.pointerActive = true;
@@ -828,7 +760,6 @@ export class ThreeViewer {
     this.lastX = event.clientX;
     this.lastY = event.clientY;
     this.moved = 0;
-    // 拖拽期间悬停框无意义，清掉
     this.setHovered(null);
     this.container.setPointerCapture(event.pointerId);
   };
@@ -840,15 +771,21 @@ export class ThreeViewer {
       this.lastX = event.clientX;
       this.lastY = event.clientY;
       this.moved += Math.abs(dx) + Math.abs(dy);
-      if (this.pointerButton === 1 || (this.pointerButton === 0 && this.pointerShift)) {
+      // 相机直接在输入事件里落地（不累积到下一帧）：orbit/pan 只是几次
+      // 向量运算，提前一帧应用可消除拖拽时整帧的输入→画面延迟。
+      if (this.moved > 4) this.beginCameraInteraction();
+      if (this.pointerButton === 1 || this.pointerButton === 2 || (this.pointerButton === 0 && this.pointerShift)) {
         this.pan(dx, dy);
       } else if (this.pointerButton === 0) {
         this.orbit(dx, dy);
       }
       return;
     }
-    // 非拖拽悬停：仅对登记目标做轻量拾取（unit 图层组，不含建筑/地面）
     if (!this.orbitEnabled || !this.options.onHover) return;
+    // 30 Hz 上限：hover 只需跟手，不需要每个 pointermove 都递归射线检测。
+    const now = performance.now();
+    if (now - this.lastHoverAt < 33) return;
+    this.lastHoverAt = now;
     this.setHovered(this.raycastTargets(event, this.hoverTargets));
   };
 
@@ -858,7 +795,6 @@ export class ThreeViewer {
     this.options.onHover?.(object ? { object } : null);
   }
 
-  /** 对目标根列表做射线拾取（回收里向上找 unitId 由使用方负责）。 */
   private raycastTargets(
     event: { clientX: number; clientY: number },
     targets: ThreeNamespace.Object3D[],
@@ -877,13 +813,19 @@ export class ThreeViewer {
   private onPointerUp = (event: PointerEvent) => {
     if (!this.pointerActive) return;
     this.pointerActive = false;
+    // 只有真正进入过交互档（拖拽超过阈值/滚轮）才需要恢复全质量。
+    if (this.interactionActive) this.scheduleQualityRestore();
     const isTap =
       this.pointerButton === 0 && !this.pointerShift && this.moved < 4;
     if (isTap) this.pick(event);
   };
 
   private onMouseDown = (event: MouseEvent) => {
-    if (event.button === 1) event.preventDefault();
+    if (event.button === 1 || event.button === 2) event.preventDefault();
+  };
+
+  private onContextMenu = (event: MouseEvent) => {
+    if (this.orbitEnabled) event.preventDefault();
   };
 
   private pick(event: PointerEvent) {
@@ -912,6 +854,8 @@ export class ThreeViewer {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     if (width === 0 || height === 0) return;
+    this.containerWidth = width;
+    this.containerHeight = height;
     this.renderer.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -920,17 +864,39 @@ export class ThreeViewer {
   }
 
   private qualityRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+  private interactionShadowState = false;
 
   private beginCameraInteraction() {
+    if (this.interactionActive) return;
+    this.interactionActive = true;
     const limit = this.options.interactionPixelRatio;
-    if (limit === undefined) return;
-    const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
-    const moving = Math.min(full, limit);
-    if (this.renderer.getPixelRatio() !== moving) this.renderer.setPixelRatio(moving);
+    if (limit !== undefined) {
+      const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
+      const moving = Math.min(full, limit);
+      if (this.renderer.getPixelRatio() !== moving) this.renderer.setPixelRatio(moving);
+    }
+    if (this.renderer.shadowMap.enabled && this.keyLight.castShadow) {
+      this.interactionShadowState = true;
+      this.renderer.shadowMap.autoUpdate = false;
+    }
+    this.scheduleQualityRestore();
+  }
+
+  private scheduleQualityRestore() {
     if (this.qualityRestoreTimer !== null) clearTimeout(this.qualityRestoreTimer);
     this.qualityRestoreTimer = setTimeout(() => {
       this.qualityRestoreTimer = null;
+      if (this.pointerActive) {
+        this.scheduleQualityRestore();
+        return;
+      }
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
+      if (this.interactionShadowState) {
+        this.renderer.shadowMap.autoUpdate = true;
+        this.renderer.shadowMap.needsUpdate = true;
+        this.interactionShadowState = false;
+      }
+      this.interactionActive = false;
       this.invalidate();
     }, 180);
   }
@@ -939,15 +905,23 @@ export class ThreeViewer {
     this.frame = requestAnimationFrame(this.renderLoop);
     if (this.assemblingScene || !this.needsRender) return;
     this.needsRender = false;
+    const now = performance.now();
+    const interval = this.lastRenderAt > 0 ? now - this.lastRenderAt : 0;
+    this.lastRenderAt = now;
+    const started = performance.now();
     this.dof.render(() => this.renderer.render(this.scene, this.camera));
-    // 渲染后回调：屏幕空间 overlay（选中/悬停描边框）在此跟随相机
+    framePerf.recordFrame(performance.now() - started, interval, {
+      calls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      programs: this.renderer.info.programs?.length ?? 0,
+      textures: this.renderer.info.memory.textures,
+      geometries: this.renderer.info.memory.geometries,
+      dpr: this.renderer.getPixelRatio(),
+    });
     this.onFrameCb?.();
   };
 
-  /**
-   * 视口截图：隐藏指定图层组 → 立即渲染 → canvas.toDataURL（PNG）→
-   * 恢复可见性。需在渲染后同一同步段读取（未开 preserveDrawingBuffer）。
-   */
+  /** 视口截图；需在渲染后同一同步段读取。 */
   captureScreenshot(excludeGroups: string[] = []): string | null {
     const previousRatio = this.renderer.getPixelRatio();
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
@@ -970,7 +944,6 @@ export class ThreeViewer {
       this.invalidate();
     }
   }
-
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
@@ -983,18 +956,13 @@ export class ThreeViewer {
     this.container.removeEventListener("pointercancel", this.onPointerUp);
     this.container.removeEventListener("wheel", this.onWheel);
     this.container.removeEventListener("mousedown", this.onMouseDown);
-    // Three's async shader poll still references material properties. Detach UI
-    // now, but release GPU/material objects only once those polls have settled.
-    const release = () => {
-      disposeObject(this.scene);
-      this.grid?.geometry.dispose();
-      (this.grid?.material as ThreeNamespace.Material | null)?.dispose();
-      this.keyLight.dispose();
-      this.dof.dispose();
-      this.renderer.dispose();
-    };
-    if (this.pendingCompilations.size) void Promise.allSettled([...this.pendingCompilations]).then(release);
-    else release();
+    this.container.removeEventListener("contextmenu", this.onContextMenu);
+    const roots = [...this.scene.children];
+    this.scene.clear();
+    for (const root of roots) this.deferredDisposals.enqueue(root);
+    this.dof.dispose();
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 }

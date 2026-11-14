@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use image::{Rgb, RgbImage};
-use sc_properties::region_map::{ed_grid_for_region, WATER_LEVEL, SHARED_TILE_GRID};
+use sc_properties::region_map::{SHARED_TILE_GRID, WATER_LEVEL, ed_grid_for_region};
 
 const HALF: f32 = 16384.0;
 const CELL: f32 = 8.0;
@@ -56,14 +56,26 @@ fn main() {
             0x03E4_21F0 => {
                 if let Ok(d) = p.read(e) {
                     if d.len() == 131092 {
-                        f0.insert(e.id.instance, d[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
+                        f0.insert(
+                            e.id.instance,
+                            d[20..]
+                                .chunks_exact(2)
+                                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                                .collect(),
+                        );
                     }
                 }
             }
             0x03E4_21ED => {
                 if let Ok(d) = p.read(e) {
                     if d.len() == 65556 {
-                        ed.insert(e.id.instance, d[20..].chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect());
+                        ed.insert(
+                            e.id.instance,
+                            d[20..]
+                                .chunks_exact(4)
+                                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                                .collect(),
+                        );
                     }
                 }
             }
@@ -97,7 +109,8 @@ fn main() {
     let mut results: Vec<(f64, bool, bool)> = Vec::new();
     for fx in [false, true] {
         for fy in [false, true] {
-            let (mut sx, mut sy, mut sxx, mut syy, mut sxy, mut n) = (0f64, 0f64, 0f64, 0f64, 0f64, 0f64);
+            let (mut sx, mut sy, mut sxx, mut syy, mut sxy, mut n) =
+                (0f64, 0f64, 0f64, 0f64, 0f64, 0f64);
             for y in 1..wm - 1 {
                 for x in 1..wm - 1 {
                     let mx = if fx { wm - 1 - x } else { x };
@@ -121,7 +134,8 @@ fn main() {
                 }
             }
             let cov = sxy / n - (sx / n) * (sy / n);
-            let r = cov / ((sxx / n - (sx / n).powi(2)).sqrt() * (syy / n - (sy / n).powi(2)).sqrt());
+            let r =
+                cov / ((sxx / n - (sx / n).powi(2)).sqrt() * (syy / n - (sy / n).powi(2)).sqrt());
             println!("帧 fx={fx} fy={fy}: corr(b1, flat) = {r:.4}  (n={n})");
             results.push((r, fx, fy));
         }
@@ -157,14 +171,26 @@ fn render_full(
             0x03E4_21F0 => {
                 if let Ok(d) = p.read(e) {
                     if d.len() == 131092 {
-                        f0.insert(e.id.instance, d[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
+                        f0.insert(
+                            e.id.instance,
+                            d[20..]
+                                .chunks_exact(2)
+                                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                                .collect(),
+                        );
                     }
                 }
             }
             0x03E4_21ED => {
                 if let Ok(d) = p.read(e) {
                     if d.len() == 65556 {
-                        ed.insert(e.id.instance, d[20..].chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect());
+                        ed.insert(
+                            e.id.instance,
+                            d[20..]
+                                .chunks_exact(4)
+                                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                                .collect(),
+                        );
                     }
                 }
             }
@@ -247,12 +273,18 @@ fn render_full(
             } else {
                 let grass = ed1[(y * 2) * w + (x * 2)];
                 let desert = false; // 逐区域判定在正式管线内，这里直接看草
-                let grass_k = if desert { 0.0 } else { (grass as f32 / 120.0).clamp(0.0, 1.0) };
+                let grass_k = if desert {
+                    0.0
+                } else {
+                    (grass as f32 / 120.0).clamp(0.0, 1.0)
+                };
                 let slope = ((dx * dx + dy * dy) as f32).sqrt() / 60.0;
                 let slope_k = (slope / 1.6).clamp(0.0, 1.0);
                 let g_amt = (grass_k * (1.0 - slope_k * 0.85)).clamp(0.0, 1.0);
                 if rel < 350 {
-                    r = 190.0; g = 175.0; b = 130.0;
+                    r = 190.0;
+                    g = 175.0;
+                    b = 130.0;
                 } else {
                     let t = ((rel - 350) as f32 / 6000.0).clamp(0.0, 1.0);
                     let rock_r = 150.0 + 50.0 * t;
@@ -264,7 +296,9 @@ fn render_full(
                 }
             }
             let shade = 0.45 + 0.55 * light;
-            r *= shade; g *= shade; b *= shade;
+            r *= shade;
+            g *= shade;
+            b *= shade;
             img.put_pixel(x as u32, y as u32, Rgb([r as u8, g as u8, b as u8]));
         }
     }

@@ -13,7 +13,9 @@ fn main() {
         r"D:/ea-games/SimCity/SimCityData/SimCityDataEP1.package",
         r"D:/ea-games/SimCity/SimCityData/SimCity_DLC0.package",
     ] {
-        let Ok(package) = Package::open(path) else { continue };
+        let Ok(package) = Package::open(path) else {
+            continue;
+        };
         for entry in package.entries().iter() {
             if targets.contains(&entry.id.instance) {
                 println!(

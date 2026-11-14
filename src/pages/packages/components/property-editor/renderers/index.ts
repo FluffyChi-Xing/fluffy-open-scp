@@ -1,28 +1,38 @@
 import type * as ThreeNamespace from "three";
 import type { LotUnitDto } from "@/api/tauri";
-import { renderPropUnit } from "./propRenderer";
-import { renderSpawnerUnit } from "./spawnerRenderer";
-import { renderTreeUnit } from "./treeRenderer";
+import { executeUnitPlan } from "@/render/exec/three/units";
+import { planUnit } from "@/render/plan/units";
 import type { UnitRenderContext, UnitRenderer } from "./types";
 
 /**
- * 精细模式资产渲染分发：按注册序逐渲染器尝试，首个产出非 null 者胜出。
- * 渲染器自持适用判定（kind/模式/资产齐备），返回 null = 不适用或降级，
- * 调用方统一退标记锥（buildUnitObject）。
+ * 精细模式资产渲染分发（2026-10-31 迁移收尾）。
  *
- * 新组件渲染器：本目录建文件 + 注册进 RENDERERS 即可，不改 Viewport。
+ * 判定与参数选择 → `src/render/plan/units.ts`（纯函数）；
+ * three 装配 → `src/render/exec/three/units.ts`（唯一副作用层）。
+ * 本文件仅保留 `renderRefinedAssetUnit` 兼容入口，不再经过 adapters 桥。
  */
-const RENDERERS: UnitRenderer[] = [renderTreeUnit, renderPropUnit, renderSpawnerUnit];
-
 export async function renderRefinedAssetUnit(
   ctx: UnitRenderContext,
   unit: LotUnitDto,
 ): Promise<ThreeNamespace.Object3D | null> {
-  for (const render of RENDERERS) {
-    const object = await render(ctx, unit);
-    if (object) return object;
-  }
-  return null;
+  const plan = planUnit(unit, {
+    renderMode: ctx.renderMode,
+    treeIds: ctx.treeIds,
+    propModels: ctx.propModels,
+    addedModelPayloads: ctx.addedModelPayloads,
+    treeModelPayloadCount: ctx.treeModelPayloads.length,
+    simPartsCount: ctx.simParts.length,
+  });
+  if (!plan) return null;
+  return executeUnitPlan(plan, unit, {
+    THREE: ctx.THREE,
+    propModels: ctx.propModels,
+    addedModelPayloads: ctx.addedModelPayloads,
+    treeModelPayloads: ctx.treeModelPayloads,
+    treeAtlasPng: ctx.treeAtlasPng,
+    envRefs: ctx.envRefs,
+    simParts: ctx.simParts,
+  });
 }
 
 export type { UnitRenderContext, UnitRenderer };

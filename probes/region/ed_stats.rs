@@ -10,15 +10,30 @@ fn main() {
     for e in p.entries() {
         if e.id.type_id == 0x03E4_21ED && e.id.group == group {
             let data = p.read(e).unwrap();
-            if data.len() < 20 { continue; }
+            if data.len() < 20 {
+                continue;
+            }
             for c in data[20..].chunks_exact(4) {
                 let v = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
-                for k in 0..4 { if (v >> (k * 8)) & 0xFF != 0 { ch_nz[k] += 1; } }
-                if samples.len() < 24 && v != 0 { samples.push(v); }
+                for k in 0..4 {
+                    if (v >> (k * 8)) & 0xFF != 0 {
+                        ch_nz[k] += 1;
+                    }
+                }
+                if samples.len() < 24 && v != 0 {
+                    samples.push(v);
+                }
                 total += 1;
             }
         }
     }
     println!("cells={total} nonzero per byte-channel: {ch_nz:?}");
-    println!("samples: {:?}", samples.iter().map(|v| format!("{v:08X}")).take(24).collect::<Vec<_>>());
+    println!(
+        "samples: {:?}",
+        samples
+            .iter()
+            .map(|v| format!("{v:08X}"))
+            .take(24)
+            .collect::<Vec<_>>()
+    );
 }

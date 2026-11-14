@@ -8,11 +8,27 @@ fn main() {
                 println!("== {path}");
                 println!(
                     "  layout={}.{} layoutRecord={} flag={} rules={} subs={} recA={} recB={} recC={} consts={} d={}/{} e={}/{} blob={} exact={}",
-                    s.major, s.minor, s.layout, s.flag, s.rule_count, s.rule_name_hashes.len(),
-                    s.rec_a_count, s.rec_b_count, s.rec_c_count, s.constant_count,
-                    s.d_objects, s.d_entries, s.e_objects, s.e_entries, s.blob_length, s.exact
+                    s.major,
+                    s.minor,
+                    s.layout,
+                    s.flag,
+                    s.rule_count,
+                    s.rule_name_hashes.len(),
+                    s.rec_a_count,
+                    s.rec_b_count,
+                    s.rec_c_count,
+                    s.constant_count,
+                    s.d_objects,
+                    s.d_entries,
+                    s.e_objects,
+                    s.e_entries,
+                    s.blob_length,
+                    s.exact
                 );
-                println!("  strings: {:?}", s.strings.iter().take(8).collect::<Vec<_>>());
+                println!(
+                    "  strings: {:?}",
+                    s.strings.iter().take(8).collect::<Vec<_>>()
+                );
             }
             Err(e) => println!("== {path}\n  ERR: {e}"),
         }

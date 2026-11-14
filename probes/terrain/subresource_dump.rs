@@ -6,8 +6,8 @@ use dbpf::Package;
 use sc_properties::{Kind, PropertyFile, Value};
 
 fn main() {
-    let p = Package::open("D:/ea-games/SimCity/SimCityData/SimCity_RegionTerrain0.package")
-        .unwrap();
+    let p =
+        Package::open("D:/ea-games/SimCity/SimCityData/SimCity_RegionTerrain0.package").unwrap();
     for group in [0xBEAF_0510u32, 0xD01F_A985] {
         println!("\n====== 区域 {:08X} ======", group);
         for e in p.entries() {
@@ -15,11 +15,20 @@ fn main() {
                 continue;
             }
             let Ok(data) = p.read(e) else { continue };
-            let Ok(pf) = PropertyFile::parse(&data) else { continue };
-            let Some(Some(name)) = pf.values.iter().find(|pr| pr.hash == 0x00B2_CCCA).map(|pr| match &pr.kind {
-                Kind::Scalar(Value::String8(s)) => Some(s.clone()),
-                _ => None,
-            }) else { continue };
+            let Ok(pf) = PropertyFile::parse(&data) else {
+                continue;
+            };
+            let Some(Some(name)) = pf
+                .values
+                .iter()
+                .find(|pr| pr.hash == 0x00B2_CCCA)
+                .map(|pr| match &pr.kind {
+                    Kind::Scalar(Value::String8(s)) => Some(s.clone()),
+                    _ => None,
+                })
+            else {
+                continue;
+            };
             if name == "region" {
                 continue;
             }
@@ -34,26 +43,38 @@ fn main() {
                 _ => None,
             });
             let brush_keys = pf.get(0x02A9_07B5).and_then(|pr| match &pr.kind {
-                Kind::Array(vs) => Some(vs.iter().filter_map(|v| match v {
-                    Value::Key(k) => Some(format!("{:08X}", k.instance)),
-                    _ => None,
-                }).collect::<Vec<_>>()),
+                Kind::Array(vs) => Some(
+                    vs.iter()
+                        .filter_map(|v| match v {
+                            Value::Key(k) => Some(format!("{:08X}", k.instance)),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                ),
                 _ => None,
             });
             let transforms = pf.get(0x02A9_07B6).and_then(|pr| match &pr.kind {
-                Kind::Array(vs) => Some(vs.iter().filter_map(|v| match v {
-                    Value::Transform(t) if t.matrix.len() >= 11 => {
-                        Some(format!("({:.0},{:.0})", t.matrix[9], t.matrix[10]))
-                    }
-                    _ => None,
-                }).collect::<Vec<_>>()),
+                Kind::Array(vs) => Some(
+                    vs.iter()
+                        .filter_map(|v| match v {
+                            Value::Transform(t) if t.matrix.len() >= 11 => {
+                                Some(format!("({:.0},{:.0})", t.matrix[9], t.matrix[10]))
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                ),
                 _ => None,
             });
             let strengths = pf.get(0x03A2_3F97).and_then(|pr| match &pr.kind {
-                Kind::Array(vs) => Some(vs.iter().filter_map(|v| match v {
-                    Value::Float(f) => Some(format!("{f}")),
-                    _ => None,
-                }).collect::<Vec<_>>()),
+                Kind::Array(vs) => Some(
+                    vs.iter()
+                        .filter_map(|v| match v {
+                            Value::Float(f) => Some(format!("{f}")),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                ),
                 _ => None,
             });
             println!(

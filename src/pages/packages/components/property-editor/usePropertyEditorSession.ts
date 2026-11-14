@@ -127,6 +127,12 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     loadError.value = "";
     session.value = null;
     modelPayload.value = null;
+    // 换 property 时清空上一栋的 prop 解析结果；否则 resourceId 跨包碰撞 /
+    // 旧 treeIds 会把新 lot 的 prop 误判成树或复用错误载荷。
+    propModels.value = new Map();
+    propTreeIds.value = new Set();
+    treeModelPayloads.value = [];
+    treeAtlasPng.value = null;
     modelLods.value = [];
     activeLod.value = 0;
     modelState.value = "pending";
@@ -224,6 +230,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     try {
       const { resolutions } = await source.resolvePropModels(ids);
       if (token !== requestToken) return;
+      const resolvedIds = new Set(resolutions.map((entry) => entry.resourceId));
+      const missingIds = ids.filter((id) => !resolvedIds.has(id));
       const trees = new Set(
         resolutions
           .filter((r) => r.source === "tree" || r.source === "tree_model")
@@ -269,32 +277,61 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       }
       referencedModels.value = [...referenced.values()];
       const next = new Map(propModels.value);
+      const unresolved: number[] = [];
       await Promise.all(
         resolutions
           .filter((r) => r.source !== "tree" && r.source !== "tree_model")
           .map(async (resolution) => {
-            const tgi = resolution.models[0];
             const pkg = resolution.packageId;
-            if (!tgi || pkg == null) return;
-            try {
-              const buffer = await source.readLotModelMeshes(pkg, tgi);
-              if (token !== requestToken) return;
-              next.set(resolution.resourceId, parseLotModelContainer(buffer));
-            } catch {
-              // 单模型失败不影响其余 prop
+            if (pkg == null || !resolution.models.length) {
+              unresolved.push(resolution.resourceId);
+              return;
             }
+            // LOD0 读取失败（包未就绪/单文件坏）时继续尝试候选 LOD；只取
+            // models[0] 会让这一步偶发缺模型，进而退化成标记锥。
+            for (const tgi of resolution.models) {
+              try {
+                const buffer = await source.readLotModelMeshes(pkg, tgi);
+                if (token !== requestToken) return;
+                const payload = parseLotModelContainer(buffer);
+                if (payload.glbs.length) {
+                  next.set(resolution.resourceId, payload);
+                  return;
+                }
+              } catch {
+                // try next candidate
+              }
+            }
+            unresolved.push(resolution.resourceId);
           }),
       );
       if (token !== requestToken) return;
+      const allUnresolved = [...new Set([...missingIds, ...unresolved])];
+      if (allUnresolved.length && import.meta.env.DEV) {
+        console.warn(
+          "[prop-models] unresolved resource ids:",
+          allUnresolved.map((id) => `0x${(id >>> 0).toString(16).padStart(8, "0")}`),
+        );
+      }
       propModels.value = next;
-    } catch {
-      // 解析整体失败：prop 全部保持标记锥
+    } catch (error) {
+      // 解析整体失败：prop 全部保持标记锥；DEV 下必须可见，否则只剩
+      // “概率不渲染”的观感而没有任何线索。
+      if (import.meta.env.DEV) {
+        console.warn("[prop-models] resolve failed:", error);
+      }
     }
   }
 
   /** PE 关闭：卸载 prop 解析自动注册的 EcoGame 包——注册范围=会话范围，
    * 不卸载会污染全局资源查找池（同实例跨包碰撞 → lot 渲染概率异常）。 */
   function releasePropPackages() {
+    // Drop the in-memory payloads too: closing a property should release both
+    // the backend package handles and the frontend model/texture references.
+    propModels.value = new Map();
+    propTreeIds.value = new Set();
+    treeModelPayloads.value = [];
+    treeAtlasPng.value = null;
     void source.releasePropModelPackages().catch(() => {});
   }
 
@@ -319,6 +356,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       edit.fieldOverrides,
     ),
   );
+  /** `0x0CAA6841` 路径点闭区间对；驱动视口按路径分组连线。 */
+  const pathPairs = computed<number[]>(() => session.value?.pathPairs ?? []);
+
   const grouping = computed<UnitGrouping>(() => {
     const units = effectiveUnits.value;
     const result: UnitGrouping = {
@@ -492,6 +532,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     modelState,
     selectedId,
     grouping,
+    pathPairs,
     flatUnits,
     lotSize,
     lotTilePeriod,

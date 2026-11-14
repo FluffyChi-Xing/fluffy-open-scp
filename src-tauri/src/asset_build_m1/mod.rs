@@ -1,0 +1,69 @@
+//! Isolated M1 Property writeback pipeline. No automatic workbench integration.
+pub mod atlas_prepare;
+pub mod author_building40;
+pub mod author_materials;
+pub mod behavior;
+mod behavior_conflicts;
+mod behavior_hotel;
+mod behavior_plop;
+mod behavior_policy;
+pub mod behavior_family;
+pub mod behavior_loops;
+pub mod behavior_nodes;
+mod spawner;
+mod behavior_templates;
+mod behavior_residence_fill;
+mod behavior_residence_wealth;
+mod behavior_office;
+mod behavior_commercial;
+mod behavior_commercial_wealth;
+mod authored_reference;
+mod behavior_tourism;
+mod author_tourism;
+pub mod build_cache;
+pub mod collision;
+pub mod commands;
+mod decal;
+mod connector;
+pub mod delta_audit;
+pub mod events;
+mod filesystem;
+pub mod geometry_route;
+mod interior_lighting;
+pub mod lotm;
+pub mod material_atlas;
+pub mod material_gate;
+pub mod materials;
+pub mod menu;
+pub mod menu_contract;
+pub mod native_lot;
+pub mod native_model;
+pub mod native_profile;
+mod package;
+pub mod patch;
+pub mod path_catalog;
+mod vehicle_paths;
+pub mod plan;
+mod processor;
+pub mod property_edit;
+pub mod property_gate;
+pub mod raster;
+pub mod resource_closure;
+pub mod scene;
+pub mod schema_discovery;
+pub mod single_compatible;
+pub mod stages;
+mod street_placement;
+pub mod template_material;
+mod value;
+pub mod workbench_logic;
+mod written_contract;
+
+pub use package::{M1BuildResult, build_from_schema};
+
+#[cfg(test)]
+mod e2e_tests;
+#[cfg(test)]
+mod tests;
+
+pub use package::build_from_schema_with_progress;

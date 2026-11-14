@@ -27,7 +27,7 @@ pub const PROPERTY_PATCH_MAX: usize = 256;
 pub const PROPERTY_OVERLAY_MAX: u64 = 64 * 1024 * 1024;
 const PROPERTY_RESOURCE_TYPE: u32 = sc_properties::PROPERTY_RESOURCE_TYPE;
 pub const EXPORT_PROGRESS_EVENT: &str = "export:progress";
-pub const MAX_OPEN_PACKAGES: usize = 32;
+pub const MAX_OPEN_PACKAGES: usize = 64;
 pub const MAX_EXPORT_JOBS: usize = 128;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -126,18 +126,12 @@ impl PackageManager {
         };
         self.packages
             .lock()
-            .map(|packages| {
-                packages
-                    .values()
-                    .any(|pkg| pkg.path() == &canon)
-            })
+            .map(|packages| packages.values().any(|pkg| pkg.path() == &canon))
             .unwrap_or(false)
     }
 
     /// 所有已打开包的 (id, package) 快照（需要回报资源所在包 id 时使用）。
-    pub(crate) fn all_packages_with_ids(
-        &self,
-    ) -> Result<Vec<(u64, Arc<Package>)>, PackageError> {
+    pub(crate) fn all_packages_with_ids(&self) -> Result<Vec<(u64, Arc<Package>)>, PackageError> {
         Ok(self
             .packages
             .lock()
@@ -218,7 +212,7 @@ impl PackageManager {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TgiDto {
     pub type_id: u32,
@@ -634,8 +628,10 @@ pub struct ResolveNamesRequest {
 /// `u32 material_index + u8 uv_kind(0无/1贴图/2tint)`。解析见 `three-gltf.ts`。
 pub const LOT_MODEL_PAYLOAD_MAGIC: u32 = 0x4D54_4F4C;
 
-/// 单个网格 GLB 的体积上限（异常模型防御，对齐原 OBJ 8MB 量级）。
-const MESH_GLB_MAX_BYTES: usize = 8 * 1024 * 1024;
+/// 单个网格 GLB 的体积上限（异常模型防御）。作者 Building40 路线必须把
+/// 全部材质组保留在一个完整网格中；88k 顶点的希望大厦已超过旧 8MB 上限。
+/// 64MiB 能覆盖当前真实样本，同时仍拒绝失控输入；不得为迎合上限拆网格。
+const MESH_GLB_MAX_BYTES: usize = 64 * 1024 * 1024;
 
 /// 文本预览全量字节上限（虚拟滚动渲染下超大文本的内存护栏）。
 const TEXT_PREVIEW_MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -1598,12 +1594,7 @@ const MENU_PARENT: u32 = 0x0DB9_FC63; // "Parent Menu"
 const MENU_ORDER: u32 = 0x0DC1_E3E0; // "Menu Item Order" i32
 const RESDEF_NAME: u32 = 0x0E9C_F564; // "Resource Name" text
 const RESENTRY_SLOTS: u32 = 0x0D9B_DA82; // 资源引用 Key[5]
-const RESENTRY_INT_COLS: [u32; 4] = [
-    0x0D9B_DA83,
-    0x0D9B_DA84,
-    0x0D9B_DA87,
-    0x0D9B_DA88,
-]; // 平行 int32[5] 装载参数（-1 哨兵）
+const RESENTRY_INT_COLS: [u32; 4] = [0x0D9B_DA83, 0x0D9B_DA84, 0x0D9B_DA87, 0x0D9B_DA88]; // 平行 int32[5] 装载参数（-1 哨兵）
 const RESENTRY_FLOAT_A: u32 = 0x0D56_0650;
 const RESENTRY_FLOAT_B: u32 = 0x0D6F_3BE1;
 const RESENTRY_FLAG: u32 = 0x0D6D_BF4A; // bool
@@ -1688,7 +1679,13 @@ fn key_refs_of_type(file: &sc_properties::PropertyFile, type_id: u32) -> Vec<Sem
     for property in &file.values {
         let mut scan = |value: &sc_properties::Value| {
             if let sc_properties::Value::Key(key) = value {
-                if key.type_id == type_id { out.push(SemanticKeyRef { type_id: key.type_id, group_id: key.group, instance_id: key.instance }); }
+                if key.type_id == type_id {
+                    out.push(SemanticKeyRef {
+                        type_id: key.type_id,
+                        group_id: key.group,
+                        instance_id: key.instance,
+                    });
+                }
             }
         };
         match &property.kind {
@@ -1797,12 +1794,10 @@ fn extract_semantic_card(
             parent: first_key_ref(file, KEY_PARENT),
             icon: first_key_ref(file, ALERT_ICON_KEY),
             texts: resolved_texts(file, ALERT_TEXT, locale),
-            duration_seconds: file
-                .get(ALERT_DURATION)
-                .and_then(|p| match &p.kind {
-                    sc_properties::Kind::Scalar(sc_properties::Value::Float(f)) => Some(*f),
-                    _ => None,
-                }),
+            duration_seconds: file.get(ALERT_DURATION).and_then(|p| match &p.kind {
+                sc_properties::Kind::Scalar(sc_properties::Value::Float(f)) => Some(*f),
+                _ => None,
+            }),
         },
         sc_properties::PropertySemantic::SimAction => SemanticCardData::SimAction {
             parent: first_key_ref(file, KEY_PARENT),
@@ -1835,24 +1830,25 @@ fn extract_semantic_card(
                 .unwrap_or_default(),
             legend: first_key_ref(file, LAYER_LEGEND),
         },
-        sc_properties::PropertySemantic::Agent | sc_properties::PropertySemantic::AgentVehicleModel => {
-            SemanticCardData::Vehicle {
-                parent: first_key_ref(file, KEY_PARENT),
-                name: resolved_texts(file, AGENT_NAME, locale),
-                models: {
-                    let declared = key_refs(file, AGENT_VEHICLE_MODELS);
-                    if declared.is_empty() { key_refs_of_type(file, RW4_MODEL_TYPE) } else { declared }
-                },
-                light_count: file
-                    .get(AGENT_LIGHT_IDS)
-                    .map(|p| match &p.kind {
-                        sc_properties::Kind::Array(vals) => vals.len(),
-                        sc_properties::Kind::Scalar(_) => 1,
-                        sc_properties::Kind::Empty => 0,
-                    }),
-                light_names: string8_list(file, AGENT_LIGHT_NAMES),
-            }
-        }
+        sc_properties::PropertySemantic::Agent
+        | sc_properties::PropertySemantic::AgentVehicleModel => SemanticCardData::Vehicle {
+            parent: first_key_ref(file, KEY_PARENT),
+            name: resolved_texts(file, AGENT_NAME, locale),
+            models: {
+                let declared = key_refs(file, AGENT_VEHICLE_MODELS);
+                if declared.is_empty() {
+                    key_refs_of_type(file, RW4_MODEL_TYPE)
+                } else {
+                    declared
+                }
+            },
+            light_count: file.get(AGENT_LIGHT_IDS).map(|p| match &p.kind {
+                sc_properties::Kind::Array(vals) => vals.len(),
+                sc_properties::Kind::Scalar(_) => 1,
+                sc_properties::Kind::Empty => 0,
+            }),
+            light_names: string8_list(file, AGENT_LIGHT_NAMES),
+        },
         sc_properties::PropertySemantic::Network => SemanticCardData::Road {
             path_title: resolved_texts(file, ROAD_PATH_TITLE, locale),
             appearance: first_key_ref(file, ROAD_APPEARANCE),
@@ -2392,167 +2388,195 @@ pub async fn read_lot_editor_session(
         request.package_id,
         request.tgi.clone(),
         move |data, package, manager, store| {
-            build_lot_editor_session(data, package, manager, store, request, bundled_registry.as_deref())
+            build_lot_editor_session(
+                data,
+                package,
+                manager,
+                store,
+                request,
+                bundled_registry.as_deref(),
+            )
         },
     )
     .await
 }
 
-
 fn build_lot_editor_session(
-    data: &[u8], package: &Package, manager: &PackageManager, store: &sc_store::Store,
-    request: LotEditorSessionRequest, bundled_registry: Option<&Path>,
+    data: &[u8],
+    package: &Package,
+    manager: &PackageManager,
+    store: &sc_store::Store,
+    request: LotEditorSessionRequest,
+    bundled_registry: Option<&Path>,
 ) -> Result<LotEditorSession, PackageError> {
-let backend_started = std::time::Instant::now();
-let tgi = request.tgi;
-if tgi.type_id != PROPERTY_RESOURCE_TYPE {
-    return Err(PackageError::InvalidArgument(
-        "lot editor requires a property resource".into(),
-    ));
-}
-let properties = sc_properties::PropertyFile::parse_with_limits(
-    data,
-    sc_properties::ParseLimits::default(),
-)?;
-// Parent(0x00B2CCCB) 继承展平：78% 的 property 带继承链，lot 变体常把
-// LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
-// 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
-let properties = flatten_lot_parents(properties, package, manager);
-// 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
-// 附带 materialData 三元组存在性与 material/shader-def 引用
-// 诊断（P4-D1 证据链）。
-let (decal_textures, decal_diag) =
-    resolve_decal_textures(&properties, package, manager);
-// 破洞贴花假内景光参数（S1）：两个 scalar 即引擎 decalInteriorMap
-// 的光强/半径因子（实证 lot：0.5/2.0 → lightScale=9、invRadius=8）。
-// 须在 properties 被 from_property_file 消耗前读取。
-let decal_light = {
-    let get = |hash: u32| -> Option<f32> {
-        properties.get(hash).and_then(|p| p.scalar()).and_then(|v| match v {
-            sc_properties::Value::Float(f) => Some(*f),
+    let backend_started = std::time::Instant::now();
+    // decal 的 Lot Textures 查找只扫已打开包；先注册 EcoGame，否则第一次
+    // 打开 property 时 decal DTO 会全部缺 png。
+    let _ = crate::prop_models::ensure_for_session(manager);
+    let tgi = request.tgi;
+    if tgi.type_id != PROPERTY_RESOURCE_TYPE {
+        return Err(PackageError::InvalidArgument(
+            "lot editor requires a property resource".into(),
+        ));
+    }
+    let raw_properties = sc_properties::PropertyFile::parse_with_limits(
+        data,
+        sc_properties::ParseLimits::default(),
+    )?;
+    // Parent(0x00B2CCCB) 继承展平：78% 的 property 带继承链，lot 变体常把
+    // LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
+    // 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
+    let mut properties = flatten_lot_parents(raw_properties.clone(), package, manager);
+    // 派生 lot 的父级授权可能落在 SimCity_Game.package，而会话只打开了当前
+    // （如 Graphics）包——父链断裂时 manager 查不到，四通道回退黑/红/绿/蓝、
+    // 图集回退本地占位 tile（用户实证 0xDBF54200：黑色停车坪 + 蓝色车位线 +
+    // 占位草皮）。仅当授权 key 全缺时用源包句柄重试，正常 lot 不付这个代价。
+    if !lot_chain_resolved(&properties) {
+        let sources = locate_sim_source_packages(manager, store).unwrap_or_default();
+        if !sources.is_empty() {
+            properties =
+                flatten_lot_parents_with_sources(raw_properties, package, manager, &sources);
+        }
+    }
+    // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
+    // 附带 materialData 三元组存在性与 material/shader-def 引用
+    // 诊断（P4-D1 证据链）。
+    let (decal_textures, decal_diag) = resolve_decal_textures(&properties, package, manager);
+    // 破洞贴花假内景光参数（S1）：两个 scalar 即引擎 decalInteriorMap
+    // 的光强/半径因子（实证 lot：0.5/2.0 → lightScale=9、invRadius=8）。
+    // 须在 properties 被 from_property_file 消耗前读取。
+    let decal_light = {
+        let get = |hash: u32| -> Option<f32> {
+            properties
+                .get(hash)
+                .and_then(|p| p.scalar())
+                .and_then(|v| match v {
+                    sc_properties::Value::Float(f) => Some(*f),
+                    _ => None,
+                })
+        };
+        match (get(0x0DA7_6A05), get(0x0DA7_6A06)) {
+            (Some(scale), Some(radius)) => Some([scale, radius]),
             _ => None,
-        })
+        }
     };
-    match (get(0x0DA7_6A05), get(0x0DA7_6A06)) {
-        (Some(scale), Some(radius)) => Some([scale, radius]),
-        _ => None,
+    let document = sc_properties::LotEditorDocument::from_property_file(properties);
+    let lot_units = document.assemble_units();
+    let mut diagnostics = lot_units.diagnostics;
+    diagnostics.extend(decal_diag);
+    let (model_lods, lod_diagnostics) = resolve_lod_model_refs(
+        package,
+        request.package_id,
+        manager,
+        document.model_lods.clone(),
+    );
+    diagnostics.extend(lod_diagnostics);
+    let model_available = model_lods.iter().any(|lod| lod.is_some());
+    let model_key = model_lods
+        .iter()
+        .find_map(|lod| lod.as_ref().map(|reference| reference.tgi.clone()));
+    let registry = package_registry(store, manager, package, bundled_registry);
+    let asset_name = semantic_instance_name(registry.as_deref(), tgi.instance);
+    if registry.is_none() {
+        diagnostics.push("property registry is unavailable; using hash identifiers".into());
     }
-};
-let document = sc_properties::LotEditorDocument::from_property_file(properties);
-let lot_units = document.assemble_units();
-let mut diagnostics = lot_units.diagnostics;
-diagnostics.extend(decal_diag);
-let (model_lods, lod_diagnostics) = resolve_lod_model_refs(
-    package,
-    request.package_id,
-    manager,
-    document.model_lods.clone(),
-);
-diagnostics.extend(lod_diagnostics);
-let model_available = model_lods.iter().any(|lod| lod.is_some());
-let model_key = model_lods
-    .iter()
-    .find_map(|lod| lod.as_ref().map(|reference| reference.tgi.clone()));
-let registry = package_registry(store, manager, package, bundled_registry);
-let asset_name = semantic_instance_name(registry.as_deref(), tgi.instance);
-if registry.is_none() {
-    diagnostics.push("property registry is unavailable; using hash identifiers".into());
-}
-let parse_ms = backend_started.elapsed().as_secs_f64() * 1000.0;
-let bake_started = std::time::Instant::now();
-let (colors, lot_colors_authored) = lot_colors(&document);
-let (lot_border_colors, lot_border_widths, lot_border_pattern_indices) =
-    lot_borders(&document);
-// 底图格三级来源（数据驱动，不可硬编码草地格）。
-let (lot_base_tile, lot_base_tile_src) = lot_base_tile(&document);
-diagnostics.push(format!(
-    "lot base tile = {lot_base_tile} (source: {lot_base_tile_src})"
-));
-// 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）。
-// 像素保留在内存供默认反照率合成取底图格，PNG 供前端精细渲染。
-let lot_surface = document.lot_textures.map(|key| {
-    match decode_lot_surface_png(package, manager, key) {
-        Ok(decoded) => Some(decoded),
-        Err(message) => {
-            diagnostics.push(message);
-            None
+    let parse_ms = backend_started.elapsed().as_secs_f64() * 1000.0;
+    let bake_started = std::time::Instant::now();
+    let (colors, lot_colors_authored) = lot_colors(&document);
+    let (lot_border_colors, lot_border_widths, lot_border_pattern_indices) = lot_borders(&document);
+    // 底图格三级来源（数据驱动，不可硬编码草地格）。
+    let (lot_base_tile, lot_base_tile_src) = lot_base_tile(&document);
+    diagnostics.push(format!(
+        "lot base tile = {lot_base_tile} (source: {lot_base_tile_src})"
+    ));
+    // 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）。
+    // 像素保留在内存供默认反照率合成取底图格，PNG 供前端精细渲染。
+    let lot_surface =
+        document
+            .lot_textures
+            .map(|key| match decode_lot_surface_png(package, manager, key) {
+                Ok(decoded) => Some(decoded),
+                Err(message) => {
+                    diagnostics.push(message);
+                    None
+                }
+            });
+    let lot_surface_png = lot_surface
+        .as_ref()
+        .and_then(|surface| surface.as_ref().map(|s| s.0.clone()));
+    // 全局共享法线图集（s15 `lotNormalSampler`；键 0x0D0082F1 的目标实例
+    // 0x60E7805D）——逐 lot 相同，标准切线空间。主区格号 = `LotColor.A`、
+    // 边框带格号 = `LotBorderColor.A`，按 0x0CCB7FD0 周期平铺作为地面
+    // normalMap：引擎的图案质感（方格勾缝/砂砾颗粒）全部来自这一层，
+    // 覆盖区反照率是平色、不采样漫反射（博客 §3）。
+    let lot_normal_atlas_png = decode_lot_surface_png(
+        package,
+        manager,
+        sc_properties::Key {
+            instance: 0x60E7_805D,
+            type_id: 0,
+            group: 0,
+        },
+    )
+    .ok()
+    .and_then(|(_, mut pixels)| {
+        // Normal atlas alpha encodes coverage, not image opacity. Canvas decoding
+        // premultiplies alpha and destroys low-alpha RGB; this RGB-only preview
+        // must be opaque. The original package and base coverage remain untouched.
+        for pixel in pixels.rgba.chunks_exact_mut(4) {
+            pixel[3] = 255;
         }
-    }
-});
-let lot_surface_png =
-    lot_surface.as_ref().and_then(|surface| surface.as_ref().map(|s| s.0.clone()));
-// 全局共享法线图集（s15 `lotNormalSampler`；键 0x0D0082F1 的目标实例
-// 0x60E7805D）——逐 lot 相同，标准切线空间。主区格号 = `LotColor.A`、
-// 边框带格号 = `LotBorderColor.A`，按 0x0CCB7FD0 周期平铺作为地面
-// normalMap：引擎的图案质感（方格勾缝/砂砾颗粒）全部来自这一层，
-// 覆盖区反照率是平色、不采样漫反射（博客 §3）。
-let lot_normal_atlas_png = decode_lot_surface_png(
-    package,
-    manager,
-    sc_properties::Key {
-        instance: 0x60E7_805D,
-        type_id: 0,
-        group: 0,
-    },
-)
-.ok()
-.and_then(|(_, mut pixels)| {
-    // Normal atlas alpha encodes coverage, not image opacity. Canvas decoding
-    // premultiplies alpha and destroys low-alpha RGB; this RGB-only preview
-    // must be opaque. The original package and base coverage remain untouched.
-    for pixel in pixels.rgba.chunks_exact_mut(4) { pixel[3] = 255; }
-    encode_rgba_png(pixels.width, pixels.height, pixels.rgba).ok()
-});
-let mut mask_dims: Option<(u32, u32)> = None;
-let lot_mask_images = document.lot_mask.and_then(|key| {
-    match decode_lot_mask_png(package, manager, key, colors) {
-        Ok((png, raw_rgba_base64, dims, raw_rgba)) => {
-            mask_dims = Some(dims);
-            Some((png, raw_rgba_base64, raw_rgba))
-        }
-        Err(message) => {
-            diagnostics.push(message);
-            None
-        }
-    }
-});
-let lot_mask_png = lot_mask_images.as_ref().map(|(png, _, _)| png.clone());
-let lot_mask_raw_rgba =
-    lot_mask_images.as_ref().map(|(_, raw, _)| raw.clone());
-// 默认模式只显示 LotColor/边框纯色分区；图集纹理仅供精细模式使用。
-let lot_albedo_png = lot_mask_images.as_ref().and_then(|(_, _, raw_rgba)| {
-    let (w, h) = mask_dims.expect("mask dims set when mask decoded");
-    match compose_lot_albedo_rgba(
-        raw_rgba,
-        w as usize,
-        h as usize,
-        colors,
-        lot_border_colors,
-        lot_border_widths,
-        None,
-        lot_base_tile,
-    ) {
-        Ok(rgba) => match encode_rgba_png(w, h, rgba) {
-            Ok(png) => Some(png),
+        encode_rgba_png(pixels.width, pixels.height, pixels.rgba).ok()
+    });
+    let mut mask_dims: Option<(u32, u32)> = None;
+    let lot_mask_images = document.lot_mask.and_then(|key| {
+        match decode_lot_mask_png(package, manager, key, colors) {
+            Ok((png, raw_rgba_base64, dims, raw_rgba)) => {
+                mask_dims = Some(dims);
+                Some((png, raw_rgba_base64, raw_rgba))
+            }
             Err(message) => {
                 diagnostics.push(message);
                 None
             }
-        },
-        Err(message) => {
-            diagnostics.push(message);
-            None
         }
-    }
-});
-// EP1 等部分 lot 无 LotSize（0x0CCB7FC8）属性但带 LotMask：地面
-// 矩形无法构建。回退：mask 光栅尺寸 × 0.75 m/px（主流换算，
-// 如 64px↔48m、128px↔96m；0x5A6EC675 无 LotSize + bbox 71×57
-// 与 128px→96×96 相容）。
-// 【2026-10-05 1m/px 试点回退】0xBA637D54 三证据虽支持 1m/px，
-// 但目视无改善且部分 mod lot 地面被拉大破坏（用户报告）——
-// 待拿到引擎 raster 范围的直接证据后再议。
-let lot_size = document.lot_size.or_else(|| {
+    });
+    let lot_mask_png = lot_mask_images.as_ref().map(|(png, _, _)| png.clone());
+    let lot_mask_raw_rgba = lot_mask_images.as_ref().map(|(_, raw, _)| raw.clone());
+    // 默认模式只显示 LotColor/边框纯色分区；图集纹理仅供精细模式使用。
+    let lot_albedo_png = lot_mask_images.as_ref().and_then(|(_, _, raw_rgba)| {
+        let (w, h) = mask_dims.expect("mask dims set when mask decoded");
+        match compose_lot_albedo_rgba(
+            raw_rgba,
+            w as usize,
+            h as usize,
+            colors,
+            lot_border_colors,
+            lot_border_widths,
+            None,
+            lot_base_tile,
+        ) {
+            Ok(rgba) => match encode_rgba_png(w, h, rgba) {
+                Ok(png) => Some(png),
+                Err(message) => {
+                    diagnostics.push(message);
+                    None
+                }
+            },
+            Err(message) => {
+                diagnostics.push(message);
+                None
+            }
+        }
+    });
+    // EP1 等部分 lot 无 LotSize（0x0CCB7FC8）属性但带 LotMask：地面
+    // 矩形无法构建。回退：mask 光栅尺寸 × 0.75 m/px（主流换算，
+    // 如 64px↔48m、128px↔96m；0x5A6EC675 无 LotSize + bbox 71×57
+    // 与 128px→96×96 相容）。
+    // 【2026-10-05 1m/px 试点回退】0xBA637D54 三证据虽支持 1m/px，
+    // 但目视无改善且部分 mod lot 地面被拉大破坏（用户报告）——
+    // 待拿到引擎 raster 范围的直接证据后再议。
+    let lot_size = document.lot_size.or_else(|| {
     mask_dims.map(|(w, h)| {
         let size = [w as f32 * 0.75, h as f32 * 0.75];
         diagnostics.push(format!(
@@ -2562,77 +2586,73 @@ let lot_size = document.lot_size.or_else(|| {
         size
     })
 });
-// 地面贴图周期 0x0CCB7FD0（米/格）；缺失走引擎默认 8.0，并做引擎的
-// 除数保护（落在 (-0.1, 0.1) 的值一律置 0.1，避免除以近零）。
-let lot_tile_period = document
-    .properties
-    .get(0x0CCB_7FD0)
-    .and_then(|property| property.scalar())
-    .and_then(|value| match value {
-        sc_properties::Value::Vector2(values) => Some(*values),
-        _ => None,
-    })
-    .map(|values| {
-        values.map(|value| {
-            if value.abs() < 0.1 { 0.1 } else { value }
-        })
-    })
-    .or(Some([8.0, 8.0]));
-let bake_ms = bake_started.elapsed().as_secs_f64() * 1000.0;
-let timing = BackendTiming {
-    parse_ms,
-    bake_ms,
-    total_ms: backend_started.elapsed().as_secs_f64() * 1000.0,
-};
-diagnostics.push(format!(
-    "backend timing: parse+units+LOD {:.1}ms, bake(decode/compose/png) {:.1}ms, total {:.1}ms",
-    timing.parse_ms, timing.bake_ms, timing.total_ms
-));
-Ok(LotEditorSession {
-    tgi,
-    asset_name,
-    model_key,
-    model_lods,
-    lot_size,
-    lot_tile_period,                // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
-    lot_placement: document
-        .placement
-        .clone()
-        .filter(|t| t.matrix.len() == 12)
-        .map(|t| t.matrix.try_into().unwrap()),
-    lot_mask_png,
-    lot_mask_raw_rgba,
-    lot_albedo_png,
-    lot_normal_atlas_png,
-    lot_surface_png,
-    lot_colors: colors,
-    lot_colors_authored,
-    lot_border_colors,
-    lot_border_widths,
-    lot_color_heights: lot_height_vector(&document.properties, 0x0D02_D58A),
-    lot_border_heights: lot_height_vector(&document.properties, 0x0D02_D58B),
-    lot_border_pattern_indices,
-    lot_base_tile: lot_base_tile as u8,
-    lot_overlay_box_offset: document.lot_offset,
-    lot_model_bbox_center: document
+    // 地面贴图周期 0x0CCB7FD0（米/格）；缺失走引擎默认 8.0，并做引擎的
+    // 除数保护（落在 (-0.1, 0.1) 的值一律置 0.1，避免除以近零）。
+    let lot_tile_period = document
         .properties
-        .get(0x00F9_EFBA)
-        .and_then(|p| p.scalar().or_else(|| p.array().and_then(|v| v.first())))
+        .get(0x0CCB_7FD0)
+        .and_then(|property| property.scalar())
         .and_then(|value| match value {
-            sc_properties::Value::BoundingBox { min, max } => {
-                Some([(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0])
-            }
+            sc_properties::Value::Vector2(values) => Some(*values),
             _ => None,
-        }),
-    decal_textures,
-    units: lot_units.units,
-    path_pairs: lot_units.path_pairs,
-    document,
-    model_available,
-    backend_ms: Some(timing),
-    decal_light,
-    diagnostics,
-})
+        })
+        .map(|values| values.map(|value| if value.abs() < 0.1 { 0.1 } else { value }))
+        .or(Some([8.0, 8.0]));
+    let bake_ms = bake_started.elapsed().as_secs_f64() * 1000.0;
+    let timing = BackendTiming {
+        parse_ms,
+        bake_ms,
+        total_ms: backend_started.elapsed().as_secs_f64() * 1000.0,
+    };
+    diagnostics.push(format!(
+        "backend timing: parse+units+LOD {:.1}ms, bake(decode/compose/png) {:.1}ms, total {:.1}ms",
+        timing.parse_ms, timing.bake_ms, timing.total_ms
+    ));
+    Ok(LotEditorSession {
+        tgi,
+        asset_name,
+        model_key,
+        model_lods,
+        lot_size,
+        lot_tile_period, // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
+        lot_placement: document
+            .placement
+            .clone()
+            .filter(|t| t.matrix.len() == 12)
+            .map(|t| t.matrix.try_into().unwrap()),
+        lot_mask_png,
+        lot_mask_raw_rgba,
+        lot_albedo_png,
+        lot_normal_atlas_png,
+        lot_surface_png,
+        lot_colors: colors,
+        lot_colors_authored,
+        lot_border_colors,
+        lot_border_widths,
+        lot_color_heights: lot_height_vector(&document.properties, 0x0D02_D58A),
+        lot_border_heights: lot_height_vector(&document.properties, 0x0D02_D58B),
+        lot_border_pattern_indices,
+        lot_base_tile: lot_base_tile as u8,
+        lot_overlay_box_offset: document.lot_offset,
+        lot_model_bbox_center: document
+            .properties
+            .get(0x00F9_EFBA)
+            .and_then(|p| p.scalar().or_else(|| p.array().and_then(|v| v.first())))
+            .and_then(|value| match value {
+                sc_properties::Value::BoundingBox { min, max } => {
+                    Some([(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0])
+                }
+                _ => None,
+            }),
+        decal_textures,
+        units: lot_units.units,
+        path_pairs: lot_units.path_pairs,
+        document,
+        model_available,
+        backend_ms: Some(timing),
+        decal_light,
+        diagnostics,
+    })
 }
 
 /// Authored channel/border relief used by generic_lot::overlayGetHeight.
@@ -2657,10 +2677,7 @@ pub(crate) struct SurfacePixels {
 }
 
 /// 从图集像素裁出第 `index` 格（4×4，行主序）；尺寸不足时返回 None。
-fn extract_atlas_cell(
-    surface: &SurfacePixels,
-    index: usize,
-) -> Option<(usize, usize, Vec<u8>)> {
+fn extract_atlas_cell(surface: &SurfacePixels, index: usize) -> Option<(usize, usize, Vec<u8>)> {
     const COLS: usize = 4;
     let cw = surface.width as usize / COLS;
     let ch = surface.height as usize / COLS;
@@ -2771,18 +2788,14 @@ pub(crate) fn decode_lot_surface_png(
     manager: &PackageManager,
     key: sc_properties::Key,
 ) -> Result<(String, SurfacePixels), String> {
-    let (bytes, _, _) = find_resource_across_packages_named(
-        current,
-        manager,
-        key.instance,
-        &[RW4_MODEL_TYPE],
-    )
-    .ok_or_else(|| {
-        format!(
-            "Lot Textures 0x{:08X} not found in open packages",
-            key.instance
-        )
-    })?;
+    let (bytes, _, _) =
+        find_resource_across_packages_named(current, manager, key.instance, &[RW4_MODEL_TYPE])
+            .ok_or_else(|| {
+                format!(
+                    "Lot Textures 0x{:08X} not found in open packages",
+                    key.instance
+                )
+            })?;
     let file = rw4::Rw4File::parse(&bytes)
         .map_err(|error| format!("Lot Textures parse failed: {error}"))?;
     let section = file
@@ -2990,6 +3003,24 @@ pub(crate) fn flatten_lot_parents(
     current: &Package,
     manager: &PackageManager,
 ) -> sc_properties::PropertyFile {
+    flatten_lot_parents_with_sources(root, current, manager, &[])
+}
+
+/// 同 `flatten_lot_parents`，额外用 `sources`（通常是 SimCity_Graphics/Game
+/// 的独立句柄）兜底父级查找。
+///
+/// 派生 lot（如 `0xDBF54200` @ SimCity_Graphics）的 `LotColor1-4` /
+/// `Lot Textures` 常常只存在于 **SimCity_Game.package** 的父级链里；会话
+/// 打开时 Game 不在 manager 的已打开包集合中，父链就会断在中间——四通道
+/// 落到引擎回退色（黑/红/绿/蓝）、图集回退本地占位 tile，表现为"部分地面
+/// 死黑 + 部分占位草皮"。`locate_sim_source_packages` 能在不注册进包池的
+/// 前提下按路径打开这两个源包，供 resolver 只读查找。
+pub(crate) fn flatten_lot_parents_with_sources(
+    root: sc_properties::PropertyFile,
+    current: &Package,
+    manager: &PackageManager,
+    sources: &[(String, Package)],
+) -> sc_properties::PropertyFile {
     let lookup = |package: &Package, key: &sc_properties::Key| {
         let entry = package
             .entries()
@@ -3001,14 +3032,87 @@ pub(crate) fn flatten_lot_parents(
         sc_properties::PropertyFile::parse(&package.read(&entry).ok()?).ok()
     };
     sc_properties::flatten_parent_inheritance(root, |key| {
-        lookup(current, key).or_else(|| {
-            manager
-                .all_packages()
-                .ok()?
-                .iter()
-                .find_map(|package| lookup(package, key))
-        })
+        lookup(current, key)
+            .or_else(|| {
+                manager
+                    .all_packages()
+                    .ok()?
+                    .iter()
+                    .find_map(|package| lookup(package, key))
+            })
+            .or_else(|| sources.iter().find_map(|(_, package)| lookup(package, key)))
     })
+}
+
+/// 父链是否已经提供地表授权。派生 lot 的 mask/size 在本级、颜色与图集在
+/// 父级——若一个授权 key 都没解析到，基本可判定父链没打通（值得用源包重试）。
+pub(crate) fn lot_chain_resolved(properties: &sc_properties::PropertyFile) -> bool {
+    const AUTHORIZATION_KEYS: [u32; 5] = [
+        0x0D02_D586,
+        0x0D02_D587,
+        0x0D02_D588,
+        0x0D02_D589,
+        0x0CCB_7FD4, // Lot Textures
+    ];
+    AUTHORIZATION_KEYS
+        .iter()
+        .any(|hash| properties.get(*hash).is_some())
+}
+
+#[cfg(test)]
+mod derived_lot_parent_chain {
+    use super::*;
+
+    /// 回归（2026-11-06 用户实证 0xDBF54200）：派生 lot 位于 Graphics，父级
+    /// 授权（LotColor1-4 / Lot Textures）只在 Game。会话只打开 Graphics 时
+    /// 父链断裂 → 四通道回退黑/红/绿/蓝 + 占位草皮；用源包句柄重试后必须
+    /// 全部 authored，且 Lot Textures 可见。
+    ///
+    /// 需要真实游戏包：设置 SC_DERIVED_LOT_GRAPHICS / SC_DERIVED_LOT_GAME。
+    #[test]
+    fn game_source_fallback_resolves_inherited_lot_authorization() {
+        let (Ok(graphics), Ok(game)) = (
+            std::env::var("SC_DERIVED_LOT_GRAPHICS"),
+            std::env::var("SC_DERIVED_LOT_GAME"),
+        ) else {
+            eprintln!("skipping: SC_DERIVED_LOT_GRAPHICS / SC_DERIVED_LOT_GAME unset");
+            return;
+        };
+        const INSTANCE: u32 = 0xDBF5_4200;
+        let graphics = Package::open(&graphics).expect("open graphics");
+        let game = Package::open(&game).expect("open game");
+        let entry = graphics
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == 0x00B1_B104 && entry.id.instance == INSTANCE)
+            .cloned()
+            .expect("derived lot property");
+        let raw = sc_properties::PropertyFile::parse_with_limits(
+            &graphics.read(&entry).unwrap(),
+            sc_properties::ParseLimits::default(),
+        )
+        .unwrap();
+
+        // 只打开 Graphics（父级所在的 Game 不在 manager 里）。
+        let manager = PackageManager::new();
+        let broken = flatten_lot_parents(raw.clone(), &graphics, &manager);
+        assert!(
+            !lot_chain_resolved(&broken),
+            "without Game the inherited authorization must be missing"
+        );
+        let (_, authored) = lot_colors(&sc_properties::LotEditorDocument::from_property_file(
+            broken,
+        ));
+        assert!(!authored.iter().any(|value| *value));
+
+        let sources = vec![("SimCity_Game.package".to_string(), game)];
+        let fixed = flatten_lot_parents_with_sources(raw, &graphics, &manager, &sources);
+        let document = sc_properties::LotEditorDocument::from_property_file(fixed);
+        let (colors, authored) = lot_colors(&document);
+        assert_eq!(authored, [true, true, true, true]);
+        assert_eq!(colors[0][3], 7, "LotColor1.A = pattern index 7");
+        assert!(document.lot_textures.is_some(), "Lot Textures inherited");
+    }
 }
 
 /// LotColor1-4 提取（raster 工作台 read_lot_material 共用）。
@@ -3021,9 +3125,9 @@ pub(crate) fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 
         // LotColor 常以单元素数组编码（图书馆 0xA6B49A4B 实证 scalar() 取
         // 不到），需回退 array 首元素。
         let property = document.properties.get(*hash);
-        let value = property.and_then(|p| p.scalar()).or_else(|| {
-            property.and_then(|p| p.array()).and_then(|v| v.first())
-        });
+        let value = property
+            .and_then(|p| p.scalar())
+            .or_else(|| property.and_then(|p| p.array()).and_then(|v| v.first()));
         if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = value {
             authored[index] = true;
             colors[index] = [
@@ -3045,19 +3149,19 @@ pub(crate) fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 
 /// 颜色缺失回退浅灰（156,156,156）；宽度缺失 = 0（无边框带自然为空集）。
 /// 第三返回值 = **边框图案索引**（LotBorderColor.A，0-15）：引擎边框带的
 /// 质感进法线图案图集（borderNormalsIdx），与主区 LotColor.A 平行。
-pub(crate) fn lot_borders(document: &sc_properties::LotEditorDocument) -> ([[u8; 3]; 4], [f32; 4], [u8; 4]) {
-    const BORDER_COLOR_HASHES: [u32; 4] =
-        [0x0D7A_F042, 0x0D7A_F043, 0x0D7A_F044, 0x0D7A_F045];
-    const BORDER_WIDTH_HASHES: [u32; 4] =
-        [0x0D7A_F046, 0x0D7A_F047, 0x0D7A_F048, 0x0D7A_F049];
+pub(crate) fn lot_borders(
+    document: &sc_properties::LotEditorDocument,
+) -> ([[u8; 3]; 4], [f32; 4], [u8; 4]) {
+    const BORDER_COLOR_HASHES: [u32; 4] = [0x0D7A_F042, 0x0D7A_F043, 0x0D7A_F044, 0x0D7A_F045];
+    const BORDER_WIDTH_HASHES: [u32; 4] = [0x0D7A_F046, 0x0D7A_F047, 0x0D7A_F048, 0x0D7A_F049];
     let mut colors = [[156u8; 3]; 4];
     let mut widths = [0.0f32; 4];
     let mut pattern_indices = [0u8; 4];
     for (index, hash) in BORDER_COLOR_HASHES.iter().enumerate() {
         let property = document.properties.get(*hash);
-        let value = property.and_then(|p| p.scalar()).or_else(|| {
-            property.and_then(|p| p.array()).and_then(|v| v.first())
-        });
+        let value = property
+            .and_then(|p| p.scalar())
+            .or_else(|| property.and_then(|p| p.array()).and_then(|v| v.first()));
         if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = value {
             colors[index] = [
                 linear_to_srgb_byte(*r),
@@ -3069,9 +3173,9 @@ pub(crate) fn lot_borders(document: &sc_properties::LotEditorDocument) -> ([[u8;
     }
     for (index, hash) in BORDER_WIDTH_HASHES.iter().enumerate() {
         let property = document.properties.get(*hash);
-        let value = property.and_then(|p| p.scalar()).or_else(|| {
-            property.and_then(|p| p.array()).and_then(|v| v.first())
-        });
+        let value = property
+            .and_then(|p| p.scalar())
+            .or_else(|| property.and_then(|p| p.array()).and_then(|v| v.first()));
         if let Some(sc_properties::Value::Float(f)) = value {
             widths[index] = *f;
         }
@@ -3093,10 +3197,8 @@ pub(crate) fn lot_base_tile(document: &sc_properties::LotEditorDocument) -> (usi
     if let Some(sc_properties::Value::Int32(v)) = value_of(0x0CCB_7FD6) {
         return ((*v).clamp(0, 15) as usize, "0x0CCB7FD6");
     }
-    if let (
-        Some(sc_properties::Value::Vector2(a)),
-        Some(sc_properties::Value::Vector2(b)),
-    ) = (value_of(0x0CCB_7FD2), value_of(0x0CCB_7FD3))
+    if let (Some(sc_properties::Value::Vector2(a)), Some(sc_properties::Value::Vector2(b))) =
+        (value_of(0x0CCB_7FD2), value_of(0x0CCB_7FD3))
     {
         let round = |v: f32| (v + 0.5).floor() as i32;
         let rx = round((a[0].min(b[0]) + 1.0 / 64.0) * 4.0);
@@ -3123,12 +3225,8 @@ fn linear_to_srgb_byte(linear: f32) -> u8 {
 
 /// 测试用 LotColor 表（LC1=黑, LC2=红, LC3=绿, LC4=蓝回退色，A=tile 索引）。
 #[cfg(test)]
-const FALLBACK_LOT_COLORS_TEST: [[u8; 4]; 4] = [
-    [0, 0, 0, 0],
-    [255, 0, 0, 1],
-    [0, 255, 0, 2],
-    [0, 0, 255, 3],
-];
+const FALLBACK_LOT_COLORS_TEST: [[u8; 4]; 4] =
+    [[0, 0, 0, 0], [255, 0, 0, 1], [0, 255, 0, 2], [0, 0, 255, 3]];
 
 fn encode_rgba_png_bytes(width: u32, height: u32, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
     let image = image::RgbaImage::from_raw(width, height, rgba)
@@ -3709,13 +3807,11 @@ fn resolve_material_resources(
                 })
                 .collect();
             if let Some((rgba, width, height)) = file_textures.first() {
-                resources.slot0_png =
-                    encode_rgba_png_bytes(*width, *height, rgba.clone()).ok();
+                resources.slot0_png = encode_rgba_png_bytes(*width, *height, rgba.clone()).ok();
             }
             if file_textures.len() > 1 {
                 let (rgba, width, height) = &file_textures[1];
-                resources.normal_png =
-                    encode_rgba_png_bytes(*width, *height, rgba.clone()).ok();
+                resources.normal_png = encode_rgba_png_bytes(*width, *height, rgba.clone()).ok();
             }
         }
     }
@@ -3748,7 +3844,7 @@ fn resolve_material_resources(
 
 /// 逐 mesh UV 类型：0=无 / 1=常规贴图（FLOAT2 或 FLOAT4≤8）/ 2=tint 着色器
 /// （FLOAT4 大坐标 facade 世界投影）。
-fn mesh_uv_kind(mesh: &rw4::DecodedMesh) -> u8 {
+pub(crate) fn mesh_uv_kind(mesh: &rw4::DecodedMesh) -> u8 {
     let mut kind = 0u8;
     for vertex in &mesh.vertices {
         for (element, value) in &vertex.components {
@@ -3772,17 +3868,24 @@ fn mesh_uv_kind(mesh: &rw4::DecodedMesh) -> u8 {
     // GLB exporter would have to zero-fill TEXCOORD_2/3 for the missing
     // vertices, which presents as windows that work only on one part of a
     // building.  Keep such mixed streams on the ordinary material path.
+    // Plugin-authored building containers (SC5 Asset Editor exports) declare
+    // the tint chain for every mesh but author facade UVs that can stay below
+    // world-projection magnitude; those meshes also carry D3DCOLOR (the
+    // parameter-table column), so COLOR + all-vertex FLOAT4 is an equally
+    // reliable facade signature.  Census over all 2278 exportable meshes in
+    // SimCity_Graphics showed zero classification flips with this relaxation.
+    let any_color = mesh.vertices.iter().any(|v| v.d3d_color_g().is_some());
     let has_facade = !mesh.vertices.is_empty()
         && mesh.vertices.iter().all(|v| facade_uv4(v).is_some())
-        && mesh.vertices.iter().any(|v| {
+        && (mesh.vertices.iter().any(|v| {
             facade_uv4(v)
                 .map(|f| f.iter().any(|value| value.abs() > 8.0))
                 .unwrap_or(false)
-        });
-    if !has_facade && kind == 2 {
-        kind = 1;
+        }) || any_color);
+    if has_facade {
+        return 2;
     }
-    kind
+    kind.min(1)
 }
 
 /// Return the facade projection FLOAT4 rather than the first TEXCOORD.  Some
@@ -3841,8 +3944,7 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
                 let Some(pal_origin) = bake.params.get(m).copied() else {
                     return FALLBACK;
                 };
-                let Some(f) = facade_uv4(v)
-                else {
+                let Some(f) = facade_uv4(v) else {
                     return FALLBACK;
                 };
                 let bu = (f[0] - f[0].floor()) * xform[0] + xform[2];
@@ -3908,10 +4010,26 @@ pub async fn write_export_file(request: WriteExportRequest) -> Result<(), Comman
 /// 小人 impostor class 22706EFA 的部件模型 key（探针 23/23 本地实证）。
 const SIM_BODY_KEYS: [u32; 3] = [0xE553_7FAB, 0xA4EB_8B32, 0xFAC9_B16D];
 const SIM_HEAD_KEYS: [u32; 20] = [
-    0x22A4_45FE, 0xF4B8_45DF, 0x92EA_C3EB, 0xC351_2C8A, 0xB93F_52B2, 0xE662_6E09,
-    0x157D_7231, 0x5007_7BB0, 0x446B_BC79, 0x612B_41F5, 0xBBB3_6488, 0x359D_E97F,
-    0x7655_0072, 0xC54F_FD13, 0x35E2_F199, 0x55DF_9CAE, 0xFF47_2323, 0x279C_922A,
-    0x97EF_A2B7, 0x4F49_47B7,
+    0x22A4_45FE,
+    0xF4B8_45DF,
+    0x92EA_C3EB,
+    0xC351_2C8A,
+    0xB93F_52B2,
+    0xE662_6E09,
+    0x157D_7231,
+    0x5007_7BB0,
+    0x446B_BC79,
+    0x612B_41F5,
+    0xBBB3_6488,
+    0x359D_E97F,
+    0x7655_0072,
+    0xC54F_FD13,
+    0x35E2_F199,
+    0x55DF_9CAE,
+    0xFF47_2323,
+    0x279C_922A,
+    0x97EF_A2B7,
+    0x4F49_47B7,
 ];
 /// "SIMF"（小端 u32 0x464D4953）。
 const SIM_PARTS_MAGIC: u32 = 0x464D_4953;
@@ -3919,14 +4037,13 @@ const SIM_PARTS_MAGIC: u32 = 0x464D_4953;
 /// 定位小人模型所在的 Graphics/Game 包：优先已打开的同名包，否则从
 /// 已打开包路径向上找 `SimCityData/`（ecogame_dirs 同款推导），再退
 /// 用户设置的 game_data_path。
-fn locate_sim_source_packages(
+pub(crate) fn locate_sim_source_packages(
     manager: &PackageManager,
     store: &sc_store::Store,
 ) -> Result<Vec<(String, Package)>, PackageError> {
     let mut found: Vec<(String, Package)> = Vec::new();
-    let mut has = |name: &str, found: &mut Vec<(String, Package)>| {
-        found.iter().any(|(n, _)| n == name)
-    };
+    let mut has =
+        |name: &str, found: &mut Vec<(String, Package)>| found.iter().any(|(n, _)| n == name);
     if let Ok(all) = manager.all_packages_with_ids() {
         for (_, pkg) in &all {
             let Some(name) = pkg.path().file_name().and_then(|n| n.to_str()) else {
@@ -3970,7 +4087,9 @@ fn locate_sim_source_packages(
                     continue;
                 }
                 let path = dir.join(name);
-                if path.is_file() && let Ok(package) = Package::open(&path) {
+                if path.is_file()
+                    && let Ok(package) = Package::open(&path)
+                {
                     found.push((name.to_string(), package));
                 }
             }
@@ -3989,7 +4108,9 @@ fn locate_sim_source_packages(
 /// `u32 instance | u8 kind(0=身体,1=头部) | u32 len | LOTM v10 字节`。
 /// 前端按 kind 分组随机合成（身体原点 + 头挂颈点 + outfit tint）。
 #[tauri::command]
-pub async fn read_sim_parts(state: State<'_, AppState>) -> Result<tauri::ipc::Response, CommandError> {
+pub async fn read_sim_parts(
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || -> Result<tauri::ipc::Response, PackageError> {
@@ -4004,9 +4125,9 @@ pub async fn read_sim_parts(state: State<'_, AppState>) -> Result<tauri::ipc::Re
                 let Some(package) = sources
                     .iter()
                     .find(|(_, pkg)| {
-                        pkg.entries().iter().any(|e| {
-                            e.id.type_id == 0x2F4E_681B && e.id.instance == *key
-                        })
+                        pkg.entries()
+                            .iter()
+                            .any(|e| e.id.type_id == 0x2F4E_681B && e.id.instance == *key)
                     })
                     .map(|(_, p)| p)
                 else {
@@ -4071,6 +4192,66 @@ pub async fn read_lot_model_meshes(
     Ok(tauri::ipc::Response::new(payload))
 }
 
+/// Export one LOD model as an editable `.blend` (mesh + six-slot materials).
+///
+/// The payload is the same LOTM the source-file page's six-slot export uses,
+/// so both entry points describe the asset identically. Blender runs in
+/// background mode on a staged copy; `path` is the user-chosen destination.
+#[tauri::command]
+pub async fn export_lot_model_blend(
+    state: State<'_, AppState>,
+    request: ExportLotModelBlendRequest,
+) -> Result<(), CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let target = std::path::PathBuf::from(&request.path);
+    let asset_name = request
+        .asset_name
+        .clone()
+        .unwrap_or_else(|| format!("0x{:08X}", request.tgi.instance));
+    let tgi = request.tgi.clone();
+    let label = format!("{:08X}:{:08X}:{:08X}", tgi.type_id, tgi.group, tgi.instance);
+    let payload = read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        tgi.clone(),
+        move |data, package, manager, _store| {
+            if tgi.type_id != RW4_MODEL_TYPE {
+                return Err(PackageError::InvalidArgument(
+                    "lot model blend export requires an RW4 model resource".into(),
+                ));
+            }
+            let file = rw4::Rw4File::parse(data)?;
+            Ok(build_lot_model_payload_for_test(
+                &file,
+                data,
+                package,
+                manager,
+                tgi.instance,
+            ))
+        },
+    )
+    .await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::lot_model_blend::export_to(&payload, &target, &label, &asset_name)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::internal)
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportLotModelBlendRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+    /// Absolute destination path ending in `.blend`.
+    pub path: String,
+    #[serde(default)]
+    pub asset_name: Option<String>,
+}
+
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PropModelsResponse {
@@ -4085,30 +4266,41 @@ pub async fn resolve_prop_models(
     request: crate::prop_models::PropModelsRequest,
 ) -> Result<PropModelsResponse, CommandError> {
     let manager = Arc::clone(&state.packages);
-    let resolutions =
-        tauri::async_runtime::spawn_blocking(move || {
-            crate::prop_models::resolve_all(&manager, &request.resource_ids)
-        })
-        .await
-        .map_err(|error| CommandError::internal(format!("prop model resolve failed: {error}")))?
-        .map_err(CommandError::from)?;
+    let store = Arc::clone(&state.store);
+    let resolutions = tauri::async_runtime::spawn_blocking(move || {
+        // Prop resolution may be requested repeatedly while several property
+        // editors are opened.  EcoGame packages are session helpers; release
+        // the previous helper batch before reserving the two game source
+        // packages below, otherwise the 64-package pool can reject those
+        // inserts and later props silently fall back to marker cones.
+        let _ = crate::prop_models::release_registered(&manager);
+        // 直挂模型 prop 的模型实体可能位于游戏源包（Graphics/Game），
+        // ensure they are open so the direct-model fallback can find them
+        //（脚本表链路原本只依赖 EcoGame 注册，不受影响）。
+        if let Ok(sources) = locate_sim_source_packages(&manager, &store) {
+            for (_, package) in sources {
+                let _ = manager.insert(package);
+            }
+        }
+        crate::prop_models::resolve_all(&manager, &request.resource_ids)
+    })
+    .await
+    .map_err(|error| CommandError::internal(format!("prop model resolve failed: {error}")))?
+    .map_err(CommandError::from)?;
     Ok(PropModelsResponse { resolutions })
 }
 
 /// PE 关闭时卸载 prop 解析自动注册的 EcoGame 包（会话范围=注册范围，
 /// 防止脚本包污染全局资源查找池——同实例跨包碰撞曾致 lot 渲染概率异常）。
 #[tauri::command]
-pub async fn release_prop_model_packages(
-    state: State<'_, AppState>,
-) -> Result<u32, CommandError> {
+pub async fn release_prop_model_packages(state: State<'_, AppState>) -> Result<u32, CommandError> {
     let manager = Arc::clone(&state.packages);
-    let released =
-        tauri::async_runtime::spawn_blocking(move || {
-            crate::prop_models::release_registered(&manager)
-        })
-        .await
-        .map_err(|error| CommandError::internal(format!("release failed: {error}")))?
-        .map_err(CommandError::from)?;
+    let released = tauri::async_runtime::spawn_blocking(move || {
+        crate::prop_models::release_registered(&manager)
+    })
+    .await
+    .map_err(|error| CommandError::internal(format!("release failed: {error}")))?
+    .map_err(CommandError::from)?;
     Ok(released as u32)
 }
 
@@ -4132,7 +4324,8 @@ pub(crate) fn build_lot_model_payload_for_test(
     package: &Package,
     manager: &PackageManager,
     model_instance: u32,
-) -> Vec<u8> {    let bindings = file.decode_mesh_material_bindings(data);
+) -> Vec<u8> {
+    let bindings = file.decode_mesh_material_bindings(data);
     let fallback_material = file
         .sections_of_type(rw4::SectionType::MATERIAL)
         .find_map(|s| {
@@ -4169,11 +4362,11 @@ pub(crate) fn build_lot_model_payload_for_test(
             .map(|b| b.material_section)
             .or(fallback_material)
             .unwrap_or(u32::MAX);
-        let material_index = match material_sections
+        let (material_index, added_material) = match material_sections
             .iter()
             .position(|number| *number == bound_section)
         {
-            Some(index) => index as u32,
+            Some(index) => (index as u32, false),
             None => {
                 material_resources.push(resolve_material_resources(
                     file,
@@ -4183,7 +4376,7 @@ pub(crate) fn build_lot_model_payload_for_test(
                     bound_section,
                 ));
                 material_sections.push(bound_section);
-                (material_resources.len() - 1) as u32
+                ((material_resources.len() - 1) as u32, true)
             }
         };
         let colors = material_resources[material_index as usize]
@@ -4205,9 +4398,10 @@ pub(crate) fn build_lot_model_payload_for_test(
         let g_max = g_values.iter().max().copied().unwrap_or(0);
         let g_distinct: std::collections::HashSet<u8> = g_values.iter().copied().collect();
         let facade_any = mesh.vertices.iter().any(|v| {
-            v.components
-                .iter()
-                .any(|(e, val)| e.usage == rw4::DeclarationUsage::TexCoord && matches!(val, rw4::ComponentValue::Float4(_)))
+            v.components.iter().any(|(e, val)| {
+                e.usage == rw4::DeclarationUsage::TexCoord
+                    && matches!(val, rw4::ComponentValue::Float4(_))
+            })
         });
         let mut diag_line = format!(
             "mesh #{:<4} verts={:<6} tris={:<6} uvKind={} → material #{} (idx {}) facade={} g=[{}-{}]×{}",
@@ -4236,8 +4430,15 @@ pub(crate) fn build_lot_model_payload_for_test(
             Some(&mat_indices),
         );
         if glb.bytes.len() > MESH_GLB_MAX_BYTES {
-            diag_line.push_str("  [GLB 超限跳过]");
+            diag_line.push_str(&format!("  [GLB {} B 超限跳过]", glb.bytes.len()));
             mesh_diag_truncated += 1;
+            if added_material {
+                // Do not serialize a material that no exported mesh references.
+                // The old order produced the exact meshes=0/materials=1 orphan
+                // payload that made a valid package look like an orphan shape.
+                material_resources.pop();
+                material_sections.pop();
+            }
         } else {
             glbs.push(glb.bytes);
             mesh_material.push(material_index);
@@ -4571,9 +4772,7 @@ fn collect_decal_atlases(packages: &[&Package]) -> Vec<sc_properties::DecalDicti
             if e.id.type_id != 0x00B1_B104 {
                 continue;
             }
-            if !sc_properties::decal::DECAL_ATLAS_INSTANCE_TYPES
-                .contains(&(e.id.group as u16))
-            {
+            if !sc_properties::decal::DECAL_ATLAS_INSTANCE_TYPES.contains(&(e.id.group as u16)) {
                 continue;
             }
             if !seen.insert((e.id.group, e.id.instance)) {
@@ -4624,7 +4823,9 @@ fn resolve_decal_textures(
             continue;
         };
         for (index, value) in ids.iter().enumerate() {
-            let sc_properties::Value::Key(key) = value else { continue };
+            let sc_properties::Value::Key(key) = value else {
+                continue;
+            };
             let found = atlases.iter().find_map(|dict| {
                 dict.entries
                     .iter()
@@ -4637,11 +4838,9 @@ fn resolve_decal_textures(
             };
             let material_instance = dict.and_then(|d| d.material.as_ref().map(|k| k.instance));
             let shader_def_instance = match material_instance {
-                Some(instance) => {
-                    *shader_def_cache
-                        .entry(instance)
-                        .or_insert_with(|| resolve_shader_def_instance(instance, package, manager))
-                }
+                Some(instance) => *shader_def_cache
+                    .entry(instance)
+                    .or_insert_with(|| resolve_shader_def_instance(instance, package, manager)),
                 None => None,
             };
             let mut dto = DecalUnitTextureDto {
@@ -4761,7 +4960,7 @@ fn resolve_decal_textures(
 /// raster 有两种载体：裸 Raster（`0x2F4E681C`，pixFmt21 直解，招牌/涂鸦/
 /// 废墟家族）与 RW4 纹理资源（`0x2F4E681B`，DXT 解码，破洞家族）。alpha
 /// 通道保留——它是柔和衰减（霓虹光晕），不是二值掩码。
-fn decode_decal_entry_rgba(
+pub(crate) fn decode_decal_entry_rgba(
     entry: &sc_properties::DecalEntry,
     package: &Package,
     manager: &PackageManager,
@@ -4788,7 +4987,13 @@ fn decode_decal_entry_rgba(
     };
     if type_id == RW4_MODEL_TYPE {
         return match decode_lot_surface_png(package, manager, raster_key) {
-            Ok((png_base64, _)) => DecalImageData { index, error: None, width: None, height: None, png_base64: Some(png_base64) },
+            Ok((png_base64, _)) => DecalImageData {
+                index,
+                error: None,
+                width: None,
+                height: None,
+                png_base64: Some(png_base64),
+            },
             Err(message) => DecalImageData::failed(index, message, None),
         };
     }
@@ -4830,9 +5035,11 @@ fn decal_raster_size(
     package: &Package,
     manager: &PackageManager,
 ) -> (u32, u32) {
-    let Some(raster_key) = entry.raster.clone() else { return (1, 1) };
+    let Some(raster_key) = entry.raster.clone() else {
+        return (1, 1);
+    };
     let Some((bytes, type_id, _)) = find_decal_raster(package, manager, Some(raster_key)) else {
-        return (1, 1)
+        return (1, 1);
     };
     if type_id != RASTER_IMAGE_TYPE {
         return (1, 1);
@@ -4862,7 +5069,7 @@ fn decode_decal_alpha_probe(
 }
 
 /// material 资源（RW4）shader-def 槽（slot 0x2D）引用实例（best-effort）。
-fn resolve_shader_def_instance(
+pub(crate) fn resolve_shader_def_instance(
     material_instance: u32,
     package: &Package,
     manager: &PackageManager,
@@ -4887,13 +5094,7 @@ fn resolve_shader_def_instance(
             rw4::MaterialSection::Raw(_) => None,
         }
     };
-    lookup(package).or_else(|| {
-        manager
-            .all_packages()
-            .ok()?
-            .iter()
-            .find_map(|p| lookup(p))
-    })
+    lookup(package).or_else(|| manager.all_packages().ok()?.iter().find_map(|p| lookup(p)))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -4993,6 +5194,15 @@ pub struct DecalImagesRequest {
     pub indices: Vec<usize>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalDictionaryRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+    #[serde(default)]
+    pub metadata_only: bool,
+}
+
 /// 跨包定位条目引用的 Raster：对齐原 SCP 的「全局索引按 instance + 类型查找」，
 /// 忽略 Key 自带的 group（原 SCP 同样只比较 instance 与 Raster 类型）。
 fn find_decal_raster(
@@ -5068,7 +5278,10 @@ fn decal_raster_status(
     let reason = if type_id != RASTER_IMAGE_TYPE {
         Some("decal entry resolved to a non-raster resource".into())
     } else if !raster.is_raw_rgba() {
-        Some(format!("unsupported raster pixel format {}", raster.pixel_format))
+        Some(format!(
+            "unsupported raster pixel format {}",
+            raster.pixel_format
+        ))
     } else if !colors_available {
         Some("decal entry is missing its four colors".into())
     } else {
@@ -5090,6 +5303,7 @@ fn decal_dictionary_data(
     dictionary: sc_properties::DecalDictionary,
     package: &Package,
     manager: &PackageManager,
+    metadata_only: bool,
 ) -> DecalDictionaryData {
     let entries = dictionary
         .entries
@@ -5103,12 +5317,26 @@ fn decal_dictionary_data(
                 aspect_ratio: entry.aspect_ratio,
                 colors: entry.colors,
                 colors_rgba8,
-                raster_status: decal_raster_status(
-                    package,
-                    manager,
-                    entry.raster,
-                    colors_rgba8.is_some(),
-                ),
+                raster_status: if metadata_only {
+                    // A raster reference is enough to schedule a thumbnail.
+                    // Its existence, dimensions and format are checked on demand.
+                    DecalRasterStatus {
+                        found: false,
+                        width: None,
+                        height: None,
+                        pixel_format: None,
+                        decodable: entry.raster.is_some(),
+                        source_package: None,
+                        reason: None,
+                    }
+                } else {
+                    decal_raster_status(
+                        package,
+                        manager,
+                        entry.raster,
+                        colors_rgba8.is_some(),
+                    )
+                },
             }
         })
         .collect();
@@ -5266,7 +5494,7 @@ fn decode_decal_entry(
 #[tauri::command]
 pub async fn read_decal_dictionary(
     state: State<'_, AppState>,
-    request: ReadResourceDataRequest,
+    request: DecalDictionaryRequest,
 ) -> Result<DecalDictionaryData, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
@@ -5285,9 +5513,16 @@ pub async fn read_decal_dictionary(
             let dictionary = sc_properties::DecalDictionary::parse(data)?;
             let property_file = sc_properties::PropertyFile::parse(data)?;
             if !sc_properties::decal::looks_like_dictionary(&property_file) {
-                return Err(PackageError::InvalidArgument("property has no decal dictionary columns".into()));
+                return Err(PackageError::InvalidArgument(
+                    "property has no decal dictionary columns".into(),
+                ));
             }
-            Ok(decal_dictionary_data(dictionary, package, manager))
+            Ok(decal_dictionary_data(
+                dictionary,
+                package,
+                manager,
+                request.metadata_only,
+            ))
         },
     )
     .await
@@ -5375,7 +5610,7 @@ pub async fn read_rw4_material_textures(
                     binding.material_section,
                 );
                 if let Some(png) = resources.slot0_png.or(resources.base_color_png) {
-                    use base64::{engine::general_purpose::STANDARD, Engine as _};
+                    use base64::{Engine as _, engine::general_purpose::STANDARD};
                     textures.push(Rw4MeshTextureDto {
                         mesh_section: binding.mesh_section,
                         png_base64: STANDARD.encode(png),
@@ -5385,7 +5620,10 @@ pub async fn read_rw4_material_textures(
             // Some prop materials have no decoded bindings but keep diffuse maps
             // directly in the model file.
             if textures.is_empty() {
-                let fallback_mesh = file.sections_of_type(rw4::SectionType::MESH).next().map(|s| s.number);
+                let fallback_mesh = file
+                    .sections_of_type(rw4::SectionType::MESH)
+                    .next()
+                    .map(|s| s.number);
                 for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
                     if let Ok(texture) = file.decode_texture(data, section.number) {
                         if let Ok(rgba) = texture.decode_top_mip_rgba() {
@@ -5394,7 +5632,7 @@ pub async fn read_rw4_material_textures(
                                 u32::from(texture.height),
                                 rgba,
                             ) {
-                                use base64::{engine::general_purpose::STANDARD, Engine as _};
+                                use base64::{Engine as _, engine::general_purpose::STANDARD};
                                 if let Some(mesh_section) = fallback_mesh {
                                     textures.push(Rw4MeshTextureDto {
                                         mesh_section,
@@ -5470,38 +5708,66 @@ pub async fn read_ecogame_preview(
 ) -> Result<EcoGamePreviewData, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
-    read_resource_with(manager, store, request.package_id, request.tgi.clone(), move |data, _, _, _| {
-        let is_state = request.tgi.type_id == 0x0806_8AED;
-        let mut decompressed = Vec::new();
-        let compressed = data.starts_with(&[0x1f, 0x8b]);
-        if is_state && compressed {
-            flate2::read::GzDecoder::new(data).take(128 * 1024 * 1024 + 1)
-                .read_to_end(&mut decompressed).map_err(|e| PackageError::InvalidArgument(e.to_string()))?;
-        } else if is_state {
-            decompressed.extend_from_slice(data);
-        }
-        let mut out = EcoGamePreviewData {
-            type_name: if is_state { "EcoGame State Data".into() } else { "EcoGame State Table".into() },
-            total_length: data.len(), compressed, decompressed_length: None, version: None,
-            environment: None, map_count: None, unit_count: None, curve_count: None,
-            table_words: Vec::new(), exact: false, error: None,
-        };
-        if is_state {
-            out.decompressed_length = Some(decompressed.len());
-            match sc_properties::region_state::read_state(&decompressed) {
-                Ok(parsed) => {
-                    out.version = Some(parsed.version); out.environment = Some(parsed.environment);
-                    out.map_count = Some(parsed.maps.len()); out.unit_count = Some(parsed.units.len());
-                    out.curve_count = Some(parsed.curves.len()); out.exact = true;
-                }
-                Err(error) => out.error = Some(error),
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi.clone(),
+        move |data, _, _, _| {
+            let is_state = request.tgi.type_id == 0x0806_8AED;
+            let mut decompressed = Vec::new();
+            let compressed = data.starts_with(&[0x1f, 0x8b]);
+            if is_state && compressed {
+                flate2::read::GzDecoder::new(data)
+                    .take(128 * 1024 * 1024 + 1)
+                    .read_to_end(&mut decompressed)
+                    .map_err(|e| PackageError::InvalidArgument(e.to_string()))?;
+            } else if is_state {
+                decompressed.extend_from_slice(data);
             }
-        } else {
-            out.table_words = data.chunks_exact(4).take(256).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])).collect();
-            out.exact = data.len() % 4 == 0;
-        }
-        Ok(out)
-    }).await
+            let mut out = EcoGamePreviewData {
+                type_name: if is_state {
+                    "EcoGame State Data".into()
+                } else {
+                    "EcoGame State Table".into()
+                },
+                total_length: data.len(),
+                compressed,
+                decompressed_length: None,
+                version: None,
+                environment: None,
+                map_count: None,
+                unit_count: None,
+                curve_count: None,
+                table_words: Vec::new(),
+                exact: false,
+                error: None,
+            };
+            if is_state {
+                out.decompressed_length = Some(decompressed.len());
+                match sc_properties::region_state::read_state(&decompressed) {
+                    Ok(parsed) => {
+                        out.version = Some(parsed.version);
+                        out.environment = Some(parsed.environment);
+                        out.map_count = Some(parsed.maps.len());
+                        out.unit_count = Some(parsed.units.len());
+                        out.curve_count = Some(parsed.curves.len());
+                        out.exact = true;
+                    }
+                    Err(error) => out.error = Some(error),
+                }
+            } else {
+                out.table_words = data
+                    .chunks_exact(4)
+                    .take(256)
+                    .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+                    .collect();
+                out.exact = data.len() % 4 == 0;
+            }
+            Ok(out)
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -5607,6 +5873,21 @@ pub async fn list_prop_bin_catalog(
 }
 
 /// 路径条目目录（工作台 entry 选择器数据源；机制见 crate::prop_models）。
+/// 带路径的 property 目录（工作台"目标建筑选择"数据源）。
+#[tauri::command]
+pub async fn list_path_sources(
+    state: State<'_, AppState>,
+    package_id: u64,
+) -> Result<Vec<crate::prop_models::PathSourceSummary>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let bundled_registry = bundled_registry_path(&state.app);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::prop_models::path_source_catalog(&manager, package_id, bundled_registry.as_deref())
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::from)
+}
 #[tauri::command]
 pub async fn list_path_entries(
     state: State<'_, AppState>,
@@ -6408,6 +6689,99 @@ mod lot_payload_tests {
         assert!(diag.contains("slot0"), "diagnostics list slot0 params");
     }
 
+    /// Run the exact backend payload chain consumed by Property Viewer over a
+    /// final written package. This deliberately starts at DBPF bytes rather
+    /// than at the builder's intermediate LOTM or resource pool.
+    #[test]
+    #[ignore = "requires SC_LOT_MODEL_PACKAGE and SC_LOT_MODEL_INSTANCE"]
+    fn written_building40_property_viewer_payload() {
+        let path = std::env::var("SC_LOT_MODEL_PACKAGE").expect("final package path");
+        let instance = std::env::var("SC_LOT_MODEL_INSTANCE").expect("LOD1 model instance");
+        let instance = u32::from_str_radix(instance.trim_start_matches("0x"), 16).unwrap();
+        let out_dir = std::env::var("SC_LOT_MODEL_OUT").expect("payload output directory");
+        let package = Package::open(&path).unwrap();
+        let manager = PackageManager::new();
+        let entry = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == RW4_MODEL_TYPE && entry.id.instance == instance)
+            .cloned()
+            .expect("LOD1 model in final package");
+        let data = package.read(&entry).unwrap();
+        let file = rw4::Rw4File::parse(&data).unwrap();
+        let payload = build_lot_model_payload_for_test(&file, &data, &package, &manager, instance);
+        let read_u32 =
+            |offset: usize| u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap());
+        assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
+        assert_eq!(read_u32(4), 10, "Property Viewer container version");
+        let mesh_count = read_u32(8) as usize;
+        if mesh_count == 0 {
+            let material_count = read_u32(12) as usize;
+            let mut dropped_offset = 16usize;
+            for _ in 0..material_count {
+                for _ in 0..9 {
+                    dropped_offset += 4 + read_u32(dropped_offset) as usize;
+                }
+                dropped_offset += 4 + read_u32(dropped_offset) as usize;
+                dropped_offset += 4;
+            }
+            let diag_len = read_u32(dropped_offset) as usize;
+            dropped_offset += 4;
+            let diag = std::str::from_utf8(&payload[dropped_offset..dropped_offset + diag_len])
+                .unwrap();
+            panic!(
+                "Property Viewer dropped the Building40 mesh but retained {material_count} orphan material(s):\n{diag}"
+            );
+        }
+        assert_eq!(mesh_count, 1, "one complete Building40 GLB must export");
+        let mut offset = 12usize;
+        let glb_len = read_u32(offset) as usize;
+        offset += 4;
+        assert!(glb_len > 20 && glb_len <= MESH_GLB_MAX_BYTES);
+        assert_eq!(&payload[offset..offset + 4], b"glTF");
+        let glb = payload[offset..offset + glb_len].to_vec();
+        offset += glb_len;
+        let material_count = read_u32(offset) as usize;
+        offset += 4;
+        assert_eq!(material_count, 1, "Building40 has one material");
+        let mut png_lengths = [0usize; 9];
+        for length in &mut png_lengths {
+            *length = read_u32(offset) as usize;
+            offset += 4 + *length;
+        }
+        // Building40's parameter-table path has no simple diffuse or vehicle
+        // slot0 PNG. All seven other payload images must decode from slots 1-5.
+        for (index, length) in png_lengths.iter().enumerate() {
+            if matches!(index, 0 | 8) {
+                assert_eq!(*length, 0, "payload image {index} must stay unused");
+            } else {
+                assert!(*length > 0, "payload image {index} is empty");
+            }
+        }
+        let params_len = read_u32(offset) as usize;
+        offset += 4 + params_len;
+        let param_cols = read_u32(offset) as usize;
+        offset += 4;
+        assert!(params_len > 0 && param_cols > 0, "slot0 parameter table");
+        assert_eq!(read_u32(offset), 0, "mesh binds material zero");
+        assert!(payload[offset + 4] > 0, "mesh has usable UVs");
+        offset += 5;
+        let diag_len = read_u32(offset) as usize;
+        offset += 4;
+        let diag = std::str::from_utf8(&payload[offset..offset + diag_len]).unwrap();
+        for slot in 0..=5 {
+            assert!(diag.contains(&format!("slot{slot}")), "slot{slot} diagnostic");
+        }
+        assert!(!diag.contains("跳过"), "viewer must not drop the mesh");
+        std::fs::create_dir_all(&out_dir).unwrap();
+        std::fs::write(format!("{out_dir}/model.glb"), glb).unwrap();
+        std::fs::write(format!("{out_dir}/model.lotm"), &payload).unwrap();
+        std::fs::write(format!("{out_dir}/diagnostics.txt"), diag).unwrap();
+        eprintln!(
+            "Property Viewer payload: {mesh_count} GLB ({glb_len} B), {material_count} material, PNG lengths {png_lengths:?}, params {params_len} B x {param_cols} cols\n{diag}"
+        );
+    }
+
     /// LOTM v9 落盘：市政厅族模型 0x01532F56（SimCity_Game；lot 0x457EA9DB /
     /// 0x909BD1C8 / 0x909BD1DB 的 LOD1，6 slot 链：paletteF32 参数表 + 3×
     /// raster + rawBGRA + DXT5）。产出容器 + 诊断文本到 `output/lot_hires/`，
@@ -6416,9 +6790,10 @@ mod lot_payload_tests {
     #[test]
     fn dump_lotm_v9_city_hall() {
         const MODEL: u32 = 0x0153_2F56;
-        let Some((package, manager, file, data)) =
-            open_game_package(MODEL, "D:/ea-games/SimCity/SimCityData/SimCity_Game.package")
-        else {
+        let Some((package, manager, file, data)) = open_game_package(
+            MODEL,
+            "D:/ea-games/SimCity/SimCityData/SimCity_Game.package",
+        ) else {
             eprintln!("skipping: SimCity_Game.package 不可用");
             return;
         };
@@ -6511,7 +6886,10 @@ mod lot_payload_tests {
         let bindings = file.decode_mesh_material_bindings(&data);
         let mut printed_params = false;
         for binding in &bindings {
-            eprintln!("binding: mesh_section={} material_section={}", binding.mesh_section, binding.material_section);
+            eprintln!(
+                "binding: mesh_section={} material_section={}",
+                binding.mesh_section, binding.material_section
+            );
             let slots: Vec<rw4::TextureSlotRef> = file
                 .decode_material(&data, binding.material_section)
                 .ok()
@@ -6520,32 +6898,62 @@ mod lot_payload_tests {
                         Some(decoded.texture_slots().copied().collect::<Vec<_>>())
                     }
                     rw4::MaterialSection::Raw(_) => {
-                        eprintln!("material #{} 解码为 Raw（slot 列表不可用）", binding.material_section);
+                        eprintln!(
+                            "material #{} 解码为 Raw（slot 列表不可用）",
+                            binding.material_section
+                        );
                         None
                     }
                 })
                 .unwrap_or_default();
             for r in &slots {
-                eprintln!("  slot {} → instance 0x{:08X}", r.slot_byte(), r.texture_instance);
+                eprintln!(
+                    "  slot {} → instance 0x{:08X}",
+                    r.slot_byte(),
+                    r.texture_instance
+                );
             }
             // 调试：slot0 实例在当前包的实际条目类型
-            let slot0 = slots.iter().find(|r| r.slot_byte() == 0).map(|r| r.texture_instance);
+            let slot0 = slots
+                .iter()
+                .find(|r| r.slot_byte() == 0)
+                .map(|r| r.texture_instance);
             if let Some(instance) = slot0 {
-                for e in package.entries().iter().filter(|e| e.id.instance == instance) {
-                    eprintln!("  条目 0x{instance:08X}: type=0x{:08X} (RW4_MODEL=0x{:08X})", e.id.type_id, RW4_MODEL_TYPE);
+                for e in package
+                    .entries()
+                    .iter()
+                    .filter(|e| e.id.instance == instance)
+                {
+                    eprintln!(
+                        "  条目 0x{instance:08X}: type=0x{:08X} (RW4_MODEL=0x{:08X})",
+                        e.id.type_id, RW4_MODEL_TYPE
+                    );
                 }
                 // 逐步解析：read → Rw4File::parse → TEXTURE → decode_texture → decode_palette_f32
-                if let Some(e) = package.entries().iter().find(|e| e.id.instance == instance && e.id.type_id == RW4_MODEL_TYPE) {
+                if let Some(e) = package
+                    .entries()
+                    .iter()
+                    .find(|e| e.id.instance == instance && e.id.type_id == RW4_MODEL_TYPE)
+                {
                     match package.read(e) {
                         Ok(bytes) => match rw4::Rw4File::parse(&bytes) {
                             Ok(tex_file) => {
-                                let sec = tex_file.sections_of_type(rw4::SectionType::TEXTURE).next().map(|s| s.number);
+                                let sec = tex_file
+                                    .sections_of_type(rw4::SectionType::TEXTURE)
+                                    .next()
+                                    .map(|s| s.number);
                                 eprintln!("  Rw4File OK, TEXTURE section = {sec:?}");
                                 if let Some(sec) = sec {
                                     match tex_file.decode_texture(&bytes, sec) {
                                         Ok(tex) => match tex.decode_palette_f32() {
-                                            Ok(pixels) => eprintln!("  palette_f32 OK: {} cols × {} rows", tex.width, pixels.len() / usize::from(tex.width)),
-                                            Err(err) => eprintln!("  decode_palette_f32 失败: {err}"),
+                                            Ok(pixels) => eprintln!(
+                                                "  palette_f32 OK: {} cols × {} rows",
+                                                tex.width,
+                                                pixels.len() / usize::from(tex.width)
+                                            ),
+                                            Err(err) => {
+                                                eprintln!("  decode_palette_f32 失败: {err}")
+                                            }
                                         },
                                         Err(err) => eprintln!("  decode_texture 失败: {err}"),
                                     }
@@ -6557,8 +6965,13 @@ mod lot_payload_tests {
                     }
                 }
             }
-            let resources =
-                resolve_material_resources(&file, &data, &package, &manager, binding.material_section);
+            let resources = resolve_material_resources(
+                &file,
+                &data,
+                &package,
+                &manager,
+                binding.material_section,
+            );
             eprintln!(
                 "material #{} paramCols={} params_bytes={}",
                 binding.material_section,
@@ -6572,17 +6985,33 @@ mod lot_payload_tests {
                     .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                     .collect();
                 // 布局 row-major：texel(x=col, y=row) → floats[(row*cols+col)*4+c]
-                eprintln!("col | row0 palU palU2 interior | row1 regionXform(sx,sy,ox,oy) | row2 top(sx,sy,ox,oy) | row3 padX padY invZX invZY");
+                eprintln!(
+                    "col | row0 palU palU2 interior | row1 regionXform(sx,sy,ox,oy) | row2 top(sx,sy,ox,oy) | row3 padX padY invZX invZY"
+                );
                 for col in 0..cols {
                     let at = |row: usize, comp: usize| -> f32 {
-                        floats.get((row * cols + col) * 4 + comp).copied().unwrap_or(f32::NAN)
+                        floats
+                            .get((row * cols + col) * 4 + comp)
+                            .copied()
+                            .unwrap_or(f32::NAN)
                     };
                     eprintln!(
                         "{col:>3} | {:+.4} {:+.4} {:+.4} | ({:+.4},{:+.4})@({:+.4},{:+.4}) | ({:+.4},{:+.4})@({:+.4},{:+.4}) | {:+.3} {:+.3} {:+.3} {:+.3}",
-                        at(0, 0), at(0, 1), at(0, 2),
-                        at(1, 0), at(1, 1), at(1, 2), at(1, 3),
-                        at(2, 0), at(2, 1), at(2, 2), at(2, 3),
-                        at(3, 0), at(3, 1), at(3, 2), at(3, 3),
+                        at(0, 0),
+                        at(0, 1),
+                        at(0, 2),
+                        at(1, 0),
+                        at(1, 1),
+                        at(1, 2),
+                        at(1, 3),
+                        at(2, 0),
+                        at(2, 1),
+                        at(2, 2),
+                        at(2, 3),
+                        at(3, 0),
+                        at(3, 1),
+                        at(3, 2),
+                        at(3, 3),
                     );
                 }
                 printed_params = true;
@@ -6637,8 +7066,14 @@ mod lot_payload_tests {
         // 模型 1：消防局 0x4DE9912B（SimCity_Game）；模型 2：DLC 三门建筑
         // 0x3F31B27E（SimCity_DLC0，三门一整两半）。
         for (model, package_path) in [
-            (0x4DE9_912B, "D:/ea-games/SimCity/SimCityData/SimCity_Game.package"),
-            (0x3F31_B27E, "D:/ea-games/SimCity/SimCityData/SimCity_DLC0.package"),
+            (
+                0x4DE9_912B,
+                "D:/ea-games/SimCity/SimCityData/SimCity_Game.package",
+            ),
+            (
+                0x3F31_B27E,
+                "D:/ea-games/SimCity/SimCityData/SimCity_DLC0.package",
+            ),
         ] {
             eprintln!("############ 模型 0x{model:08X} ############");
             let Some((package, manager, file, data)) = open_game_package(model, package_path)
@@ -6667,7 +7102,10 @@ mod lot_payload_tests {
                 .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 .collect();
             let at = |col: usize, row: usize, comp: usize| -> f32 {
-                floats.get((row * cols + col) * 4 + comp).copied().unwrap_or(f32::NAN)
+                floats
+                    .get((row * cols + col) * 4 + comp)
+                    .copied()
+                    .unwrap_or(f32::NAN)
             };
             if let Some(tint_png) = &resources.tint_png {
                 let tint_path =
@@ -6699,68 +7137,89 @@ mod lot_payload_tests {
                 let _ = img.save(&regions_path);
                 eprintln!("region overlay → {regions_path}");
             }
-        // 逐列：顶点 uv 范围 → 采样子矩形
-        for section in file.sections_of_type(rw4::SectionType::MESH) {
-            let Ok(mesh) = file.decode_mesh(&data, section.number) else {
-                continue;
-            };
-            if !mesh.is_exportable() {
-                continue;
-            }
-            struct ColRange {
-                count: u32,
-                uv2_min: [f32; 2],
-                uv2_max: [f32; 2],
-                uv3_min: [f32; 2],
-                uv3_max: [f32; 2],
-            }
-            let mut ranges: std::collections::BTreeMap<u8, ColRange> = Default::default();
-            for v in &mesh.vertices {
-                let g = v.d3d_color_g().unwrap_or(0);
-                let Some(f4) = v.components.iter().find_map(|(_, val)| match val {
-                    rw4::ComponentValue::Float4(f) => Some(*f),
-                    _ => None,
-                }) else {
+            // 逐列：顶点 uv 范围 → 采样子矩形
+            for section in file.sections_of_type(rw4::SectionType::MESH) {
+                let Ok(mesh) = file.decode_mesh(&data, section.number) else {
                     continue;
                 };
-                let entry = ranges.entry(g).or_insert(ColRange {
-                    count: 0,
-                    uv2_min: [f32::MAX; 2],
-                    uv2_max: [f32::MIN; 2],
-                    uv3_min: [f32::MAX; 2],
-                    uv3_max: [f32::MIN; 2],
-                });
-                entry.count += 1;
-                for k in 0..2 {
-                    entry.uv2_min[k] = entry.uv2_min[k].min(f4[k]);
-                    entry.uv2_max[k] = entry.uv2_max[k].max(f4[k]);
-                    entry.uv3_min[k] = entry.uv3_min[k].min(f4[2 + k]);
-                    entry.uv3_max[k] = entry.uv3_max[k].max(f4[2 + k]);
-                }
-            }
-            eprintln!("=== 逐列：uv 范围（span≥1 即 frac 回卷）===");
-            eprintln!("g | n | wrap | uv2 范围/span × row1 | uv3 范围 × row2 | pad");
-            for (g, r) in &ranges {
-                let col = *g as usize;
-                if col >= cols {
+                if !mesh.is_exportable() {
                     continue;
                 }
-                let (sx, sy, ox, oy) = (at(col, 1, 0), at(col, 1, 1), at(col, 1, 2), at(col, 1, 3));
-                let (tx, ty, tox, toy) = (at(col, 2, 0), at(col, 2, 1), at(col, 2, 2), at(col, 2, 3));
-                let (px, py) = (at(col, 3, 0), at(col, 3, 1));
-                let span_x = r.uv2_max[0] - r.uv2_min[0];
-                let span_y = r.uv2_max[1] - r.uv2_min[1];
-                let wraps = if span_x >= 1.0 || span_y >= 1.0 { "WRAP" } else { "    " };
-                eprintln!(
-                    "g={g:>2} n={:>4} {wraps} | uv2 x[{:+.3},{:+.3}] y[{:+.3},{:+.3}] span({:+.2},{:+.2}) × row1({:+.3},{:+.3})@({:+.3},{:+.3}) | uv3 x[{:+.3},{:+.3}] y[{:+.3},{:+.3}] × row2({:+.3},{:+.3})@({:+.3},{:+.3}) | pad=({:+.1},{:+.1})",
-                    r.count,
-                    r.uv2_min[0], r.uv2_max[0], r.uv2_min[1], r.uv2_max[1], span_x, span_y,
-                    sx, sy, ox, oy,
-                    r.uv3_min[0], r.uv3_max[0], r.uv3_min[1], r.uv3_max[1],
-                    tx, ty, tox, toy,
-                    px, py,
-                );
-            }
+                struct ColRange {
+                    count: u32,
+                    uv2_min: [f32; 2],
+                    uv2_max: [f32; 2],
+                    uv3_min: [f32; 2],
+                    uv3_max: [f32; 2],
+                }
+                let mut ranges: std::collections::BTreeMap<u8, ColRange> = Default::default();
+                for v in &mesh.vertices {
+                    let g = v.d3d_color_g().unwrap_or(0);
+                    let Some(f4) = v.components.iter().find_map(|(_, val)| match val {
+                        rw4::ComponentValue::Float4(f) => Some(*f),
+                        _ => None,
+                    }) else {
+                        continue;
+                    };
+                    let entry = ranges.entry(g).or_insert(ColRange {
+                        count: 0,
+                        uv2_min: [f32::MAX; 2],
+                        uv2_max: [f32::MIN; 2],
+                        uv3_min: [f32::MAX; 2],
+                        uv3_max: [f32::MIN; 2],
+                    });
+                    entry.count += 1;
+                    for k in 0..2 {
+                        entry.uv2_min[k] = entry.uv2_min[k].min(f4[k]);
+                        entry.uv2_max[k] = entry.uv2_max[k].max(f4[k]);
+                        entry.uv3_min[k] = entry.uv3_min[k].min(f4[2 + k]);
+                        entry.uv3_max[k] = entry.uv3_max[k].max(f4[2 + k]);
+                    }
+                }
+                eprintln!("=== 逐列：uv 范围（span≥1 即 frac 回卷）===");
+                eprintln!("g | n | wrap | uv2 范围/span × row1 | uv3 范围 × row2 | pad");
+                for (g, r) in &ranges {
+                    let col = *g as usize;
+                    if col >= cols {
+                        continue;
+                    }
+                    let (sx, sy, ox, oy) =
+                        (at(col, 1, 0), at(col, 1, 1), at(col, 1, 2), at(col, 1, 3));
+                    let (tx, ty, tox, toy) =
+                        (at(col, 2, 0), at(col, 2, 1), at(col, 2, 2), at(col, 2, 3));
+                    let (px, py) = (at(col, 3, 0), at(col, 3, 1));
+                    let span_x = r.uv2_max[0] - r.uv2_min[0];
+                    let span_y = r.uv2_max[1] - r.uv2_min[1];
+                    let wraps = if span_x >= 1.0 || span_y >= 1.0 {
+                        "WRAP"
+                    } else {
+                        "    "
+                    };
+                    eprintln!(
+                        "g={g:>2} n={:>4} {wraps} | uv2 x[{:+.3},{:+.3}] y[{:+.3},{:+.3}] span({:+.2},{:+.2}) × row1({:+.3},{:+.3})@({:+.3},{:+.3}) | uv3 x[{:+.3},{:+.3}] y[{:+.3},{:+.3}] × row2({:+.3},{:+.3})@({:+.3},{:+.3}) | pad=({:+.1},{:+.1})",
+                        r.count,
+                        r.uv2_min[0],
+                        r.uv2_max[0],
+                        r.uv2_min[1],
+                        r.uv2_max[1],
+                        span_x,
+                        span_y,
+                        sx,
+                        sy,
+                        ox,
+                        oy,
+                        r.uv3_min[0],
+                        r.uv3_max[0],
+                        r.uv3_min[1],
+                        r.uv3_max[1],
+                        tx,
+                        ty,
+                        tox,
+                        toy,
+                        px,
+                        py,
+                    );
+                }
             }
         }
     }
@@ -6802,7 +7261,12 @@ mod lot_payload_tests {
     fn open_game_package(
         model: u32,
         package_path: &str,
-    ) -> Option<(std::sync::Arc<dbpf::Package>, PackageManager, rw4::Rw4File, Vec<u8>)> {
+    ) -> Option<(
+        std::sync::Arc<dbpf::Package>,
+        PackageManager,
+        rw4::Rw4File,
+        Vec<u8>,
+    )> {
         let graphics =
             dbpf::Package::open("D:/ea-games/SimCity/SimCityData/SimCity_Graphics.package").ok();
         let source = dbpf::Package::open(package_path).ok()?;
@@ -6822,8 +7286,401 @@ mod lot_payload_tests {
     }
 }
 
+/// D3 diagnostic: run the viewer's material-slot resolution over every
+/// MATERIAL section of the compiled university model and dump what the
+/// frontend would receive (per-slot texture PNGs, params table, bake).
+#[cfg(test)]
+mod material_diag {
+    use super::*;
+
+    #[test]
+    #[ignore = "diagnostic for the built university package"]
+    fn diag_university_material_slot_resolution() {
+        let fixture = std::path::PathBuf::from(
+            std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT"),
+        );
+        let mut package_path = None;
+        for hash in fs::read_dir(fixture.join("university-export/.build"))
+            .expect("build dir")
+            .flatten()
+        {
+            let candidate = hash.path().join("packages/university-lab.package");
+            if candidate.is_file() {
+                package_path = Some(candidate);
+            }
+        }
+        let package_path = package_path.expect("built university package");
+        let package = Package::open(&package_path).unwrap();
+        let manager = PackageManager::new();
+        let lot = ResourceId {
+            type_id: 0x00B1B104,
+            group: 0x58F0C000,
+            instance: 0x2063CCDD,
+        };
+        let lot_file =
+            sc_properties::PropertyFile::parse(&package.read(package.entry(lot).unwrap()).unwrap())
+                .unwrap();
+        let sc_properties::Value::Key(model_key) = lot_file
+            .get(sc_properties::LOD1_MODEL_HASH)
+            .and_then(|p| p.scalar().cloned())
+            .unwrap()
+        else {
+            panic!("LOD1 key");
+        };
+        let bytes = package
+            .read(
+                package
+                    .entry(ResourceId {
+                        type_id: model_key.type_id,
+                        group: model_key.group,
+                        instance: model_key.instance,
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+        let file = rw4::Rw4File::parse(&bytes).unwrap();
+        let bindings = file.decode_mesh_material_bindings(&bytes);
+        let mut uv_kinds: Vec<(u32, u8)> = Vec::new();
+        for section in file.sections_of_type(rw4::SectionType::MESH) {
+            let decoded = file.decode_mesh(&bytes, section.number).unwrap();
+            uv_kinds.push((section.number, mesh_uv_kind(&decoded)));
+        }
+        let mut printed = 0;
+        for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
+            let resources =
+                resolve_material_resources(&file, &bytes, &package, &manager, section.number);
+            let slots: Vec<String> = match file.decode_material(&bytes, section.number) {
+                Ok(rw4::MaterialSection::Decoded(m)) => m
+                    .texture_slots()
+                    .map(|r| format!("s{}={:08X}", r.slot_byte(), r.texture_instance))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            println!(
+                "material #{:<4} refs[{}] bake={} params_cols={} base={} tint={} palette={} shader={} interior={} normal={}",
+                section.number,
+                slots.join(" "),
+                resources.bake.is_some(),
+                resources.param_cols,
+                resources.base_color_png.is_some(),
+                resources.tint_png.is_some(),
+                resources.palette_png.is_some(),
+                resources.shader_png.is_some(),
+                resources.interior_png.is_some(),
+                resources.normal_png.is_some(),
+            );
+            if !std::env::var("SC_MATERIAL_DUMP")
+                .unwrap_or_default()
+                .is_empty()
+                || printed < 6
+            {
+                println!("  diag: {}", resources.diag.replace('\n', " | "));
+                let dump_dir =
+                    std::path::PathBuf::from(std::env::var("SC_MATERIAL_DUMP").unwrap_or_default());
+                if !dump_dir.as_os_str().is_empty() {
+                    let _ = fs::create_dir_all(&dump_dir);
+                    let write = |name: &str, bytes: &Option<Vec<u8>>| {
+                        if let Some(bytes) = bytes {
+                            let _ = fs::write(dump_dir.join(name), bytes);
+                        }
+                    };
+                    write(&format!("m{printed}_tint.png"), &resources.tint_png);
+                    write(&format!("m{printed}_palette.png"), &resources.palette_png);
+                    write(&format!("m{printed}_shader.png"), &resources.shader_png);
+                    write(&format!("m{printed}_interior.png"), &resources.interior_png);
+                    write(&format!("m{printed}_normal.png"), &resources.normal_png);
+                }
+            }
+            printed += 1;
+        }
+        let kind_hist: std::collections::BTreeMap<u8, usize> =
+            uv_kinds.iter().fold(Default::default(), |mut acc, (_, k)| {
+                *acc.entry(*k).or_default() += 1;
+                acc
+            });
+        println!("mesh uv_kind histogram: {kind_hist:?}");
+    }
+
+    /// 第三方包验收诊断：对 `SC5_NightHouse_Test_0_5_0.package` 内每个建筑
+    /// 模型跑查看器生产链路（uv_kind + 材质槽解析 + 烘焙），打印前端将收到的
+    /// 材质/贴图清单。用法：
+    /// 商业样本场景 prop 模型的材质取证：dump payload 各槽位 PNG 并打印
+    /// 尺寸/alpha/不透明像素均色，定位"树叶发白"是贴图源还是材质装配。
+    /// 用法：
+    /// `SC_TREE_DUMP=<dir> cargo test diag_scene_prop_payload_materials --lib -- --ignored --nocapture`
+    /// 打开游戏包并定位单个模型资源（material_diag 本地版）。
+    fn open_model_package(
+        model: u32,
+        package_path: &str,
+    ) -> Option<(
+        std::sync::Arc<dbpf::Package>,
+        PackageManager,
+        rw4::Rw4File,
+        Vec<u8>,
+    )> {
+        let source = dbpf::Package::open(package_path).ok()?;
+        let manager = PackageManager::new();
+        let (_gid, package) = manager.insert(source).ok()?;
+        let entry = package
+            .entries()
+            .iter()
+            .find(|e| e.id.type_id == RW4_MODEL_TYPE && e.id.instance == model)
+            .cloned()?;
+        let data = package.read(&entry).ok()?;
+        let file = rw4::Rw4File::parse(&data).ok()?;
+        Some((package, manager, file, data))
+    }
+
+    #[test]
+    #[ignore = "diagnostic for the workbench scene prop models"]
+    fn diag_scene_prop_payload_materials() {
+        let dump_dir =
+            std::path::PathBuf::from(std::env::var("SC_TREE_DUMP").expect("set SC_TREE_DUMP"));
+        fs::create_dir_all(&dump_dir).unwrap();
+        let graphics = "D:/ea-games/SimCity/SimCityData/SimCity_Graphics.package";
+        let game = "D:/ea-games/SimCity/SimCityData/SimCity_Game.package";
+        let models: [(&str, u32); 4] = [
+            ("tree_0x14984C68", 0x1498_4C68),
+            ("prop_0xD15E6C57", 0xD15E_6C57),
+            ("prop_0x4E15EC0E", 0x4E15_EC0E),
+            ("truck_0xDE3A1E85", 0xDE3A_1E85), // Alloy Truck 3728069957
+        ];
+        for (name, model) in models {
+            let Some((package, manager, file, data)) =
+                open_model_package(model, graphics).or_else(|| open_model_package(model, game))
+            else {
+                println!("{name} ({model:08X}): model not found in Graphics/Game");
+                continue;
+            };
+            let payload = build_lot_model_payload_for_test(&file, &data, &package, &manager, model);
+            let out = dump_dir.join(name);
+            fs::create_dir_all(&out).unwrap();
+            println!(
+                "{name} ({model:08X}): payload {} bytes, materials {}",
+                payload.len(),
+                file.sections_of_type(rw4::SectionType::MATERIAL).count()
+            );
+            let manager = &manager;
+            let package = &package;
+            for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
+                let resources =
+                    resolve_material_resources(&file, &data, package, manager, section.number);
+                let save = |label: &str, png: &Option<Vec<u8>>| {
+                    let Some(bytes) = png else {
+                        println!("  m#{} {label}: none", section.number);
+                        return;
+                    };
+                    fs::write(
+                        out.join(format!("m{}_{}.png", section.number, label)),
+                        bytes,
+                    )
+                    .unwrap();
+                    let Ok(img) = image::load_from_memory(bytes) else {
+                        println!("  m#{} {label}: undecodable png", section.number);
+                        return;
+                    };
+                    let rgba = img.to_rgba8();
+                    let (w, h) = rgba.dimensions();
+                    let mut min_a = 255u8;
+                    let mut opaque = 0u64;
+                    let mut sum = [0u64; 3];
+                    for px in rgba.pixels() {
+                        min_a = min_a.min(px.0[3]);
+                        if px.0[3] >= 128 {
+                            opaque += 1;
+                            for c in 0..3 {
+                                sum[c] += px.0[c] as u64;
+                            }
+                        }
+                    }
+                    let mean = |c: usize| if opaque > 0 { sum[c] / opaque } else { 0 };
+                    println!(
+                        "  m#{}) {label}: {}x{} min_alpha={min_a} opaque_px={opaque} mean_rgb=({},{},{})",
+                        section.number,
+                        w,
+                        h,
+                        mean(0),
+                        mean(1),
+                        mean(2),
+                    );
+                };
+                save("slot0", &resources.slot0_png);
+                save("base", &resources.base_color_png);
+                save("normal", &resources.normal_png);
+                save("rough", &resources.roughness_png);
+                save("shader", &resources.shader_png);
+            }
+        }
+    }
+
+    /// `SC_NIGHTHOUSE_PACKAGE=<path> cargo test diag_third_party_package_payload --lib -- --ignored --nocapture`
+    #[test]
+    #[ignore = "diagnostic for a third-party package"]
+    fn diag_third_party_package_payload() {
+        let package_path = std::env::var("SC_NIGHTHOUSE_PACKAGE")
+            .expect("set SC_NIGHTHOUSE_PACKAGE to the .package path");
+        let package = Package::open(&package_path).unwrap();
+        let manager = PackageManager::new();
+        for entry in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == RW4_MODEL_TYPE)
+        {
+            let data = match package.read(entry) {
+                Ok(d) => d,
+                Err(err) => {
+                    println!("model {:08X}: read error {err}", entry.id.instance);
+                    continue;
+                }
+            };
+            let file = match rw4::Rw4File::parse(&data) {
+                Ok(f) => f,
+                Err(err) => {
+                    println!("model {:08X}: parse error {err}", entry.id.instance);
+                    continue;
+                }
+            };
+            if file
+                .sections_of_type(rw4::SectionType::MESH)
+                .next()
+                .is_none()
+            {
+                continue; // 贴图包裹资源，跳过
+            }
+            let payload = build_lot_model_payload_for_test(
+                &file,
+                &data,
+                &package,
+                &manager,
+                entry.id.instance,
+            );
+            let mesh_count = file
+                .sections_of_type(rw4::SectionType::MESH)
+                .filter(|s| {
+                    file.decode_mesh(&data, s.number)
+                        .map(|m| m.is_exportable())
+                        .unwrap_or(false)
+                })
+                .count();
+            let diag_start = payload
+                .windows(4)
+                .position(|w| w == b"mesh")
+                .map(|p| p.min(payload.len()));
+            println!(
+                "model {:08X}: {} exportable meshes, payload {} bytes{}",
+                entry.id.instance,
+                mesh_count,
+                payload.len(),
+                diag_start
+                    .map(|p| format!(" (diag at {p})"))
+                    .unwrap_or_default(),
+            );
+            for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
+                let resources =
+                    resolve_material_resources(&file, &data, &package, &manager, section.number);
+                let slots: Vec<String> = match file.decode_material(&data, section.number) {
+                    Ok(rw4::MaterialSection::Decoded(m)) => m
+                        .texture_slots()
+                        .map(|r| format!("s{}={:08X}", r.slot_byte(), r.texture_instance))
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                println!(
+                    "  material #{}: refs[{}] bake={} params_cols={} base={} tint={} palette={} shader={} interior={} normal={}",
+                    section.number,
+                    slots.join(" "),
+                    resources.bake.is_some(),
+                    resources.param_cols,
+                    resources.base_color_png.is_some(),
+                    resources.tint_png.is_some(),
+                    resources.palette_png.is_some(),
+                    resources.shader_png.is_some(),
+                    resources.interior_png.is_some(),
+                    resources.normal_png.is_some(),
+                );
+                println!("    diag: {}", resources.diag.replace('\n', " | "));
+            }
+            for section in file.sections_of_type(rw4::SectionType::MESH) {
+                if let Ok(mesh) = file.decode_mesh(&data, section.number) {
+                    println!(
+                        "  mesh #{}: uv_kind={} verts={} tris={}",
+                        section.number,
+                        mesh_uv_kind(&mesh),
+                        mesh.vertices.len(),
+                        mesh.triangles.len()
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    /// Plugin-authored facade meshes: all-vertex FLOAT4 with small UVs plus a
+    /// D3DCOLOR must classify as tint (kind2) — the COLOR column is the facade
+    /// signature; without COLOR the small-FLOAT4 mesh stays on the simple path.
+    #[test]
+    fn mesh_uv_kind_accepts_color_as_facade_signature() {
+        use rw4::{DeclarationType, VertexElement};
+        let element = |usage: rw4::DeclarationUsage, offset: u16| VertexElement {
+            unknown1: 0,
+            offset,
+            decl_type: match usage {
+                rw4::DeclarationUsage::TexCoord => DeclarationType::Float4,
+                rw4::DeclarationUsage::Color => DeclarationType::D3DColor,
+                _ => unreachable!(),
+            },
+            usage,
+            index: if usage == rw4::DeclarationUsage::TexCoord {
+                1
+            } else {
+                0
+            },
+            unknown2: 0,
+            unknown3: 0,
+            unknown4: 0,
+        };
+        let vertex = |color: Option<u8>| rw4::DecodedVertex {
+            components: vec![
+                (
+                    element(rw4::DeclarationUsage::TexCoord, 0),
+                    rw4::ComponentValue::Float4([0.5, 0.5, 0.0, 0.0]),
+                ),
+                (
+                    element(rw4::DeclarationUsage::Color, 16),
+                    rw4::ComponentValue::D3DColor {
+                        a: 255,
+                        r: 0,
+                        g: color.unwrap_or(0),
+                        b: 0,
+                    },
+                ),
+            ],
+        };
+        let with_color = rw4::DecodedMesh {
+            number: 0,
+            header: rw4::MeshHeader {
+                tri_section: 0,
+                triangle_count: 0,
+                start_index: 0,
+                index_count: 0,
+                min_vertex_index: 0,
+                vertex_count: 0,
+                vertex_section: 0,
+            },
+            triangles: vec![],
+            vertices: vec![vertex(Some(0)), vertex(Some(0))],
+        };
+        assert_eq!(mesh_uv_kind(&with_color), 2, "COLOR + all-FLOAT4 = facade");
+        let mut without_color = with_color.clone();
+        for v in &mut without_color.vertices {
+            v.components
+                .retain(|(e, _)| e.usage != rw4::DeclarationUsage::Color);
+        }
+        assert_eq!(mesh_uv_kind(&without_color), 1, "no COLOR stays simple");
+    }
     use super::*;
     use dbpf::{OverlayEntry, write_uncompressed_overlay};
 
@@ -6848,7 +7705,9 @@ mod tests {
         let mut with_payload = 0usize;
         let mut with_uv1 = 0usize;
         'outer: for path in paths {
-            let Ok(package) = Package::open(path) else { continue };
+            let Ok(package) = Package::open(path) else {
+                continue;
+            };
             let arc = manager.insert(package).expect("insert").1;
             let entries: Vec<_> = arc
                 .entries()
@@ -6861,7 +7720,9 @@ mod tests {
                     break 'outer;
                 }
                 let Ok(data) = arc.read(&entry) else { continue };
-                let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+                let Ok(file) = rw4::Rw4File::parse(&data) else {
+                    continue;
+                };
                 let payload = build_lot_model_payload_for_test(
                     &file,
                     &data,
@@ -6874,17 +7735,12 @@ mod tests {
                     continue;
                 }
                 with_uv1 += 1;
-                let has_facade_uv = payload
-                    .windows(11)
-                    .any(|window| window == b"TEXCOORD_2");
+                let has_facade_uv = payload.windows(11).any(|window| window == b"TEXCOORD_2");
                 if !has_facade_uv {
                     continue;
                 }
                 with_payload += 1;
-                let out = format!(
-                    "tmp/gltf_fixture/ep1_{:08X}.bin",
-                    entry.id.instance
-                );
+                let out = format!("tmp/gltf_fixture/ep1_{:08X}.bin", entry.id.instance);
                 std::fs::write(&out, &payload).expect("write payload");
                 println!(
                     "EP1 facade payload {:08X}: bytes={} -> {}",
@@ -6931,7 +7787,11 @@ mod tests {
             colors,
             borders,
             [0.0; 4],
-            Some(&SurfacePixels { width: 8, height: 8, rgba: surface }),
+            Some(&SurfacePixels {
+                width: 8,
+                height: 8,
+                rgba: surface,
+            }),
             8,
         )
         .expect("compose albedo");
@@ -6939,10 +7799,8 @@ mod tests {
         // 像素 1 中心 u=0.75 → 镜像 0.25 → cell sx=0；v=0.5 → sy=1 → 色 10*0+1。
         assert_eq!(&out[4..8], &[1, 1, 1, 255], "未覆盖区铺底图格（U 镜像）");
         // 默认模式不采样图集，未覆盖区使用中性纯色。
-        let out = compose_lot_albedo_rgba(
-            &raw, 2, 1, colors, borders, [0.0; 4], None, 8,
-        )
-        .expect("compose albedo");
+        let out = compose_lot_albedo_rgba(&raw, 2, 1, colors, borders, [0.0; 4], None, 8)
+            .expect("compose albedo");
         assert_eq!(&out[4..8], &[92, 113, 100, 255]);
     }
 
@@ -6956,25 +7814,20 @@ mod tests {
         colors[0] = [10, 20, 30, 1];
         let mut borders = [[156u8; 3]; 4];
         borders[0] = [200, 210, 220];
-        let out = compose_lot_albedo_rgba(
-            &raw, 2, 1, colors, borders, [0.1, 0.0, 0.0, 0.0], None, 8,
-        )
-        .expect("compose albedo");
+        let out =
+            compose_lot_albedo_rgba(&raw, 2, 1, colors, borders, [0.1, 0.0, 0.0, 0.0], None, 8)
+                .expect("compose albedo");
         assert_eq!(&out[0..3], &[200, 210, 220], "边框带 → LotBorderColor 平色");
         assert_eq!(&out[4..7], &[10, 20, 30], "主区 → LotColor 平色");
         // 优先级瀑布：R+G 同时过阈 → G 胜（w→z→y→x）。
         let raw = vec![255, 255, 0, 0];
-        let out = compose_lot_albedo_rgba(
-            &raw, 1, 1, colors, borders, [0.0; 4], None, 8,
-        )
-        .expect("compose albedo");
+        let out = compose_lot_albedo_rgba(&raw, 1, 1, colors, borders, [0.0; 4], None, 8)
+            .expect("compose albedo");
         assert_eq!(&out[0..3], &colors[1][0..3]);
         // bw = 0 时 (0.5, 0.5] 为空集 → 无边框带（值 0.502 直接主区）。
         let raw = vec![128, 0, 0, 0];
-        let out = compose_lot_albedo_rgba(
-            &raw, 1, 1, colors, borders, [0.0; 4], None, 8,
-        )
-        .expect("compose albedo");
+        let out = compose_lot_albedo_rgba(&raw, 1, 1, colors, borders, [0.0; 4], None, 8)
+            .expect("compose albedo");
         assert_eq!(&out[0..3], &[10, 20, 30]);
     }
 
@@ -6993,10 +7846,7 @@ mod tests {
             })
         };
         // ① FD6 Int32 直给。
-        let document = document_of(vec![prop(
-            0x0CCB_7FD6,
-            sc_properties::Value::Int32(5),
-        )]);
+        let document = document_of(vec![prop(0x0CCB_7FD6, sc_properties::Value::Int32(5))]);
         assert_eq!(lot_base_tile(&document), (5, "0x0CCB7FD6"));
         // ② FD6 缺失 → FD2/FD3 推导：x: min(0.75,0.9)=0.75 → round(3.0625)=3；
         //    y: min(0.5,0.25)=0.25 → round(1.0625)=1 → 3+1*4=7。
@@ -7464,17 +8314,26 @@ mod tests {
         let file = sc_properties::PropertyFile {
             claimed_count: 0,
             values: vec![
-                prop_of(0x0E28_B5D5, sc_properties::Value::Text(sc_properties::Text {
-                    table_id: 0x0ED9_C82B,
-                    instance_id: 7,
-                })),
-                prop_of(0x0D8_97169, sc_properties::Value::Key(sc_properties::Key {
-                    type_id: 0x2F4E_681B,
-                    group: 0,
-                    instance: 0x79A5_6B0D,
-                })),
+                prop_of(
+                    0x0E28_B5D5,
+                    sc_properties::Value::Text(sc_properties::Text {
+                        table_id: 0x0ED9_C82B,
+                        instance_id: 7,
+                    }),
+                ),
+                prop_of(
+                    0x0D8_97169,
+                    sc_properties::Value::Key(sc_properties::Key {
+                        type_id: 0x2F4E_681B,
+                        group: 0,
+                        instance: 0x79A5_6B0D,
+                    }),
+                ),
                 prop_of(0x0CAA_8F10, sc_properties::Value::Bool(true)),
-                prop_of(0x0CAA_8F17, sc_properties::Value::String8("headlightCar".into())),
+                prop_of(
+                    0x0CAA_8F17,
+                    sc_properties::Value::String8("headlightCar".into()),
+                ),
             ],
         };
         let card = extract_semantic_card(&file, sc_properties::PropertySemantic::Agent, None)
@@ -7512,11 +8371,14 @@ mod tests {
         let file = sc_properties::PropertyFile {
             claimed_count: 0,
             values: vec![
-                prop_of(0x0D9B_DA82, sc_properties::Value::Key(sc_properties::Key {
-                    type_id: 0,
-                    group: 0,
-                    instance: 0xCAC2_A973,
-                })),
+                prop_of(
+                    0x0D9B_DA82,
+                    sc_properties::Value::Key(sc_properties::Key {
+                        type_id: 0,
+                        group: 0,
+                        instance: 0xCAC2_A973,
+                    }),
+                ),
                 prop_of(0x0D9B_DA83, sc_properties::Value::Int32(-1)),
                 prop_of(0x0D9B_DA84, sc_properties::Value::Int32(42)),
                 prop_of(0x0D9B_DA87, sc_properties::Value::Int32(-1)),
@@ -7524,18 +8386,11 @@ mod tests {
                 prop_of(0x0D6D_BF4A, sc_properties::Value::Bool(true)),
             ],
         };
-        let card = extract_semantic_card(
-            &file,
-            sc_properties::PropertySemantic::ResourceEntry,
-            None,
-        )
-        .expect("resource entry card");
+        let card =
+            extract_semantic_card(&file, sc_properties::PropertySemantic::ResourceEntry, None)
+                .expect("resource entry card");
         match card {
-            SemanticCardData::ResourceEntry {
-                slots,
-                enabled,
-                ..
-            } => {
+            SemanticCardData::ResourceEntry { slots, enabled, .. } => {
                 assert_eq!(slots.len(), 1);
                 assert_eq!(slots[0].resource.instance_id, 0xCAC2_A973);
                 // -1 哨兵 → None；实际值保留
@@ -7558,12 +8413,8 @@ mod tests {
                 }),
             )],
         };
-        let card = extract_semantic_card(
-            &file,
-            sc_properties::PropertySemantic::ResourceDef,
-            None,
-        )
-        .expect("resource def card");
+        let card = extract_semantic_card(&file, sc_properties::PropertySemantic::ResourceDef, None)
+            .expect("resource def card");
         match card {
             SemanticCardData::ResourceDef { resource_name, .. } => {
                 assert_eq!(resource_name.len(), 1);
@@ -7676,7 +8527,9 @@ mod tests {
             claimed_count: 0,
             values: vec![],
         };
-        assert!(extract_semantic_card(&file, sc_properties::PropertySemantic::Unit, None).is_none());
+        assert!(
+            extract_semantic_card(&file, sc_properties::PropertySemantic::Unit, None).is_none()
+        );
         assert!(
             extract_semantic_card(&file, sc_properties::PropertySemantic::Other, None).is_none()
         );
@@ -7691,13 +8544,11 @@ mod tests {
             values: vec![sc_properties::Property {
                 hash: sc_properties::PARENT_HASH,
                 prop_type: sc_properties::PropType::Key,
-                kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(
-                    sc_properties::Key {
-                        type_id: 0x00B1_B104,
-                        group: 0x40E1_C000,
-                        instance: 0x2092_116E,
-                    },
-                )),
+                kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(sc_properties::Key {
+                    type_id: 0x00B1_B104,
+                    group: 0x40E1_C000,
+                    instance: 0x2092_116E,
+                })),
                 encoding: sc_properties::PropertyEncoding::default(),
             }],
         };
@@ -8014,7 +8865,8 @@ mod hole_tex_probe {
     fn dump_hole_texture() {
         let game_dir = "D:/ea-games/SimCity/SimCityData";
         let game = dbpf::Package::open(&format!("{game_dir}/SimCity_Game.package")).unwrap();
-        let graphics = dbpf::Package::open(&format!("{game_dir}/SimCity_Graphics.package")).unwrap();
+        let graphics =
+            dbpf::Package::open(&format!("{game_dir}/SimCity_Graphics.package")).unwrap();
         let app = dbpf::Package::open(&format!("{game_dir}/SimCity_App.package")).unwrap();
         let manager = PackageManager::new();
         let (_gid, package) = manager.insert(game).unwrap();
@@ -8022,10 +8874,15 @@ mod hole_tex_probe {
         let _ = manager.insert(app);
         // 破洞 atlas 条目的 raster 实例（half_window_probe 实测）
         for instance in [0x6578_56F3u32, 1702385392, 1702385393, 1702385398] {
-            let key = sc_properties::Key { instance, type_id: 0, group: 0 };
+            let key = sc_properties::Key {
+                instance,
+                type_id: 0,
+                group: 0,
+            };
             match decode_lot_surface_png(&package, &manager, key) {
                 Ok((png, _)) => {
-                    let path = format!("D:/rust/packages/fluffy-open-scp/tmp/hole_{instance:08X}.png");
+                    let path =
+                        format!("D:/rust/packages/fluffy-open-scp/tmp/hole_{instance:08X}.png");
                     std::fs::write(&path, png).unwrap();
                     eprintln!("decoded → {path}");
                 }
@@ -8049,7 +8906,9 @@ mod hole_pkg_scan {
             if path.extension().and_then(|e| e.to_str()) != Some("package") {
                 continue;
             }
-            let Ok(package) = dbpf::Package::open(&path) else { continue };
+            let Ok(package) = dbpf::Package::open(&path) else {
+                continue;
+            };
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
             for target in targets {
                 for e in package.entries() {
@@ -8084,8 +8943,13 @@ mod decal_taxonomy_scan {
             if path.extension().and_then(|e| e.to_str()) != Some("package") {
                 continue;
             }
-            let Ok(package) = dbpf::Package::open(&path) else { continue };
-            owned.push((path.file_name().unwrap().to_string_lossy().into_owned(), package));
+            let Ok(package) = dbpf::Package::open(&path) else {
+                continue;
+            };
+            owned.push((
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                package,
+            ));
         }
         let all: Vec<&Package> = owned.iter().map(|(_, p)| p).collect();
         let atlases = collect_decal_atlases(&all);
@@ -8123,13 +8987,21 @@ mod decal_taxonomy_scan {
                     continue;
                 }
                 let Ok(bytes) = package.read(e) else { continue };
-                let Ok(file) = sc_properties::PropertyFile::parse(&bytes) else { continue };
+                let Ok(file) = sc_properties::PropertyFile::parse(&bytes) else {
+                    continue;
+                };
                 let mut has_decal = false;
                 for category in 0..3u32 {
-                    let Some(prop) = file.get(0x0D10_9050 + category) else { continue };
-                    let sc_properties::Kind::Array(ids) = &prop.kind else { continue };
+                    let Some(prop) = file.get(0x0D10_9050 + category) else {
+                        continue;
+                    };
+                    let sc_properties::Kind::Array(ids) = &prop.kind else {
+                        continue;
+                    };
                     for value in ids.iter() {
-                        let sc_properties::Value::Key(key) = value else { continue };
+                        let sc_properties::Value::Key(key) = value else {
+                            continue;
+                        };
                         let found = atlases.iter().find_map(|dict| {
                             dict.entries
                                 .iter()
@@ -8158,7 +9030,10 @@ mod decal_taxonomy_scan {
                 }
             }
         }
-        println!("==== category × (material, 带色) 分布（{} lot 含 decal）====", lots_with_decals);
+        println!(
+            "==== category × (material, 带色) 分布（{} lot 含 decal）====",
+            lots_with_decals
+        );
         for (category, map) in cat_material.iter().enumerate() {
             let mut rows: Vec<_> = map.iter().collect();
             rows.sort_by(|a, b| b.1.cmp(a.1));
@@ -8215,7 +9090,9 @@ mod decal_atlas_dump {
             let _ = std::fs::create_dir_all(&dir);
             eprintln!("atlas material={tag} entries={}", atlas.entries.len());
             for entry in &atlas.entries {
-                let Some(raster_key) = entry.raster.clone() else { continue };
+                let Some(raster_key) = entry.raster.clone() else {
+                    continue;
+                };
                 let index = entry.index;
                 // 四色解码（有 Color1-4 的条目）
                 let decoded = decode_decal_entry(entry, &refs[0], &manager);
@@ -8230,11 +9107,8 @@ mod decal_atlas_dump {
                         decode_lot_surface_png(&refs[0], &manager, raster_key.clone())
                     {
                         use base64::Engine as _;
-                        if let Ok(bytes) =
-                            base64::engine::general_purpose::STANDARD.decode(&png)
-                        {
-                            let _ =
-                                std::fs::write(format!("{dir}/raw_{index:03}.png"), bytes);
+                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&png) {
+                            let _ = std::fs::write(format!("{dir}/raw_{index:03}.png"), bytes);
                         }
                     }
                     // 裸 raster（非 RW4）也试一次原始 RGBA
@@ -8244,13 +9118,13 @@ mod decal_atlas_dump {
                         if type_id == RASTER_IMAGE_TYPE {
                             if let Ok(raster) = rw4::RasterImage::parse(&bytes) {
                                 if let Ok(rgba) = raster.decode_top_mip_rgba() {
-                                    if let Ok(png) = encode_rgba_png(
-                                        raster.width,
-                                        raster.height,
-                                        rgba,
-                                    ) {
+                                    if let Ok(png) =
+                                        encode_rgba_png(raster.width, raster.height, rgba)
+                                    {
                                         use base64::Engine as _;
-                                        if let Ok(raw_bytes) = base64::engine::general_purpose::STANDARD.decode(&png) {
+                                        if let Ok(raw_bytes) =
+                                            base64::engine::general_purpose::STANDARD.decode(&png)
+                                        {
                                             let _ = std::fs::write(
                                                 format!("{dir}/rawraster_{index:03}.png"),
                                                 raw_bytes,
@@ -8277,8 +9151,7 @@ mod decal_resolve_diag {
     fn decal_resolve_dto_outcomes() {
         let game_path = std::env::var("DECAL_DIAG_GAME")
             .unwrap_or_else(|_| "D:/ea-games/SimCity/SimCityData/SimCity_Game.package".into());
-        let dlc_path = std::env::var("DECAL_DIAG_PRIMARY")
-            .unwrap_or_else(|_| game_path.clone());
+        let dlc_path = std::env::var("DECAL_DIAG_PRIMARY").unwrap_or_else(|_| game_path.clone());
         const GAME: &str = "";
         const DLC0: &str = "";
         let _ = (GAME, DLC0);
@@ -8287,7 +9160,10 @@ mod decal_resolve_diag {
         const APP: &str = "D:/ea-games/SimCity/SimCityData/SimCity_App.package";
         let dlc0 = match dbpf::Package::open(&dlc_path) {
             Ok(p) => p,
-            Err(e) => { eprintln!("skipping: {e}"); return; }
+            Err(e) => {
+                eprintln!("skipping: {e}");
+                return;
+            }
         };
         let manager = PackageManager::new();
         let (_dlc_id, dlc0) = manager.insert(dlc0).expect("insert dlc0");
@@ -8327,13 +9203,22 @@ mod decal_resolve_diag {
         let document = sc_properties::LotEditorDocument::from_property_file(props2);
         let units = document.assemble_units();
         for u in &units.units {
-            if let sc_properties::LotUnit::Decal { index, category, scale, .. } = u {
+            if let sc_properties::LotUnit::Decal {
+                index,
+                category,
+                scale,
+                ..
+            } = u
+            {
                 println!("unit  cat{category} idx{index} scale={scale:?}");
             }
         }
         for t in &textures {
             if let Some(png) = &t.png {
-                let path = format!("../tmp/decal_omegaco/dto_cat{}_idx{}.png", t.category, t.index);
+                let path = format!(
+                    "../tmp/decal_omegaco/dto_cat{}_idx{}.png",
+                    t.category, t.index
+                );
                 use base64::Engine as _;
                 if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(png) {
                     std::fs::write(&path, &bytes).expect("write png");
@@ -8386,8 +9271,7 @@ pub async fn list_model_catalog(
         let mut entries: Vec<ModelCatalogEntry> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for (package_id, package) in &all {
-            let registry =
-                package_registry(&store, &manager, package, bundled_registry.as_deref());
+            let registry = package_registry(&store, &manager, package, bundled_registry.as_deref());
             for entry in package
                 .entries()
                 .iter()

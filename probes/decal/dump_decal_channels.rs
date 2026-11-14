@@ -18,15 +18,20 @@ fn main() {
         .expect("raster not found");
     let data = package.read(&entry).expect("read");
     let raster = rw4::RasterImage::parse(&data).expect("parse");
-    println!("pixFmt={} {}x{}", raster.pixel_format, raster.width, raster.height);
+    println!(
+        "pixFmt={} {}x{}",
+        raster.pixel_format, raster.width, raster.height
+    );
     let rgba = raster.decode_top_mip_rgba().expect("decode");
     let (w, h) = (raster.width as usize, raster.height as usize);
     for ch in 0..4 {
         let mut img = image::GrayImage::new(w as u32, h as u32);
-        for y in 0..h { for x in 0..w {
-            let v = rgba[(y * w + x) * 4 + ch];
-            img.put_pixel(x as u32, y as u32, image::Luma([v]));
-        }}
+        for y in 0..h {
+            for x in 0..w {
+                let v = rgba[(y * w + x) * 4 + ch];
+                img.put_pixel(x as u32, y as u32, image::Luma([v]));
+            }
+        }
         img.save(format!("{out_dir}/ch{ch}.png")).expect("save");
     }
     // 扫描线剖面：y = 字母主体行（32），全宽 R/G/B/A

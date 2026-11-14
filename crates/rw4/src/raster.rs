@@ -112,13 +112,8 @@ impl RasterImage {
 
     /// 序列化回 raster 字节（头部 6×u32 BE + 逐 mip block 头与载荷）。
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(
-            24 + self
-                .mips
-                .iter()
-                .map(|mip| mip.len() + 4)
-                .sum::<usize>(),
-        );
+        let mut out =
+            Vec::with_capacity(24 + self.mips.iter().map(|mip| mip.len() + 4).sum::<usize>());
         for value in [
             self.raster_type,
             self.width,
@@ -439,14 +434,19 @@ mod tests {
         // 引擎 dot 语义：color = Σ(mask_i/255)×color_i（不按 total 归一——
         // 混色像素线性减亮），alpha = 主通道强度（连续软边）；
         // 弱权重噪声底（主通道 <24）裁为全透明，避免整面糊膜。
-        let colors = [[10, 10, 10, 0], [200, 60, 60, 0], [3, 3, 3, 0], [4, 4, 4, 0]];
+        let colors = [
+            [10, 10, 10, 0],
+            [200, 60, 60, 0],
+            [3, 3, 3, 0],
+            [4, 4, 4, 0],
+        ];
         let data = raster(
             21,
             3,
             1,
             &[
-                0, 0, 255, 0,   // R 满 → dot = color0 全强度
-                0, 0, 128, 0,   // R 半 → color0 半亮度，alpha 连续
+                0, 0, 255, 0, // R 满 → dot = color0 全强度
+                0, 0, 128, 0, // R 半 → color0 半亮度，alpha 连续
                 10, 10, 10, 10, // 弱噪声底（主通道 <24）→ 全透明
             ],
         );
@@ -511,9 +511,7 @@ mod tests {
             (RasterView::Alpha, 40),
         ] {
             assert_eq!(
-                image
-                    .render_view(view, &DEFAULT_QUANTIZED_COLORS)
-                    .unwrap(),
+                image.render_view(view, &DEFAULT_QUANTIZED_COLORS).unwrap(),
                 vec![expected, expected, expected, 255],
                 "view {view:?}"
             );

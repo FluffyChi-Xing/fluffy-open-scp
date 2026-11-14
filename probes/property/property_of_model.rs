@@ -9,7 +9,9 @@ const PROPERTY_TYPE: u32 = 0x00B1_B104;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (path, targets) = args.split_first().expect("usage: property_of_model <package> 0xMODEL...");
+    let (path, targets) = args
+        .split_first()
+        .expect("usage: property_of_model <package> 0xMODEL...");
     let package = dbpf::Package::open(path).expect("open package");
     let targets: Vec<u32> = targets
         .iter()
@@ -20,7 +22,9 @@ fn main() {
             continue;
         }
         let entry = entry.clone();
-        let Ok(data) = package.read(&entry) else { continue };
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
         let Ok(properties) =
             PropertyFile::parse_with_limits(&data, sc_properties::ParseLimits::default())
         else {

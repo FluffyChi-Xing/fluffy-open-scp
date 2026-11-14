@@ -322,9 +322,11 @@ fn parse_encode_parse_preserves_values_and_encoding_metadata() {
         push_f32(&mut transform, value);
     }
     let data = file(&[
-        entry(0x20, 10, 0, &be32(42)),
+        // 0x8000：游戏加载器的标量有效位（真实文件不存在 flags=0 的条目；
+        // 编码器对 flags=0 输入合成 0x8000，见 canonical_flags）。
+        entry(0x20, 10, 0x8000, &be32(42)),
         entry(0x10, 10, 0x8090, &array),
-        entry(0x30, 56, 0, &transform),
+        entry(0x30, 56, 0x8000, &transform),
     ]);
     let first = PropertyFile::parse(&data).unwrap();
     assert_eq!(first.get(0x10).unwrap().encoding.flags, 0x8090);
@@ -656,7 +658,10 @@ fn text_array_roundtrips_with_game_stride() {
     payload.extend_from_slice(&be32(0x0EBC_E055));
     let data = file(&[entry(0x0EB1_FC05, 34, 0x801C, &payload)]);
     let parsed = PropertyFile::parse(&data).unwrap();
-    assert_eq!(parsed.get(0x0EB1_FC05).unwrap().encoding.array_item_size, Some(520));
+    assert_eq!(
+        parsed.get(0x0EB1_FC05).unwrap().encoding.array_item_size,
+        Some(520)
+    );
     assert_eq!(parsed.encode_canonical().unwrap(), data);
 }
 
@@ -686,4 +691,96 @@ fn text_arrays_default_to_the_game_stride_when_encoding() {
         reparsed.get(1).unwrap().encoding.array_item_size,
         Some(TEXT_ARRAY_ITEM_SIZE)
     );
+}
+
+#[test]
+fn declared_stride_gate_accepts_legal_and_rejects_zero_and_empty() {
+    use crate::{
+        Kind, PropType, Property, PropertyEncoding, PropertyFile, Transform, Value,
+        legal_declared_stride,
+    };
+    // vanilla 标定表（scan_strides 2026-11-07）每个数组类型恰好一个合法步长
+    for (prop_type, expected) in [
+        (PropType::Bool, 1),
+        (PropType::Int32, 4),
+        (PropType::Float, 4),
+        (PropType::Key, 12),
+        (PropType::Vector3, 12),
+        (PropType::Vector2, 8),
+        (PropType::String8, 16),
+        (PropType::Text, 520),
+        (PropType::Transform, 56),
+        (PropType::BoundingBox, 24),
+    ] {
+        assert_eq!(
+            legal_declared_stride(prop_type),
+            Some(expected),
+            "{prop_type:?}"
+        );
+    }
+
+    let array =
+        |hash: u32, prop_type: PropType, item_size: Option<i32>, values: Vec<Value>| Property {
+            hash,
+            prop_type,
+            kind: Kind::Array(values),
+            encoding: PropertyEncoding {
+                flags: 0x809c,
+                array_item_size: item_size,
+            },
+        };
+    let transform = |flags: u16, unknown: Option<f32>| {
+        Value::Transform(Transform {
+            flags,
+            unknown,
+            matrix: vec![1.0; 12],
+        })
+    };
+
+    // 合法：Transform stride 56（vanilla 约定，每项实际 50B + 松弛）
+    let legal = PropertyFile {
+        values: vec![array(
+            0x0C12_EF31,
+            PropType::Transform,
+            Some(56),
+            vec![transform(14, None), transform(14, None)],
+        )],
+        claimed_count: 1,
+    };
+    assert!(legal.validate_declared_strides().is_ok());
+
+    // 毒性：Transform stride 0（s25/s26/s27 事故编码）
+    let poisoned = PropertyFile {
+        values: vec![array(
+            0x0C12_EF31,
+            PropType::Transform,
+            Some(0),
+            vec![transform(14, None)],
+        )],
+        claimed_count: 1,
+    };
+    assert!(poisoned.validate_declared_strides().is_err());
+
+    // 毒性：未声明步长（None → 编码为 0）
+    let undeclared = PropertyFile {
+        values: vec![array(
+            0x0C12_EF21,
+            PropType::Key,
+            None,
+            vec![Value::Key(crate::Key {
+                instance: 1,
+                type_id: 0,
+                group: 0,
+            })],
+        )],
+        claimed_count: 1,
+    };
+    assert!(undeclared.validate_declared_strides().is_err());
+
+    // 毒性：空数组（vanilla 从不存在 count=0 数组）
+    let empty = PropertyFile {
+        values: vec![array(0x0C12_EF21, PropType::Key, Some(12), vec![])],
+        claimed_count: 1,
+    };
+    assert!(empty.validate_declared_strides().is_err());
 }

@@ -44,7 +44,11 @@ fn main() {
             }
         }
         if count == 0 {
-            println!("mesh #{:<4} verts={} UV 缺失", mesh.number, mesh.vertices.len());
+            println!(
+                "mesh #{:<4} verts={} UV 缺失",
+                mesh.number,
+                mesh.vertices.len()
+            );
             continue;
         }
         println!(

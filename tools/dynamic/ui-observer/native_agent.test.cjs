@@ -38,6 +38,8 @@ test('mutation requests and results survive saturated query channels', () => {
     hooks[0].onEnter.call(call);hooks[0].onLeave.call(call,ptr(1));
   }
   for(let i=0;i<100;i++)invoke('resourceAmount/123');
+  invoke('periodTimes/0');
+  invoke('gamespeed');
   for(const name of ['SaveLocalGame','UpdateBoxName/71/test','SaveRegionAs/9/copy/true','UpdateRegionName/9/test'])invoke(name);
   invoke('SaveLocalGameExtra');
   // A 14-element template array is complete, while normal query limits stay unchanged.
@@ -62,6 +64,8 @@ test('mutation requests and results survive saturated query channels', () => {
   context.rpc.exports.stop();
   const final = sent.find(x=>x.kind==='stopped');
   assert.equal(final.channels.query.dropped,101);
+  assert.equal(final.channels.clock.accepted,2);
+  assert.equal(final.channels.clockResult.accepted,2);
   assert.equal(final.channels.mutation.accepted,4);
   assert.equal(final.channels.mutationResult.accepted,4);
   assert.equal(final.channels.mutation.dropped,0);

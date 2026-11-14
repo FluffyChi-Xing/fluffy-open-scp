@@ -5,7 +5,7 @@ import { isTauri } from "@/api";
 import { loadLotPreviewSession } from "./lotPreviewSession";
 import type { LotEditorSession } from "@/api/tauri";
 import { useGamePackagesStore } from "@/stores/gamePackages";
-import type { RasterSource } from "@/lib/raster-editor/schema";
+import type { RasterSource, RasterSchema } from "@/lib/raster-editor/schema";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 const props = defineProps<{
   raw: string;
@@ -15,6 +15,7 @@ const props = defineProps<{
   metersPerPixel: number;
   colors: [number, number, number, number][];
   target: RasterSource | null;
+  material?: RasterSchema["lot"];
   texture: boolean;
   renderMode?: "default" | "refined";
   albedoPng?: string | null;
@@ -33,7 +34,11 @@ onMounted(() => {
   if (!root.value || typeof IntersectionObserver === "undefined") return;
   visibilityObserver = new IntersectionObserver(([entry]) => {
     visible.value = entry.isIntersecting;
-  }, { root: root.value.closest(".inspector"), threshold: 0.01 });
+  }, {
+    // Lot 库卡片在 `.lot-library` / `.maw-inspector` 内，属性检视在 `.inspector`。
+    root: root.value.closest(".lot-library, .maw-inspector, .inspector"),
+    threshold: 0.01,
+  });
   visibilityObserver.observe(root.value);
 });
 let generation = 0;
@@ -98,11 +103,11 @@ const treeIds = new Set<number>();
     <p v-else-if="error" role="alert">
       {{ t("rasterEditor.previewError") }} {{ error }}
     </p>
-    <p v-else-if="!session?.lotSurfacePng" role="status">
+    <p v-else-if="!session?.lotSurfacePng && !albedoPng" role="status">
       {{ t("rasterEditor.missingAtlas") }}
     </p>
     <PropertyEditorViewport
-      v-if="visible && session?.lotSurfacePng"
+      v-if="visible && (session?.lotSurfacePng || albedoPng)"
       ground-only
       :model-payload="null"
       :model-lods="[]"
@@ -110,28 +115,28 @@ const treeIds = new Set<number>();
       :render-mode="renderMode"
       :grouping="grouping"
       :lot-size="
-        (texture ? session?.lotSize : bound?.lotSize) ?? [
+        material?.size ?? (texture ? session?.lotSize : bound?.lotSize) ?? [
           width * metersPerPixel,
           height * metersPerPixel,
         ]
       "
-      :lot-tile-period="bound?.lotTilePeriod ?? [6, 6]"
+      :lot-tile-period="material?.tilePeriod ?? bound?.lotTilePeriod ?? [8, 8]"
       :lot-placement="null"
       :lot-colors="colors"
       :lot-colors-authored="[true, true, true, true]"
-      :lot-border-colors="bound?.lotBorderColors ?? []"
-      :lot-border-widths="bound?.lotBorderWidths ?? [0, 0, 0, 0]"
+      :lot-border-colors="material?.borderColors ?? bound?.lotBorderColors ?? []"
+      :lot-border-widths="material?.borderWidths ?? bound?.lotBorderWidths ?? [0, 0, 0, 0]"
       :lot-border-pattern-indices="
-        bound?.lotBorderPatternIndices ?? [0, 0, 0, 0]
+        material?.borderPatternIndices ?? bound?.lotBorderPatternIndices ?? [0, 0, 0, 0]
       "
-      :lot-color-heights="bound?.lotColorHeights"
-      :lot-border-heights="bound?.lotBorderHeights"
-      :lot-base-tile="bound?.lotBaseTile ?? 8"
+      :lot-color-heights="material?.colorHeights ?? bound?.lotColorHeights"
+      :lot-border-heights="material?.borderHeights ?? bound?.lotBorderHeights"
+      :lot-base-tile="material?.baseTile ?? bound?.lotBaseTile ?? 8"
       :lot-overlay-box-offset="null"
       :lot-model-bbox-center="null"
       :lot-mask-png="texture ? pngUrl(session?.lotMaskPng) : png"
       :lot-mask-raw-rgba="texture ? (session?.lotMaskRawRgba ?? null) : raw"
-      :lot-albedo-png="renderMode === 'default' ? (albedoPng ?? pngUrl(session?.lotAlbedoPng)) : null"
+      :lot-albedo-png="albedoPng ?? pngUrl(session?.lotAlbedoPng)"
       :lot-surface-png="texture ? png : pngUrl(session?.lotSurfacePng)"
       :lot-normal-atlas-png="pngUrl(session?.lotNormalAtlasPng)"
       :prop-models="emptyMap"

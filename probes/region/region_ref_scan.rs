@@ -5,20 +5,29 @@ fn main() {
     let region = u32::from_str_radix(&args.next().unwrap().trim_start_matches("0x"), 16).unwrap();
     let p = dbpf::Package::open(&path).unwrap();
     for e in p.entries() {
-        if e.id.type_id != 0x00B1_B104 { continue; }
+        if e.id.type_id != 0x00B1_B104 {
+            continue;
+        }
         let Ok(data) = p.read(e) else { continue };
-        let Ok(pf) = sc_properties::PropertyFile::parse(&data) else { continue };
+        let Ok(pf) = sc_properties::PropertyFile::parse(&data) else {
+            continue;
+        };
         let mut hits: Vec<String> = Vec::new();
         for prop in &pf.values {
-            let check_key = |k: &sc_properties::Key| {
-                k.group == region || k.instance == region
-            };
+            let check_key = |k: &sc_properties::Key| k.group == region || k.instance == region;
             match &prop.kind {
-                sc_properties::Kind::Scalar(sc_properties::Value::Key(k)) => if check_key(k) { hits.push(format!("{:08X}", prop.hash)); },
+                sc_properties::Kind::Scalar(sc_properties::Value::Key(k)) => {
+                    if check_key(k) {
+                        hits.push(format!("{:08X}", prop.hash));
+                    }
+                }
                 sc_properties::Kind::Array(vs) => {
                     for v in vs {
                         if let sc_properties::Value::Key(k) = v {
-                            if check_key(k) { hits.push(format!("{:08X}", prop.hash)); break; }
+                            if check_key(k) {
+                                hits.push(format!("{:08X}", prop.hash));
+                                break;
+                            }
                         }
                     }
                 }
@@ -26,7 +35,14 @@ fn main() {
             }
         }
         if !hits.is_empty() {
-            println!("{:08X}:{:08X}:{:08X} ({}B) keys {:?}", e.id.type_id, e.id.group, e.id.instance, data.len(), hits);
+            println!(
+                "{:08X}:{:08X}:{:08X} ({}B) keys {:?}",
+                e.id.type_id,
+                e.id.group,
+                e.id.instance,
+                data.len(),
+                hits
+            );
         }
     }
 }

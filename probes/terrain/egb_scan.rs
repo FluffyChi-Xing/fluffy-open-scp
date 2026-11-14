@@ -33,7 +33,8 @@ fn main() {
     while i < n32 {
         let v = f32::from_le_bytes([d[i * 4], d[i * 4 + 1], d[i * 4 + 2], d[i * 4 + 3]]);
         let mut j = i + 1;
-        while j < n32 && f32::from_le_bytes([d[j * 4], d[j * 4 + 1], d[j * 4 + 2], d[j * 4 + 3]]) == v
+        while j < n32
+            && f32::from_le_bytes([d[j * 4], d[j * 4 + 1], d[j * 4 + 2], d[j * 4 + 3]]) == v
         {
             j += 1;
         }

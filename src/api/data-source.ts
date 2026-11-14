@@ -20,6 +20,7 @@ import type {
   PropertyResourceData,
   DecalDictionaryData,
   DecalImageData,
+  EffectDetailData,
   EffectPreviewResponse,
   LotEditorSession,
   RasterChannel,
@@ -95,6 +96,7 @@ export interface OpenScpDataSource {
   readDecalDictionary(
     packageId: number,
     tgi: Tgi,
+    metadataOnly?: boolean,
   ): Promise<DecalDictionaryData>;
   /** 按条目下标批量解码缩略图（单次上限 256）。 */
   readDecalImages(
@@ -104,6 +106,8 @@ export interface OpenScpDataSource {
   ): Promise<DecalImageData[]>;
   readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
   readEffectPreview(packageId: number, effectIds: number[]): Promise<EffectPreviewResponse>;
+  /** 单效果详情：block 结构 + 粒子参数 + 图集 PNG（属性栏使用）。 */
+  readEffectDetail(packageId: number, effectId: number): Promise<EffectDetailData>;
   /** 返回 `read_lot_model_meshes` 原始字节容器（LotModelPayload，见 tauri.ts）。 */
   readLotModelMeshes(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
   /** PE 精细替换：prop resourceID → RW4 模型 TGI（含 EcoGame 包自注册）。 */
@@ -191,6 +195,10 @@ function tauriDataSource(): OpenScpDataSource {
     readEffectPreview: (packageId, effectIds) =>
       command<EffectPreviewResponse>("read_effect_preview", {
         request: { packageId, effectIds },
+      }),
+    readEffectDetail: (packageId, effectId) =>
+      command<EffectDetailData>("read_effect_detail", {
+        request: { packageId, effectId },
       }),
     readLotModelMeshes: tauriApi.packages.readLotModelMeshes,
     resolvePropModels: tauriApi.packages.resolvePropModels,
@@ -464,6 +472,19 @@ function mockDataSource(): OpenScpDataSource {
     },
     async readEffectPreview() {
       return { effects: [], diagnostics: [] };
+    },
+    async readEffectDetail(_packageId, effectId) {
+      void _packageId;
+      return {
+        effectId,
+        collectionInstance: 0,
+        collectionGroup: 0,
+        visualIndex: 0,
+        blocks: [],
+        emitters: [],
+        unsupportedBlocks: 0,
+        diagnostics: [],
+      };
     },
     async readLotEditorSession(_packageId, tgi) {
       const matrix = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];

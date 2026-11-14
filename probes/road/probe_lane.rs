@@ -14,7 +14,9 @@ fn main() -> Result<(), String> {
         .next()
         .unwrap_or_else(|| r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package".into());
     let instance_hex = args.next().unwrap_or_else(|| "7BE85E77".into());
-    let out_path = args.next().unwrap_or_else(|| "tmp/lane_7BE85E77.png".into());
+    let out_path = args
+        .next()
+        .unwrap_or_else(|| "tmp/lane_7BE85E77.png".into());
 
     let instance = u32::from_str_radix(instance_hex.trim_start_matches("0x"), 16)
         .map_err(|_| format!("invalid instance: {instance_hex}"))?;
@@ -54,13 +56,19 @@ fn main() -> Result<(), String> {
     }
     println!("unique colors: {}", colors.len());
     for (color, count) in colors.iter().take(12) {
-        println!("  #{:02X}{:02X}{:02X}{:02X} x{}", color[0], color[1], color[2], color[3], count);
+        println!(
+            "  #{:02X}{:02X}{:02X}{:02X} x{}",
+            color[0], color[1], color[2], color[3], count
+        );
     }
 
     // 结构摘要：强度（任一通道）≥128 的行占用区间（判断线条位置与粗细）
     let intensity = |x: u32, y: u32| {
         let base = ((y * width + x) * 4) as usize;
-        rgba[base].max(rgba[base + 1]).max(rgba[base + 2]).max(rgba[base + 3])
+        rgba[base]
+            .max(rgba[base + 1])
+            .max(rgba[base + 2])
+            .max(rgba[base + 3])
     };
     let occupied = |x: u32, y: u32| intensity(x, y) >= 128;
     for y in (0..height).step_by((height / 16).max(1) as usize) {
@@ -87,7 +95,9 @@ fn main() -> Result<(), String> {
     // 分通道几何：包围盒 + 每隔 4 行/列的行程（定位线条与图层结构）
     for (name, shift) in [("R", 0usize), ("G", 1), ("B", 2), ("A", 3)] {
         let channel = |x: u32, y: u32| rgba[((y * width + x) * 4) as usize + shift];
-        let count = (0..width * height).filter(|i| channel(i % width, i / width) >= 128).count();
+        let count = (0..width * height)
+            .filter(|i| channel(i % width, i / width) >= 128)
+            .count();
         println!("channel {name}: {count}/{} px >=128", width * height);
         if count == 0 {
             continue;
@@ -160,14 +170,8 @@ fn main() -> Result<(), String> {
         px[2] = v;
         px[3] = 255;
     }
-    image::save_buffer(
-        &out_path,
-        &viz,
-        width,
-        height,
-        image::ColorType::Rgba8,
-    )
-    .map_err(|e| e.to_string())?;
+    image::save_buffer(&out_path, &viz, width, height, image::ColorType::Rgba8)
+        .map_err(|e| e.to_string())?;
     println!("saved {out_path}");
     Ok(())
 }

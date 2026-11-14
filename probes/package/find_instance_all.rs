@@ -8,16 +8,26 @@ fn main() {
     for path in &args[1..] {
         let package = Package::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
         for e in package.entries() {
-            if e.id.instance != instance { continue; }
+            if e.id.instance != instance {
+                continue;
+            }
             let data = package.read(e).unwrap_or_default();
-            println!("{path}: T {:08X} G {:08X} ({}B)", e.id.type_id, e.id.group, data.len());
+            println!(
+                "{path}: T {:08X} G {:08X} ({}B)",
+                e.id.type_id,
+                e.id.group,
+                data.len()
+            );
             if e.id.type_id == 0x2F4E_681B {
                 if let Ok(file) = rw4::Rw4File::parse(&data) {
                     for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
                         match file.decode_material(&data, section.number) {
                             Ok(rw4::MaterialSection::Decoded(m)) => {
                                 for r in &m.texture_refs {
-                                    println!("  slot {:#04x} -> {:#010x}", r.slot, r.texture_instance);
+                                    println!(
+                                        "  slot {:#04x} -> {:#010x}",
+                                        r.slot, r.texture_instance
+                                    );
                                 }
                             }
                             Ok(rw4::MaterialSection::Raw(_)) => println!("  (raw)"),

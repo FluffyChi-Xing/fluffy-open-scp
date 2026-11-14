@@ -54,6 +54,8 @@ fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
     const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
     const ERROR_SHARING_VIOLATION: i32 = 32;
     const RETRY_DELAYS_MS: [u64; 4] = [25, 50, 100, 200];
+    let source_path = source.to_path_buf();
+    let target_path = target.to_path_buf();
     let source: Vec<u16> = source
         .as_os_str()
         .encode_wide()
@@ -67,13 +69,27 @@ fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
     unsafe extern "system" {
         fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
     }
-    let flags = if replace { MOVEFILE_REPLACE_EXISTING } else { 0 };
+    let flags = if replace {
+        MOVEFILE_REPLACE_EXISTING
+    } else {
+        0
+    };
     for attempt in 0..=RETRY_DELAYS_MS.len() {
         let ok = unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), flags) };
         if ok != 0 {
             return Ok(());
         }
         let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(5) {
+            // Some protected/managed project folders reject MoveFileExW while
+            // allowing the ordinary same-volume rename. The temporary file is
+            // already fsynced, so this fallback preserves the atomic boundary.
+            return if replace {
+                fs::rename(&source_path, &target_path)
+            } else {
+                install_new(&source_path, &target_path)
+            };
+        }
         if error.raw_os_error() != Some(ERROR_SHARING_VIOLATION) || attempt == RETRY_DELAYS_MS.len() {
             return Err(error);
         }
@@ -84,13 +100,17 @@ fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
 
 #[cfg(not(windows))]
 fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
-    if !replace && target.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "target already exists",
-        ));
+    if replace {
+        fs::rename(source, target)
+    } else {
+        install_new(source, target)
     }
-    fs::rename(source, target)
+}
+
+fn install_new(source: &Path, target: &Path) -> io::Result<()> {
+    fs::hard_link(source, target)?;
+    let _ = fs::remove_file(source);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -98,7 +118,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("openscp-atomic-{label}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("openscp-atomic-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

@@ -11,8 +11,8 @@
 //!       <package> [max_lots] [extra_package...]
 
 use dbpf::Package;
-use sc_properties::decal::{DecalDictionary, DECAL_ATLAS_INSTANCE_TYPES};
-use sc_properties::{assemble_units, inherit, Key, LotEditorDocument, PropertyFile};
+use sc_properties::decal::{DECAL_ATLAS_INSTANCE_TYPES, DecalDictionary};
+use sc_properties::{Key, LotEditorDocument, PropertyFile, assemble_units, inherit};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 const RW4_MODEL_TYPE: u32 = 0x2F4E_681B;
@@ -26,7 +26,10 @@ struct Geometry {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: decal_float_scan <package> [max] [extra...]").clone();
+    let path = args
+        .first()
+        .expect("usage: decal_float_scan <package> [max] [extra...]")
+        .clone();
     let max_lots: usize = args.get(1).and_then(|v| v.parse().ok()).unwrap_or(200);
     let extras: Vec<String> = args.iter().skip(2).cloned().collect();
 
@@ -46,9 +49,13 @@ fn main() {
             {
                 continue;
             }
-            let Ok(bytes) = package.read(entry) else { continue };
+            let Ok(bytes) = package.read(entry) else {
+                continue;
+            };
             if let Ok(dict) = DecalDictionary::parse(&bytes) {
-                let Some(material) = dict.material else { continue };
+                let Some(material) = dict.material else {
+                    continue;
+                };
                 for e in &dict.entries {
                     if let Some(id) = e.id {
                         entry_material.insert(id.instance, material.instance);
@@ -66,15 +73,21 @@ fn main() {
         if entry.id.type_id != PROPERTY_TYPE {
             continue;
         }
-        let Ok(raw) = packages[0].read(entry) else { continue };
-        let Ok(raw_file) = PropertyFile::parse(&raw) else { continue };
+        let Ok(raw) = packages[0].read(entry) else {
+            continue;
+        };
+        let Ok(raw_file) = PropertyFile::parse(&raw) else {
+            continue;
+        };
         let resolve = |key: &Key| -> Option<PropertyFile> {
             for source in &packages {
                 for candidate in source.entries() {
                     if candidate.id.instance == key.instance
                         && (key.type_id == 0 || candidate.id.type_id == key.type_id)
                     {
-                        let Ok(bytes) = source.read(candidate) else { continue };
+                        let Ok(bytes) = source.read(candidate) else {
+                            continue;
+                        };
                         if let Ok(file) = PropertyFile::parse(&bytes) {
                             return Some(file);
                         }
@@ -89,7 +102,9 @@ fn main() {
         // 收集目标族 decal：id → 字典 material
         let mut decals: Vec<(usize, usize, u32)> = Vec::new(); // (cat, index, dictmat)
         for cat in 0..3u32 {
-            let Some(value) = flattened.get(0x0D10_9050 + cat) else { continue };
+            let Some(value) = flattened.get(0x0D10_9050 + cat) else {
+                continue;
+            };
             let Some(arr) = value.array() else { continue };
             for (index, v) in arr.iter().enumerate() {
                 if let sc_properties::Value::Key(k) = v {
@@ -117,7 +132,10 @@ fn main() {
         let mut best: Option<Geometry> = None;
         for instance in &candidates {
             if let Some(geometry) = load_geometry(&packages, *instance) {
-                if best.as_ref().is_none_or(|b| geometry.verts.len() > b.verts.len()) {
+                if best
+                    .as_ref()
+                    .is_none_or(|b| geometry.verts.len() > b.verts.len())
+                {
                     best = Some(geometry);
                 }
             }
@@ -138,9 +156,8 @@ fn main() {
             else {
                 continue;
             };
-            let Some(&(_, _, dictmat)) = decals
-                .iter()
-                .find(|(c, i, _)| c == category && i == index)
+            let Some(&(_, _, dictmat)) =
+                decals.iter().find(|(c, i, _)| c == category && i == index)
             else {
                 continue;
             };
@@ -203,15 +220,25 @@ fn main() {
                 agg[1] += 1;
                 println!(
                     "  [cat{category}:{index}] {} scale={scale:.2} depth={:?} dataDepth={data_depth:.2} md={} → MISS",
-                    if dictmat == SIGN_MATERIAL { "sign" } else { "graffiti" },
-                    depth, md
+                    if dictmat == SIGN_MATERIAL {
+                        "sign"
+                    } else {
+                        "graffiti"
+                    },
+                    depth,
+                    md
                 );
             } else {
                 agg[0] += 1;
                 println!(
                     "  [cat{category}:{index}] {} scale={scale:.2} depth={:?} dataDepth={data_depth:.2} md={} → hit {}/9 min={:.2} med={:.2} max={:.2}",
-                    if dictmat == SIGN_MATERIAL { "sign" } else { "graffiti" },
-                    depth, md,
+                    if dictmat == SIGN_MATERIAL {
+                        "sign"
+                    } else {
+                        "graffiti"
+                    },
+                    depth,
+                    md,
                     hits.len(),
                     hits[0],
                     hits[hits.len() / 2],
@@ -271,9 +298,14 @@ fn load_geometry(packages: &[Package], instance: u32) -> Option<Geometry> {
             }
             let bytes = package.read(entry).ok()?;
             let file = rw4::Rw4File::parse(&bytes).ok()?;
-            let mut geometry = Geometry { verts: Vec::new(), tris: Vec::new() };
+            let mut geometry = Geometry {
+                verts: Vec::new(),
+                tris: Vec::new(),
+            };
             for section in file.sections_of_type(rw4::SectionType::MESH) {
-                let Ok(mesh) = file.decode_mesh(&bytes, section.number) else { continue };
+                let Ok(mesh) = file.decode_mesh(&bytes, section.number) else {
+                    continue;
+                };
                 let base = geometry.verts.len();
                 for vertex in &mesh.vertices {
                     if let Some(position) = vertex.position() {

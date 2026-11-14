@@ -39,7 +39,9 @@ impl LocaleTables {
             if entry.id.type_id != TYPE_LOCALE {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
             let text = String::from_utf8_lossy(&data);
             let text = text.trim_start_matches('\u{feff}');
             let Ok(parsed) = serde_json::from_str::<BTreeMap<String, String>>(text) else {
@@ -177,7 +179,8 @@ fn main() {
             continue;
         }
         if after_dashdash {
-            instances.push(u32::from_str_radix(arg.trim_start_matches("0x"), 16).expect("bad instance"));
+            instances
+                .push(u32::from_str_radix(arg.trim_start_matches("0x"), 16).expect("bad instance"));
         } else {
             packages.push(arg);
         }
@@ -231,7 +234,9 @@ fn main() {
     let mut menu_meta: BTreeMap<u32, serde_json::Value> = BTreeMap::new();
     let mut icon_map: BTreeMap<u32, u32> = BTreeMap::new();
     for (_, instance, data) in &menu_entries {
-        let Ok(file) = PropertyFile::parse(data) else { continue };
+        let Ok(file) = PropertyFile::parse(data) else {
+            continue;
+        };
         if let Some(unit) = key_instance(&file, HASH_MENU_UNIT) {
             unit_targets.push(unit);
         }
@@ -260,26 +265,32 @@ fn main() {
     let unit_entries = read_property(&unit_wanted, &UNIT_GROUPS, &|_, _| true);
     let unit_files: Vec<(u32, PropertyFile)> = unit_entries
         .iter()
-        .filter_map(|(_, instance, data)| {
-            PropertyFile::parse(data).ok().map(|f| (*instance, f))
-        })
+        .filter_map(|(_, instance, data)| PropertyFile::parse(data).ok().map(|f| (*instance, f)))
         .collect();
 
     // 3) 组装 meta：名称/desc/统计行
     let mut meta: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     for (_, instance, _) in &menu_entries {
-        let Some(info) = menu_meta.get(instance) else { continue };
+        let Some(info) = menu_meta.get(instance) else {
+            continue;
+        };
         let mut row = serde_json::Map::new();
         // 名称/描述：全表解析（基础 6C969DEE 与 DLC 7B45C298 统一处理）
         for (key, prop) in [("name", "title"), ("desc", "desc")] {
             if let Some(text_ref) = info[prop].as_object() {
                 let table = u32::from_str_radix(
-                    text_ref["table"].as_str().unwrap_or("").trim_start_matches("0x"),
+                    text_ref["table"]
+                        .as_str()
+                        .unwrap_or("")
+                        .trim_start_matches("0x"),
                     16,
                 )
                 .unwrap_or(0);
                 let id = u32::from_str_radix(
-                    text_ref["id"].as_str().unwrap_or("").trim_start_matches("0x"),
+                    text_ref["id"]
+                        .as_str()
+                        .unwrap_or("")
+                        .trim_start_matches("0x"),
                     16,
                 )
                 .unwrap_or(0);
@@ -299,16 +310,12 @@ fn main() {
             .iter()
             .enumerate()
             .filter_map(|(i, title_ref)| {
-                let table = u32::from_str_radix(
-                    title_ref["table"].as_str()?.trim_start_matches("0x"),
-                    16,
-                )
-                .ok()?;
-                let id = u32::from_str_radix(
-                    title_ref["id"].as_str()?.trim_start_matches("0x"),
-                    16,
-                )
-                .ok()?;
+                let table =
+                    u32::from_str_radix(title_ref["table"].as_str()?.trim_start_matches("0x"), 16)
+                        .ok()?;
+                let id =
+                    u32::from_str_radix(title_ref["id"].as_str()?.trim_start_matches("0x"), 16)
+                        .ok()?;
                 let template = locales.resolve(table, id)?;
                 let (label, suffix) = split_effect_template(&template);
                 let value = params
@@ -341,9 +348,17 @@ fn main() {
         "meta": meta,
         "iconMap": icon_map_json,
     });
-    std::fs::write(&meta_out, serde_json::to_string_pretty(&payload).unwrap() + "\n")
-        .expect("write meta-out");
-    eprintln!("meta {} 条、icon {} 个 → {}", meta.len(), icon_map.len(), meta_out.display());
+    std::fs::write(
+        &meta_out,
+        serde_json::to_string_pretty(&payload).unwrap() + "\n",
+    )
+    .expect("write meta-out");
+    eprintln!(
+        "meta {} 条、icon {} 个 → {}",
+        meta.len(),
+        icon_map.len(),
+        meta_out.display()
+    );
 
     // 5) 图片提取（大图 + 图标 PNG），已存在则跳过
     let wanted_icons: HashSet<u32> = icon_map.values().copied().collect();
@@ -384,5 +399,8 @@ fn main() {
             }
         }
     }
-    eprintln!("新增大图 {marquees} 张、图标 {icons} 张 → {}", assets_dir.display());
+    eprintln!(
+        "新增大图 {marquees} 张、图标 {icons} 张 → {}",
+        assets_dir.display()
+    );
 }

@@ -17,6 +17,9 @@
 
 ## 警车身份闭合
 
+新样本进一步确认四个警车 TransportEntry 都应归入 `cartraffic` handler（handler ID `0x54ABDF8C`，实现类 `SC::cTransportVehicle`）。因此 `50/52/179/424` 是车型入口 index，而 `0x54ABDF8C` 是共享的道路车辆模拟实现；两者必须在调试工具中分栏显示。完整 12 项 handler 注册表见 [交通 handler 与车辆规则类型闭合](traffic-handler-types-and-police-correlation-20261030.md)。
+
+
 静态源码给出了两条可复核关系：
 
 1. GB::cEcoGameScripts::TransportEntryFromIndex 通过 deque iterator 按整数索引返回 cEcoTransportEntry。

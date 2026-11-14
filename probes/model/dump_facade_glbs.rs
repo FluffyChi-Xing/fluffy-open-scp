@@ -15,7 +15,9 @@ fn main() {
     let mut dumped = 0usize;
     let mut scanned = 0usize;
     'outer: for path in paths {
-        let Ok(package) = Package::open(path) else { continue };
+        let Ok(package) = Package::open(path) else {
+            continue;
+        };
         let entries: Vec<_> = package
             .entries()
             .iter()
@@ -23,8 +25,12 @@ fn main() {
             .cloned()
             .collect();
         for entry in entries {
-            let Ok(data) = package.read(&entry) else { continue };
-            let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+            let Ok(data) = package.read(&entry) else {
+                continue;
+            };
+            let Ok(file) = rw4::Rw4File::parse(&data) else {
+                continue;
+            };
             for section in file.sections_of_type(rw4::SectionType::MESH) {
                 let Ok(mesh) = file.decode_mesh(&data, section.number) else {
                     continue;

@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type * as ThreeNamespace from "three";
-import { buildRealLightUnit, unitId, unitMatrix } from "./unitGizmos";
+import { buildRealLightUnit } from "@/render/exec/three/overlays";
+import { unitId, unitMatrix } from "./unitGizmos";
 import type { DecalUnit, LightUnit, PropUnit, SpawnerUnit } from "@/api/tauri";
 
 const THREE = (await import("three")) as typeof ThreeNamespace;
 
 describe("refined light selection", () => {
-  it.each(["Point", "Spot"])("%s picks only the emitter while preserving its light range", lightType => {
+  // 范围取游戏契约（`docs/re/light-uniform-contract-20261111.md`）：
+  //   Point 的 reach = position.w = 外半径；
+  //   Spot 的 reach = 锥体段长（endPosition - position 的长度），外半径决定锥底。
+  // 旧断言 `distance = outerRadius * 2` 是编辑器自造系数，已按 HLSL 修正。
+  it.each([
+    ["Point", 80],
+    ["Spot", 100],
+  ] as const)("%s picks only the emitter while preserving its light range", (lightType, distance) => {
     const unit = { kind: "light", lightType, outerRadius: 80, length: 100, transform: null } as LightUnit;
     const object = buildRealLightUnit(THREE, unit);
     object.updateMatrixWorld(true);
@@ -16,7 +24,7 @@ describe("refined light selection", () => {
     expect(ray.intersectObject(object, true).length).toBeGreaterThan(0);
     const proxy = object.children.find(o => o.userData.pickOnly) as ThreeNamespace.Mesh;
     expect(new THREE.Box3().setFromObject(proxy).getSize(new THREE.Vector3()).length()).toBeLessThan(4);
-    expect((object.children[0] as ThreeNamespace.PointLight).distance).toBe(160);
+    expect((object.children[0] as ThreeNamespace.PointLight).distance).toBe(distance);
   });
 });
 

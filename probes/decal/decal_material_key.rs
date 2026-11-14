@@ -9,12 +9,26 @@ fn main() {
     let atlas = u32::from_str_radix(args[0].trim_start_matches("0x"), 16).expect("hex");
     for path in &args[1..] {
         let package = Package::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
-        for e in package.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
-            if e.id.instance != atlas { continue; }
+        for e in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
+            if e.id.instance != atlas {
+                continue;
+            }
             let data = package.read(e).unwrap_or_default();
-            let Ok(dict) = sc_properties::DecalDictionary::parse(&data) else { continue };
-            let m = dict.material.map(|k| format!("T {:08X} G {:08X} I {:08X}", k.type_id, k.group, k.instance));
-            println!("{path}: atlas G {:08X} I {atlas:08X} material = {}", e.id.group, m.unwrap_or_else(|| "-".into()));
+            let Ok(dict) = sc_properties::DecalDictionary::parse(&data) else {
+                continue;
+            };
+            let m = dict
+                .material
+                .map(|k| format!("T {:08X} G {:08X} I {:08X}", k.type_id, k.group, k.instance));
+            println!(
+                "{path}: atlas G {:08X} I {atlas:08X} material = {}",
+                e.id.group,
+                m.unwrap_or_else(|| "-".into())
+            );
         }
     }
 }

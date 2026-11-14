@@ -56,11 +56,13 @@ fn stem_of(path: &str) -> &str {
 
 /// 玩家安装的全部 package：SimCityData 根 + Locale 子目录 +
 /// SimCityUserData 的 EcoGame 与 Packages（与游戏扫描范围一致）。
-fn package_paths(game_data: &Path) -> Vec<PathBuf> {
+pub(crate) fn package_paths(game_data: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let root = game_data.parent().unwrap_or(game_data).to_path_buf();
     let mut push_dir = |dir: PathBuf| {
-        let Ok(entries) = std::fs::read_dir(&dir) else { return };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let is_package = path
@@ -87,13 +89,12 @@ fn package_paths(game_data: &Path) -> Vec<PathBuf> {
 fn build_index(game_data: &Path) -> AssetIndex {
     let mut entries: HashMap<u32, Vec<(PathBuf, dbpf::IndexEntry)>> = HashMap::new();
     for path in package_paths(game_data) {
-        let Ok(package) = dbpf::Package::open(&path) else { continue };
+        let Ok(package) = dbpf::Package::open(&path) else {
+            continue;
+        };
         for entry in package.entries() {
             // 全类型入索引：布局资产走 PNG/JPG，菜单条目复制走 property
-            if matches!(
-                entry.id.type_id,
-                TYPE_PNG | TYPE_JPG | TYPE_PROPERTY
-            ) {
+            if matches!(entry.id.type_id, TYPE_PNG | TYPE_JPG | TYPE_PROPERTY) {
                 entries
                     .entry(entry.id.instance)
                     .or_default()
@@ -149,7 +150,10 @@ pub async fn game_asset(
         .map_err(CommandError::from)?
         .and_then(|s| s.game_data_path)
         .ok_or_else(|| {
-            CommandError::new("game_directory_not_configured", "Game data directory is not configured")
+            CommandError::new(
+                "game_directory_not_configured",
+                "Game data directory is not configured",
+            )
         })?;
     let game_data = PathBuf::from(game_data);
     if !game_data.is_dir() {
@@ -165,7 +169,7 @@ pub async fn game_asset(
             return Err(CommandError::new(
                 "game_asset_bad_request",
                 "provide either path or tgi",
-            ))
+            ));
         }
     };
     tauri::async_runtime::spawn_blocking(move || {
@@ -189,15 +193,24 @@ pub async fn game_asset(
                 })
             })
             .collect();
-        let read_candidate = |(path, entry): (&PathBuf, &dbpf::IndexEntry)| -> Option<GameAssetData> {
-            let Ok(package) = dbpf::Package::open(path) else { return None };
-            let Ok(data) = package.read(entry) else { return None };
-            let mime = if entry.id.type_id == TYPE_PNG { "image/png" } else { "image/jpeg" };
-            Some(GameAssetData {
-                data_base64: base64::engine::general_purpose::STANDARD.encode(&data),
-                mime: mime.into(),
-            })
-        };
+        let read_candidate =
+            |(path, entry): (&PathBuf, &dbpf::IndexEntry)| -> Option<GameAssetData> {
+                let Ok(package) = dbpf::Package::open(path) else {
+                    return None;
+                };
+                let Ok(data) = package.read(entry) else {
+                    return None;
+                };
+                let mime = if entry.id.type_id == TYPE_PNG {
+                    "image/png"
+                } else {
+                    "image/jpeg"
+                };
+                Some(GameAssetData {
+                    data_base64: base64::engine::general_purpose::STANDARD.encode(&data),
+                    mime: mime.into(),
+                })
+            };
         let from_ref = index.entries.get(&instance).ok_or_else(missing)?;
         let from_filtered = candidates.iter().map(|(p, e)| (p, e));
         let from_all = from_ref.iter().map(|(p, e)| (p, e));
@@ -404,12 +417,16 @@ pub async fn game_property_copy(
             _ => {
                 *guard = Some(build_index(&game_data));
                 let index = guard.as_ref().unwrap();
-                index.entries.get(&source_instance).ok_or_else(|| {
-                    CommandError::new(
-                        "game_property_missing",
-                        format!("source property 0x{source_instance:08X} not found"),
-                    )
-                })?.clone()
+                index
+                    .entries
+                    .get(&source_instance)
+                    .ok_or_else(|| {
+                        CommandError::new(
+                            "game_property_missing",
+                            format!("source property 0x{source_instance:08X} not found"),
+                        )
+                    })?
+                    .clone()
             }
         };
         let source_group = request.source_group;
@@ -423,9 +440,15 @@ pub async fn game_property_copy(
                     continue;
                 }
             }
-            let Ok(package) = dbpf::Package::open(path) else { continue };
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(package) = dbpf::Package::open(path) else {
+                continue;
+            };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             copied = Some((file, entry.id.group));
             break;
         }
@@ -455,13 +478,28 @@ pub async fn game_property_copy(
         );
         // 文案指针：提供了新字符串 id 才覆盖，否则沿用源条目字符串
         if let Some(id) = request.title_string_id {
-            set_scalar_text(&mut file, 0x0A09_F5FA, sc_properties::locale::OPENSCP_LOCALE_TABLE, id);
+            set_scalar_text(
+                &mut file,
+                0x0A09_F5FA,
+                sc_properties::locale::OPENSCP_LOCALE_TABLE,
+                id,
+            );
         }
         if let Some(id) = request.desc_string_id {
-            set_scalar_text(&mut file, 0x0A09_F5FB, sc_properties::locale::OPENSCP_LOCALE_TABLE, id);
+            set_scalar_text(
+                &mut file,
+                0x0A09_F5FB,
+                sc_properties::locale::OPENSCP_LOCALE_TABLE,
+                id,
+            );
         }
         if let Some(id) = request.unlock_string_id {
-            set_scalar_text(&mut file, 0x0DE8_4DDC, sc_properties::locale::OPENSCP_LOCALE_TABLE, id);
+            set_scalar_text(
+                &mut file,
+                0x0DE8_4DDC,
+                sc_properties::locale::OPENSCP_LOCALE_TABLE,
+                id,
+            );
         } else if request.remove_unlock_string {
             // 显式清空解锁文案：删除解锁键，避免副本携带悬空指针。
             remove_property(&mut file, 0x0DE8_4DDC);
@@ -530,8 +568,8 @@ pub async fn game_property_copy(
 }
 
 // ===== property read/patch 原语：Sheet 深层语义编辑（经济/统计行）的数据通道 =====
-use tauri::State;
 use crate::activity::CommandError;
+use tauri::State;
 // 数据规范由 encode_canonical 保证（对原版属性逐字节往返，见 sc-properties 测试）：
 // float/int 补丁走类型化标量写入，Text 数组补丁走 520 步长数组重写。
 

@@ -14,7 +14,8 @@ import FButton from "@/components/ui/FButton.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSelect from "@/components/ui/FSelect.vue";
 import Switch from "@/components/ui/switch/Switch.vue";
-import LogStream from "./LogStream.vue";
+import LogStream from "@/components/runtime-observer/LogStream.vue";
+import CaptureFilters from "./CaptureFilters.vue";
 import DiagnosticWorkbench from "./DiagnosticWorkbench.vue";
 import {
   runtimeObserver,
@@ -35,27 +36,19 @@ const captureEpoch = ref(0);
 const processes = ref<GameProcess[]>([]);
 const selectedPid = ref<number>();
 const profile = ref("balanced");
-const captureScope = ref<"ui" | "building" | "agent">("ui");
-const captureTarget = ref("all");
+const observation = ref("ui:all");
+const capturedObservation = ref("ui:all");
+const captureTarget = computed(() => capturedObservation.value.startsWith("agent:")
+  ? capturedObservation.value.slice(6) : undefined);
 const frameUrl = ref("");
 const captureFrames = ref(true);
-const captureScopes = computed(() => [
-  { value: "ui", label: t("runtimeObserver.scope.ui.label"), hint: t("runtimeObserver.scope.ui.hint") },
-  { value: "building", label: t("runtimeObserver.scope.building.label"), hint: t("runtimeObserver.scope.building.hint") },
-  { value: "agent", label: t("runtimeObserver.scope.agent.label"), hint: t("runtimeObserver.scope.agent.hint") },
-] as const);
-const captureTargets = computed(() => captureScope.value === "building"
-  ? [{ value: "school", label: t("runtimeObserver.target.school") }, { value: "omegaco", label: t("runtimeObserver.target.omegaco") }]
-  : captureScope.value === "agent"
-    ? [{ value: "police", label: t("runtimeObserver.target.police") }]
-    : [{ value: "all", label: t("runtimeObserver.target.all") }]);
-const observation = computed(() => `${captureScope.value}:${captureTarget.value}`);
 const error = ref("");
 const displayError = computed(() => {
   try {
     const detail = JSON.parse(error.value);
     const key = `runtimeObserver.errors.${detail.code}`;
-    return te(key) ? t(key) : detail.message || error.value;
+    const assetKey = `assetCapture.errors.${detail.code}`;
+    return te(key) ? t(key) : te(assetKey) ? t(assetKey) : detail.message || error.value;
   } catch {
     return error.value;
   }
@@ -99,11 +92,12 @@ const events = computed(() =>
   Object.values(status.value.eventCounts).reduce((a, b) => a + b, 0),
 );
 const latestDataResult = (requestName: string) => [...status.value.recent].reverse().find((row) => row.requestName === requestName && row.channel === "result");
-const gamePaused = computed<boolean | undefined>(() => {
-  if (typeof status.value.gamePaused === "boolean") return status.value.gamePaused;
-  const row = [...status.value.recent].reverse().find((candidate) => typeof candidate.requestName === "string" && candidate.requestName.startsWith("globalFlags") && candidate.channel === "result");
-  const value = row?.result && typeof row.result === "object" && "value" in row.result ? row.result.value : undefined;
-  return typeof value === "boolean" ? value : undefined;
+const gameState = computed(() => {
+  if (status.value.gamePaused === true) return "paused";
+  if (status.value.clockAdvancing === false) return "clockStopped";
+  if (status.value.gamePaused === false || status.value.clockAdvancing === true)
+    return "playing";
+  return "unknownStatus";
 });
 const gameTime = computed(() => {
   const source = typeof status.value.gameClockSeconds === "number"
@@ -151,13 +145,14 @@ async function refresh() {
     if (captureFrames.value && next.pid) {
       try {
         const frame = await runtimeObserver.frame(next.pid);
-        frameUrl.value = `data:${frame.mime};base64,${frame.dataBase64}`;
+        if (active && captureFrames.value && epoch === captureEpoch.value && version === pollVersion)
+          frameUrl.value = `data:${frame.mime};base64,${frame.dataBase64}`;
       } catch {
         // A minimized or transitioning window can fail one frame; keep the last good frame.
       }
     }
     if (!next.running) stopping.value = false;
-    if (next.status?.error) error.value = String(next.status.error);
+    if (next.status?.error) error.value = JSON.stringify({ code: next.status.error, message: next.status.error });
     if (next.directory) await runtimeObserver.sync();
   } catch (e) {
     if (active && epoch === captureEpoch.value && version === pollVersion)
@@ -170,6 +165,7 @@ async function refresh() {
 async function start() {
   if (
     !selectedPid.value ||
+    !observation.value ||
     busy.value ||
     status.value.running ||
     stopping.value
@@ -182,6 +178,7 @@ async function start() {
   frozen = false;
   pollVersion += 1;
   captureEpoch.value += 1;
+  capturedObservation.value = observation.value;
   status.value = empty();
   frameUrl.value = "";
   processMenu.value = false;
@@ -214,6 +211,10 @@ async function stop() {
           recent: status.value.recent,
           records: status.value.records,
           eventCounts: status.value.eventCounts,
+          gameClockSeconds: next.gameClockSeconds ?? status.value.gameClockSeconds,
+          gameTimeSeconds: next.gameTimeSeconds ?? status.value.gameTimeSeconds,
+          gamePaused: next.gamePaused ?? status.value.gamePaused,
+          clockAdvancing: next.clockAdvancing ?? status.value.clockAdvancing,
         };
     frozen = !next.running;
   } catch (e) {
@@ -263,18 +264,18 @@ onBeforeUnmount(release);
         <p v-if="error" class="error" role="alert">{{ displayError }}</p>
 
         <section class="summary">
-          <div class="preview" :class="{ ready: frameUrl }">
-            <img v-if="frameUrl" :src="frameUrl" :alt="t('runtimeObserver.frame')" />
+          <div class="preview" :class="{ ready: captureFrames && frameUrl }">
+            <img v-if="captureFrames && frameUrl" :src="frameUrl" :alt="t('runtimeObserver.frame')" />
             <span v-else>{{ t("runtimeObserver.previewUnavailable") }}</span>
           </div>
           <div class="session">
             <div class="runtime-strip">
-              <span class="runtime-strip-title">{{ t("runtimeObserver.runtimeStatus") }}</span>
-              <span class="runtime-pill" :class="{ paused: gamePaused === true, active: gamePaused === false }">
+              <span class="runtime-strip-title">{{ t(status.running || !status.records ? "runtimeObserver.runtimeStatus" : "runtimeObserver.lastGameStatus") }}</span>
+              <span class="runtime-pill" :class="{ paused: gameState === 'paused', active: gameState === 'playing' }">
                 <span class="runtime-dot" aria-hidden="true"></span>
-                {{ gamePaused === true ? t("runtimeObserver.paused") : gamePaused === false ? t("runtimeObserver.playing") : t("runtimeObserver.unknownStatus") }}
+                {{ t(`runtimeObserver.${gameState}`) }}
               </span>
-              <span class="runtime-time"><span>{{ t(gameTimeIsClock ? "runtimeObserver.gameClock" : "runtimeObserver.gameTime") }}</span><strong>{{ gameTime ?? "—" }}</strong></span>
+              <span class="runtime-time"><span>{{ t(gameTimeIsClock ? (status.running ? "runtimeObserver.gameClock" : "runtimeObserver.lastGameClock") : "runtimeObserver.gameTime") }}</span><strong>{{ gameTime ?? "—" }}</strong></span>
               <label class="frame-toggle"><Switch v-model="captureFrames" :aria-label="t('runtimeObserver.captureFrame')" /><span>{{ t("runtimeObserver.captureFrame") }}</span></label>
               <div class="header-process">
                 <FDropdown v-model:open="processMenuOpen" :width="240">
@@ -320,27 +321,24 @@ onBeforeUnmount(release);
         </section>
 
         <section class="capture-toolbar" :aria-label="t('runtimeObserver.control')">
-          <div class="capture-filter" :aria-label="t('runtimeObserver.captureScope')">
-            <div class="scope-tabs" role="tablist">
-              <button v-for="scope in captureScopes" :key="scope.value" type="button" role="tab" :aria-selected="captureScope === scope.value" :class="{ active: captureScope === scope.value }" @click="captureScope = scope.value; captureTarget = 'all'">{{ scope.label }}</button>
-            </div>
-            <p class="scope-hint">{{ captureScopes.find((scope) => scope.value === captureScope)?.hint }}</p>
-            <div class="target-radios" role="radiogroup" :aria-label="t('runtimeObserver.captureTarget')">
-              <label v-for="target in captureTargets" :key="target.value" class="target-radio"><input v-model="captureTarget" type="radio" name="capture-target" :value="target.value" /><span>{{ target.label }}</span></label>
-            </div>
-          </div>
-          <div class="toolbar-profile">
+          <CaptureFilters v-model="observation" :disabled="status.running || busy || stopping" />
+          <div v-if="!observation.startsWith('city:')" class="toolbar-profile">
             <label class="profile-picker"><span>{{ t("runtimeObserver.profileLabel") }}</span><FSelect v-model="profile" :options="profileOptions" :disabled="status.running || busy" :aria-label="t('runtimeObserver.profileLabel')" /></label>
             <p class="profile-description">{{ t(`runtimeObserver.profile.${profile}.description`) }}</p>
           </div>
           <div class="toolbar-actions">
-            <FButton :disabled="status.running || !selectedPid" :loading="busy" @click="start">{{ t("runtimeObserver.start") }}</FButton>
+            <FButton :disabled="status.running || !selectedPid || !observation" :loading="busy" @click="start">{{ t("runtimeObserver.start") }}</FButton>
             <FButton variant="secondary" :disabled="!status.running || stopping" @click="stop">{{ t("runtimeObserver.stop") }}</FButton>
             <span class="phase" role="status">{{ t("runtimeObserver." + phase) }}</span>
           </div>
         </section>
 
-        <LogStream :key="captureEpoch" :rows="status.recent" :scope="captureScope" :target="captureTarget" />
+        <p v-if="capturedObservation.startsWith('city:') && !error" role="status" class="scope-hint">
+          {{ status.status?.ready
+            ? t("observerMenu.cityStatus", { matched: status.status.matched, tracked: status.status.tracked })
+            : status.running ? t("observerMenu.cityWaiting") : "" }}
+        </p>
+        <LogStream :key="`capture-${captureEpoch}`" :rows="status.recent" :target="captureTarget" />
       </TabsContent>
     </div>
     <div v-show="mode === 'static'">
@@ -523,33 +521,8 @@ dt {
   font-size: 12px;
   color: var(--muted-foreground);
 }
-.capture-filter { display: grid; gap: 6px; margin-top: 2px; }
-.scope-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
-.scope-tabs button { min-height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--background); color: var(--muted-foreground); cursor: pointer; font: 12px var(--font-sans); transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
-.scope-tabs button.active { color: var(--foreground); border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); background: color-mix(in srgb, var(--accent) 14%, var(--background)); }
 .scope-hint { margin: 0; color: var(--muted-foreground); font-size: 11px; }
 .capture-notice { margin: 0; color: var(--warning, #d6a85e); font-size: 11px; line-height: 1.35; max-width: 360px; }
-.target-radios { display: flex; gap: 12px; flex-wrap: wrap; }
-.target-radio { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; color: var(--foreground); cursor: pointer; }
-.target-radio input {
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  flex: none;
-  border: 1px solid var(--muted-foreground);
-  border-radius: 999px;
-  background: var(--background);
-  box-shadow: inset 0 0 0 3px var(--background);
-  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
-}
-.target-radio input:checked {
-  border-color: var(--accent);
-  background: var(--accent);
-  box-shadow: inset 0 0 0 3px var(--background);
-}
-.target-radio input:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-.target-radio:hover input { border-color: var(--foreground); }
 .metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -582,7 +555,6 @@ dt {
 .toolbar-process { min-width: 240px; }
 .toolbar-profile { min-width: 260px; flex: 1 1 280px; }
 .toolbar-actions { margin-inline-start: auto; display: flex; align-items: center; gap: 8px; }
-.capture-toolbar .capture-filter { min-width: 230px; }
 dd {
   font-size: 18px;
   font-variant-numeric: tabular-nums;

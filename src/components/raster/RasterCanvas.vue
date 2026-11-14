@@ -27,11 +27,11 @@ import {
 } from "@/lib/raster-editor/tools";
 import type { RasterTool } from "@/lib/raster-editor/schema";
 import { pickedLayer } from "@/lib/raster-editor/profileBehavior";
+import { lotRegion } from "@/lib/raster-editor/lotPaint";
+import { viewportToPixel } from "@/lib/raster-editor/viewport";
 
 /**
- * Raster 绘制画布：原生 canvas 按 1:1 像素持有文档，CSS transform 缩放平移
- * （image-rendering: pixelated 保持像素锐利）。工具交互在组件内闭环，
- * 提交历史后向宿主发 change 事件。
+ * 绘制工具使用文档坐标。地面合成预览按屏幕密度绘制材质，通道视图按原始像素显示。
  */
 const props = defineProps<{
   doc: RasterDocument;
@@ -53,7 +53,13 @@ const props = defineProps<{
   /** Display channel is independent from the channel being painted. */
   displayChannel?: Channel;
   lotLayer?: number | null;
+  lotBorderWidths?: number[];
   dataChannels?: boolean;
+  paintPreview?: ((context: CanvasRenderingContext2D, doc: RasterDocument) => void) | null;
+  /** 画布平面背景（CSS background），透明像素处可见；缺省为棋盘格。 */
+  backdrop?: string | null;
+  /** 橡皮擦清空全部通道（Lot 地面：擦除 = 露出底图）。 */
+  eraseAllChannels?: boolean;
 }>();
 const emit = defineEmits<{
   change: [];
@@ -124,20 +130,32 @@ const checkerboard = computed(() => {
   return `url(${canvasEl.toDataURL()})`;
 });
 
-function syncCanvasSize() {
-  const element = canvas.value;
-  if (!element) return;
-  element.width = props.doc.width;
-  element.height = props.doc.height;
-  ctx = element.getContext("2d");
-  render();
-}
+const materialPreview = computed(() =>
+  (props.displayChannel ?? "rgba") === "rgba" ? props.paintPreview : null,
+);
 
 function render() {
-  if (!ctx) return;
+  const element = canvas.value;
+  if (!element || !ctx) return;
   const before = dragBefore ?? curve?.base ?? polygonDraft?.base;
   if (before)
     restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
+  const { width, height } = props.doc;
+  const preview = materialPreview.value;
+  // Keep the backing store bounded when zooming into large masks.
+  const scale = preview
+    ? Math.min(zoom.value * window.devicePixelRatio, 4096 / Math.max(width, height))
+    : 1;
+  const backingWidth = Math.max(1, Math.round(width * scale));
+  const backingHeight = Math.max(1, Math.round(height * scale));
+  if (element.width !== backingWidth) element.width = backingWidth;
+  if (element.height !== backingHeight) element.height = backingHeight;
+  if (preview) {
+    ctx.setTransform(backingWidth / width, 0, 0, backingHeight / height, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    preview(ctx, props.doc);
+    return;
+  }
   const displayChannel = props.displayChannel ?? "rgba";
   const image =
     displayChannel !== "rgba"
@@ -166,7 +184,15 @@ defineExpose({
   zoomIn: () => setZoom(zoom.value * 1.25),
   zoomOut: () => setZoom(zoom.value / 1.25),
   setZoom: (value: number) => setZoom(value),
+  applyEdit,
 });
+
+/** 宿主发起的整幅修改（如移除材质）：同样进入撤销栈。 */
+function applyEdit(mutate: (pixels: Uint8ClampedArray) => Rect | null) {
+  cancelDraft();
+  const before = props.doc.pixels.slice();
+  pushEdit(mutate(props.doc.pixels), before);
+}
 
 function setZoom(value: number) {
   zoom.value = Math.min(32, Math.max(0.05, value));
@@ -210,6 +236,7 @@ let polygonDraft: { base: Uint8ClampedArray; vertices: { x: number; y: number }[
 
 function preserveErasedLotLayers(before: Uint8ClampedArray, dirty: Rect | null) {
   if (props.tool !== "eraser" || props.lotLayer == null || props.channel !== "rgba") return;
+  if (props.eraseAllChannels) return;
   if (!dirty) return;
   const selected = [3, 0, 1, 2][props.lotLayer];
   const rect = clampRect(dirty, props.doc);
@@ -225,12 +252,15 @@ function preserveErasedLotLayers(before: Uint8ClampedArray, dirty: Rect | null) 
 }
 
 function toPixel(event: PointerEvent): { x: number; y: number } {
-  const element = canvas.value!;
+  const element = wrap.value!;
   const rect = element.getBoundingClientRect();
-  return {
-    x: Math.floor((event.clientX - rect.left) / zoom.value),
-    y: Math.floor((event.clientY - rect.top) / zoom.value),
-  };
+  // Wrapper border is outside the plane coordinate system.
+  return viewportToPixel(
+    { x: event.clientX, y: event.clientY },
+    { left: rect.left + element.clientLeft, top: rect.top + element.clientTop },
+    pan.value,
+    zoom.value,
+  );
 }
 
 function constrainedEnd(from: { x: number; y: number }, to: { x: number; y: number }, shift: boolean) {
@@ -405,6 +435,9 @@ function onPointerDown(event: PointerEvent) {
       activeColor(),
       () => {},
       props.fillTolerance ?? 0,
+      props.lotLayer != null && (props.channel ?? "rgba") === "rgba"
+        ? (pixel) => lotRegion(pixel, props.lotBorderWidths)
+        : undefined,
     );
     preserveErasedLotLayers(before, dirty);
     pushEdit(dirty, before);
@@ -622,6 +655,10 @@ function makeEdit(rect: Rect, beforeFull: Uint8ClampedArray) {
 
 function renderRegion(region: Rect) {
   if (!ctx) return;
+  if (materialPreview.value) {
+    render();
+    return;
+  }
   const rect = clampRect(region, props.doc);
   if (!rect) return;
   const pixels = props.doc.copyRegion(rect);
@@ -677,8 +714,9 @@ function onKeyup(event: KeyboardEvent) {
 }
 
 onMounted(() => {
-  syncCanvasSize();
+  ctx = canvas.value?.getContext("2d") ?? null;
   fit();
+  render();
   window.addEventListener("keydown", onKeydown);
   window.addEventListener("keyup", onKeyup);
 });
@@ -696,6 +734,10 @@ watch(
   },
 );
 watch(
+  () => [materialPreview.value, materialPreview.value ? zoom.value : 1],
+  () => render(),
+);
+watch(
   () => props.tool,
   () => cancelDraft(),
 );
@@ -709,8 +751,8 @@ watch(
     polygonDraft = null;
     dragMode = "none";
     points = [];
-    syncCanvasSize();
     fit();
+    render();
   },
 );
 </script>
@@ -732,10 +774,15 @@ watch(
       class="canvas-plane"
       :style="{
         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-        background: checkerboard,
+        background: backdrop || checkerboard,
       }"
     >
-      <canvas ref="canvas" class="surface" />
+      <canvas
+        ref="canvas"
+        class="surface"
+        :class="{ 'material-preview': materialPreview }"
+        :style="{ width: `${doc.width}px`, height: `${doc.height}px` }"
+      />
     </div>
     <div v-if="metersPerPixel" class="ruler ruler-x" aria-hidden="true">
       <span
@@ -814,6 +861,9 @@ watch(
   display: block;
   image-rendering: pixelated;
   cursor: crosshair;
+}
+.surface.material-preview {
+  image-rendering: auto;
 }
 .hud {
   z-index: 3;

@@ -8,6 +8,10 @@ struct X {
     png_base64: String,
 }
 fn main() {
-    let x = X { origin_world: (1.0, 2.0), meters_per_pixel: 8.0, png_base64: "a".into() };
+    let x = X {
+        origin_world: (1.0, 2.0),
+        meters_per_pixel: 8.0,
+        png_base64: "a".into(),
+    };
     println!("{}", serde_json::to_string(&x).unwrap());
 }

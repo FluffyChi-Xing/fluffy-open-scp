@@ -20,9 +20,20 @@ fn main() {
             v
         })
         .unwrap_or(8);
-    let needle_arg = args.first().expect("usage: payload_bin_grep <hex[,hex...]> <package...>").clone();
-    let raw = args.iter().position(|a| a == "--raw").map(|i| args.remove(i)).is_some();
-    let gzip = args.iter().position(|a| a == "--gzip").map(|i| args.remove(i)).is_some();
+    let needle_arg = args
+        .first()
+        .expect("usage: payload_bin_grep <hex[,hex...]> <package...>")
+        .clone();
+    let raw = args
+        .iter()
+        .position(|a| a == "--raw")
+        .map(|i| args.remove(i))
+        .is_some();
+    let gzip = args
+        .iter()
+        .position(|a| a == "--gzip")
+        .map(|i| args.remove(i))
+        .is_some();
     let needles: Vec<(String, Vec<u8>)> = needle_arg
         .split(',')
         .map(|h| {
@@ -46,8 +57,7 @@ fn main() {
                         .entries()
                         .iter()
                         .find(|e| {
-                            off as u64 >= e.offset
-                                && (off as u64) < e.offset + e.stored_len()
+                            off as u64 >= e.offset && (off as u64) < e.offset + e.stored_len()
                         })
                         .map(|e| {
                             format!(
@@ -64,7 +74,10 @@ fn main() {
                         label,
                         off,
                         owner,
-                        data[s..e2].iter().map(|b| format!("{b:02x}")).collect::<String>()
+                        data[s..e2]
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>()
                     );
                     from = off + 1;
                 }
@@ -104,7 +117,10 @@ fn main() {
                 for (label, pat) in &needles {
                     let mut from = 0usize;
                     while let Some(off) = find(blob, from, pat) {
-                        let n = per_needle.entry(label.clone()).and_modify(|c| *c += 1).or_insert(1);
+                        let n = per_needle
+                            .entry(label.clone())
+                            .and_modify(|c| *c += 1)
+                            .or_insert(1);
                         if *n <= limit {
                             let s = off.saturating_sub(16);
                             let e2 = (off + pat.len() + 16).min(blob.len());
@@ -117,7 +133,10 @@ fn main() {
                                 off,
                                 s,
                                 e2,
-                                blob[s..e2].iter().map(|b| format!("{b:02x}")).collect::<String>()
+                                blob[s..e2]
+                                    .iter()
+                                    .map(|b| format!("{b:02x}"))
+                                    .collect::<String>()
                             );
                         }
                         from = off + 1;
@@ -145,5 +164,8 @@ fn find(hay: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
 }
 
 fn file_name(p: &str) -> &str {
-    std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p)
+    std::path::Path::new(p)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(p)
 }

@@ -2,6 +2,7 @@ import { i18n } from "@/locales";
 const t = i18n.global.t;
 import type { Tgi } from "@/api/tauri";
 import { base64ToRgba } from "./encoders";
+import { isSignSettings, type SignSettings } from "./signPaint";
 
 export const RASTER_PROFILES = [
   {
@@ -201,6 +202,18 @@ export interface RasterSchema {
   sampling: { generateMips: boolean; metersPerPixel: number };
   lot: {
     colors: [number, number, number, number][];
+    /** Uncovered base material texture index in the shared 4×4 atlas. */
+    baseTile?: number;
+    tilePeriod?: [number, number];
+    size?: [number, number];
+    colorHeights?: number[];
+    borderHeights?: number[];
+    /** Optional border paint settings; kept in schema for native Lot parity. */
+    borderColors?: [number, number, number][];
+    borderPatternIndices?: number[];
+    borderWidths?: number[];
+    /** Which LotColor slots (index = mask channel R/G/B/A) the user has bound as materials. */
+    slots?: boolean[];
     target: RasterSource | null;
   };
   decal: {
@@ -210,6 +223,7 @@ export interface RasterSchema {
     entryTgi?: Tgi;
     replaceInstance: string;
     atlas: RasterSource | null;
+    sign?: SignSettings;
   };
 }
 export function isMaskProfile(profile: RasterProfile) {
@@ -291,13 +305,34 @@ export function parseRasterSchema(input: unknown): RasterSchema {
   )
     throw new Error(t("rasterEditor.text160"));
   if (
+    s.lot.baseTile != null &&
+    (!Number.isInteger(s.lot.baseTile) || s.lot.baseTile < 0 || s.lot.baseTile > 15)
+  )
+    throw new Error(t("rasterEditor.text160"));
+  const numberArray = (value: unknown, count: number, valid: (n: number) => boolean) =>
+    value == null || (Array.isArray(value) && value.length === count &&
+      value.every((n) => typeof n === "number" && Number.isFinite(n) && valid(n)));
+  if (!numberArray(s.lot.borderPatternIndices, 4, n => Number.isInteger(n) && n >= 0 && n <= 15) ||
+      !numberArray(s.lot.borderWidths, 4, n => n >= 0 && n <= 0.5) ||
+      !numberArray(s.lot.tilePeriod, 2, n => n > 0) ||
+      !numberArray(s.lot.size, 2, n => n > 0) ||
+      !numberArray(s.lot.colorHeights, 4, () => true) ||
+      !numberArray(s.lot.borderHeights, 4, () => true) ||
+      (s.lot.borderColors != null && (!Array.isArray(s.lot.borderColors) || s.lot.borderColors.length !== 4 ||
+       !s.lot.borderColors.every((c: unknown) => c != null && numberArray(c, 3, n => Number.isInteger(n) && n >= 0 && n <= 255)))) ||
+      (s.lot.slots != null && (!Array.isArray(s.lot.slots) || s.lot.slots.length !== 4 ||
+       !s.lot.slots.every((used: unknown) => typeof used === "boolean"))))
+    throw new Error(t("rasterEditor.text160"));
+  if (
     !Array.isArray(s.decal?.colors) ||
     s.decal.colors.length !== 4 ||
     !s.decal.colors.every((c: string) => /^#[\da-f]{6}$/i.test(c)) ||
     !Number.isFinite(s.decal.aspectRatio) ||
     s.decal.aspectRatio <= 0 ||
     typeof s.decal.entryId !== "string" ||
-    typeof s.decal.replaceInstance !== "string"
+    typeof s.decal.replaceInstance !== "string" ||
+    (s.decal.sign !== undefined &&
+      (s.profile !== "decal-sign" || !isSignSettings(s.decal.sign)))
   )
     throw new Error(t("rasterEditor.text161"));
   for (const source of [

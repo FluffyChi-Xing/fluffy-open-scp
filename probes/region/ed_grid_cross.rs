@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use dbpf::Package;
-use sc_properties::region_map::{ed_grid_for_region, SHARED_TILE_GRID};
+use sc_properties::region_map::{SHARED_TILE_GRID, ed_grid_for_region};
 use sc_properties::{Kind, PropertyFile, Value};
 
 fn main() {
@@ -89,20 +89,34 @@ fn main() {
                 continue;
             }
             let Ok(data) = p.read(e) else { continue };
-            let Ok(pf) = PropertyFile::parse(&data) else { continue };
-            let Some(Some(name)) = pf.values.iter().find(|pr| pr.hash == 0x00B2_CCCA).map(|pr| match &pr.kind {
-                Kind::Scalar(Value::String8(s)) => Some(s.clone()),
-                _ => None,
-            }) else { continue };
+            let Ok(pf) = PropertyFile::parse(&data) else {
+                continue;
+            };
+            let Some(Some(name)) = pf
+                .values
+                .iter()
+                .find(|pr| pr.hash == 0x00B2_CCCA)
+                .map(|pr| match &pr.kind {
+                    Kind::Scalar(Value::String8(s)) => Some(s.clone()),
+                    _ => None,
+                })
+            else {
+                continue;
+            };
             if !(name.contains("water") || name.contains("Water") || name.contains("tessendorf")) {
                 continue;
             }
-            println!("  -- instance {:08X} name=\"{name}\"（{} 键）--", e.id.instance, pf.values.len());
+            println!(
+                "  -- instance {:08X} name=\"{name}\"（{} 键）--",
+                e.id.instance,
+                pf.values.len()
+            );
             for pr in &pf.values {
                 let brief = match &pr.kind {
                     Kind::Scalar(v) => format!("{v:?}"),
                     Kind::Array(vs) => {
-                        let show: Vec<String> = vs.iter().take(6).map(|v| format!("{v:?}")).collect();
+                        let show: Vec<String> =
+                            vs.iter().take(6).map(|v| format!("{v:?}")).collect();
                         format!("[{};{}]", show.join(","), vs.len())
                     }
                     Kind::Empty => "(empty)".to_string(),

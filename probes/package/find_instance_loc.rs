@@ -7,12 +7,14 @@ fn main() {
     let instance = u32::from_str_radix(args[0].trim_start_matches("0x"), 16).expect("hex");
     for path in &args[1..] {
         let package = Package::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
-        for e in package.entries().iter().filter(|e| e.id.instance == instance) {
+        for e in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.instance == instance)
+        {
             println!(
                 "{path}: T {:08X} G {:08X} ({}B)",
-                e.id.type_id,
-                e.id.group,
-                e.decompressed_size
+                e.id.type_id, e.id.group, e.decompressed_size
             );
         }
     }

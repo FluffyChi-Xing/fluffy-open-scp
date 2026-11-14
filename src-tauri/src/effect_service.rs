@@ -191,6 +191,35 @@ pub struct EffectDefinition {
     pub unsupported_blocks: usize,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectDetailRequest {
+    package_id: u64,
+    effect_id: u32,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectBlock {
+    pub block_type: u8,
+    pub component_index: i32,
+    pub offset: [f32; 3],
+    pub scale: f32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectDetail {
+    pub effect_id: u32,
+    pub collection_instance: u32,
+    pub collection_group: u32,
+    pub visual_index: usize,
+    pub blocks: Vec<EffectBlock>,
+    pub emitters: Vec<EffectEmitter>,
+    pub unsupported_blocks: usize,
+    pub diagnostics: Vec<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EffectPreviewResponse {
@@ -222,6 +251,7 @@ fn fast_particle_fallback() -> ParticleComponent {
             draw_mode: 0,
         },
         tile_count: [1, 1],
+        align_mode: 0,
         frame_start: 0,
         frame_count: 1,
         frame_random: 0,
@@ -232,6 +262,17 @@ fn fast_particle_fallback() -> ParticleComponent {
         gravity_strength: 0.0,
         drag: 0.7,
     }
+}
+
+fn ordered_texture_refs(material: &EffectMaterial) -> Vec<(u32, u32)> {
+    let mut refs = material.textures.clone();
+    // Swarm stores the sprite atlas in material parameter slot 2; other slots
+    // may hold normal/soft-particle maps. Prefer slot 2 so the preview does not
+    // pick a decodable but visually unrelated texture.
+    refs.sort_by_key(|(slot, _)| if *slot == 2 { 0 } else { 1 + *slot });
+    refs.into_iter()
+        .map(|(_, texture)| (texture.group, texture.instance))
+        .collect()
 }
 
 fn materialize_emitter(
@@ -256,13 +297,7 @@ fn materialize_emitter(
     let texture_refs: Vec<_> = if particle.texture.draw_mode == 15 {
         materials
             .get(&(particle.texture.group, particle.texture.instance))
-            .map(|material| {
-                let mut refs = material.textures.clone();
-                refs.sort_by_key(|(slot, _)| *slot);
-                refs.into_iter()
-                    .map(|(_, texture)| (texture.group, texture.instance))
-                    .collect()
-            })
+            .map(ordered_texture_refs)
             .unwrap_or_default()
     } else if particle.texture.instance != u32::MAX {
         vec![(particle.texture.group, particle.texture.instance)]
@@ -421,6 +456,144 @@ pub async fn read_effect_preview(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+/// 单效果详情：给 property inspector 展示 block 结构、粒子参数和真实图集。
+#[tauri::command]
+pub async fn read_effect_detail(
+    state: State<'_, AppState>,
+    request: EffectDetailRequest,
+) -> Result<EffectDetail, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let current = manager
+            .get(request.package_id)
+            .map_err(CommandError::from)?;
+        let packages = locate_effect_packages(&current, &manager, &store);
+        let mut diagnostics = Vec::new();
+        let mut texture_cache = HashMap::<(u32, u32), Option<String>>::new();
+
+        for package in &packages {
+            for entry in package
+                .entries()
+                .iter()
+                .filter(|entry| entry.id.type_id == EFFECT_COLLECTION_TYPE)
+            {
+                let Ok(bytes) = package.read(entry) else {
+                    continue;
+                };
+                let Ok(collection) = SwarmCollection::parse(&bytes) else {
+                    continue;
+                };
+                let Some(export) = collection
+                    .exports
+                    .iter()
+                    .find(|export| export.name_hash == request.effect_id)
+                else {
+                    continue;
+                };
+                let Some(visual_index) = export.effect_index else {
+                    continue;
+                };
+
+                let (particles, particle_error) =
+                    decode_particle_components_prefix(&collection, &bytes);
+                if let Some(error) = particle_error {
+                    diagnostics.push(format!(
+                        "effect collection {:08X}: {error}",
+                        entry.id.instance
+                    ));
+                }
+                let metas = match decode_meta_particle_components(&collection, &bytes) {
+                    Ok(metas) => metas,
+                    Err(error) => {
+                        diagnostics.push(format!(
+                            "effect collection {:08X}: {error}",
+                            entry.id.instance
+                        ));
+                        Vec::new()
+                    }
+                };
+                let materials = match decode_effect_materials(&collection, &bytes) {
+                    Ok(materials) => materials,
+                    Err(error) => {
+                        diagnostics.push(format!(
+                            "effect collection {:08X}: {error}",
+                            entry.id.instance
+                        ));
+                        HashMap::new()
+                    }
+                };
+
+                let Some(visual) = collection.visual_effects.get(visual_index) else {
+                    diagnostics.push(format!(
+                        "effect collection {:08X}: visual index {visual_index} out of range",
+                        entry.id.instance
+                    ));
+                    continue;
+                };
+                let blocks = visual
+                    .blocks
+                    .iter()
+                    .map(|block| EffectBlock {
+                        block_type: block.type_code,
+                        component_index: block.component_index,
+                        offset: block.transform.offset,
+                        scale: block.transform.scale,
+                    })
+                    .collect();
+
+                let mut candidates = Vec::new();
+                let mut unsupported_blocks = 0;
+                collect_emitter_candidates(
+                    &collection,
+                    visual_index,
+                    &particles,
+                    &metas,
+                    None,
+                    None,
+                    &mut Vec::new(),
+                    &mut candidates,
+                    &mut unsupported_blocks,
+                );
+                let mut emitters = Vec::new();
+                for candidate in candidates {
+                    if emitters.len() >= MAX_EMITTERS_PER_EFFECT {
+                        unsupported_blocks += 1;
+                        continue;
+                    }
+                    if let Some(emitter) = materialize_emitter(
+                        candidate,
+                        &packages,
+                        &materials,
+                        &mut texture_cache,
+                        &mut unsupported_blocks,
+                    ) {
+                        emitters.push(emitter);
+                    }
+                }
+
+                return Ok(EffectDetail {
+                    effect_id: request.effect_id,
+                    collection_instance: entry.id.instance,
+                    collection_group: entry.id.group,
+                    visual_index,
+                    blocks,
+                    emitters,
+                    unsupported_blocks,
+                    diagnostics,
+                });
+            }
+        }
+
+        Err(CommandError::new(
+            "not_found",
+            format!("effect {:08X} not found", request.effect_id),
+        ))
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,6 +610,45 @@ mod tests {
             rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
             offset,
         }
+    }
+
+    #[test]
+    fn material_texture_prefers_slot_two_atlas() {
+        use sc_properties::swarm_material::MaterialTexture;
+        let material = EffectMaterial {
+            group: 0,
+            instance: 1,
+            shader_group: 0,
+            shader_instance: 0,
+            format: 16,
+            textures: vec![
+                (
+                    0,
+                    MaterialTexture {
+                        group: 0,
+                        instance: 0xA0,
+                    },
+                ),
+                (
+                    1,
+                    MaterialTexture {
+                        group: 0,
+                        instance: 0xB0,
+                    },
+                ),
+                (
+                    2,
+                    MaterialTexture {
+                        group: 0,
+                        instance: 0xC0,
+                    },
+                ),
+            ],
+        };
+        assert_eq!(
+            ordered_texture_refs(&material),
+            vec![(0, 0xC0), (0, 0xA0), (0, 0xB0)]
+        );
     }
 
     #[test]

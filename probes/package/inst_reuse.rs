@@ -2,7 +2,14 @@
 use std::collections::HashMap;
 fn main() {
     let path = std::env::args().nth(1).expect("package");
-    let ty = u32::from_str_radix(std::env::args().nth(2).expect("type").trim_start_matches("0x"), 16).unwrap();
+    let ty = u32::from_str_radix(
+        std::env::args()
+            .nth(2)
+            .expect("type")
+            .trim_start_matches("0x"),
+        16,
+    )
+    .unwrap();
     let package = dbpf::Package::open(&path).expect("open");
     let mut by_inst: HashMap<u32, Vec<u32>> = HashMap::new();
     let mut total = 0;
@@ -13,11 +20,18 @@ fn main() {
         }
     }
     let multi = by_inst.values().filter(|v| v.len() > 1).count();
-    println!("type 0x{ty:08X}: {total} entries, {} unique instances, {multi} reused by >1 group", by_inst.len());
+    println!(
+        "type 0x{ty:08X}: {total} entries, {} unique instances, {multi} reused by >1 group",
+        by_inst.len()
+    );
     // sample a reused instance
     for (inst, groups) in by_inst.iter().take(4000) {
         if groups.len() > 1 {
-            println!("inst 0x{inst:08X} in {} groups: {:?}", groups.len(), &groups[..groups.len().min(4)]);
+            println!(
+                "inst 0x{inst:08X} in {} groups: {:?}",
+                groups.len(),
+                &groups[..groups.len().min(4)]
+            );
             break;
         }
     }

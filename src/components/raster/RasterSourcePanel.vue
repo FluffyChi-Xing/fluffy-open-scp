@@ -236,7 +236,10 @@ function create() {
     <h3>{{ t("rasterEditor.text088") }}</h3>
     <fieldset :disabled="disabled || busy">
       <div class="package-source">
-        <div v-if="profile !== 'slot0'" class="dimensions">
+        <p v-if="profile === 'lot-mask'" class="lot-size-hint">
+          {{ t("rasterEditor.ground.createHint") }}
+        </p>
+        <div v-if="profile !== 'slot0' && profile !== 'lot-mask'" class="dimensions">
           <label>
             {{ t("rasterEditor.text089") }}
             <input
@@ -250,7 +253,7 @@ function create() {
             <input v-model.number="height" type="number" min="1" max="4096"
           /></label>
         </div>
-        <button v-if="profile !== 'slot0'" @click="create">
+        <button v-if="profile !== 'slot0' && profile !== 'lot-mask'" @click="create">
           {{ t("rasterEditor.text091") }}
         </button>
         <button v-if="isTauri() && profile !== 'slot0'" @click="importImage">
@@ -399,6 +402,12 @@ select[size] {
 }
 option {
   padding: 5px;
+}
+.lot-size-hint {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 0;
 }
 .dimensions {
   display: flex;

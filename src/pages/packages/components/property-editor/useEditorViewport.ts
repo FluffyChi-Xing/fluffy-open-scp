@@ -69,6 +69,13 @@ export function useEditorViewport(options: {
   interactionPixelRatio?: number;
   onTapUnit: (id: string | null) => void;
   onHoverUnit?: (id: string | null) => void;
+  /**
+   * 清场前钩子：装配层在此摘除指向即将被移除对象的编辑器挂件
+   * （TransformControls 等）。否则挂件在清场后仍持有已脱离场景图的对象，
+   * three 每次 updateMatrixWorld 都会报 "attached object must be a part of
+   * the scene graph"（2026-11-06 用户控制台刷屏）。
+   */
+  onBeforeClear?: () => void;
 }) {
   const container = shallowRef<HTMLElement | null>(null);
   const viewer = shallowRef<ThreeViewer | null>(null);
@@ -82,6 +89,7 @@ export function useEditorViewport(options: {
   let rebuildToken = 0;
   /** 重建在飞标记：资产通道部分刷新据此让位（见 isAssembling）。 */
   let assembling = false;
+  let disposed = false;
   /** 在飞重建完全落地的等待者（whenSettled；尾部统一 flush）。 */
   const rebuildWaiters: (() => void)[] = [];
   let readyResolve: (() => void) | null = null;
@@ -161,7 +169,10 @@ export function useEditorViewport(options: {
     readyResolve?.();
   });
   onBeforeUnmount(() => {
+    disposed = true;
     rebuildToken += 1;
+    assembling = false;
+    for (const waiter of rebuildWaiters.splice(0)) waiter();
     viewer.value?.dispose();
     viewer.value = null;
     unitObjects.clear();
@@ -170,12 +181,13 @@ export function useEditorViewport(options: {
   });
 
   /**
-   * 场景真实光源总数上限：three 前向渲染每片元评估全部光源（成本 =
-   * 光源数 × 片元数）。24 是早期低配机「推近掉帧」时代定的；hejl 管线 +
-   * 现代 GPU 下 48 可承受（2026-09-27 放开，多灯 lot 的招牌/路灯不再被
-   * 大面积剪掉）。剪枝策略按单元总强度从弱到强——后续可加距离权重。
+   * 场景真实光源总数上限：three 前向渲染**每片元**评估全部 Point/Spot
+   * 光源（成本 = 光源数 × 片元数 × BRDF）。48 盏在 2× DPR 下会把精细模式
+   * 的片元成本推到无法跟手（2026-11-06 用户实测）。12 保留最强的招牌/
+   * 路灯照明，其余剪枝；多灯 lot 若需要更多，先提升交互降级力度再调此值。
+   * 剪枝策略按单元总强度从弱到强。
    */
-  const MAX_REAL_LIGHTS = 48;
+  const MAX_REAL_LIGHTS = 12;
 
   /** 真实光源总数超限时，从强度最弱的单元开始摘除光源本体。 */
   function pruneExcessLights() {
@@ -217,13 +229,20 @@ export function useEditorViewport(options: {
    */
   async function rebuild(
     assembly: (ctx: EditorViewportRebuildCtx) => Promise<void> | void,
-    options: { reframe?: boolean } = {},
+    rebuildOptions: { reframe?: boolean; prepareGpu?: boolean } = {},
   ) {
     const instance = viewer.value;
     if (!instance) return;
     const token = ++rebuildToken;
     assembling = true;
     instance.setSceneAssembling(true);
+    // 先摘挂件再清场：挂件（gizmo）持有上一代对象，清场后对象 parent=null，
+    // 后续任何 scene.updateMatrixWorld 都会触发 three 的告警刷屏。
+    try {
+      options.onBeforeClear?.();
+    } catch {
+      // 挂件清理失败不应阻断重建
+    }
     for (const name of VIEWPORT_GROUPS) instance.clearGroup(name);
     unitObjects.clear();
     for (const url of textureUrls) URL.revokeObjectURL(url);
@@ -243,14 +262,14 @@ export function useEditorViewport(options: {
       stats: {},
     };
     const span = renderTelemetry.begin("scene_rebuild", {
-      reframe: options.reframe === true,
+      reframe: rebuildOptions.reframe === true,
       first: !framed,
     });
     try {
       await assembly(ctx);
       if (token !== rebuildToken) return;
       pruneExcessLights();
-      if (options.reframe || !framed) {
+      if (rebuildOptions.reframe || !framed) {
         instance.frameContent({ framingGroups: [...FRAMING_GROUPS] });
         framed = true;
       } else {
@@ -264,20 +283,19 @@ export function useEditorViewport(options: {
       }
       sceneReady.value = true;
       revision.value += 1;
-      // GPU 侧准备（遥测外语义的收尾段，仍在"在飞"窗口内）：全量纹理
-      // 预热 + 程序预编译完成后再放行首帧——首次 draw 不再承担纹理上传
-      // 与 program 链接。prepareShaders 内建 stale 看门狗；整个窗口被
-      // whenSettled 串行化覆盖（编译窗口内开新一轮 = dispose 在编译的
-      // 材质 → three 轮询抛 isReady + 半成品帧，2026-10-08 勘误）。
+      // GPU 侧准备：**先放行首帧**，未上屏的纹理再按 idle 切片补传。
+      // 此前"全量 primeTextures + 整场 compile 完成后才出画"会把首帧
+      // 推迟数百 ms（模式切换卡死），而放到首帧后同步跑同样是主线程冻帧。
       if (token === rebuildToken) {
-        try {
-          instance.primeTextures();
-          await instance.prepareShaders(() => token !== rebuildToken);
-        } catch {
-          // GPU 准备失败不阻塞出画（首轮 draw 走同步路径兜底）
-        }
-        if (token !== rebuildToken) return;
+        // 首帧先放行；GPU 预热放到首帧之后的 idle 切片。
+        instance.setSceneAssembling(false);
         instance.invalidate();
+        if (rebuildOptions.prepareGpu === true) {
+          // 逐纹理上传、每片 ~6ms：整场 prime 在 refined 首帧后同步跑完会
+          // 把刚刚可见的视口再冻住数百毫秒（用户观测的「切换精细卡死」）。
+          // 首帧本身需要的纹理由 draw 惰性上传，这里只补未上屏的部分。
+          instance.primeTexturesInBackground(() => token !== rebuildToken);
+        }
       }
     } finally {
       // 仅当前代清旗/唤醒：过期代误清会抹掉新一代的在飞标记
@@ -343,7 +361,7 @@ export function useEditorViewport(options: {
    * （2026-10-08）。
    */
   function whenSettled(): Promise<void> {
-    if (!assembling) return Promise.resolve();
+    if (disposed || !assembling) return Promise.resolve();
     return new Promise((resolve) => {
       rebuildWaiters.push(resolve);
     });

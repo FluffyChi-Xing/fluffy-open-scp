@@ -106,8 +106,7 @@ fn main() -> dbpf::Result<()> {
         return Ok(());
     }
 
-    let graphics =
-        Package::open(r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package")?;
+    let graphics = Package::open(r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package")?;
     let mut target: Option<IndexEntry> = None;
     for entry in graphics.entries() {
         if entry.id.type_id == RW4_TYPE && entry.id.instance == H_NORMAL_ATLAS {

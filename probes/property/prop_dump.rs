@@ -7,7 +7,9 @@ use sc_properties::PropertyFile;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (path, rest) = args.split_first().expect("usage: prop_dump <package> <type> <group> <instance>");
+    let (path, rest) = args
+        .split_first()
+        .expect("usage: prop_dump <package> <type> <group> <instance>");
     let nums: Vec<u32> = rest
         .iter()
         .map(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).expect("bad hex"))

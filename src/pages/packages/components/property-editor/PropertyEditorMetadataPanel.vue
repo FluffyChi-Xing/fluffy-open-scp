@@ -2,15 +2,18 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FAlert from "@/components/ui/FAlert.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FColorPicker from "@/components/ui/FColorPicker.vue";
+import { Switch } from "@/components/ui/switch";
 import type { LightUnit, LotUnitDto, PropUnit } from "@/api/tauri";
 import { unitId } from "./unitGizmos";
 
 /**
  * 元数据 tab：按 Unit 类型给出语义字段编辑（写本地字段 override，可撤销）。
- * 覆盖 light（类型/颜色/半径/漫射/长度）与 prop（缩放倍率）；其余类型只读
- * 提示（decal 按用户裁决暂缓）。新组件族按节追加（divider 语义）。
+ * 覆盖 light（类型/颜色/半径/漫射/长度/裁切距离/体积光——2026-11-03 用户
+ * 指令补齐，长度仅 Spot/Line 显示，Point 不消费该字段）与 prop（缩放倍率）；
+ * 其余类型只读提示（decal 按用户裁决暂缓）。新组件族按节追加（divider 语义）。
  */
 const props = defineProps<{
   unit: LotUnitDto | null;
@@ -59,22 +62,47 @@ function commitScale() {
 const LIGHT_TYPES = ["Point", "Spot", "Line"] as const;
 const typeOpen = ref(false);
 
+/** 裁切距离档位 = scene.rs cull_distance_instance 的解析枚举。 */
+const CULL_DISTANCES = ["Near", "Mid", "Far", "Max"] as const;
+const cullOpen = ref(false);
+
 interface NumberField {
-  key: "outerRadius" | "innerRadius" | "diffuse" | "length";
+  key: "outerRadius" | "innerRadius" | "diffuse" | "specular" | "falloffStart" | "length";
   label: string;
   step: number;
+  /** 字段适用的灯型；省略 = 全类型。Point 不消费 length（引擎侧仅 Spot 锥长/Line 条长）。 */
+  types?: readonly (typeof LIGHT_TYPES)[number][];
 }
 const NUMBER_FIELDS: NumberField[] = [
   { key: "outerRadius", label: "package.lightRadius", step: 0.5 },
   { key: "innerRadius", label: "package.lightInnerRadius", step: 0.5 },
   { key: "diffuse", label: "package.lightDiffuse", step: 0.05 },
-  { key: "length", label: "package.lightLength", step: 0.5 },
+  // 游戏 shader 的 params.y（Ks）：与 diffuse 同量纲、独立高光通道。
+  { key: "specular", label: "package.lightSpecular", step: 0.05 },
+  // 游戏 params.z：从灯心起开始衰减的距离（0 = 立即开始）。
+  { key: "falloffStart", label: "package.lightFalloffStart", step: 0.1 },
+  { key: "length", label: "package.lightLength", step: 0.5, types: ["Spot", "Line"] },
 ];
+const numberFields = computed(() => {
+  const type = light.value?.lightType ?? "Point";
+  return NUMBER_FIELDS.filter((field) => !field.types || field.types.includes(type));
+});
 
 function setLightType(type: string) {
   if (locked.value || !light.value) return;
   emit("update-fields", unitId(light.value), { lightType: type });
   typeOpen.value = false;
+}
+
+function setCullDistance(distance: string) {
+  if (locked.value || !light.value) return;
+  emit("update-fields", unitId(light.value), { cullDistance: distance });
+  cullOpen.value = false;
+}
+
+function setVolumetric(value: boolean) {
+  if (locked.value || !light.value) return;
+  emit("update-fields", unitId(light.value), { isVolumetric: value });
 }
 
 function setNumberField(key: NumberField["key"], event: Event) {
@@ -138,6 +166,18 @@ function setColor(hex: string) {
       </section>
     </template>
     <template v-else-if="light">
+      <!-- 属性语义提示：只随灯的元数据出现（用户反馈内/外半径、反射、裁切档
+           对作者是黑箱，需要就地解释，而不是让人去翻文档）。 -->
+      <FAlert type="info" class="light-semantics">
+        <strong>{{ $t("package.lightSemanticsTitle") }}</strong>
+        <ul>
+          <li>{{ $t("package.lightSemanticsRadius") }}</li>
+          <li>{{ $t("package.lightSemanticsInner") }}</li>
+          <li>{{ $t("package.lightSemanticsDiffuse") }}</li>
+          <li>{{ $t("package.lightSemanticsCull") }}</li>
+          <li>{{ $t("package.lightSemanticsVolumetric") }}</li>
+        </ul>
+      </FAlert>
       <!-- 灯光三节：统一左标签/右控件布局；锁定（toolbar 未解锁）时全部禁用 -->
       <section class="panel-section">
         <div class="scale-row">
@@ -189,7 +229,7 @@ function setColor(hex: string) {
       </section>
       <section class="panel-section">
         <div class="axis-rows">
-          <label v-for="field in NUMBER_FIELDS" :key="field.key" class="axis-row">
+          <label v-for="field in numberFields" :key="field.key" class="axis-row">
             <span class="field-label">{{ t(field.label) }}</span>
             <input
               type="number"
@@ -200,6 +240,48 @@ function setColor(hex: string) {
               @change="setNumberField(field.key, $event)"
             />
           </label>
+        </div>
+      </section>
+      <section class="panel-section">
+        <div class="scale-row">
+          <div class="scale-label">
+            <span>{{ $t("package.lightCullDistance") }}</span>
+          </div>
+          <FDropdown v-model:open="cullOpen" :width="150">
+            <template #trigger>
+              <button type="button" class="type-trigger" :disabled="locked">
+                <span>{{ light.cullDistance ?? "Max" }}</span>
+                <FIcon name="ChevronDown" :size="14" aria-label="" />
+              </button>
+            </template>
+            <button
+              v-for="distance in CULL_DISTANCES"
+              :key="distance"
+              type="button"
+              :class="{ selected: (light.cullDistance ?? 'Max') === distance }"
+              @click="setCullDistance(distance)"
+            >
+              <FIcon
+                :name="(light.cullDistance ?? 'Max') === distance ? 'Check' : 'CircleDot'"
+                :size="14"
+                aria-label=""
+              />
+              {{ distance }}
+            </button>
+          </FDropdown>
+        </div>
+      </section>
+      <section class="panel-section">
+        <div class="scale-row volumetric-row">
+          <div class="scale-label">
+            <span>{{ $t("package.lightVolumetric") }}</span>
+          </div>
+          <Switch
+            :model-value="light.isVolumetric ?? false"
+            :disabled="locked"
+            :aria-label="$t('package.lightVolumetric')"
+            @update:model-value="setVolumetric"
+          />
         </div>
       </section>
     </template>
@@ -318,6 +400,10 @@ function setColor(hex: string) {
 .scale-input:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+/* 体积光开关行：右侧 Switch（组件库统一布尔控件，非 checkbox——用户指令 2026-11-03） */
+.volumetric-row {
+  cursor: default;
 }
 .metadata-panel.locked .type-trigger,
 .metadata-panel.locked .axis-row input,

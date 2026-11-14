@@ -25,8 +25,8 @@ mod texture_index;
 pub use batch::{BatchExport, ExportFailure, ExportProgress, export_batch, export_textures};
 pub use error::{Error, Result};
 pub use gltf::{
-    AnimClip, AnimTrack, EmbeddedTextures, GlbOutput, SkinData, export_glb,
-    export_glb_with_colors, export_glb_with_textures, extract_skin,
+    AnimClip, AnimTrack, EmbeddedTextures, GlbOutput, SkinData, export_glb, export_glb_with_colors,
+    export_glb_with_textures, extract_skin,
 };
 pub use magic::{MAGIC_FORMATS, MagicFormat, detect_magic};
 pub use obj::export_obj;

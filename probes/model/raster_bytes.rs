@@ -4,19 +4,37 @@
 use rw4::RasterImage;
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: raster_bytes <package> [instance]");
-    let want = std::env::args().nth(2).and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: raster_bytes <package> [instance]");
+    let want = std::env::args()
+        .nth(2)
+        .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
     let package = dbpf::Package::open(&path).expect("open package");
     let mut shown = 0usize;
     for entry in package.entries() {
-        if entry.id.type_id != 0x2F4E_681C { continue; }
-        if let Some(want) = want { if entry.id.instance != want { continue; } }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(r) = RasterImage::parse(&data) else { continue };
-        if !r.is_raw_rgba() { continue; }
+        if entry.id.type_id != 0x2F4E_681C {
+            continue;
+        }
+        if let Some(want) = want {
+            if entry.id.instance != want {
+                continue;
+            }
+        }
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(r) = RasterImage::parse(&data) else {
+            continue;
+        };
+        if !r.is_raw_rgba() {
+            continue;
+        }
         let Some(mip) = r.mips.first() else { continue };
         let px = mip.len() / 4;
-        if px == 0 { continue; }
+        if px == 0 {
+            continue;
+        }
         let mut stats = [(0u64, 0u64, u8::MAX, 0u8); 4]; // (sum, count, min, max)
         for p in mip.as_chunks::<4>().0 {
             for (i, &b) in p.iter().enumerate() {
@@ -26,13 +44,23 @@ fn main() {
                 stats[i].3 = stats[i].3.max(b);
             }
         }
-        println!("0x{:08X} {}x{} pixFmt={}", entry.id.instance, r.width, r.height, r.pixel_format);
+        println!(
+            "0x{:08X} {}x{} pixFmt={}",
+            entry.id.instance, r.width, r.height, r.pixel_format
+        );
         for (i, (sum, count, min, max)) in stats.iter().enumerate() {
-            println!("  byte{i}: avg={:.1} min={min} max={max}", *sum as f64 / *count as f64);
+            println!(
+                "  byte{i}: avg={:.1} min={min} max={max}",
+                *sum as f64 / *count as f64
+            );
         }
         println!("  first8: {:?}", &mip[..mip.len().min(32)]);
         shown += 1;
-        if shown >= 6 { break; }
+        if shown >= 6 {
+            break;
+        }
     }
-    if shown == 0 { println!("no raw rasters found"); }
+    if shown == 0 {
+        println!("no raw rasters found");
+    }
 }

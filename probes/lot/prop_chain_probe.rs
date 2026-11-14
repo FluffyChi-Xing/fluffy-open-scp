@@ -6,8 +6,12 @@ const PROP_SLOT_BASE: u32 = 0x0C12_EF40;
 const PROP_TRANSFORM_BASE: u32 = 0x0C12_EF30;
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: prop_chain_probe <package> [instance]");
-    let only = std::env::args().nth(2).and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: prop_chain_probe <package> [instance]");
+    let only = std::env::args()
+        .nth(2)
+        .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
     let package = dbpf::Package::open(&path).expect("open package");
     let mut found = 0usize;
     for entry in package.entries() {
@@ -19,8 +23,12 @@ fn main() {
                 continue;
             }
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         let has_props = (0..14).any(|b| {
             file.get(PROP_SLOT_BASE + b).is_some() || file.get(PROP_TRANSFORM_BASE + b).is_some()
         });
@@ -61,7 +69,10 @@ fn scalar_summary(v: &Value) -> String {
         Value::UInt32(u) => format!("u32(0x{u:08X})"),
         Value::Float(f) => format!("f({f:.3})"),
         Value::Text(t) => format!("text({},0x{:08X})", t.table_id, t.instance_id),
-        Value::Key(k) => format!("key(t=0x{:08X},g=0x{:08X},i=0x{:08X})", k.type_id, k.group, k.instance),
+        Value::Key(k) => format!(
+            "key(t=0x{:08X},g=0x{:08X},i=0x{:08X})",
+            k.type_id, k.group, k.instance
+        ),
         other => format!("{other:?}"),
     }
 }

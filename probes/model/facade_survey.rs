@@ -23,7 +23,10 @@ impl Ctx<'_> {
             let Some(e) = pkg
                 .entries()
                 .iter()
-                .find(|e| e.id.instance == inst && (e.id.type_id == RASTER_IMAGE || e.id.type_id == RW4_IMAGE))
+                .find(|e| {
+                    e.id.instance == inst
+                        && (e.id.type_id == RASTER_IMAGE || e.id.type_id == RW4_IMAGE)
+                })
                 .cloned()
             else {
                 continue;
@@ -31,12 +34,23 @@ impl Ctx<'_> {
             let bytes = pkg.read(&e).ok()?;
             if e.id.type_id == RASTER_IMAGE {
                 let raster = rw4::RasterImage::parse(&bytes).ok()?;
-                return Some((raster.decode_top_mip_rgba().ok()?, raster.width, raster.height));
+                return Some((
+                    raster.decode_top_mip_rgba().ok()?,
+                    raster.width,
+                    raster.height,
+                ));
             }
             let tex_file = rw4::Rw4File::parse(&bytes).ok()?;
-            let sec = tex_file.sections_of_type(rw4::SectionType::TEXTURE).next()?.number;
+            let sec = tex_file
+                .sections_of_type(rw4::SectionType::TEXTURE)
+                .next()?
+                .number;
             let tex = tex_file.decode_texture(&bytes, sec).ok()?;
-            return Some((tex.decode_top_mip_rgba().ok()?, u32::from(tex.width), u32::from(tex.height)));
+            return Some((
+                tex.decode_top_mip_rgba().ok()?,
+                u32::from(tex.width),
+                u32::from(tex.height),
+            ));
         }
         None
     }
@@ -44,12 +58,20 @@ impl Ctx<'_> {
     /// slot0 参数表（f32 texel 平铺 + 列数）
     fn find_params(&self, inst: u32) -> Option<(Vec<[f32; 4]>, usize)> {
         for (_, pkg) in &self.packages {
-            let Some(e) = pkg.entries().iter().find(|e| e.id.instance == inst && e.id.type_id == RW4_IMAGE).cloned() else {
+            let Some(e) = pkg
+                .entries()
+                .iter()
+                .find(|e| e.id.instance == inst && e.id.type_id == RW4_IMAGE)
+                .cloned()
+            else {
                 continue;
             };
             let bytes = pkg.read(&e).ok()?;
             let tex_file = rw4::Rw4File::parse(&bytes).ok()?;
-            let sec = tex_file.sections_of_type(rw4::SectionType::TEXTURE).next()?.number;
+            let sec = tex_file
+                .sections_of_type(rw4::SectionType::TEXTURE)
+                .next()?
+                .number;
             let tex = tex_file.decode_texture(&bytes, sec).ok()?;
             let pixels = tex.decode_palette_f32().ok()?;
             return Some((pixels, usize::from(tex.width)));
@@ -106,7 +128,10 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (path, extras) = args.split_first().expect("usage: <package> [跨包...]");
     let package = dbpf::Package::open(path).expect("open package");
-    let extra_pkgs: Vec<_> = extras.iter().map(|p| dbpf::Package::open(p).expect("open extra")).collect();
+    let extra_pkgs: Vec<_> = extras
+        .iter()
+        .map(|p| dbpf::Package::open(p).expect("open extra"))
+        .collect();
     let mut ctx = Ctx {
         packages: vec![(path.clone(), &package)],
     };
@@ -133,14 +158,20 @@ fn main() {
     let mut rows: Vec<String> = Vec::new();
 
     for entry in &models {
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = rw4::Rw4File::parse(&data) else {
+            continue;
+        };
         let mut v = ModelVerdict::default();
 
         // 收集所有 exportable mesh 的 materialIndex 使用计数 + uv2 存在性
         let mut used: std::collections::HashMap<u8, usize> = Default::default();
         for section in file.sections_of_type(rw4::SectionType::MESH) {
-            let Ok(mesh) = file.decode_mesh(&data, section.number) else { continue };
+            let Ok(mesh) = file.decode_mesh(&data, section.number) else {
+                continue;
+            };
             if !mesh.is_exportable() {
                 continue;
             }
@@ -149,7 +180,8 @@ fn main() {
                     *used.entry(m).or_default() += 1;
                 }
                 if vtx.components.iter().any(|(e, val)| {
-                    e.usage == rw4::DeclarationUsage::TexCoord && matches!(val, rw4::ComponentValue::Float4(_))
+                    e.usage == rw4::DeclarationUsage::TexCoord
+                        && matches!(val, rw4::ComponentValue::Float4(_))
                 }) {
                     v.uv2 = true;
                 }
@@ -158,7 +190,8 @@ fn main() {
         }
 
         for material_section in file.sections_of_type(rw4::SectionType::MATERIAL) {
-            let Ok(rw4::MaterialSection::Decoded(mat)) = file.decode_material(&data, material_section.number)
+            let Ok(rw4::MaterialSection::Decoded(mat)) =
+                file.decode_material(&data, material_section.number)
             else {
                 continue;
             };

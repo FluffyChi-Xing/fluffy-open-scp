@@ -20,7 +20,9 @@ fn main() {
             continue;
         }
         let Ok(data) = p.read(e) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         let mut found: BTreeMap<u32, Vec<String>> = BTreeMap::new();
         for prop in &file.values {
             if !hashes.contains(&prop.hash) {

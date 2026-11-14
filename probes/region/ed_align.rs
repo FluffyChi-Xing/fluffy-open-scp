@@ -22,13 +22,25 @@ fn main() {
             0x03E4_21F0 => {
                 let d = p.read(e).unwrap();
                 if d.len() == 131092 {
-                    f0.insert(e.id.instance, d[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
+                    f0.insert(
+                        e.id.instance,
+                        d[20..]
+                            .chunks_exact(2)
+                            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                            .collect(),
+                    );
                 }
             }
             0x03E4_21ED => {
                 let d = p.read(e).unwrap();
                 if d.len() == 65556 {
-                    ed.insert(e.id.instance, d[20..].chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect());
+                    ed.insert(
+                        e.id.instance,
+                        d[20..]
+                            .chunks_exact(4)
+                            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                            .collect(),
+                    );
                 }
             }
             _ => {}
@@ -36,13 +48,25 @@ fn main() {
     }
 
     let mut f0g = [[0u32; 16]; 16];
-    for (y, line) in std::fs::read_to_string("tmp/region_preview/grid_shared.txt").unwrap().lines().filter(|l| !l.trim().is_empty()).take(16).enumerate() {
+    for (y, line) in std::fs::read_to_string("tmp/region_preview/grid_shared.txt")
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .take(16)
+        .enumerate()
+    {
         for (x, v) in line.split(',').take(16).enumerate() {
             f0g[y][x] = u32::from_str_radix(v.trim(), 16).unwrap_or(0);
         }
     }
     let mut edg = [[0u32; 16]; 16];
-    for (y, line) in std::fs::read_to_string(&ed_grid_file).unwrap().lines().filter(|l| !l.trim().is_empty()).take(16).enumerate() {
+    for (y, line) in std::fs::read_to_string(&ed_grid_file)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .take(16)
+        .enumerate()
+    {
         for (x, v) in line.split(',').take(16).enumerate() {
             edg[y][x] = u32::from_str_radix(v.trim(), 16).unwrap_or(0);
         }
@@ -54,7 +78,8 @@ fn main() {
         for (tx, i) in row.iter().enumerate() {
             if let Some(px) = f0.get(i) {
                 for y in 0..256 {
-                    hgt[(ty * 256 + y) * w + tx * 256..(ty * 256 + y) * w + tx * 256 + 256].copy_from_slice(&px[y * 256..(y + 1) * 256]);
+                    hgt[(ty * 256 + y) * w + tx * 256..(ty * 256 + y) * w + tx * 256 + 256]
+                        .copy_from_slice(&px[y * 256..(y + 1) * 256]);
                 }
             }
         }
@@ -67,7 +92,8 @@ fn main() {
                 for y in 0..128 {
                     for x in 0..128 {
                         let v = px[y * 128 + x];
-                        edpx[(ty * 128 + y) * wm + tx * 128 + x] = [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF];
+                        edpx[(ty * 128 + y) * wm + tx * 128 + x] =
+                            [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF];
                     }
                 }
             }
@@ -100,7 +126,11 @@ fn main() {
                 }
             }
         }
-        for (cls, cname) in [(0usize, "ocean<300     "), (1usize, "low 300..3336 "), (2usize, "land>=3336    ")] {
+        for (cls, cname) in [
+            (0usize, "ocean<300     "),
+            (1usize, "low 300..3336 "),
+            (2usize, "land>=3336    "),
+        ] {
             println!(
                 "frame {name} {cname}: b0={:6.1} b1={:6.1} b2={:6.1}  ({} cells)",
                 acc[cls][0] / cnt[cls][0].max(1.0),

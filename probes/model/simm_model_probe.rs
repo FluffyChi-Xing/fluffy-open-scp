@@ -6,11 +6,9 @@ use std::collections::BTreeMap;
 
 fn main() {
     // GI_Simm_*/GI_SimM_* 注册表 instance（docs database_main.s3db Instances 表）
-    let names: BTreeMap<u32, &str> = [
-        (0xB7B7B92F_u32, "GI_SimM_airtraffcontrol_fa"),
-    ]
-    .into_iter()
-    .collect();
+    let names: BTreeMap<u32, &str> = [(0xB7B7B92F_u32, "GI_SimM_airtraffcontrol_fa")]
+        .into_iter()
+        .collect();
     let _ = names; // 名字映射从 tmp/simm_names.json 读取（构建期无 serde 依赖）
     let Ok(json) = std::fs::read_to_string("tmp/simm_names.json") else {
         panic!("先运行 python 生成 tmp/simm_names.json");
@@ -75,8 +73,7 @@ fn main() {
                     for (i, tex) in file.sections_of_type(rw4::SectionType::TEXTURE).enumerate() {
                         if let Ok(t) = file.decode_texture(&data, tex.number) {
                             print!(" tex{i} {}x{}", t.width, t.height);
-                            let out =
-                                format!("tmp/simm/tex_{}_{}.png", name, i);
+                            let out = format!("tmp/simm/tex_{}_{}.png", name, i);
                             let _ = std::fs::create_dir_all("tmp/simm");
                             if let Ok(px) = t.decode_top_mip_rgba() {
                                 let img = image::RgbaImage::from_fn(
@@ -84,12 +81,7 @@ fn main() {
                                     t.height as u32,
                                     |x, y| {
                                         let at = (x as usize + y as usize * t.width as usize) * 4;
-                                        image::Rgba([
-                                            px[at],
-                                            px[at + 1],
-                                            px[at + 2],
-                                            px[at + 3],
-                                        ])
+                                        image::Rgba([px[at], px[at + 1], px[at + 2], px[at + 3]])
                                     },
                                 );
                                 let _ = img.save(&out);
@@ -105,7 +97,11 @@ fn main() {
                                 let out = sc_exporter::export_glb(&mesh, None, &[]);
                                 let p = format!("tmp/simm/{}_mesh{}.glb", name, section.number);
                                 let _ = std::fs::write(&p, &out.bytes);
-                                print!(" verts={} tris={} →{p}", mesh.vertices.len(), mesh.triangles.len());
+                                print!(
+                                    " verts={} tris={} →{p}",
+                                    mesh.vertices.len(),
+                                    mesh.triangles.len()
+                                );
                                 break;
                             }
                         }

@@ -167,6 +167,7 @@ export interface RoadRibbon {
   component: number;
   offset: [number, number, number];
   scale: [number, number, number];
+  rotation?: [number, number, number];
   worldSize: [number, number];
   uvStart: [number, number];
   uvEnd: [number, number];

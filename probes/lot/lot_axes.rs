@@ -14,26 +14,112 @@ fn fmt(m: &[f32; 12]) -> String {
 
 fn main() {
     let path = std::env::args().nth(1).expect("usage: lot_axes <package>");
-    let min_props: usize = std::env::args().nth(2).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let min_props: usize = std::env::args()
+        .nth(2)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let package = dbpf::Package::open(&path).expect("open package");
     for entry in package.entries() {
-        if entry.id.type_id != 0x00B1_B104 { continue; }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = sc_properties::PropertyFile::parse_with_limits(&data, sc_properties::ParseLimits::default()) else { continue };
+        if entry.id.type_id != 0x00B1_B104 {
+            continue;
+        }
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = sc_properties::PropertyFile::parse_with_limits(
+            &data,
+            sc_properties::ParseLimits::default(),
+        ) else {
+            continue;
+        };
         let document = sc_properties::LotEditorDocument::from_property_file(file);
         let units = document.assemble_units();
-        let lights: Vec<_> = units.units.iter().filter(|u| matches!(u, LotUnit::Light { .. })).collect();
-        let props: Vec<_> = units.units.iter().filter(|u| matches!(u, LotUnit::Prop { .. })).collect();
-        if lights.is_empty() || props.len() < min_props { continue; }
-        let spots = lights.iter().filter(|u| matches!(u, LotUnit::Light { light_type: Some("Spot"), .. })).count();
-        println!("=== 0x{:08X} units={} lights={} spots={} props={}", entry.id.instance, units.units.len(), lights.len(), spots, props.len());
+        let lights: Vec<_> = units
+            .units
+            .iter()
+            .filter(|u| matches!(u, LotUnit::Light { .. }))
+            .collect();
+        let props: Vec<_> = units
+            .units
+            .iter()
+            .filter(|u| matches!(u, LotUnit::Prop { .. }))
+            .collect();
+        if lights.is_empty() || props.len() < min_props {
+            continue;
+        }
+        let spots = lights
+            .iter()
+            .filter(|u| {
+                matches!(
+                    u,
+                    LotUnit::Light {
+                        light_type: Some("Spot"),
+                        ..
+                    }
+                )
+            })
+            .count();
+        println!(
+            "=== 0x{:08X} units={} lights={} spots={} props={}",
+            entry.id.instance,
+            units.units.len(),
+            lights.len(),
+            spots,
+            props.len()
+        );
         for u in &units.units {
             match u {
-                LotUnit::Light { index, light_type, transform, length, .. } => println!("  L[{}] {:?} len={:?} {:?}", index, light_type, length, transform.as_ref().map(|t| fmt(&t.matrix))),
-                LotUnit::Prop { index, bin, transform, .. } => println!("  P[{}] bin={} {:?}", index, bin, transform.as_ref().map(|t| fmt(&t.matrix))),
-                LotUnit::Spawner { index, transform, .. } => println!("  S[{}] {:?}", index, transform.as_ref().map(|t| fmt(&t.matrix))),
-                LotUnit::Decal { index, category, transform, scale, .. } => println!("  D[{}] cat={} scale={:?} {:?}", index, category, scale, transform.as_ref().map(|t| fmt(&t.matrix))),
-                LotUnit::Effect { index, transform, .. } => println!("  E[{}] {:?}", index, transform.as_ref().map(|t| fmt(&t.matrix))),
+                LotUnit::Light {
+                    index,
+                    light_type,
+                    transform,
+                    length,
+                    ..
+                } => println!(
+                    "  L[{}] {:?} len={:?} {:?}",
+                    index,
+                    light_type,
+                    length,
+                    transform.as_ref().map(|t| fmt(&t.matrix))
+                ),
+                LotUnit::Prop {
+                    index,
+                    bin,
+                    transform,
+                    ..
+                } => println!(
+                    "  P[{}] bin={} {:?}",
+                    index,
+                    bin,
+                    transform.as_ref().map(|t| fmt(&t.matrix))
+                ),
+                LotUnit::Spawner {
+                    index, transform, ..
+                } => println!(
+                    "  S[{}] {:?}",
+                    index,
+                    transform.as_ref().map(|t| fmt(&t.matrix))
+                ),
+                LotUnit::Decal {
+                    index,
+                    category,
+                    transform,
+                    scale,
+                    ..
+                } => println!(
+                    "  D[{}] cat={} scale={:?} {:?}",
+                    index,
+                    category,
+                    scale,
+                    transform.as_ref().map(|t| fmt(&t.matrix))
+                ),
+                LotUnit::Effect {
+                    index, transform, ..
+                } => println!(
+                    "  E[{}] {:?}",
+                    index,
+                    transform.as_ref().map(|t| fmt(&t.matrix))
+                ),
                 LotUnit::PathPoint { index, point, .. } => println!("  W[{}] {:?}", index, point),
             }
         }

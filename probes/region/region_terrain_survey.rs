@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use dbpf::Package;
-use sc_properties::region_map::{ed_grid_for_region, SHARED_TILE_GRID};
+use sc_properties::region_map::{SHARED_TILE_GRID, ed_grid_for_region};
 use sc_properties::{Kind, PropertyFile, Value};
 
 fn main() {
@@ -102,7 +102,11 @@ fn main() {
         let mut size_vec: Vec<(usize, usize)> = sizes.into_iter().collect();
         size_vec.sort();
         println!("  尺寸直方图: {size_vec:?} 重复instance={dup}");
-        let missing: Vec<u32> = f0_mip0.iter().filter(|i| !insts.contains(i)).copied().collect();
+        let missing: Vec<u32> = f0_mip0
+            .iter()
+            .filter(|i| !insts.contains(i))
+            .copied()
+            .collect();
         println!(
             "  mip0 槽位 {}/256，缺失 {} 个 {:?}",
             insts.intersection(&f0_mip0).count(),
@@ -147,8 +151,16 @@ fn main() {
                         let k = (2 * y) * 128 + 2 * x;
                         let lane = |v: u32, s: u32| ((v >> (s * 8)) & 0xFF) as u32;
                         b[y * 64 + x] = (
-                            (lane(px[k], 0) + lane(px[k + 1], 0) + lane(px[k + 128], 0) + lane(px[k + 129], 0)) / 4,
-                            (lane(px[k], 2) + lane(px[k + 1], 2) + lane(px[k + 128], 2) + lane(px[k + 129], 2)) / 4,
+                            (lane(px[k], 0)
+                                + lane(px[k + 1], 0)
+                                + lane(px[k + 128], 0)
+                                + lane(px[k + 129], 0))
+                                / 4,
+                            (lane(px[k], 2)
+                                + lane(px[k + 1], 2)
+                                + lane(px[k + 128], 2)
+                                + lane(px[k + 129], 2))
+                                / 4,
                         );
                     }
                 }
@@ -160,7 +172,9 @@ fn main() {
                 let cb = &ds[&child];
                 let mut best = f64::INFINITY;
                 for &parent in &insts {
-                    if parent == child { continue; }
+                    if parent == child {
+                        continue;
+                    }
                     let pp = &tiles[&parent];
                     for q in 0..4usize {
                         let (qx, qy) = ((q % 2) * 64, (q / 2) * 64);
@@ -172,7 +186,9 @@ fn main() {
                                 let pv = pp[prow + x];
                                 let ce = cb[crow + x];
                                 e += (f64::from((pv & 0xFF) as u8) - f64::from(ce.0 as u8)).abs()
-                                    + (f64::from(((pv >> 16) & 0xFF) as u8) - f64::from(ce.1 as u8)).abs();
+                                    + (f64::from(((pv >> 16) & 0xFF) as u8)
+                                        - f64::from(ce.1 as u8))
+                                    .abs();
                             }
                         }
                         e /= 4096.0;
@@ -211,7 +227,10 @@ fn main() {
                 if d.len() == 131092 {
                     tiles.insert(
                         e.id.instance,
-                        d[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect(),
+                        d[20..]
+                            .chunks_exact(2)
+                            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                            .collect(),
                     );
                 }
             }
@@ -265,13 +284,16 @@ fn main() {
         for e in p.entries() {
             if e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x51E7_A18D {
                 let Ok(data) = p.read(e) else { continue };
-                let Ok(pf) = PropertyFile::parse(&data) else { continue };
+                let Ok(pf) = PropertyFile::parse(&data) else {
+                    continue;
+                };
                 println!("  -- {group:08X}（{} 键）--", pf.values.len());
                 for prop in &pf.values {
                     let brief = match &prop.kind {
                         Kind::Scalar(v) => format!("{v:?}"),
                         Kind::Array(vs) => {
-                            let show: Vec<String> = vs.iter().take(4).map(|v| format!("{v:?}")).collect();
+                            let show: Vec<String> =
+                                vs.iter().take(4).map(|v| format!("{v:?}")).collect();
                             format!("[{};{}]", show.join(","), vs.len())
                         }
                         Kind::Empty => "(empty)".to_string(),

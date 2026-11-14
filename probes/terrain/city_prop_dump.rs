@@ -14,12 +14,13 @@ fn main() {
             continue;
         }
         let Ok(data) = p.read(e) else { continue };
-        let Ok(pf) = PropertyFile::parse(&data) else { continue };
+        let Ok(pf) = PropertyFile::parse(&data) else {
+            continue;
+        };
         let Some(Some(region)) = pf.get(0xC194_9C4D).map(|pr| match &pr.kind {
             Kind::Scalar(Value::Key(k)) => Some(k.group),
             _ => None,
-        })
-        else {
+        }) else {
             continue;
         };
         let int_val = pf.get(0x1B53_D525).and_then(|pr| match &pr.kind {

@@ -31,6 +31,7 @@ pub fn ensure_project_layout(root: &Path, mod_type: &str) -> Result<Value, Strin
             "assets/materials",
             "assets/audio",
         ],
+        "road" => vec!["assets/roads"],
         "gameplay" => vec!["assets/properties", "assets/tuning", "assets/localization"],
         _ => return Err("Unknown mod type".into()),
     };
@@ -41,12 +42,21 @@ pub fn ensure_project_layout(root: &Path, mod_type: &str) -> Result<Value, Strin
     Ok(json!({"schemas":schemas,"assets":assets,"output":"build"}))
 }
 pub(crate) static FLOW_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-pub fn dispatch(root: &Path, name: &str, action: &str, payload: Value) -> Result<Value, String> {
+pub fn dispatch(
+    root: &Path,
+    name: &str,
+    action: &str,
+    payload: Value,
+    blend_atlas: Option<&Path>,
+) -> Result<Value, String> {
     let _guard = FLOW_LOCK.lock().map_err(|_| "Workflow lock failed")?;
     let string = |key: &str| payload[key].as_str().unwrap_or("");
     match action {
-        "import-asset" => asset_inputs::import(root, &payload),
+        "import-asset" => asset_inputs::import(root, &payload, blend_atlas),
+        "import-menu-image" => asset_inputs::import_menu_image(root, &payload),
+        "read-menu-image" => asset_inputs::read_menu_image(root, &payload),
         "read-asset" => asset_inputs::describe(root, string("asset")),
+        "write-asset" => asset_inputs::write_asset(root, &payload),
         "inspect" => serde_json::to_value(inspect(root)?).map_err(|e| e.to_string()),
         "initialize" => serde_json::to_value(initialize(
             root,
@@ -1188,6 +1198,64 @@ mod tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
+
+    #[test]
+    fn menu_image_preview_reads_uploaded_jpeg_and_bound_legacy_png() {
+        let f = Fixture::new();
+        let source = f.0.join("source.png");
+        let write_source = |color| {
+            image::RgbImage::from_pixel(2, 2, image::Rgb(color))
+                .save(&source)
+                .unwrap();
+        };
+        let upload = || {
+            dispatch(
+                &f.0,
+                "Example",
+                "import-menu-image",
+                json!({"kind": "marquee", "path": source}),
+                None,
+            )
+            .unwrap()
+        };
+        let preview = |asset: &Value| {
+            dispatch(
+                &f.0,
+                "Example",
+                "read-menu-image",
+                json!({"kind": "marquee", "asset": asset}),
+                None,
+            )
+            .unwrap()
+        };
+        write_source([255, 0, 0]);
+        let uploaded = upload();
+        let jpeg = preview(&uploaded["asset"]);
+        assert_eq!(jpeg["asset"], uploaded["asset"]);
+        assert_eq!(
+            jpeg["data"],
+            format!(
+                "data:image/jpeg;base64,{}",
+                uploaded["base64"].as_str().unwrap()
+            )
+        );
+
+        let legacy = "assets/images/menu-marquee.png";
+        fs::copy(&source, f.0.join(legacy)).unwrap();
+        assert!(
+            preview(&json!(legacy))["data"]
+                .as_str()
+                .unwrap()
+                .starts_with("data:image/png;base64,")
+        );
+        assert_eq!(preview(&Value::Null), jpeg);
+
+        write_source([0, 0, 255]);
+        let replaced = upload();
+        assert_eq!(replaced["asset"], uploaded["asset"]);
+        assert_ne!(preview(&replaced["asset"])["data"], jpeg["data"]);
+    }
+
     #[test]
     fn builds_real_dbpf_and_rejects_changed_inputs() {
         let f = Fixture::new();
@@ -1218,7 +1286,7 @@ mod tests {
                 .count(),
             6
         );
-        let imported = asset_inputs::import(&f.0, &json!({"path": source})).unwrap();
+        let imported = asset_inputs::import(&f.0, &json!({"path": source}), None).unwrap();
         let mut building = state
             .schemas
             .iter()

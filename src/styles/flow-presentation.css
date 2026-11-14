@@ -1,68 +1,81 @@
-/* ComfyUI proportions, using OpenSCP's existing palette. No node transforms:
-   handles must remain aligned with Vue Flow's connection geometry. */
-.app-shell .flow-workbench .vue-flow {
-  background-color: var(--background);
-  background-image:
-    linear-gradient(
-      color-mix(in srgb, var(--border) 32%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--border) 32%, transparent) 1px,
-      transparent 1px
-    );
-  background-size: 120px 120px;
+/* Blender node-editor theme for the flow canvases (asset blueprint + mod flow).
+   Fixed dark palette — deliberately independent from the app's light/dark
+   tokens so the canvas reads the same in both modes.
+   No node transforms: handles must stay aligned with Vue Flow's connection
+   geometry. */
+.app-shell :is(.flow-workbench, .blueprint) {
+  --flow-bg: #1d1d1d;
+  --flow-node: #282828;
+  --flow-border: #141414;
+  --flow-text: #e6e6e6;
+  --flow-text-dim: #9b9b9b;
+  --flow-field: #1a1a1a;
+  --flow-field-border: #3a3a3a;
+  --flow-socket-in: #d9b64d;
+  --flow-socket-out: #58a05e;
+  --flow-edge: #4e9455;
+  --flow-select: rgba(255, 255, 255, 0.92);
+  /* Blender-style muted header hues, assigned per node role. */
+  --flow-head-input: #6e4a2b;
+  --flow-head-process: #2e6b2e;
+  --flow-head-output: #7f3030;
+  --flow-head-group: #7a5a33;
+  --flow-head-lot: #3d5a6b;
+  --flow-head-menu: #6b5b2e;
 }
-.app-shell .flow-workbench :is(.workflow-node, .generation-node) {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  background: color-mix(in srgb, var(--background) 25%, var(--surface));
-  box-shadow:
-    var(--shadow-md),
-    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease;
+
+.app-shell :is(.flow-workbench, .blueprint) .vue-flow {
+  background-color: var(--flow-bg);
 }
-.app-shell .flow-workbench :is(.workflow-node, .generation-node) > header {
-  border-radius: calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px) 0 0;
-  background: color-mix(in srgb, var(--surface-hover) 55%, var(--surface));
-  color: var(--muted-foreground);
-  font-weight: 600;
+
+/* Sockets: filled circles sitting on the node edge, colored by direction
+   (in = yellow, out = green), half outside the node like Blender. */
+.app-shell :is(.flow-workbench, .blueprint) .vue-flow__handle {
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--flow-bg);
+  border-radius: 50%;
+  background: var(--flow-socket-in);
 }
-.app-shell .flow-workbench .selected :is(.workflow-node, .generation-node) {
-  outline: 1px solid var(--primary);
-  outline-offset: 2px;
-  border-color: var(--primary);
-  box-shadow: var(--shadow-lg);
+.app-shell :is(.flow-workbench, .blueprint) .vue-flow__handle-right {
+  background: var(--flow-socket-out);
 }
-.app-shell .flow-workbench .vue-flow__handle {
-  width: 10px;
-  height: 10px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 25%, var(--border));
-  background: var(--muted-foreground);
-}
-.app-shell .flow-workbench .vue-flow__handle-right {
-  background: var(--scp-primary-300);
-}
-/* Map nodes also style their port label as .source; don't inset the source handle. */
-.app-shell .flow-workbench .generation-node .vue-flow__handle-right {
-  right: 0;
-}
-.app-shell .flow-workbench .vue-flow__edge-path {
-  stroke: var(--muted-foreground);
+
+/* Cables: Blender green curves; selected edge and the drag-out connection
+   preview use the same color. */
+.app-shell :is(.flow-workbench, .blueprint) .vue-flow__edge-path,
+.app-shell :is(.flow-workbench, .blueprint) .vue-flow__connection-path {
+  stroke: var(--flow-edge);
   stroke-width: 2;
 }
-.app-shell .flow-workbench .vue-flow__edge.selected .vue-flow__edge-path {
-  stroke: var(--primary);
+.app-shell :is(.flow-workbench, .blueprint) .vue-flow__edge.selected .vue-flow__edge-path {
+  stroke: var(--flow-select);
 }
-.app-shell .flow-workbench :is(.node-config, .generation-node .body) input {
-  background: color-mix(in srgb, var(--background) 65%, var(--surface));
-  border-color: color-mix(in srgb, var(--border) 65%, transparent);
-  border-radius: var(--radius-md);
+
+/* Rubber-band selection on the dark canvas. */
+.app-shell :is(.flow-workbench, .blueprint) :is(.vue-flow__nodesselection-rect, .vue-flow__selection) {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px dotted rgba(255, 255, 255, 0.55);
 }
-.app-shell .flow-workbench :is(.node-ports, .generation-node .ports) {
-  color: var(--muted-foreground);
-  font-size: 12px;
+
+/* Selection outline: bright ring hugging the node, Blender-style. */
+.app-shell :is(.flow-workbench, .blueprint) .selected :is(.workflow-node, .generation-node, .wb-node, .wb-entry) {
+  border-color: #454545;
+  outline: 2px solid var(--flow-select);
+  outline-offset: 0;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+}
+
+.app-shell .flow-workbench :is(.node-config, .generation-node .body) input,
+.app-shell .blueprint .wb-menu-input {
+  background: var(--flow-field);
+  border-color: var(--flow-field-border);
+  color: var(--flow-text);
+}
+.app-shell .flow-workbench :is(.node-config, .generation-node .body) input:focus-visible {
+  outline: 2px solid var(--flow-select);
+  outline-offset: 1px;
+}
+.app-shell .flow-workbench :is(.node-config p, .node-ports, .generation-node .ports) {
+  color: var(--flow-text-dim);
 }

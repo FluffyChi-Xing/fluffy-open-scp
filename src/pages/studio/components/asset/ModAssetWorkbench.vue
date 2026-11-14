@@ -9,30 +9,28 @@ import FSheet from "@/components/ui/FSheet.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
 import MonacoEditor from "@/components/ui/MonacoEditor.vue";
 import { Switch } from "@/components/ui/switch";
-import {
-  Resizable,
-  ResizableHandle,
-  ResizablePanel,
-} from "@/components/ui/resizable";
 import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
-import type { PathEntrySummary, Tgi } from "@/api/tauri";
+import type { Tgi } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import SchemaPropertyViewport from "@/pages/packages/components/property-editor/SchemaPropertyViewport.vue";
 import PropertyEditorOutliner from "@/pages/packages/components/property-editor/PropertyEditorOutliner.vue";
-import PropertyEditorInspector from "@/pages/packages/components/property-editor/PropertyEditorInspector.vue";
+import UnitInspector from "@/pages/packages/components/unit-inspector/UnitInspector.vue";
+import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import PropertyEditorStatusBar from "@/pages/packages/components/property-editor/PropertyEditorStatusBar.vue";
 import AssetPathPanel from "./AssetPathPanel.vue";
+import type { PathTypeId } from "./path-planning/pathTypes";
+import { workbenchPathsToPathPairs } from "./path-planning/pathModel";
 import { useEffectPreview } from "@/pages/packages/components/property-editor/effects/useEffectPreview";
 import { useEditorHotkeys } from "@/pages/packages/components/property-editor/useEditorHotkeys";
-import {
-  directModelKey,
-} from "@/pages/packages/components/property-editor/assetCategories";
+import { directModelKey } from "@/pages/packages/components/property-editor/assetCategories";
 import { exportLotModel } from "@/composables/useModelExport";
 import AssetSourceTree from "./AssetSourceTree.vue";
+import { useUnitClipboard } from "./clipboard/useUnitClipboard";
 import AssetComponentLibrary from "./AssetComponentLibrary.vue";
 import AssetLotPanel from "./AssetLotPanel.vue";
+import SceneWorkbenchLayout from "../SceneWorkbenchLayout.vue";
 import AssetBlueprintCanvas from "./AssetBlueprintCanvas.vue";
 import {
   useWorkbenchAsset,
@@ -41,7 +39,9 @@ import {
   type PlacePayload,
 } from "./useWorkbenchAsset";
 import AssetLotLibrary from "./AssetLotLibrary.vue";
+import type { AuthoredLot } from "@/lib/lot-ground/authored";
 import AssetMaterialSlotsPanel from "./AssetMaterialSlotsPanel.vue";
+import PackageProjectForm from "./PackageProjectForm.vue";
 
 /**
  * Assets Mod 工作台（Blender 式三栏，2026-10-25 彻底重构）：
@@ -57,6 +57,7 @@ const { t } = useI18n();
 const toast = useToast();
 const asset = useWorkbenchAsset(props.project);
 const ui = asset.ui;
+// 两条竖分隔线相邻时，命中区也要保持独立。
 
 // ---- 顶部工具条状态（与 PropertyEditor 渲染控制同口径）----
 const editEnabled = ref(true);
@@ -79,7 +80,7 @@ const effectsActive = computed(
 );
 const effectUnits = computed(() => ui.value?.grouping.effects ?? []);
 const effectPreview = useEffectPreview(
-  () => asset.nativePackageId.value ?? 0,
+  () => asset.effectPreviewPackageId.value,
   effectsActive,
   effectUnits,
 );
@@ -111,12 +112,11 @@ const selectedScaleEditable = computed(() => {
     asset.addedModelPayloads.value.has(directModelKey(unit))
   );
 });
-const pathPointUnits = computed(
-  () =>
-    (ui.value?.flatUnits ?? []).filter(
-      (unit): unit is import("@/api/tauri").PathPointUnit =>
-        unit.kind === "pathPoint",
-    ),
+const pathPointUnits = computed(() =>
+  (ui.value?.flatUnits ?? []).filter(
+    (unit): unit is import("@/api/tauri").PathPointUnit =>
+      unit.kind === "pathPoint",
+  ),
 );
 
 function commitTransform(id: string, matrix: number[]) {
@@ -125,7 +125,21 @@ function commitTransform(id: string, matrix: number[]) {
     asset.setModelTransform(matrix);
     return;
   }
+  // pathPoint 没有 UnitTransformDto；它的世界坐标由 point 字段承载。
+  // 如果把 gizmo 矩阵写入 transform，mergeUnitOverrides 会有意跳过它，
+  // 下一次重建时就会回到原 point。
+  const unit = ui.value?.flatUnits.find((candidate) => unitId(candidate) === id);
+  if (unit?.kind === "pathPoint") {
+    if (matrix.length === 12) {
+      ui.value?.edit.setUnitFields(id, {
+        point: [matrix[9], matrix[10], matrix[11]],
+      });
+      asset.markUnitTouched(id);
+    }
+    return;
+  }
   ui.value?.edit.setUnitTransform(id, matrix);
+  asset.markUnitTouched(id);
 }
 
 /** 编辑锁：解锁进入编辑时渲染模式默认落在"默认渲染"（可自由切精细）。 */
@@ -135,6 +149,7 @@ function toggleEdit() {
 }
 function commitFields(id: string, patch: Record<string, unknown>) {
   ui.value?.edit.setUnitFields(id, patch);
+  asset.markUnitTouched(id);
 }
 
 // ---- 视口 props（schema 文档 = 单一数据源；事件显式绑定）----
@@ -144,8 +159,12 @@ const viewportRef = ref<InstanceType<typeof SchemaPropertyViewport> | null>(
 const viewportBindings = computed(() => {
   const current = ui.value;
   if (!current) return null;
+  // schema 已含 editor.workbench.paths，但 SchemaPropertyViewport 默认
+  // pathPairs=[] → 视口回退全点串线；显式从 draftPaths 换算闭区间对。
+  const pathPairs = workbenchPathsToPathPairs(asset.draftPaths.value);
   return {
     schema: asset.schemaDocument.value,
+    pathPairs,
     modelPayload: current.modelPayload,
     modelLods: current.modelLods,
     activeLod: current.activeLod,
@@ -166,9 +185,11 @@ const viewportBindings = computed(() => {
     selectedId: current.selectedId.value,
     tool: tool.value,
     editEnabled: editEnabled.value,
-    modelSelectable: editEnabled.value && current.editMode === "draft",
+    modelSelectable:
+      editEnabled.value && current.editMode === "draft" && !current.loading && !!current.modelPayload,
     modelTransform: current.modelTransform,
     modelOrigin: current.modelOrigin,
+    streetFacingDegrees: current.streetFacingDegrees,
     specMode: 2,
     timeOfDay: timeOfDay.value,
     powered: powered.value,
@@ -192,74 +213,98 @@ watch(
 
 // ---- 组件放置：库条目 pointerdown 拾起 → 视口地面落点放置 ----
 const placementPayload = ref<PlacePayload | null>(null);
-useEventListener(window, "pointerup", (event: PointerEvent) => {
+const placementViewport = ref<HTMLElement | null>(null);
+useEventListener(window, "pointercancel", () => {
+  placementPayload.value = null;
+  document.body.style.cursor = "";
+});
+useEventListener(window, "pointerup", async (event: PointerEvent) => {
   const payload = placementPayload.value;
   if (!payload) return;
   placementPayload.value = null;
   document.body.style.cursor = "";
+  if (!editEnabled.value) return;
+  if (payload.kind === "decal") {
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+    if (!target || !placementViewport.value?.contains(target)) return;
+  }
   const position = viewportRef.value?.groundPointAt(
     event.clientX,
     event.clientY,
   );
   if (!position) return; // 落点不在地面平面（视线朝天）→ 取消
-  pendingSelectId.value = asset.placeUnit(payload, position);
-  // pathPoint 预设 = 进入路径 Draw 模式：首个落点即首点，后续点击续画
-  if (payload.kind === "pathPoint") {
-    startPathDraw();
-    asset.addPathPoint(position);
+  if (payload.kind === "decal" && payload.decal) {
+    try {
+      const id = await asset.placeDecal(payload.decal, position, () => editEnabled.value);
+      if (id) pendingSelectId.value = id;
+    } catch {
+      toast.error(t("studio.assetWorkbench.decalPlaceError"));
+    }
     return;
   }
+  pendingSelectId.value = asset.placeUnit(payload, position);
 });
 
-  // ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----
-  const pathDrawing = ref(false);
-  const pathEntries = ref<PathEntrySummary[]>([]);
-  const pathEntriesLoading = ref(false);
-  let viewportDownAt: { x: number; y: number } | null = null;
+// ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----
+const pathDrawing = ref(false);
+let viewportDownAt: { x: number; y: number } | null = null;
 
-  async function loadPathEntries(): Promise<void> {
-    if (pathEntries.value.length || pathEntriesLoading.value) return;
-    pathEntriesLoading.value = true;
-    try {
-      pathEntries.value = await tauriApi.packages.listPathEntries();
-    } catch {
-      pathEntries.value = [];
-    } finally {
-      pathEntriesLoading.value = false;
-    }
+function startPathDraw(type: PathTypeId): void {
+  if (!editEnabled.value) return;
+  if (!asset.activePathId.value) {
+    asset.createPath({ type });
+  } else {
+    // 已有激活路径：切换类型 = 换语义配方（entry/scope/connect 由构建器换算）
+    asset.updatePath(asset.activePathId.value, { type });
   }
+  pathDrawing.value = true;
+}
 
-  function startPathDraw(): void {
-    if (!editEnabled.value) return;
-    if (!asset.activePathId.value) asset.createPath();
-    pathDrawing.value = true;
-    void loadPathEntries();
+function finishPathDraw(): void {
+  asset.finishPath();
+  pathDrawing.value = false;
+  // 结束绘制时丢弃尚未落点的路径拖放载荷，避免完成后 pointerup
+  // 通过通用放置管线再创建一个孤立 pathPoint。
+  if (placementPayload.value?.kind === "pathPoint") {
+    placementPayload.value = null;
+    document.body.style.cursor = "";
   }
+}
 
-  function finishPathDraw(): void {
-    asset.finishPath();
-    pathDrawing.value = false;
-  }
+/** Draw 模式视口点击加点：按下/抬起位移 <6px 才算点击（相机轨道拖拽排除）。 */
+function onViewportPointerDown(event: PointerEvent): void {
+  if (!pathDrawing.value || event.button !== 0) return;
+  viewportDownAt = { x: event.clientX, y: event.clientY };
+}
+function onViewportPointerUp(event: PointerEvent): void {
+  if (!pathDrawing.value || event.button !== 0 || !viewportDownAt) return;
+  const moved = Math.hypot(
+    event.clientX - viewportDownAt.x,
+    event.clientY - viewportDownAt.y,
+  );
+  viewportDownAt = null;
+  if (moved > 6) return;
+  const position = viewportRef.value?.groundPointAt(
+    event.clientX,
+    event.clientY,
+  );
+  if (position) asset.addPathPoint(position);
+}
 
-  /** Draw 模式视口点击加点：按下/抬起位移 <6px 才算点击（相机轨道拖拽排除）。 */
-  function onViewportPointerDown(event: PointerEvent): void {
-    if (!pathDrawing.value || event.button !== 0) return;
-    viewportDownAt = { x: event.clientX, y: event.clientY };
-  }
-  function onViewportPointerUp(event: PointerEvent): void {
-    if (!pathDrawing.value || event.button !== 0 || !viewportDownAt) return;
-    const moved = Math.hypot(
-      event.clientX - viewportDownAt.x,
-      event.clientY - viewportDownAt.y,
-    );
-    viewportDownAt = null;
-    if (moved > 6) return;
-    const position = viewportRef.value?.groundPointAt(
-      event.clientX,
-      event.clientY,
-    );
-    if (position) asset.addPathPoint(position);
-  }
+// ---- 单元剪贴板（逻辑层见 clipboard/；组件只做热键与 toast 映射）----
+const unitClipboard = useUnitClipboard({
+  get selectedUnit() {
+    return ui.value?.selectedUnit ?? null;
+  },
+  get units() {
+    return ui.value?.flatUnits ?? [];
+  },
+  addUnit: (unit) => {
+    ui.value?.edit.addUnit(unit);
+    asset.markUnitTouched(unitId(unit));
+  },
+  selectUnit: (id) => asset.selectUnit(id),
+});
 
 // ---- 热键（sheet 级作用域同 PE）----
 useEditorHotkeys(
@@ -268,6 +313,9 @@ useEditorHotkeys(
     { combo: "g", handler: () => (tool.value = "translate") },
     { combo: "r", handler: () => (tool.value = "rotate") },
     { combo: "s", handler: () => (tool.value = "scale") },
+    ...(modelSelected.value
+      ? [{ combo: "delete", handler: () => void onRemoveModel() }]
+      : []),
     {
       combo: "escape",
       handler: () => {
@@ -279,6 +327,25 @@ useEditorHotkeys(
         else asset.selectUnit(null);
       },
     },
+    {
+      combo: "ctrl+c",
+      handler: () => {
+        const status = unitClipboard.copy();
+        if (status === "copied")
+          toast.success(t("studio.assetWorkbench.clipboardCopied"));
+        else if (status === "blocked-path-point")
+          toast.info(t("studio.assetWorkbench.clipboardPathPointBlocked"));
+      },
+    },
+    {
+      combo: "ctrl+v",
+      handler: () => {
+        // 编辑锁下粘贴是写操作，与组件库放置一并拒绝
+        if (!editEnabled.value) return;
+        if (unitClipboard.paste() === "pasted")
+          toast.success(t("studio.assetWorkbench.clipboardPasted"));
+      },
+    },
     { combo: "ctrl+z", handler: () => ui.value?.edit.undo() },
     { combo: "ctrl+shift+z", handler: () => ui.value?.edit.redo() },
   ],
@@ -287,7 +354,7 @@ useEditorHotkeys(
 // ---- 右栏页签 ----
 type RightTab = "tree" | "library" | "lot" | "lotlib" | "slots" | "schema";
 const rightTab = ref<RightTab>("tree");
-const RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
+const ALL_RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
   { id: "tree", icon: "ListTree", label: "package.componentTree" },
   { id: "library", icon: "Boxes", label: "package.materialsPanel" },
   { id: "lot", icon: "LandPlot", label: "studio.assetWorkbench.lotTab" },
@@ -299,6 +366,17 @@ const RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
   },
   { id: "schema", icon: "CodeXml", label: "package.schemaSheet" },
 ];
+const rightTabs = computed(() =>
+  asset.nativeBlender.value
+    ? ALL_RIGHT_TABS.filter((tab) => tab.id !== "slots")
+    : ALL_RIGHT_TABS,
+);
+watch(
+  () => asset.nativeBlender.value,
+  (native) => {
+    if (native && rightTab.value === "slots") rightTab.value = "tree";
+  },
+);
 async function onBindMaterialSlots(binding: MaterialSlotBinding) {
   try {
     await asset.composeSlotMaterials(binding);
@@ -307,53 +385,19 @@ async function onBindMaterialSlots(binding: MaterialSlotBinding) {
     toast.error(String(cause));
   }
 }
-async function onBlendImported(result: {
-  asset: string;
-  baked?: boolean;
-  materialSlots?: Record<string, string>;
-  materialSlotsByMaterial?: Record<string, Record<string, string>>;
-}) {
+async function onBlendImported(lotm: string) {
   try {
-    await asset.openDraftAsset(result.asset);
-    if (result.baked) {
-      toast.success(t("studio.assetWorkbench.blendImported"));
+    await asset.openDraftAsset(lotm, {
+      nativeBlender: true,
+      nativeLotm: lotm,
+    });
+    if (asset.sourceKind.value !== "lotm") {
+      toast.error(t("studio.assetWorkbench.blendNativeFailed"));
       return;
     }
-    const slots = result.materialSlots ?? {};
-    const binding: MaterialSlotBinding = {};
-    for (const key of [
-      "params",
-      "materialParams",
-      "slot1",
-      "slot2",
-      "slot3",
-      "slot4",
-      "slot5",
-    ] as const) {
-      const value = slots[key];
-      if (typeof value === "string" && value) binding[key] = value;
-    }
-    const byMaterial = result.materialSlotsByMaterial ?? {};
-    const materialBindings = Object.fromEntries(
-      Object.entries(byMaterial).flatMap(([name, slots]) => {
-        const entry: Record<string, string> = {};
-        for (const key of ["slot1", "slot2", "slot3", "slot4", "slot5"] as const) {
-          if (typeof slots[key] === "string" && slots[key]) entry[key] = slots[key];
-        }
-        return Object.keys(entry).length ? [[name, entry]] : [];
-      }),
-    );
-    if (Object.keys(materialBindings).length) binding.byMaterial = materialBindings;
-    if (Object.keys(binding).length) {
-      await asset.composeSlotMaterials(binding);
-      toast.success(
-        t("studio.assetWorkbench.blendImported", {
-          count: Object.keys(binding).length,
-        }),
-      );
-    } else {
-      toast.info(t("studio.assetWorkbench.blendImportedNoSlots"));
-    }
+    // Save the current model binding before the next build reads the document.
+    await asset.saveDocument();
+    toast.success(t("studio.assetWorkbench.blendNativeImported"));
   } catch (cause) {
     toast.error(String(cause));
   }
@@ -383,9 +427,51 @@ async function onApplyLotPreset(preset: LotPresetRef) {
     applyingLot.value = false;
   }
 }
+async function onApplyAuthoredLot(lot: AuthoredLot, silent = false) {
+  if (applyingLot.value) return;
+  applyingLot.value = true;
+  try {
+    const size = await asset.applyAuthoredLot(lot);
+    if (!silent) {
+      toast.success(
+        t("rasterEditor.ground.workbench.appliedToast", { width: size[0], depth: size[1] }),
+      );
+    }
+  } catch (cause) {
+    const message = (cause as { message?: string }).message ?? String(cause);
+    toast.error(
+      message === "lot_apply_native"
+        ? t("studio.assetWorkbench.lotApplyNativeHint")
+        : message,
+    );
+  } finally {
+    applyingLot.value = false;
+  }
+}
+/** 已绑定的自绘地面重新编辑后，地块随之刷新。 */
+function onAuthoredLotSaved(lot: AuthoredLot) {
+  if (asset.appliedAuthoredLot.value) void onApplyAuthoredLot(lot, true);
+}
 
 // ---- 导入：模型文件 / TGI 解析 ----
 const treeRef = ref<InstanceType<typeof AssetSourceTree> | null>(null);
+/**
+ * 左栏当前选中的文件：点击 package.json 时中栏切换成项目配置表单
+ * （HBuilderX manifest.json 式分类表单）；打开模型/包时自动回到场景。
+ */
+const selectedFile = ref<string | null>(null);
+const isProjectConfig = computed(() => selectedFile.value === "package.json");
+function onTreeSelect(relativePath: string): void {
+  selectedFile.value = relativePath;
+}
+async function onOpenAsset(relativePath: string): Promise<void> {
+  selectedFile.value = null;
+  await asset.openDraftAsset(relativePath);
+  // 导入/打开后立刻落盘 assetPath，避免「视口已是新 LOTM、构建仍读旧 schema.model」
+  if (asset.schemaDocument.value) {
+    await asset.saveDocument();
+  }
+}
 const tgiSheetOpen = ref(false);
 const tgiPackagePath = ref("");
 const tgiText = ref("");
@@ -393,6 +479,7 @@ const tgiBusy = ref(false);
 const packageCandidates = ref<Tgi[]>([]);
 /** 树 .package 点击 → 读资源表 → 列出 Lot property 候选并打开选择页。 */
 async function onOpenPackage(relativePath: string) {
+  selectedFile.value = null;
   packageCandidates.value = [];
   tgiPackagePath.value = relativePath;
   tgiText.value = "";
@@ -482,6 +569,13 @@ async function onSave() {
       toast.success(
         t("studio.assetWorkbench.saved", { path: asset.documentPath }),
       );
+      if (asset.dependencySyncError.value) {
+        toast.warning(
+          t("studio.assetWorkbench.dependencySyncFailed", {
+            error: asset.dependencySyncError.value,
+          }),
+        );
+      }
     }
   } catch (cause) {
     toast.error(String(cause));
@@ -559,6 +653,25 @@ const unitCounts = computed(() => {
     paths: grouping?.pathPoints.length ?? 0,
   };
 });
+
+const modelSelectable = computed(() => viewportBindings.value?.modelSelectable === true);
+const modelSelected = computed(() => modelSelectable.value && ui.value?.selectedId.value === "model");
+
+async function onRemoveModel() {
+  if (!modelSelected.value || removing.value || saving.value) return;
+  if (!window.confirm(t("studio.assetWorkbench.removeModelConfirm"))) return;
+  removing.value = true;
+  try {
+    await asset.removeModel();
+    toast.success(t("studio.assetWorkbench.modelRemoved"));
+  } catch (cause) {
+    console.warn("[workbench] remove model failed:", cause);
+    toast.error(t("studio.assetWorkbench.removeModelError"));
+  } finally {
+    void treeRef.value?.refresh();
+    removing.value = false;
+  }
+}
 
 /** 移除当前资产（清空视口回到空态，可重新上传/解析）。 */
 async function onRemoveAsset() {
@@ -701,10 +814,7 @@ function templateOf(resourceId: number) {
             <span>{{ t("package.neonAnim") }}</span>
           </label>
           <label
-            v-if="
-              asset.sourceKind.value === 'native' &&
-              effectiveRenderMode === 'refined'
-            "
+            v-if="effectiveRenderMode === 'refined'"
             class="maw-switch"
             :title="effectRenderTitle"
           >
@@ -745,7 +855,7 @@ function templateOf(resourceId: number) {
           <button
             type="button"
             class="maw-btn primary"
-            :disabled="saving || !asset.savedDirty.value"
+            :disabled="saving || removing || !asset.savedDirty.value"
             :title="t('studio.assetWorkbench.saveHint')"
             @click="onSave"
           >
@@ -825,18 +935,30 @@ function templateOf(resourceId: number) {
               </button>
             </template>
           </FTooltip>
-          <!-- 移除当前资产：删除文档+导入的模型文件，回到空态可重新导入 -->
+          <button
+            v-if="modelSelectable"
+            type="button"
+            class="maw-icon"
+            :class="{ active: modelSelected }"
+            :aria-pressed="modelSelected"
+            :aria-label="t('package.modelUnitLabel')"
+            :title="t('package.modelUnitLabel')"
+            @click="asset.selectUnit(modelSelected ? null : 'model')"
+          >
+            <FIcon name="Box" :size="14" aria-label="" />
+          </button>
           <FTooltip
-            :text="t('studio.assetWorkbench.removeAsset')"
+            :text="t(modelSelected ? 'studio.assetWorkbench.removeModel' : 'studio.assetWorkbench.removeAsset')"
             side="bottom"
           >
             <template #trigger>
               <button
+                :key="modelSelected ? 'remove-model' : 'remove-asset'"
                 type="button"
                 class="maw-icon"
-                :disabled="removing"
-                :aria-label="t('studio.assetWorkbench.removeAsset')"
-                @click="onRemoveAsset"
+                :disabled="removing || saving"
+                :aria-label="t(modelSelected ? 'studio.assetWorkbench.removeModel' : 'studio.assetWorkbench.removeAsset')"
+                @click="modelSelected ? onRemoveModel() : onRemoveAsset()"
               >
                 <FIcon
                   :name="removing ? 'Loader2' : 'Trash2'"
@@ -850,32 +972,46 @@ function templateOf(resourceId: number) {
       </div>
     </header>
 
-    <Resizable direction="horizontal" class="maw-split">
-      <ResizablePanel id="maw-tree" :default-size="17" :min-size="10">
-        <AssetSourceTree
-          ref="treeRef"
-          :project="props.project"
-          :active-asset="asset.sourceAssetPath.value"
-          @open-asset="asset.openDraftAsset($event)"
-          @open-package="onOpenPackage"
-          @blend-imported="onBlendImported"
-        />
-      </ResizablePanel>
-      <ResizableHandle
-        orientation="horizontal"
-        :label="t('studio.assetWorkbench.resizeTree')"
-      />
-      <ResizablePanel id="maw-center" :default-size="57" :min-size="30">
-        <Resizable direction="vertical" class="maw-center">
-          <ResizablePanel id="maw-viewport" :default-size="64" :min-size="22">
+    <SceneWorkbenchLayout>
+      <template #files>
+        <div class="maw-scroll-pane maw-tree-pane">
+          <AssetSourceTree
+            ref="treeRef"
+            :project="props.project"
+            :active-asset="asset.sourceAssetPath.value"
+            :selected-path="selectedFile"
+            @select="onTreeSelect"
+            @open-asset="onOpenAsset"
+            @open-package="onOpenPackage"
+            @blend-imported="onBlendImported"
+          />
+        </div>
+      </template>
+      <template #center v-if="isProjectConfig">
+        <div class="maw-scroll-pane maw-config-pane">
+          <PackageProjectForm
+            :project="props.project"
+            :menu="asset.menu"
+            :logic="asset.draftLogic.value"
+            :saved-dirty="asset.savedDirty.value"
+            :save-document="asset.saveDocument"
+            :document-path="asset.documentPath"
+            @update:menu="asset.setMenuBinding($event)"
+            @update:logic="asset.setLogicGraph($event)"
+            @close="selectedFile = null"
+          />
+        </div>
+      </template>
+      <template #viewport>
             <div
-                   class="maw-viewport"
-                   @pointerdown="onViewportPointerDown"
-                   @pointerup="onViewportPointerUp"
-                 >
-                <p v-if="pathDrawing" class="maw-draw-hint" role="status">
-                  {{ t("studio.assetWorkbench.pathDrawHint") }}
-                </p>
+              ref="placementViewport"
+              class="maw-viewport"
+              @pointerdown="onViewportPointerDown"
+              @pointerup="onViewportPointerUp"
+            >
+              <p v-if="pathDrawing" class="maw-draw-hint" role="status">
+                {{ t("studio.assetWorkbench.pathDrawHint") }}
+              </p>
               <template v-if="ui">
                 <p v-if="ui.loadError" class="maw-load-error" role="alert">
                   {{ t(ui.loadError) }}
@@ -934,38 +1070,30 @@ function templateOf(resourceId: number) {
                 />
               </div>
             </div>
-          </ResizablePanel>
-          <ResizableHandle
-            orientation="vertical"
-            :label="t('studio.assetWorkbench.resizeBlueprint')"
-          />
-          <ResizablePanel id="maw-blueprint" :default-size="36" :min-size="14">
+      </template>
+      <template #lower>
             <AssetBlueprintCanvas
               :source-kind="asset.sourceKind.value"
               :source-label="asset.sourceLabel.value"
               :unit-counts="unitCounts"
               :lot-size="ui?.lotSize ?? null"
+              :project="props.project"
+              :project-root="asset.projectRoot.value"
               :menu="asset.menu"
+              :logic="asset.draftLogic.value"
               :saved-dirty="asset.savedDirty.value"
               :document-saved="Boolean(asset.schemaDocument.value)"
               @update:menu="asset.setMenuBinding($event)"
+              @update:logic="asset.setLogicGraph($event)"
               @import-model="treeRef?.refresh()"
               @open-tgi="tgiSheetOpen = true"
             />
-          </ResizablePanel>
-        </Resizable>
-      </ResizablePanel>
-      <ResizableHandle
-        orientation="horizontal"
-        :label="t('studio.assetWorkbench.resizeRight')"
-      />
-      <ResizablePanel id="maw-right" :default-size="26" :min-size="15">
-        <Resizable direction="vertical" class="maw-right">
-          <ResizablePanel id="maw-right-tabs" :default-size="52" :min-size="18">
-            <div class="maw-right-panel">
+      </template>
+      <template #library>
+            <div class="maw-right-panel maw-scroll-pane">
               <div class="maw-tabs" role="tablist">
                 <button
-                  v-for="tab in RIGHT_TABS"
+                  v-for="tab in rightTabs"
                   :key="tab.id"
                   type="button"
                   role="tab"
@@ -997,7 +1125,12 @@ function templateOf(resourceId: number) {
                     :referenced-models="ui.referencedModels"
                     :prop-tree-ids="ui.propTreeIds"
                     :template-of="templateOf"
+                    :units="ui.flatUnits"
+                    :selected-unit-id="
+                      ui.selectedUnit ? unitId(ui.selectedUnit) : null
+                    "
                     @place="placementPayload = $event"
+                    @select="asset.selectUnit"
                   >
                     <template #paths>
                       <AssetPathPanel
@@ -1007,8 +1140,6 @@ function templateOf(resourceId: number) {
                         :drawing="pathDrawing"
                         :edit-enabled="editEnabled"
                         :path-points="pathPointUnits"
-                        :entries="pathEntries"
-                        :entries-loading="pathEntriesLoading"
                         @begin-draw="startPathDraw"
                         @finish-draw="finishPathDraw"
                         @undo-point="asset.removeLastPathPoint"
@@ -1022,13 +1153,19 @@ function templateOf(resourceId: number) {
                     v-else-if="rightTab === 'lot'"
                     :lot-size="ui.lotSize"
                     :edit-mode="ui.editMode"
+                    :street-facing-degrees="ui.streetFacingDegrees"
                     @set-size="asset.setDraftLotSize($event)"
+                    @set-street-facing="asset.setStreetFacingDegrees($event)"
                   />
                   <AssetLotLibrary
                     v-else-if="rightTab === 'lotlib'"
+                    :project="props.project"
                     :edit-enabled="editEnabled"
                     :edit-mode="ui.editMode"
+                    :authored-bound="asset.appliedAuthoredLot.value"
                     @apply="onApplyLotPreset"
+                    @apply-authored="onApplyAuthoredLot"
+                    @authored-saved="onAuthoredLotSaved"
                   />
                   <AssetMaterialSlotsPanel
                     v-else-if="rightTab === 'slots'"
@@ -1038,7 +1175,7 @@ function templateOf(resourceId: number) {
                     :disabled="ui.editMode !== 'draft'"
                     @bind="onBindMaterialSlots"
                   />
-                  <div v-else class="maw-schema">
+                  <div v-else-if="rightTab === 'schema'" class="maw-schema">
                     <MonacoEditor
                       :value="
                         asset.schemaJson.value ||
@@ -1054,20 +1191,13 @@ function templateOf(resourceId: number) {
                 </p>
               </div>
             </div>
-          </ResizablePanel>
-          <ResizableHandle
-            orientation="vertical"
-            :label="t('studio.assetWorkbench.resizeInspector')"
-          />
-          <ResizablePanel
-            id="maw-right-inspector"
-            :default-size="48"
-            :min-size="18"
-          >
-            <div class="maw-inspector">
+      </template>
+      <template #inspector>
+            <div class="maw-inspector maw-scroll-pane">
               <template v-if="ui">
-                <PropertyEditorInspector
+                <UnitInspector
                   :unit="ui.selectedUnit"
+                  :units="ui.flatUnits"
                   :live-transform="liveTransform"
                   :scale-editable="selectedScaleEditable"
                   :edit-enabled="editEnabled"
@@ -1079,10 +1209,8 @@ function templateOf(resourceId: number) {
                 {{ t("studio.assetWorkbench.noAssetRight") }}
               </p>
             </div>
-          </ResizablePanel>
-        </Resizable>
-      </ResizablePanel>
-    </Resizable>
+      </template>
+    </SceneWorkbenchLayout>
 
     <FSheet
       v-model:open="tgiSheetOpen"
@@ -1323,26 +1451,68 @@ function templateOf(resourceId: number) {
   gap: 6px;
   white-space: nowrap;
 }
-.maw-split {
-  border-inline: 1px solid var(--border);
-  flex: 1;
-  min-height: 0;
+.maw-scroll-pane {
+  block-size: 100%;
+  min-block-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
-.maw-center,
-.maw-right {
-  height: 100%;
-  min-height: 0;
+.maw-tree-pane > * {
+  min-inline-size: 150px;
+}
+.maw-config-pane > * {
+  min-inline-size: 500px;
 }
 .maw-viewport {
+  container: scene-viewport / size;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  overflow: clip;
   position: relative;
 }
 .maw-viewport :deep(.viewport-pane) {
   flex: 1;
   min-height: 0;
+  overflow: clip;
+}
+.maw-viewport :deep(.viewport-visibility) {
+  grid-auto-rows: max-content;
+  max-block-size: max(0px, calc(100% - 20px));
+  max-inline-size: calc(50% - 10px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.maw-viewport :deep(.viewport-tools) {
+  max-inline-size: calc(50% - 10px);
+  overflow: auto;
+}
+.maw-viewport :deep(.viewport-toolrail) {
+  max-block-size: max(0px, calc(100% - 58px));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.maw-viewport :deep(.viewport-light-panel),
+.maw-viewport :deep(.info-panel) {
+  max-block-size: max(0px, calc(100% - 58px));
+  max-inline-size: calc(100% - 20px);
+  overflow: auto;
+}
+.maw-viewport :deep(.lod-mask) {
+  overflow: auto;
+  place-items: safe center;
+}
+@container scene-viewport (height < 250px) {
+  .maw-viewport :deep(.viewport-toolrail) {
+    top: 48px;
+    transform: none;
+  }
+}
+@container scene-viewport (height < 80px) {
+  .maw-status {
+    display: none;
+  }
 }
 .maw-load-error {
   color: var(--danger);
@@ -1408,6 +1578,11 @@ function templateOf(resourceId: number) {
   height: 100%;
   min-height: 0;
 }
+.maw-tabs,
+.maw-tab-body,
+.maw-inspector > * {
+  min-inline-size: 240px;
+}
 .maw-tabs {
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -1440,9 +1615,8 @@ function templateOf(resourceId: number) {
   font-weight: 600;
 }
 .maw-tab-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  flex: 1 0 64px;
+  overflow: auto;
 }
 .maw-tab-body > * {
   height: 100%;
@@ -1457,11 +1631,6 @@ function templateOf(resourceId: number) {
   margin: 0;
   padding: 20px 10px;
   text-align: center;
-}
-.maw-inspector {
-  height: 100%;
-  min-height: 0;
-  overflow: auto;
 }
 .tgi-body {
   display: flex;

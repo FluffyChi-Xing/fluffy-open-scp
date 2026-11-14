@@ -179,14 +179,16 @@ async function importImage(event: Event) {
   </article>
 </template>
 <style scoped>
+/* Blender node-editor look: fixed gray-black palette, independent of the
+   app theme. Shared tokens live in styles/flow-presentation.css. */
 .generation-node {
   position: relative;
   width: 310px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--surface-elevated);
-  color: var(--foreground);
-  box-shadow: var(--shadow-md);
+  border: 1px solid var(--flow-border, #141414);
+  border-radius: 8px;
+  background: var(--flow-node, #282828);
+  color: var(--flow-text, #e6e6e6);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 .generation-node.output {
   width: 760px;
@@ -197,15 +199,31 @@ header {
   align-items: center;
   height: 36px;
   padding: 0 12px;
-  background: var(--surface-hover);
-  border-radius: 10px 10px 0 0;
+  background: var(--flow-head-process, #2e6b2e);
+  border-radius: 7px 7px 0 0;
+  color: #f2f2f2;
   cursor: grab;
   font-size: 13px;
+}
+.generation-node.output header {
+  background: var(--flow-head-output, #7f3030);
+}
+header button {
+  background: transparent;
+  border: 0;
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+}
+header button:hover {
+  color: #ffffff;
 }
 .ports {
   padding: 10px 14px;
   font-size: 11px;
   min-height: 40px;
+  color: var(--flow-text-dim, #9b9b9b);
 }
 .port {
   height: 28px;
@@ -230,15 +248,19 @@ label {
 input,
 button {
   min-width: 0;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--foreground);
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  background: var(--flow-field, #1a1a1a);
+  color: var(--flow-text, #e6e6e6);
   border-radius: 4px;
   padding: 5px;
 }
+input:focus-visible {
+  outline: 2px solid var(--flow-select, rgba(255, 255, 255, 0.92));
+  outline-offset: 1px;
+}
 p {
   margin: 0;
-  color: var(--muted-foreground);
+  color: var(--flow-text-dim, #9b9b9b);
   font-size: 12px;
 }
 </style>

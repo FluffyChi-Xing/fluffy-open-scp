@@ -7,12 +7,14 @@ import FSheet from "@/components/ui/FSheet.vue";
 import FMarkdown from "@/components/markdown/FMarkdown.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import { tauriApi } from "@/api";
-import type { ResourceAnnotation, Tgi } from "@/api/tauri";
+import type { EffectAnnotation, ResourceAnnotation, Tgi } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 
 /**
  * 资源批注面板：源文件右键"创建批注"打开；列出当前 TGI 的全部批注
  * （md 默认预览态，可切编辑），支持新建（topic 标签可复用已有或新建）。
+ * 底部单独区域列出「此资源内创建的 effect 语义批注」（只读 + 删除，
+ * 创建入口在属性查看器的效果语义标签 section）。
  */
 
 const props = defineProps<{
@@ -26,6 +28,7 @@ const { t } = useI18n();
 const toast = useToast();
 
 const annotations = ref<ResourceAnnotation[]>([]);
+const effectNotes = ref<EffectAnnotation[]>([]);
 const loading = ref(false);
 const editingId = ref<number | null>(null);
 const formTopic = ref("");
@@ -46,13 +49,32 @@ async function load() {
   if (!props.tgi) return;
   loading.value = true;
   try {
-    annotations.value = await tauriApi.annotations.forTgi(props.tgi);
+    const [list, effectList] = await Promise.all([
+      tauriApi.annotations.forTgi(props.tgi),
+      tauriApi.effectAnnotations.forSource(props.tgi),
+    ]);
+    annotations.value = list;
+    effectNotes.value = effectList;
     const stats = await tauriApi.annotations.topicStats();
     knownTopics.value = stats.map((entry) => entry.topic);
   } catch {
     annotations.value = [];
+    effectNotes.value = [];
   } finally {
     loading.value = false;
+  }
+}
+
+function hexTgi(value: number) {
+  return value.toString(16).padStart(8, "0").toUpperCase();
+}
+
+async function removeEffectNote(id: number) {
+  try {
+    await tauriApi.effectAnnotations.remove(id);
+    await load();
+  } catch {
+    toast.error(t("effectTags.deleteFailed"));
   }
 }
 
@@ -284,6 +306,39 @@ const editing = computed(() =>
           </span>
         </footer>
       </article>
+
+      <section
+        v-if="effectNotes.length && editingId === null"
+        class="effect-notes-region"
+        :aria-label="$t('effectTags.sheetRegionTitle')"
+      >
+        <h4 class="effect-notes-title">{{ $t("effectTags.sheetRegionTitle") }}</h4>
+        <article v-for="item in effectNotes" :key="item.id" class="notes-item">
+          <header class="notes-item-head">
+            <span class="notes-topic-chip">{{ item.tag }}</span>
+            <code
+              class="notes-effect-tgi"
+              :title="`T ${hexTgi(item.typeId)} · G ${hexTgi(item.groupId)} · I ${hexTgi(item.instance)}`"
+            >
+              {{ hexTgi(item.instance) }}
+            </code>
+          </header>
+          <FMarkdown :source="item.note || '*—*'" class="notes-md" />
+          <footer class="notes-item-foot">
+            <span class="notes-meta">{{ new Date(item.updatedAt).toLocaleString() }}</span>
+            <span class="notes-actions-inline">
+              <button
+                type="button"
+                class="danger"
+                :aria-label="$t('common.delete')"
+                @click="removeEffectNote(item.id)"
+              >
+                <FIcon name="Trash2" :size="13" aria-label="" />
+              </button>
+            </span>
+          </footer>
+        </article>
+      </section>
     </div>
   </FSheet>
 </template>
@@ -507,5 +562,27 @@ const editing = computed(() =>
 }
 .notes-md :deep(pre) {
   overflow-x: auto;
+}
+/* effect 语义批注区域：与资源批注分区显示 */
+.effect-notes-region {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+.effect-notes-title {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  margin: 0;
+  text-transform: uppercase;
+}
+.notes-effect-tgi {
+  color: var(--muted-foreground);
+  font: 11px ui-monospace, Consolas, monospace;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

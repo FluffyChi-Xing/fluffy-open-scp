@@ -31,15 +31,17 @@ const TEMPLATE_HASHES: &[(u32, &str)] = &[
 
 fn main() {
     // ---- ① 数字 UI id ----
-    let rt = Package::open("D:/ea-games/SimCity/SimCityData/SimCity_RegionTerrain0.package")
-        .unwrap();
+    let rt =
+        Package::open("D:/ea-games/SimCity/SimCityData/SimCity_RegionTerrain0.package").unwrap();
     println!("-- 区域组 → 数字 UI id --");
     for e in rt.entries() {
         if e.id.type_id != 0x00B1_B104 || e.id.instance != 0x51E7_A18D {
             continue;
         }
         let Ok(data) = rt.read(e) else { continue };
-        let Ok(pf) = sc_properties::PropertyFile::parse(&data) else { continue };
+        let Ok(pf) = sc_properties::PropertyFile::parse(&data) else {
+            continue;
+        };
         let num = pf.get(0x4EE9_7F5B).and_then(|p| match &p.kind {
             sc_properties::Kind::Scalar(sc_properties::Value::String8(s)) => Some(s.clone()),
             _ => None,
@@ -69,7 +71,10 @@ fn main() {
         let mut hits: Vec<&str> = Vec::new();
         for (h, name) in TEMPLATE_HASHES {
             // hash 可能以十进制或十六进制出现
-            if text.contains(&format!("{h}")) || text.contains(&format!("{h:08x}")) || text.contains(&format!("{h:08X}")) {
+            if text.contains(&format!("{h}"))
+                || text.contains(&format!("{h:08x}"))
+                || text.contains(&format!("{h:08X}"))
+            {
                 hits.push(name);
             }
         }

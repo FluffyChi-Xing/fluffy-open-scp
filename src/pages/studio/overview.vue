@@ -54,13 +54,6 @@ const panels = computed(
         status: "planned",
         to: "/studio/asset",
       },
-      {
-        key: "versions",
-        icon: "History",
-        stage: "verify",
-        status: "next",
-        to: "/studio/versions",
-      },
     ] as const,
 );
 

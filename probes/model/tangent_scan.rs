@@ -41,7 +41,9 @@ fn main() {
             if entry.id.type_id != MODEL_TYPE {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
             let Ok(file) = rw4::Rw4File::parse(&data) else {
                 continue;
             };
@@ -67,7 +69,9 @@ fn main() {
                             .or_insert_with(|| format!("0x{:08X}", entry.id.instance));
                     }
                     if el.usage == rw4::DeclarationUsage::Tangent {
-                        *tangent_types.entry(format!("{:?}", el.decl_type)).or_default() += 1;
+                        *tangent_types
+                            .entry(format!("{:?}", el.decl_type))
+                            .or_default() += 1;
                     }
                     parts.push(format!("{name}{}:{:?}", el.index, el.decl_type));
                 }
@@ -121,7 +125,9 @@ fn dump(paths: &[&String], hex: &str) {
         else {
             continue;
         };
-        let Ok(data) = package.read(&entry) else { continue };
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
         let Ok(file) = rw4::Rw4File::parse(&data) else {
             continue;
         };

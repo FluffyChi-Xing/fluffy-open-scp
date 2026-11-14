@@ -9,8 +9,8 @@
 //! 用法：script_resources_probe <package> [extra...] --lot <lot_instance_hex> <lot_group_hex>
 
 use dbpf::Package;
-use sc_properties::{Kind, PropertyFile, ParseLimits, Value};
 use sc_properties::PROPERTY_RESOURCE_TYPE;
+use sc_properties::{Kind, ParseLimits, PropertyFile, Value};
 
 const SIM_MASTER_GROUP: u32 = 0x4080_0200;
 const ADDON_MASTER_GROUP: u32 = 0x4080_0201;
@@ -55,9 +55,8 @@ fn main() {
     // --dump <inst>：跨包转储一条属性记录全文（先摘除标志再开包）
     let mut dump_inst: Option<u32> = None;
     if let Some(pos) = args.iter().position(|a| a == "--dump") {
-        dump_inst = Some(
-            u32::from_str_radix(args[pos + 1].trim_start_matches("0x"), 16).expect("hex"),
-        );
+        dump_inst =
+            Some(u32::from_str_radix(args[pos + 1].trim_start_matches("0x"), 16).expect("hex"));
         args.remove(pos);
         args.remove(pos);
     }
@@ -68,12 +67,13 @@ fn main() {
 
     if let Some(inst) = dump_inst {
         for (pi, pkg) in packages.iter().enumerate() {
-            for e in pkg.entries().iter().filter(|e| {
-                e.id.instance == inst && e.id.type_id == PROPERTY_RESOURCE_TYPE
-            }) {
+            for e in pkg
+                .entries()
+                .iter()
+                .filter(|e| e.id.instance == inst && e.id.type_id == PROPERTY_RESOURCE_TYPE)
+            {
                 let data = pkg.read(e).unwrap();
-                let f = PropertyFile::parse_with_limits(&data, ParseLimits::default())
-                    .unwrap();
+                let f = PropertyFile::parse_with_limits(&data, ParseLimits::default()).unwrap();
                 println!(
                     "pkg{pi} I {inst:08X} T {:08X} G {:08X} ({} props)",
                     e.id.type_id,
@@ -102,9 +102,11 @@ fn main() {
     // 1. sim 主表：group 0x40800200 的属性列表
     let mut masters: Vec<(usize, dbpf::ResourceId, PropertyFile)> = Vec::new();
     for (pi, pkg) in packages.iter().enumerate() {
-        for e in pkg.entries().iter().filter(|e| {
-            e.id.type_id == PROPERTY_RESOURCE_TYPE
-        }) {
+        for e in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE)
+        {
             let Ok(data) = pkg.read(e) else { continue };
             let Ok(file) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else {
                 continue;
@@ -130,8 +132,7 @@ fn main() {
     }
 
     // 1.4 主表属性全览（找 nonSim LocalKey 线索）
-    for (_, id, file) in &masters {
-            }
+    for (_, id, file) in &masters {}
     for (_, id, file) in masters.iter() {
         if id.instance != 0x622B_9CD7 {
             continue;
@@ -183,7 +184,10 @@ fn main() {
     for (_, id, file) in &masters {
         for v in values_of(file, NON_SIM_KEY) {
             if let Some((inst, _ty, grp)) = key_of(v) {
-                println!("主表 {:08X} → nonSim 主表 key I {:08X} G {:08X}", id.instance, inst, grp);
+                println!(
+                    "主表 {:08X} → nonSim 主表 key I {:08X} G {:08X}",
+                    id.instance, inst, grp
+                );
                 ns_keys.push((inst, grp));
             }
         }
@@ -197,12 +201,14 @@ fn main() {
                     && e.id.group == *grp
             }) {
                 let Ok(data) = pkg.read(e) else { continue };
-                let Ok(file) =
-                    PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                let Ok(file) = PropertyFile::parse_with_limits(&data, ParseLimits::default())
                 else {
                     continue;
                 };
-                println!("nonSim 主表: pkg{pi} I {inst:08X} G {grp:08X} ({} 属性)", file.values.len());
+                println!(
+                    "nonSim 主表: pkg{pi} I {inst:08X} G {grp:08X} ({} 属性)",
+                    file.values.len()
+                );
                 nonsim.push((pi, e.id, file));
             }
         }
@@ -222,7 +228,10 @@ fn main() {
                     if let Some((inst, _ty, grp)) = key_of(v) {
                         groups_wanted.push((grp, inst, name));
                         if label == "sim" {
-                                            println!("sim 主表 {:08X} 子表[{name}] group key I {inst:08X} G {grp:08X}", id.instance);
+                            println!(
+                                "sim 主表 {:08X} 子表[{name}] group key I {inst:08X} G {grp:08X}",
+                                id.instance
+                            );
                         }
                     }
                 }
@@ -244,7 +253,11 @@ fn main() {
         let mut by_group = 0usize;
         let mut by_instance = 0usize;
         for pkg in &packages {
-            for e in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE) {
+            for e in pkg
+                .entries()
+                .iter()
+                .filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE)
+            {
                 if wants.iter().any(|(g, _)| *g == e.id.group) {
                     by_group += 1;
                 }
@@ -253,9 +266,7 @@ fn main() {
                 }
             }
         }
-        println!(
-            "[{want_name}] group 字段命中 {by_group} 条 / instance 字段命中 {by_instance} 条"
-        );
+        println!("[{want_name}] group 字段命中 {by_group} 条 / instance 字段命中 {by_instance} 条");
     }
 
     // 5. 消防局 lot：prop/spawner/path id 反查
@@ -296,9 +307,13 @@ fn main() {
                     && res_groups.iter().any(|g| *g == e.id.group)
             }) {
                 let Ok(data) = pkg.read(e) else { continue };
-                let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default())
-                else {
-                    println!("  资源表解析失败: I {:08X} G {:08X} ({} 字节)", e.id.instance, e.id.group, data.len());
+                let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else {
+                    println!(
+                        "  资源表解析失败: I {:08X} G {:08X} ({} 字节)",
+                        e.id.instance,
+                        e.id.group,
+                        data.len()
+                    );
                     continue;
                 };
                 let model = values_of(&f, 0x0D8C_29C3)
@@ -311,7 +326,10 @@ fn main() {
                     .count();
                 let model = model.unwrap_or_else(|| {
                     if markers > 0 {
-                        format!("selfkey I{:08X} T{:08X} G{:08X} (markers={markers})", e.id.instance, e.id.type_id, e.id.group)
+                        format!(
+                            "selfkey I{:08X} T{:08X} G{:08X} (markers={markers})",
+                            e.id.instance, e.id.type_id, e.id.group
+                        )
                     } else {
                         "无模型 key".to_string()
                     }
@@ -327,9 +345,7 @@ fn main() {
                     .values
                     .iter()
                     .filter_map(|p| match &p.kind {
-                        Kind::Scalar(Value::String8(s)) => {
-                            Some(format!("0x{:08X}={s}", p.hash))
-                        }
+                        Kind::Scalar(Value::String8(s)) => Some(format!("0x{:08X}={s}", p.hash)),
                         Kind::Array(vs) => vs.first().and_then(|v| match v {
                             Value::String8(s) => Some(format!("0x{:08X}={s}", p.hash)),
                             _ => None,
@@ -341,7 +357,11 @@ fn main() {
                 res_table.insert(e.id.instance, (model, name));
             }
         }
-        println!("资源表条目: {} 条, 别名 {} 条", res_table.len(), aliases.len());
+        println!(
+            "资源表条目: {} 条, 别名 {} 条",
+            res_table.len(),
+            aliases.len()
+        );
         // 4.7 EcoGame 脚本包直查（SimCityUserData/EcoGame）
         {
             let mut eco_ids: Vec<u32> = Vec::new();
@@ -354,35 +374,34 @@ fn main() {
             }
             let eco_dirs = [r"D:\ea-games\SimCity\SimCityUserData\EcoGame"];
             for dir in eco_dirs {
-                let Ok(rd) = std::fs::read_dir(dir) else { continue };
+                let Ok(rd) = std::fs::read_dir(dir) else {
+                    continue;
+                };
                 for entry in rd.flatten() {
                     let path = entry.path();
                     if path.extension().and_then(|e| e.to_str()) != Some("package") {
                         continue;
                     }
-                    let Some(pkg) = Package::open(&path).ok() else { continue };
+                    let Some(pkg) = Package::open(&path).ok() else {
+                        continue;
+                    };
                     let mut hits = 0usize;
                     for e in pkg.entries().iter().filter(|e| {
-                        e.id.type_id == PROPERTY_RESOURCE_TYPE
-                            && eco_ids.contains(&e.id.instance)
+                        e.id.type_id == PROPERTY_RESOURCE_TYPE && eco_ids.contains(&e.id.instance)
                     }) {
                         hits += 1;
                         if hits > 40 {
                             continue;
                         }
                         let Ok(data) = pkg.read(e) else { continue };
-                        let Ok(f) = PropertyFile::parse_with_limits(
-                            &data,
-                            ParseLimits::default(),
-                        ) else {
+                        let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                        else {
                             continue;
                         };
                         let model = values_of(&f, 0x0D8C_29C3)
                             .first()
                             .and_then(|v| key_of(v))
-                            .map(|(i, t, g)| {
-                                format!("explicit I{i:08X} T{t:08X} G{g:08X}")
-                            });
+                            .map(|(i, t, g)| format!("explicit I{i:08X} T{t:08X} G{g:08X}"));
                         let markers = [0x00F9_EFBBu32, 0x0D89_7169, 0x0C36_D30D]
                             .iter()
                             .filter(|h| f.values.iter().any(|p| p.hash == **h))
@@ -422,23 +441,25 @@ fn main() {
             // 从 EcoGame 命中里收集显式模型 key
             let mut model_keys: Vec<(u32, u32)> = Vec::new();
             for dir in [r"D:\ea-games\SimCity\SimCityUserData\EcoGame"] {
-                let Ok(rd) = std::fs::read_dir(dir) else { continue };
+                let Ok(rd) = std::fs::read_dir(dir) else {
+                    continue;
+                };
                 for entry in rd.flatten() {
                     let path = entry.path();
                     if path.extension().and_then(|e| e.to_str()) != Some("package") {
                         continue;
                     }
-                    let Some(pkg) = Package::open(&path).ok() else { continue };
+                    let Some(pkg) = Package::open(&path).ok() else {
+                        continue;
+                    };
                     for e in pkg.entries().iter().filter(|e| {
                         e.id.type_id == PROPERTY_RESOURCE_TYPE
                             && e.id.group == 0x40E0_C100
                             && eco_ids.contains(&e.id.instance)
                     }) {
                         let Ok(data) = pkg.read(e) else { continue };
-                        let Ok(f) = PropertyFile::parse_with_limits(
-                            &data,
-                            ParseLimits::default(),
-                        ) else {
+                        let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                        else {
                             continue;
                         };
                         if let Some(v) = values_of(&f, 0x0D8C_29C3).first() {
@@ -461,10 +482,8 @@ fn main() {
                         && e.id.group == *grp
                 }) {
                     let Ok(data) = main_pkg.read(e) else { continue };
-                    let Ok(f) = PropertyFile::parse_with_limits(
-                        &data,
-                        ParseLimits::default(),
-                    ) else {
+                    let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                    else {
                         continue;
                     };
                     lod1 = values_of(&f, 0x00F9_EFBB)
@@ -475,13 +494,11 @@ fn main() {
                 match lod1 {
                     Some(rw4_inst) => {
                         let found = packages.iter().any(|p| {
-                            p.entries().iter().any(|e| {
-                                e.id.instance == rw4_inst && e.id.type_id == 0x2F4E_681B
-                            })
+                            p.entries()
+                                .iter()
+                                .any(|e| e.id.instance == rw4_inst && e.id.type_id == 0x2F4E_681B)
                         });
-                        println!(
-                            "wrapper I {inst:08X} -> LOD1 I {rw4_inst:08X} RW4({found})"
-                        );
+                        println!("wrapper I {inst:08X} -> LOD1 I {rw4_inst:08X} RW4({found})");
                     }
                     None => {
                         println!("wrapper I {inst:08X} -> LOD1 缺失，记录全文:");
@@ -491,10 +508,9 @@ fn main() {
                                 && e.id.group == *grp
                         }) {
                             let Ok(data) = main_pkg.read(e) else { continue };
-                            let Ok(f) = PropertyFile::parse_with_limits(
-                                &data,
-                                ParseLimits::default(),
-                            ) else {
+                            let Ok(f) =
+                                PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                            else {
                                 continue;
                             };
                             for p in &f.values {
@@ -514,12 +530,10 @@ fn main() {
             let mut lots_scanned = 0usize;
             for pkg in &packages {
                 for e in pkg.entries().iter().filter(|e| {
-                    e.id.type_id == PROPERTY_RESOURCE_TYPE
-                        && (e.id.group & 0xFFFF) == 0xC000
+                    e.id.type_id == PROPERTY_RESOURCE_TYPE && (e.id.group & 0xFFFF) == 0xC000
                 }) {
                     let Ok(data) = pkg.read(e) else { continue };
-                    let Ok(f) =
-                        PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                    let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default())
                     else {
                         continue;
                     };
@@ -546,10 +560,18 @@ fn main() {
             );
             // 分类普查：96 个 bin id → 记录位置 + 模型可解性 + 包装形状
             {
-                let mut b1_all: std::collections::HashMap<u32, Vec<(u32, u64)>> = Default::default();
+                let mut b1_all: std::collections::HashMap<u32, Vec<(u32, u64)>> =
+                    Default::default();
                 for (pi, pkg) in packages.iter().enumerate() {
-                    for e in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE) {
-                        b1_all.entry(e.id.instance).or_default().push((e.id.group, pi as u64));
+                    for e in pkg
+                        .entries()
+                        .iter()
+                        .filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE)
+                    {
+                        b1_all
+                            .entry(e.id.instance)
+                            .or_default()
+                            .push((e.id.group, pi as u64));
                     }
                 }
                 let mut stats: std::collections::BTreeMap<String, usize> = Default::default();
@@ -569,17 +591,18 @@ fn main() {
                                     && e.id.group == *grp
                             }) {
                                 let Ok(data) = pkg.read(e) else { continue };
-                                let Ok(f) = PropertyFile::parse_with_limits(
-                                    &data,
-                                    ParseLimits::default(),
-                                ) else {
+                                let Ok(f) =
+                                    PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                                else {
                                     continue;
                                 };
                                 let has = |h: u32| !values_of(&f, h).is_empty();
-                                let explicit = values_of(&f, 0x0D8C_29C3).first().and_then(|v| key_of(v));
+                                let explicit =
+                                    values_of(&f, 0x0D8C_29C3).first().and_then(|v| key_of(v));
                                 let vehicle = has(0x0D89_7169);
                                 let marker = has(0x00F9_EFBB) || has(0x0C36_D30D);
-                                let parent = values_of(&f, 0x00B2_CCCB).first().and_then(|v| key_of(v));
+                                let parent =
+                                    values_of(&f, 0x00B2_CCCB).first().and_then(|v| key_of(v));
                                 shape = if vehicle {
                                     "vehicle_models直出".into()
                                 } else if explicit.is_some() {
@@ -648,7 +671,8 @@ fn main() {
                     samples.entry(key).or_default().push(*id);
                 }
                 for (k, ids) in samples {
-                    let hexes: Vec<String> = ids.iter().take(3).map(|i| format!("{i:08X}")).collect();
+                    let hexes: Vec<String> =
+                        ids.iter().take(3).map(|i| format!("{i:08X}")).collect();
                     println!("  样本[{k}]: {}", hexes.join(" "));
                 }
             }
@@ -659,7 +683,11 @@ fn main() {
             let mut b1_index: std::collections::HashMap<u32, u32> =
                 std::collections::HashMap::new();
             for pkg in &packages {
-                for e in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE) {
+                for e in pkg
+                    .entries()
+                    .iter()
+                    .filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE)
+                {
                     b1_index.entry(e.id.instance).or_insert(e.id.group);
                 }
             }
@@ -687,7 +715,10 @@ fn main() {
                 .collect();
             println!(
                 "未命中抽样: {:?}",
-                missing.iter().map(|i| format!("{i:08X}")).collect::<Vec<_>>()
+                missing
+                    .iter()
+                    .map(|i| format!("{i:08X}"))
+                    .collect::<Vec<_>>()
             );
         }
 
@@ -703,20 +734,30 @@ fn main() {
         {
             let want = 0x92BE_E95Fu32;
             for (pi, pkg) in packages.iter().enumerate() {
-                for e in pkg.entries().iter().filter(|e| e.id.instance == want && e.id.type_id != PROPERTY_RESOURCE_TYPE) {
+                for e in pkg
+                    .entries()
+                    .iter()
+                    .filter(|e| e.id.instance == want && e.id.type_id != PROPERTY_RESOURCE_TYPE)
+                {
                     println!(
                         "selfkey 模型验证: pkg{pi} I {want:08X} T {:08X} G {:08X} ({} 字节)",
-                        e.id.type_id,
-                        e.id.group,
-                        e.decompressed_size
+                        e.id.type_id, e.id.group, e.decompressed_size
                     );
                 }
             }
         }
         {
             let probe_ids = [
-                0x0AB4DFE1u32, 0x0AB4DFE2, 0x0AB4DFE3, 0xBF2C1022, 0x54CA89F0,
-                0x92BEE95F, 0x14984C6B, 0x14984C6A, 0x14984C69, 0x14984C68,
+                0x0AB4DFE1u32,
+                0x0AB4DFE2,
+                0x0AB4DFE3,
+                0xBF2C1022,
+                0x54CA89F0,
+                0x92BEE95F,
+                0x14984C6B,
+                0x14984C6A,
+                0x14984C69,
+                0x14984C68,
             ];
 
             // addon 资源组直查（各 master 的 resources group）
@@ -727,12 +768,17 @@ fn main() {
                 .collect();
             addon_groups.sort();
             addon_groups.dedup();
-            println!("全部资源组: {:?}", addon_groups.iter().map(|g| format!("{g:08X}")).collect::<Vec<_>>());
+            println!(
+                "全部资源组: {:?}",
+                addon_groups
+                    .iter()
+                    .map(|g| format!("{g:08X}"))
+                    .collect::<Vec<_>>()
+            );
             for id in &probe_ids {
                 for pkg in &packages {
                     for e in pkg.entries().iter().filter(|e| {
-                        e.id.instance == *id
-                            && addon_groups.iter().any(|g| *g == e.id.group)
+                        e.id.instance == *id && addon_groups.iter().any(|g| *g == e.id.group)
                     }) {
                         println!(
                             "  addon 资源组命中 I {id:08X} → T {:08X} G {:08X}",
@@ -767,8 +813,7 @@ fn main() {
                         continue;
                     }
                     let Ok(data) = pkg.read(e) else { continue };
-                    let Ok(f) =
-                        PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                    let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default())
                     else {
                         continue;
                     };
@@ -780,8 +825,12 @@ fn main() {
                         .iter()
                         .filter(|h| f.values.iter().any(|p| p.hash == **h))
                         .count();
-                    let hashes: Vec<String> =
-                        f.values.iter().take(8).map(|p| format!("{:08X}", p.hash)).collect();
+                    let hashes: Vec<String> = f
+                        .values
+                        .iter()
+                        .take(8)
+                        .map(|p| format!("{:08X}", p.hash))
+                        .collect();
                     println!(
                         "  I {id:08X} -> T {:08X} G {:08X} ({} props) model={} markers={markers} hashes=[{}]",
                         e.id.type_id,
@@ -822,7 +871,8 @@ fn main() {
                     let hit = res_table.get(&inst);
                     println!(
                         "  prop bin{bin}: id I {inst:08X} T {ty:08X} G {grp:08X} → {}",
-                        hit.map(|(m, n)| format!("{m} {n}")).unwrap_or_else(|| "✗ 不在资源表".into())
+                        hit.map(|(m, n)| format!("{m} {n}"))
+                            .unwrap_or_else(|| "✗ 不在资源表".into())
                     );
                 }
             }

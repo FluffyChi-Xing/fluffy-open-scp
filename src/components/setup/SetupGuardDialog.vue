@@ -10,7 +10,8 @@ import type { SetupPathStatus, SetupStatusResponse } from "@/api/tauri";
  * 绿色免安装版的配置缺失守卫：
  * - 引导从未完成 → 跳转 /onboarding 全屏引导；
  * - 引导已完成但个别目录缺失/失效 → 弹居中 dialog，缺哪个配哪个。
- * 浏览器 demo 模式（非 Tauri）不检测。
+ * 文档工作区与模组根自 2026-10-29 起由启动自动落盘（internal_dirs），
+ * 不再进入守卫；仅游戏目录需要用户指定。浏览器 demo 模式不检测。
  */
 const router = useRouter();
 const { t } = useI18n();
@@ -18,28 +19,22 @@ const open = ref(false);
 const busy = ref(false);
 const error = ref("");
 const status = ref<SetupStatusResponse | null>(null);
-/** 正在补配的路径键：workspace | game | modRoot。 */
-const fixing = ref<null | "workspace" | "game" | "modRoot">(null);
+/** 正在补配的路径键：仅 game（workspace/modRoot 已内部化）。 */
+const fixing = ref<null | "game">(null);
 
 const entries = computed(() => {
   const current = status.value;
   if (!current)
     return [] as { key: string; label: string; value: SetupPathStatus }[];
   return [
-    {
-      key: "workspace",
-      label: t("setupDialog.workspace"),
-      value: current.workspace,
-    },
     { key: "game", label: t("setupDialog.game"), value: current.game },
-    { key: "modRoot", label: t("setupDialog.modRoot"), value: current.modRoot },
   ].filter((entry) => !(entry.value.path && entry.value.isDirectory));
 });
 
 const allConfigured = computed(
   () =>
     Boolean(status.value) &&
-    [status.value?.workspace, status.value?.game, status.value?.modRoot].every(
+    [status.value?.game].every(
       (entry) => Boolean(entry?.path) && Boolean(entry?.isDirectory),
     ),
 );
@@ -68,7 +63,7 @@ function errorMessage(cause: unknown): string {
     : String(cause);
 }
 
-async function pickAndSave(key: "workspace" | "game" | "modRoot") {
+async function pickAndSave(key: "game") {
   fixing.value = key;
   error.value = "";
   try {
@@ -77,9 +72,7 @@ async function pickAndSave(key: "workspace" | "game" | "modRoot") {
     );
     if (!path) return;
     busy.value = true;
-    if (key === "workspace") await tauriApi.workspace.setRoot(path);
-    else if (key === "game") await tauriApi.settings.setGameDirectory(path);
-    else await tauriApi.studio.setModRoot(path);
+    await tauriApi.settings.setGameDirectory(path);
     status.value = await tauriApi.studio.setupStatus();
     if (allConfigured.value) open.value = false;
   } catch (cause) {
@@ -121,9 +114,7 @@ async function pickAndSave(key: "workspace" | "game" | "modRoot") {
               class="fix"
               type="button"
               :disabled="busy"
-              @click="
-                pickAndSave(entry.key as 'workspace' | 'game' | 'modRoot')
-              "
+              @click="pickAndSave('game')"
             >
               <FIcon name="FolderOpen" :size="13" aria-label="" />
               {{ $t("setupDialog.pick") }}

@@ -17,15 +17,16 @@ const props = defineProps<{
   project: string;
   /** 当前激活的模型资产相对路径（高亮）。 */
   activeAsset: string;
+  /** 当前在右侧配置区打开的文件（package.json 等），单独高亮。 */
+  selectedPath?: string | null;
+  readOnly?: boolean;
 }>();
 const emit = defineEmits<{
+  /** 任意文件点击（package.json 等配置入口）。 */
+  select: [relativePath: string];
   "open-asset": [relativePath: string];
   "open-package": [relativePath: string];
-  "blend-imported": [result: {
-    asset: string;
-    materialSlots?: Record<string, string>;
-    materialSlotsByMaterial?: Record<string, Record<string, string>>;
-  }];
+  "blend-imported": [lotm: string];
   imported: [];
 }>();
 
@@ -50,10 +51,14 @@ function errorMessage(cause: unknown): string {
 
 function importErrorToast(cause: unknown) {
   const message = errorMessage(cause).toLowerCase();
-  if (message.includes("blender executable not found")) {
+  if (message === "blend_atlas_missing") {
+    toast.error(t("studio.assetWorkbench.blendAtlasMissing"));
+  } else if (message.includes("cannot start blender")) {
     toast.error(t("studio.assetWorkbench.blendUnavailable"));
-  } else if (message.includes("blender could not export")) {
-    toast.error(t("studio.assetWorkbench.blendExportFailed"));
+  } else if (message.includes("blender reader failed")) {
+    toast.error(t("studio.assetWorkbench.blendReadFailed"));
+  } else if (message.includes("原生导出失败") || message.includes("lotm 无效")) {
+    toast.error(t("studio.assetWorkbench.blendNativeFailed"));
   } else {
     toast.error(t("studio.assetWorkbench.importFailed"));
   }
@@ -104,7 +109,7 @@ async function loadTree() {
           .map((node) => node.relativePath),
       );
     }
-  } catch (cause) {
+  } catch {
     error.value = "";
     toast.error(t("studio.assetWorkbench.treeLoadFailed"));
   } finally {
@@ -126,6 +131,7 @@ function onRowClick(row: TreeRow) {
     toggleFolder(row);
     return;
   }
+  emit("select", row.relativePath);
   const lower = row.name.toLowerCase();
   if (MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
     emit("open-asset", row.relativePath);
@@ -160,17 +166,18 @@ async function importFile() {
   try {
     const value = await command<{
       asset: string;
-      source?: string;
-      baked?: boolean;
-      materialSlots?: Record<string, string>;
-      materialSlotsByMaterial?: Record<string, Record<string, string>>;
+      source?: "blend-native";
+      cache?: "hit";
     }>("code_flow", {
       request: { project: props.project, action: "import-asset", payload: { path } },
     });
     await loadTree();
+    if (value.cache === "hit")
+      toast.info(t("studio.assetWorkbench.blendCacheHit"));
     const lower = value.asset.toLowerCase();
-    if (value.source === "blend") emit("blend-imported", value);
-    if (value.source !== "blend" && MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
+    if (value.source === "blend-native") {
+      emit("blend-imported", value.asset);
+    } else if (MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
       emit("open-asset", value.asset);
     }
     emit("imported");
@@ -193,6 +200,7 @@ onMounted(loadTree);
       <button
         type="button"
         class="tree-import"
+        v-if="!readOnly"
         :disabled="importing || loading"
         :title="t('studio.assetWorkbench.importFile')"
         :aria-label="t('studio.assetWorkbench.importFile')"
@@ -218,6 +226,7 @@ onMounted(loadTree);
         active:
           !row.isFolder &&
           (row.relativePath === activeAsset || activeAsset.endsWith(`/${row.relativePath}`) || activeAsset.endsWith(`\\${row.relativePath}`)),
+        selected: !row.isFolder && row.relativePath === selectedPath,
       }"
       :style="{ paddingInlineStart: `${8 + row.depth * 13}px` }"
       :title="row.relativePath"
@@ -318,6 +327,10 @@ onMounted(loadTree);
 .tree-row.folder {
   color: var(--muted-foreground);
   font-weight: 600;
+}
+.tree-row.selected {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
 }
 .tree-row.active {
   background: color-mix(in srgb, var(--primary) 14%, transparent);

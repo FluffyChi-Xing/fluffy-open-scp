@@ -116,9 +116,7 @@ fn collect_packages(root: &str, out: &mut Vec<PathBuf>) -> Result<(), std::io::E
     walk(&root_path, 0, out)
 }
 
-pub fn scan_overrides(
-    roots: &[String],
-) -> Result<OverrideScanResponse, CommandError> {
+pub fn scan_overrides(roots: &[String]) -> Result<OverrideScanResponse, CommandError> {
     // (TGI) -> 覆盖链（按加载顺序）
     #[derive(Default)]
     struct Slot {
@@ -155,11 +153,7 @@ pub fn scan_overrides(
         for entry in package.entries() {
             entry_count += 1;
             total_entries += 1;
-            let key = (
-                entry.id.type_id,
-                entry.id.group,
-                entry.id.instance,
-            );
+            let key = (entry.id.type_id, entry.id.group, entry.id.instance);
             slots
                 .entry(key)
                 .or_default()

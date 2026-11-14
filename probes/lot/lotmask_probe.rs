@@ -11,7 +11,9 @@ const PROPERTY_TYPE: u32 = 0x00B1_B104;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: lotmask_probe <package> [lookup...]");
+    let path = args
+        .first()
+        .expect("usage: lotmask_probe <package> [lookup...]");
     let package = dbpf::Package::open(path).expect("open package");
     let lookups: Vec<_> = args
         .iter()
@@ -33,14 +35,18 @@ fn main() {
         }
         properties += 1;
         let entry = entry.clone();
-        let Ok(data) = package.read(&entry) else { continue };
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
         let Ok(properties_file) =
             PropertyFile::parse_with_limits(&data, sc_properties::ParseLimits::default())
         else {
             continue;
         };
         let document = LotEditorDocument::from_property_file(properties_file);
-        let Some(mask) = document.lot_mask else { continue };
+        let Some(mask) = document.lot_mask else {
+            continue;
+        };
         with_mask += 1;
         // Key 的精确 TGI 或 instance+RASTER_TYPE 扫描
         let exact = dbpf::ResourceId {
@@ -76,9 +82,13 @@ fn main() {
         };
         *source_hist.entry(source).or_insert(0) += 1;
         raster_found += 1;
-        let Ok(raster_data) = package.read(&raster_entry) else { continue };
+        let Ok(raster_data) = package.read(&raster_entry) else {
+            continue;
+        };
         if let Ok(raster) = rw4::RasterImage::parse(&raster_data) {
-            *pix_fmt_hist.entry(u32::from(raster.pixel_format)).or_insert(0) += 1;
+            *pix_fmt_hist
+                .entry(u32::from(raster.pixel_format))
+                .or_insert(0) += 1;
             if sample_printed < 5 {
                 sample_printed += 1;
                 println!(
@@ -95,7 +105,9 @@ fn main() {
         }
     }
 
-    println!("properties={properties} with_lot_mask={with_mask} raster_found={raster_found} raster_missing_in_package={raster_missing}");
+    println!(
+        "properties={properties} with_lot_mask={with_mask} raster_found={raster_found} raster_missing_in_package={raster_missing}"
+    );
     println!("mask raster source histogram (0=main, 1..=lookup index):");
     for (source, count) in &source_hist {
         println!("  package {source}: {count}");

@@ -1,6 +1,8 @@
 import { pngBlobUrl } from "@/lib/three-gltf";
 import type * as ThreeNamespace from "three";
 import type { LotModelPayload } from "@/api/tauri";
+import { RELIEF_GLSL } from "@/render/exec/three/reliefShader";
+import { planRelief, reliefHasHeight } from "@/render/plan/relief";
 
 /**
  * SCP 精细渲染模块（scene contributor）：building4 tint 着色器注入、
@@ -242,6 +244,36 @@ export interface TintTextureSet {
   paramCols: number;
   paramsByMaterial: Map<string, ThreeNamespace.DataTexture>;
   paletteRowsByMaterial: Map<string, number>;
+  /** shaderMap.r 是否存在真实高度（平面建筑不做浮雕）。 */
+  reliefAvailable: boolean;
+}
+
+
+/** 解码 shaderMap PNG 像素，用于一次性判断该材质是否有浮雕高度。 */
+async function decodePngPixels(
+  bytes: Uint8Array,
+): Promise<Uint8ClampedArray | null> {
+  try {
+    if (typeof createImageBitmap !== "function") return null;
+    const bitmap = await createImageBitmap(
+      new Blob([bytes.slice().buffer], { type: "image/png" }),
+    );
+    const canvas =
+      typeof OffscreenCanvas !== "undefined"
+        ? new OffscreenCanvas(bitmap.width, bitmap.height)
+        : document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d") as
+      | CanvasRenderingContext2D
+      | OffscreenCanvasRenderingContext2D
+      | null;
+    if (!context) return null;
+    context.drawImage(bitmap, 0, 0);
+    return context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -361,12 +393,19 @@ export async function loadTintTextures(
               })
             : Promise.resolve(null),
         ]);
+      const shaderPixels = material.shaderPng
+        ? await decodePngPixels(material.shaderPng)
+        : null;
+      const reliefAvailable = shaderPixels
+        ? reliefHasHeight(shaderPixels)
+        : Boolean(material.shaderPng);
       return {
         tintTex,
         paletteTex,
         normalTex,
         shaderTex,
         interiorTex,
+        reliefAvailable,
         // reliefPng（slot5 alpha）高度通道语义未确证（疑为灯亮同源），视差
         // 已回滚——不加载、不上传 GPU。见 Top 层块内回滚记录。
         paramsTex: buildParamsTexture(THREE, material),
@@ -642,7 +681,7 @@ varying float vSeed;
 varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
 varying vec3 vReliefNormal;
-varying vec3 vReliefTangent;`,
+varying float vReliefTangentW;`,
       )
       .replace(
         "#include <uv_vertex>",
@@ -693,9 +732,9 @@ vMatUV = vec2(0.0);
         `#include <defaultnormal_vertex>
 vReliefNormal = normalize(transformedNormal);
 #ifdef USE_TANGENT
-vReliefTangent = normalize(transformedTangent);
+vReliefTangentW = tangent.w;
 #else
-vReliefTangent = vec3(0.0, 0.0, 0.0);
+vReliefTangentW = 1.0;
 #endif`,
       )
       .replace(
@@ -725,7 +764,7 @@ varying float vSeed;
 varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
 varying vec3 vReliefNormal;
-varying vec3 vReliefTangent;
+varying float vReliefTangentW;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
 // Clamp only the border, without rescaling every brick/window inside a tile.
@@ -814,109 +853,7 @@ uniform float uPaletteRow;
 #ifdef TINT_SHADERMAP
 uniform sampler2D shaderMapMap;
 uniform float uReliefEnabled;
-// Building4 uses a short cone-step relief pass for the facade height channel.
-// The distance/flat-level tests keep this path cheap for walls and distant LODs.
-vec2 scReliefUv(vec2 src, vec3 eye, sampler2D heightMap, vec4 region, vec2 dx, vec2 dy) {
-  if (uReliefEnabled < 0.5) return src;
-  float distSq = dot(vViewPosition, vViewPosition);
-  // building4's shipped shader uses kCullDistanceSq=160000.  Keeping the
-  // same cutoff matters here because the relief result must still be allowed
-  // to leave the tile before outsideTile disables the Top layer.
-  if (distSq > 160000.0) return src;
-  // This is the game's reliefPS cone-step mapping. The shader does not move
-  // vertices: it walks the authored height/cone field in shaderMap.rg, then
-  // returns a displaced UV used by the Top window/door layer.
-  const float kReliefDepth = 0.16;
-  const float kMaxConeRatio = 0.5;
-  const float kFlatLevel = 23.0 / 255.0;
-  const int kConeSteps = 8;
-  const int kBinarySteps = 2;
-
-  // The game divides the tangent-space XY ray by the Top atlas scale before
-  // calling reliefMap(). Keep that division here so dsRatio below is in the
-  // same texture-space units as the source shader.
-  eye.xy /= max(abs(region.xy), vec2(1e-4));
-  float safeZ = abs(eye.z) < 1e-4 ? (eye.z < 0.0 ? -1e-4 : 1e-4) : eye.z;
-  vec3 ds = eye;
-  // This is the source reliefMap() direction. The authored height field is
-  // traversed from the camera toward the wall; changing this to '+' makes
-  // windows/doors read as an outward bulge.
-  ds.xy = -ds.xy;
-  ds.z = safeZ;
-  ds.z *= 1.0 / kReliefDepth;
-  ds *= 1.0 / ds.z;
-  src -= ds.xy * kFlatLevel;
-  vec3 samplePos = vec3(src, 0.0);
-  float dsRatio = length(ds.xy * region.xy);
-  float finalDistance = 0.0;
-
-  for (int i = 0; i < kConeSteps; i++) {
-    vec2 sampleUv = clamp(samplePos.xy, 0.0, 1.0) * region.xy + region.zw;
-    vec4 control = scSampleAtlas(heightMap, sampleUv, region, dx, dy);
-    float height = control.r;
-    float coneRatio = max(control.g * kMaxConeRatio, 0.0);
-    float stepHeight = clamp(height - samplePos.z, 0.0, 1.0);
-    float stepDistance = (dsRatio + coneRatio) > 1e-5
-      ? (coneRatio * stepHeight) / (dsRatio + coneRatio)
-      : 0.0;
-    if (stepHeight > 0.0) finalDistance = stepDistance;
-    samplePos += ds * stepDistance;
-  }
-
-  ds *= finalDistance;
-  samplePos -= ds;
-  for (int i = 0; i < kBinarySteps; i++) {
-    ds *= 0.5;
-    vec2 sampleUv = clamp(samplePos.xy, 0.0, 1.0) * region.xy + region.zw;
-    float height = scSampleAtlas(heightMap, sampleUv, region, dx, dy).r;
-    samplePos += ((height - samplePos.z) >= 0.0) ? ds : -ds;
-  }
-
-  // Flat pixels are the game's no-relief path. Keep the authored UV for the
-  // common wall case while allowing window/door heights to pop in and out.
-  vec4 sourceControl = scSampleAtlas(
-    heightMap,
-    clamp(src, 0.0, 1.0) * region.xy + region.zw,
-    region,
-    dx,
-    dy
-  );
-  if (sourceControl.r <= kFlatLevel) return src;
-  // Keep the unbounded result.  The game deliberately tests this coordinate
-  // against [0,1] after reliefMap(); clamping here would make outsideTile
-  // permanently zero and would smear a window/door texel into the surrounding
-  // wall whenever the parallax ray exits the Top tile.
-  return samplePos.xy;
-}
-vec3 scReliefEyeDir() {
-  vec3 tangentU;
-  vec3 tangentV;
-  vec3 normalV;
-#ifdef USE_TANGENT
-  // building4's vertex shader uses the exported mesh tangent and derives the
-  // second axis as cross(tangent, normal). Three exposes the opposite order
-  // for vBitangent, so construct the game-space binormal explicitly.
-  tangentU = normalize(vReliefTangent);
-  normalV = normalize(vReliefNormal);
-  tangentV = normalize(cross(tangentU, normalV));
-#else
-  // Fallback for foreign meshes without an exported tangent attribute.
-  vec3 posV = -vViewPosition;
-  vec3 dpx = dFdx(posV);
-  vec3 dpy = dFdy(posV);
-  vec2 dux = dFdx(vTopUv);
-  vec2 duy = dFdy(vTopUv);
-  float det = dux.x * duy.y - duy.x * dux.y;
-  if (abs(det) < 1e-6) return vec3(0.0, 0.0, 1.0);
-  tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
-  normalV = normalize(vReliefNormal);
-  tangentV = normalize(cross(tangentU, normalV));
-#endif
-  // Three's vViewPosition is the fragment-to-camera vector, matching the
-  // source eyeDir = -mul(tangentSpace, viewPos).
-  vec3 eyeV = normalize(vViewPosition);
-  return normalize(vec3(dot(eyeV, tangentU), dot(eyeV, tangentV), dot(eyeV, normalV)));
-}
+${RELIEF_GLSL}
 #endif
 #ifdef TINT_INTERIOR
 uniform sampler2D interiorMapMap;
@@ -1038,7 +975,11 @@ float scFastNoise(vec3 seed) {
             max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
           // 先定位 Top 图集区域，采样时再按每张图的 texel 尺寸保护边缘。
           topUv = clamp(reliefSrc, 0.0, 1.0) * topRegion.xy + topRegion.zw;
-          facadeTintValues = scSampleFacade(tintMap, topUv, topRegion, scTopGradX, scTopGradY);
+          // 发行版此处是 tex2Dgrad（LINEAR + mip）：Top tint 是离散的调色板/
+          // 覆盖率选择器。Catmull-Rom 会把 0→1 的 alpha 过渡拉宽到约 2 texel，
+          // 且在窗户 tile 边界会把外侧 3×3 tap 钳回边界 texel——这份重复采样
+          // 正是门窗边缘发糊的直接来源。双三次只保留给 Base 砖墙层。
+          facadeTintValues = scSampleAtlas(tintMap, topUv, topRegion, scTopGradX, scTopGradY);
           scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
         }
         vec2 scSubTop = facadeTintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
@@ -1202,7 +1143,7 @@ float scFastNoise(vec3 seed) {
           // Missing tangents must use the facade UV, not the baked color UV.
           #ifdef USE_TANGENT
             vec3 scNormalN = normalize(vNormal);
-            vec3 scNormalB = normalize(cross(scNormalN, vTangent));
+            vec3 scNormalB = normalize(cross(scNormalN, vTangent) * vReliefTangentW);
             vec3 scNormalT = cross(scNormalB, scNormalN);
             mat3 scNormalFrame = mat3(scNormalT, scNormalB, scNormalN);
             #ifdef DOUBLE_SIDED
@@ -1321,6 +1262,11 @@ export function makeTintMaterial(
     paramsTex && tint.shaderTex && tint.interiorTex,
   );
   if (interiorReady) tinted.defines.TINT_INTERIOR = "";
+  const relief = planRelief({
+    toggle: reliefEnabled,
+    hasHeight: tint.reliefAvailable,
+  });
+  const uReliefUniform = { value: relief.enabled ? 1 : 0 };
   const uSpecGUniform = { value: effectiveSpecMode() };
   const uPaletteRowUniform = { value: paletteRow };
   attachTintShader(
@@ -1346,7 +1292,7 @@ export function makeTintMaterial(
       uDayLight: env.dayLight,
       uPowered: env.powered,
       uPaletteRow: uPaletteRowUniform,
-      uReliefEnabled: { value: reliefEnabled ? 1 : 0 },
+      uReliefEnabled: uReliefUniform,
     },
     Boolean(paramsTex),
     Boolean(tint.shaderTex),
@@ -1356,5 +1302,8 @@ export function makeTintMaterial(
   );
   // 行 uniform 引用挂 userData（prop 按实例设变体行；建筑保持 0）
   tinted.userData.uPaletteRow = uPaletteRowUniform;
+  // 浮雕开关热更新：切换时只改这个 uniform，不重建场景/材质。
+  tinted.userData.uReliefEnabled = uReliefUniform;
+  tinted.userData.reliefAvailable = tint.reliefAvailable;
   return [tinted, uSpecGUniform];
 }

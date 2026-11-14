@@ -216,11 +216,12 @@ fn read_visual_effect(r: &mut Reader<'_>) -> Result<VisualEffect, SwarmError> {
         let scale = f32::from_bits(r.u32()?);
         let mut rotation = [0.0; 9];
         for value in &mut rotation {
-            *value = f32::from_bits(r.u32_le()?);
+            // Transform floats are big-endian like the rest of the stream.
+            *value = f32::from_bits(r.u32()?);
         }
         let mut offset = [0.0; 3];
         for value in &mut offset {
-            *value = f32::from_bits(r.u32_le()?);
+            *value = f32::from_bits(r.u32()?);
         }
         r.skip(2)?; // LOD endpoints
         let scale_count = r.count()?;
@@ -330,7 +331,18 @@ mod tests {
         bytes.extend_from_slice(&1u32.to_be_bytes());
         bytes.push(1);
         bytes.extend_from_slice(&9u32.to_be_bytes());
-        bytes.extend_from_slice(&[0; 56]);
+        let mut block = Vec::new();
+        block.extend_from_slice(&0u16.to_be_bytes()); // transform flags
+        for value in [
+            1.0f32, // scale
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, // rotation
+            1.0, 2.0, 3.0, // offset
+        ] {
+            block.extend_from_slice(&value.to_bits().to_be_bytes());
+        }
+        block.extend_from_slice(&[0, 0]); // LOD begin/end
+        assert_eq!(block.len(), 56);
+        bytes.extend_from_slice(&block);
         bytes.extend_from_slice(&0u32.to_be_bytes());
         bytes.extend_from_slice(&[0; 40]);
         bytes.extend_from_slice(&3u32.to_be_bytes());
@@ -351,9 +363,9 @@ mod tests {
                 type_code: 1,
                 flags: 9,
                 transform: BlockTransform {
-                    scale: 0.0,
-                    rotation: [0.0; 9],
-                    offset: [0.0; 3],
+                    scale: 1.0,
+                    rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                    offset: [1.0, 2.0, 3.0],
                 },
                 component_index: 3
             }]

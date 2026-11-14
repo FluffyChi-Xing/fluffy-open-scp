@@ -38,11 +38,50 @@ fn subtype_label(it: u16) -> &'static str {
 
 /// 名称词根扫描表（小写子串匹配）。
 const NAME_TOKENS: &[&str] = &[
-    "road", "brush", "map", "truck", "agent", "vehicle", "train", "plane", "ship", "boat",
-    "sim", "pedestrian", "path", "network", "zone", "terrain", "water", "tree", "sand",
-    "mud", "cliff", "rock", "grass", "building", "house", "park", "landmark", "bus",
-    "fire", "police", "health", "power", "sewage", "garbage", "miner", "oil", "river",
-    "bridge", "tunnel", "rail", "street", "avenue", "dirt", "curve",
+    "road",
+    "brush",
+    "map",
+    "truck",
+    "agent",
+    "vehicle",
+    "train",
+    "plane",
+    "ship",
+    "boat",
+    "sim",
+    "pedestrian",
+    "path",
+    "network",
+    "zone",
+    "terrain",
+    "water",
+    "tree",
+    "sand",
+    "mud",
+    "cliff",
+    "rock",
+    "grass",
+    "building",
+    "house",
+    "park",
+    "landmark",
+    "bus",
+    "fire",
+    "police",
+    "health",
+    "power",
+    "sewage",
+    "garbage",
+    "miner",
+    "oil",
+    "river",
+    "bridge",
+    "tunnel",
+    "rail",
+    "street",
+    "avenue",
+    "dirt",
+    "curve",
 ];
 
 #[derive(Default)]
@@ -70,7 +109,10 @@ struct Cluster {
 
 fn value_summary(v: &Value) -> String {
     match v {
-        Value::Key(k) => format!("key(T={:08X} G={:08X} I={:08X})", k.type_id, k.group, k.instance),
+        Value::Key(k) => format!(
+            "key(T={:08X} G={:08X} I={:08X})",
+            k.type_id, k.group, k.instance
+        ),
         Value::Bool(b) => format!("bool({b})"),
         Value::Int32(n) => format!("i32({n})"),
         Value::UInt32(n) => format!("u32({n})"),
@@ -97,9 +139,7 @@ fn main() {
         std::process::exit(2);
     }
     let registry = Registry::open(&args[1]).expect("open s3db");
-    let mut out = std::io::BufWriter::new(
-        std::fs::File::create(&args[2]).expect("create report"),
-    );
+    let mut out = std::io::BufWriter::new(std::fs::File::create(&args[2]).expect("create report"));
 
     let mut clusters: BTreeMap<u16, Cluster> = BTreeMap::new();
     // 词根家族：token -> (覆盖数, 样例 [(instancetype, name)])
@@ -200,10 +240,7 @@ fn main() {
             }
 
             // 关注子类型的完整样品 dump（每簇 2 个）
-            if matches!(it, 0xE000 | 0xC600 | 0x8B7E | 0xC400 | 0x2043)
-                && c.dumped < 2
-                && named
-            {
+            if matches!(it, 0xE000 | 0xC600 | 0x8B7E | 0xC400 | 0x2043) && c.dumped < 2 && named {
                 c.dumped += 1;
                 let _ = writeln!(
                     out,
@@ -221,12 +258,19 @@ fn main() {
                     let summary = match &p.kind {
                         Kind::Scalar(val) => value_summary(val),
                         Kind::Array(vals) => {
-                            let head: Vec<String> = vals.iter().take(4).map(value_summary).collect();
+                            let head: Vec<String> =
+                                vals.iter().take(4).map(value_summary).collect();
                             format!("array[{}] {}", vals.len(), head.join("; "))
                         }
                         Kind::Empty => "empty".into(),
                     };
-                    let _ = writeln!(out, "    0x{:08X} {:<10} {}: {summary}", p.hash, p.prop_type.name(), pname);
+                    let _ = writeln!(
+                        out,
+                        "    0x{:08X} {:<10} {}: {summary}",
+                        p.hash,
+                        p.prop_type.name(),
+                        pname
+                    );
                 }
             }
         }
@@ -234,10 +278,27 @@ fn main() {
 
     // ------------------------------------------------ A. 分布总表
     let _ = writeln!(out, "\n\n########## A. InstanceType 分布总表 ##########");
-    let _ = writeln!(out, "{:<8} {:<12} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7}  {}",
-        "IType", "label", "count", "named%", "grpH", "mdl", "raster", "prop", "text", "xform", "top keys");
+    let _ = writeln!(
+        out,
+        "{:<8} {:<12} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7}  {}",
+        "IType",
+        "label",
+        "count",
+        "named%",
+        "grpH",
+        "mdl",
+        "raster",
+        "prop",
+        "text",
+        "xform",
+        "top keys"
+    );
     for (it, c) in &clusters {
-        let named_pct = if c.count > 0 { c.named * 100 / c.count } else { 0 };
+        let named_pct = if c.count > 0 {
+            c.named * 100 / c.count
+        } else {
+            0
+        };
         let mut top: Vec<_> = c.key_cov.iter().collect();
         top.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
         let top_keys: Vec<String> = top
@@ -245,11 +306,20 @@ fn main() {
             .take(3)
             .map(|(h, n)| format!("{h:08X}({n})"))
             .collect();
-        let _ = writeln!(out,
+        let _ = writeln!(
+            out,
             "0x{it:04X}   {:<12} {:>7} {:>6}% {:>7} {:>7} {:>7} {:>7} {:>7} {:>7}  {}",
-            subtype_label(*it), c.count, named_pct, c.groups.len(),
-            c.ref_model, c.ref_raster, c.ref_property, c.has_text, c.has_transform,
-            top_keys.join(" "));
+            subtype_label(*it),
+            c.count,
+            named_pct,
+            c.groups.len(),
+            c.ref_model,
+            c.ref_raster,
+            c.ref_property,
+            c.has_text,
+            c.has_transform,
+            top_keys.join(" ")
+        );
     }
 
     // ------------------------------------------------ B. 非 Unit 子类型结构特征
@@ -258,11 +328,19 @@ fn main() {
         if *it == 0xC000 || c.count == 0 {
             continue;
         }
-        let _ = writeln!(out,
+        let _ = writeln!(
+            out,
             "\n=== 0x{it:04X} {} — {} 个（命名率 {:.0}%，parse_fail {}，组高 16 位变体 {} 种）",
-            subtype_label(*it), c.count,
-            if c.count > 0 { c.named * 100 / c.count } else { 0 },
-            c.parse_fail, c.groups.len());
+            subtype_label(*it),
+            c.count,
+            if c.count > 0 {
+                c.named * 100 / c.count
+            } else {
+                0
+            },
+            c.parse_fail,
+            c.groups.len()
+        );
         let _ = writeln!(out, "  名称样例:");
         for (inst, name) in c.names.iter().take(14) {
             let _ = writeln!(out, "    0x{inst:08X}  {name}");
@@ -274,28 +352,45 @@ fn main() {
             let cov = (**n) as f64 / c.count as f64 * 100.0;
             let (tn, _) = c.key_type.get(h).cloned().unwrap_or(("?".into(), 0));
             let sample = c.key_sample.get(h).cloned().unwrap_or_default();
-            let sample = if sample.len() > 60 { sample[..60].to_string() } else { sample };
-            let _ = writeln!(out,
+            let sample = if sample.len() > 60 {
+                sample[..60].to_string()
+            } else {
+                sample
+            };
+            let _ = writeln!(
+                out,
                 "    0x{h:08X} {:<9} {:>5.1}%  {:<28} {}",
-                tn, cov, registry.property_name(**h), sample);
+                tn,
+                cov,
+                registry.property_name(**h),
+                sample
+            );
         }
     }
 
     // ------------------------------------------------ C. 名称词根家族
-    let _ = writeln!(out, "\n########## C. 名称词根家族（非全部 property，含 Unit 命名） ##########");
+    let _ = writeln!(
+        out,
+        "\n########## C. 名称词根家族（非全部 property，含 Unit 命名） ##########"
+    );
     let mut fams: Vec<_> = token_families.iter().collect();
-    fams.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+    fams.sort_by(|a, b| b.1.0.cmp(&a.1.0));
     for (tok, (n, samples)) in fams {
         let n = *n;
-        let by_type: BTreeMap<u16, usize> = samples.iter().fold(BTreeMap::new(), |mut m, (it, _)| {
-            *m.entry(*it).or_default() += 1;
-            m
-        });
+        let by_type: BTreeMap<u16, usize> =
+            samples.iter().fold(BTreeMap::new(), |mut m, (it, _)| {
+                *m.entry(*it).or_default() += 1;
+                m
+            });
         let types: Vec<String> = by_type
             .iter()
             .map(|(it, _)| format!("0x{it:04X}({})", subtype_label(*it)))
             .collect();
-        let _ = writeln!(out, "\n  *\"{tok}\"* — {n} 处命名命中，样例子类型: {}", types.join(", "));
+        let _ = writeln!(
+            out,
+            "\n  *\"{tok}\"* — {n} 处命名命中，样例子类型: {}",
+            types.join(", ")
+        );
         for (it, name) in samples.iter().take(8) {
             let _ = writeln!(out, "      [0x{it:04X}] {name}");
         }

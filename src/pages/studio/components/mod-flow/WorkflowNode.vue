@@ -73,16 +73,16 @@ function setDirty(value: boolean) {
       v-if="!source && kind !== 'building-asset'"
       type="target"
       :position="Position.Left"
-      :style="{ top: '55px' }"
+      :style="{ top: '53px' }"
     /><Handle
       v-if="!output"
       type="source"
       :position="Position.Right"
-      :style="{ top: '55px' }"
+      :style="{ top: '53px' }"
     />
     <div v-if="kind === 'building-asset'" class="asset-ports">
       <div v-for="(slot, index) in BUILDING_SLOTS" :key="slot.id" class="asset-port">
-        <Handle :id="slot.id" type="target" :position="Position.Left" :style="{ top: `${94 + index * 28}px` }" />
+        <Handle :id="slot.id" type="target" :position="Position.Left" :style="{ top: `${90 + index * 28}px` }" />
         {{ slot.id }} · {{ slot.label }}
       </div>
     </div>
@@ -108,23 +108,24 @@ function setDirty(value: boolean) {
   </article>
 </template>
 <style scoped>
+/* Blender node-editor look: fixed gray-black palette, independent of the
+   app theme. Shared tokens live in styles/flow-presentation.css. */
 .asset-ports { padding: 6px 16px; font-size: 12px; }
 .asset-port { height: 28px; display: flex; align-items: center; }
 .workflow-node {
-  --node-accent: var(--primary);
   width: 340px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--surface-elevated);
-  color: var(--foreground);
-  box-shadow: 0 4px 14px #0002;
+  border: 1px solid var(--flow-border, #141414);
+  border-radius: 8px;
+  background: var(--flow-node, #282828);
+  color: var(--flow-text, #e6e6e6);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.workflow-node.invalid {
+  border-color: #8a6a2a;
 }
 .workflow-node.asset-node { width: 460px; }
 .workflow-node.map-node {
   width: 420px;
-}
-.workflow-node.output {
-  --node-accent: var(--success, #42a58a);
 }
 .node-heading {
   height: 36px;
@@ -132,9 +133,22 @@ function setDirty(value: boolean) {
   align-items: center;
   gap: 8px;
   padding: 0 12px 0 6px;
-  background: color-mix(in srgb, var(--node-accent) 10%, var(--surface-hover));
-  border-radius: 9px 9px 0 0;
+  background: var(--flow-head-process, #2e6b2e);
+  border-radius: 7px 7px 0 0;
+  color: #f2f2f2;
   cursor: grab;
+}
+.workflow-node.source .node-heading {
+  background: var(--flow-head-input, #6e4a2b);
+}
+.workflow-node.asset-node .node-heading {
+  background: var(--flow-head-group, #7a5a33);
+}
+.workflow-node.map-node .node-heading {
+  background: var(--flow-head-lot, #3d5a6b);
+}
+.workflow-node.output .node-heading {
+  background: var(--flow-head-output, #7f3030);
 }
 .node-heading h3 {
   font-size: 13px;
@@ -151,11 +165,11 @@ function setDirty(value: boolean) {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: var(--muted-foreground);
+  color: rgba(255, 255, 255, 0.65);
   cursor: pointer;
 }
 .collapse:hover {
-  background: var(--surface-hover);
+  background: rgba(255, 255, 255, 0.14);
 }
 .node-ports {
   display: flex;
@@ -163,7 +177,7 @@ function setDirty(value: boolean) {
   height: 34px;
   padding: 0 14px;
   font-size: 11px;
-  color: var(--muted-foreground);
+  color: var(--flow-text-dim, #9b9b9b);
 }
 .output-label {
   margin-left: auto;
@@ -172,24 +186,18 @@ function setDirty(value: boolean) {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--success, #42a58a);
+  background: #58a05e;
 }
 .invalid .status-dot,
 .status-dot.dirty {
-  background: var(--warning, #d6a451);
-}
-.workflow-node :deep(.vue-flow__handle) {
-  height: 10px;
-  width: 10px;
-  background: var(--node-accent);
-  border: 2px solid var(--surface-elevated);
+  background: #d9a53d;
 }
 .complex-tool {
   padding: 0 12px 12px;
 }
 .complex-tool p {
   font-size: 11px;
-  color: var(--muted-foreground);
+  color: var(--flow-text-dim, #9b9b9b);
   line-height: 1.5;
 }
 .complex-tool button {
@@ -198,11 +206,15 @@ function setDirty(value: boolean) {
   align-items: center;
   height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
   font-size: 11px;
-  background: var(--surface);
-  color: inherit;
+  background: var(--flow-field, #1a1a1a);
+  color: var(--flow-text, #e6e6e6);
   cursor: pointer;
+}
+.complex-tool button:hover:not(:disabled) {
+  background: #333333;
+  border-color: #6a6a6a;
 }
 </style>

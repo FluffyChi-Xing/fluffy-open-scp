@@ -18,7 +18,9 @@ fn is_ident(s: &str) -> bool {
         Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
         _ => return false,
     }
-    let len = 1 + chars.filter(|c| c.is_ascii_alphanumeric() || *c == '_').count();
+    let len = 1 + chars
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .count();
     (2..=61).contains(&len) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
@@ -45,7 +47,9 @@ fn tokens(data: &[u8]) -> Vec<&str> {
         let l = data[i] as usize;
         if (4..=250).contains(&l) && i + 1 + l <= data.len() {
             let s = &data[i + 1..i + 1 + l];
-            if s.iter().all(|&c| (0x20..0x7f).contains(&c) || c == b'\t' || c == b'\n' || c == b'\r') {
+            if s.iter()
+                .all(|&c| (0x20..0x7f).contains(&c) || c == b'\t' || c == b'\n' || c == b'\r')
+            {
                 out.push(std::str::from_utf8(s).unwrap());
                 i += 1 + l;
                 continue;
@@ -83,7 +87,10 @@ pub fn parse(data: &[u8]) -> Vec<Fragment> {
     if let (Some(name), false) = (&pending_name, pending_body.is_empty()) {
         upsert(&mut blocks, name.clone(), pending_body);
     }
-    blocks.into_iter().map(|(name, body)| Fragment { name, body }).collect()
+    blocks
+        .into_iter()
+        .map(|(name, body)| Fragment { name, body })
+        .collect()
 }
 
 fn upsert(blocks: &mut Vec<(String, String)>, name: String, body: String) {

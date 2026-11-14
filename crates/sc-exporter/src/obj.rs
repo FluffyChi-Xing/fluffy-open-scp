@@ -15,10 +15,7 @@ pub fn export_obj(mesh: &DecodedMesh) -> String {
 
     for v in &mesh.vertices {
         let p = v.position().unwrap_or([0.0; 3]);
-        out.push_str(&format!(
-            "v  {:.12} {:.12} {:.12}\r\n",
-            p[0], p[1], p[2]
-        ));
+        out.push_str(&format!("v  {:.12} {:.12} {:.12}\r\n", p[0], p[1], p[2]));
     }
     out.push_str(&format!("# {} vertices\r\n\n", mesh.vertices.len()));
 

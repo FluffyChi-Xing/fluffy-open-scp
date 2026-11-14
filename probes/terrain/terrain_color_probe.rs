@@ -22,20 +22,41 @@ fn main() {
     let mut grass_sum = 0.0;
     for y in 0..2048 {
         for x in 0..2048 {
-            if h[y * 2 * 4096 + x * 2] <= 5028 { continue; }
+            if h[y * 2 * 4096 + x * 2] <= 5028 {
+                continue;
+            }
             let k = y * 2048 + x;
-            for (sum, v) in sums.iter_mut().zip([b0[k], b1[k], b2[k]]) { *sum += f64::from(v); }
+            for (sum, v) in sums.iter_mut().zip([b0[k], b1[k], b2[k]]) {
+                *sum += f64::from(v);
+            }
             grass_sum += (f64::from(b0[k]) * f64::from(b2[k])).sqrt() / 255.0;
             land += 1;
         }
     }
-    println!("{group:08X} land={land}, mean B/G/R={:?}, sqrt(soil*water)={:.3}",
-        sums.map(|v| v / land as f64), grass_sum / land as f64);
-    let mut region = sc_properties::region_3d::region_3d(&terrain, group, ep1.as_ref(), game.as_ref(), locale.as_ref()).unwrap();
-    println!("{:?} / {:?}, desert={}", region.display_name, region.display_name_en, region.desert);
+    println!(
+        "{group:08X} land={land}, mean B/G/R={:?}, sqrt(soil*water)={:.3}",
+        sums.map(|v| v / land as f64),
+        grass_sum / land as f64
+    );
+    let mut region = sc_properties::region_3d::region_3d(
+        &terrain,
+        group,
+        ep1.as_ref(),
+        game.as_ref(),
+        locale.as_ref(),
+    )
+    .unwrap();
+    println!(
+        "{:?} / {:?}, desert={}",
+        region.display_name, region.display_name_en, region.desert
+    );
     std::fs::write(out.join("height.png"), &region.height_png).unwrap();
     std::fs::write(out.join("ground.png"), &region.ground_png).unwrap();
     region.height_png.clear();
     region.ground_png.clear();
-    std::fs::write(out.join("region.json"), serde_json::to_vec_pretty(&region).unwrap()).unwrap();
+    std::fs::write(
+        out.join("region.json"),
+        serde_json::to_vec_pretty(&region).unwrap(),
+    )
+    .unwrap();
 }

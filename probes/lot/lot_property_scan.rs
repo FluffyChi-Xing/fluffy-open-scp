@@ -66,7 +66,9 @@ fn main() {
     }
 
     let Some(instance) = flag("instance") else {
-        eprintln!("usage: lot_property_scan <package> --instance=<hex> [--model=<hex>] [--find=<hex>] [extra...]");
+        eprintln!(
+            "usage: lot_property_scan <package> --instance=<hex> [--model=<hex>] [--find=<hex>] [extra...]"
+        );
         std::process::exit(2);
     };
     let model = flag("model");
@@ -223,7 +225,9 @@ fn survey(paths: &[String]) {
         .collect();
     let mut seen_keys = [0usize; 6];
     for path in paths {
-        let Ok(package) = Package::open(path) else { continue };
+        let Ok(package) = Package::open(path) else {
+            continue;
+        };
         for entry in package.entries() {
             if entry.id.type_id != PROPERTY_TYPE {
                 continue;
@@ -236,9 +240,9 @@ fn survey(paths: &[String]) {
                     seen_keys[slot] += 1;
                     *hist[slot]
                         .1
-                        .entry(first_value(property).map_or("<empty>".to_owned(), |v| {
-                            format!("{v}")
-                        }))
+                        .entry(
+                            first_value(property).map_or("<empty>".to_owned(), |v| format!("{v}")),
+                        )
                         .or_default() += 1;
                 }
             }
@@ -325,7 +329,11 @@ fn walk_chain(packages: &[Package], start: IndexEntry) {
     println!("  合并后LotMask      = {}", fmt_key(doc.lot_mask));
     println!("  合并后Lot Textures = {}", fmt_key(doc.lot_textures));
     for (index, hash) in H_LOT_COLORS.iter().enumerate() {
-        println!("  合并后LotColor{}    = {}", index + 1, fmt_color(color_at(&doc.properties, *hash)));
+        println!(
+            "  合并后LotColor{}    = {}",
+            index + 1,
+            fmt_color(color_at(&doc.properties, *hash))
+        );
     }
 }
 

@@ -42,10 +42,7 @@ fn main() -> dbpf::Result<()> {
     let out_dir = PathBuf::from(args.remove(0));
     std::fs::create_dir_all(&out_dir).expect("create out dir");
 
-    let want: BTreeMap<u32, &str> = NAMES
-        .iter()
-        .map(|name| (fnv1_lower(name), *name))
-        .collect();
+    let want: BTreeMap<u32, &str> = NAMES.iter().map(|name| (fnv1_lower(name), *name)).collect();
 
     for path in &args {
         let package = match dbpf::Package::open(path) {

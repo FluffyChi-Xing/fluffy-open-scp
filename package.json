@@ -1,11 +1,11 @@
 {
   "name": "fluffy-open-scp",
   "private": true,
-  "version": "0.10.2",
+  "version": "0.12.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node -e \"require('fs').rmSync('node_modules/.tmp',{recursive:true,force:true})\" && vue-tsc -b && vite build",
+    "build": "node scripts/build.mjs",
     "check": "vue-tsc -b --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
@@ -30,6 +30,7 @@
     "lucide-vue-next": "^0.468.0",
     "markdown-it": "^15.0.0",
     "monaco-editor": "^0.57.0",
+    "motion-v": "^2.11.0",
     "pinia": "^2.3.1",
     "reka-ui": "^2.10.3",
     "shiki": "^4.4.2",

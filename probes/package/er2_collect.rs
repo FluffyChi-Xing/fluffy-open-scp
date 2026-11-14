@@ -18,21 +18,41 @@ fn main() -> dbpf::Result<()> {
                 let data = package.read(e)?;
                 let name = format!(
                     "{}_{}_{}_{}_{:08X}.{}",
-                    p.file_name().unwrap().to_string_lossy().split('-').next().unwrap(),
-                    if e.id.type_id == 0x08068AEB { "AEB" } else { "AEC" },
+                    p.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .split('-')
+                        .next()
+                        .unwrap(),
+                    if e.id.type_id == 0x08068AEB {
+                        "AEB"
+                    } else {
+                        "AEC"
+                    },
                     e.id.group,
                     e.id.instance,
                     e.decompressed_size,
-                    if e.id.type_id == 0x08068AEB { "bin" } else { "txt" },
+                    if e.id.type_id == 0x08068AEB {
+                        "bin"
+                    } else {
+                        "txt"
+                    },
                 );
                 std::fs::write(Path::new(&outdir).join(&name), &data).unwrap();
-                index.entry((e.id.type_id, e.id.group)).or_insert(Vec::new()).push(name);
+                index
+                    .entry((e.id.type_id, e.id.group))
+                    .or_insert(Vec::new())
+                    .push(name);
             }
         }
     }
     for ((t, g), mut names) in index {
         names.sort();
-        println!("{t:08X}:{g:08X} count={} ex={:?}", names.len(), names.first());
+        println!(
+            "{t:08X}:{g:08X} count={} ex={:?}",
+            names.len(),
+            names.first()
+        );
     }
     Ok(())
 }

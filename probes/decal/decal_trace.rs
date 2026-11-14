@@ -7,7 +7,10 @@ use sc_properties::{DecalDictionary, PROPERTY_RESOURCE_TYPE, is_decal_dictionary
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let Some(id) = args.first().map(|s| u32::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex")) else {
+    let Some(id) = args
+        .first()
+        .map(|s| u32::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex"))
+    else {
         panic!("用法: decal_trace <id_instance_hex> <pkg> [pkg...]");
     };
     let packages: Vec<(String, Package)> = args
@@ -30,8 +33,14 @@ fn main() {
                 continue;
             }
             let Ok(data) = pkg.read(e) else { continue };
-            let Ok(dict) = DecalDictionary::parse(&data) else { continue };
-            let Some(pos) = dict.entries.iter().position(|en| en.id.map(|k| k.instance) == Some(id)) else {
+            let Ok(dict) = DecalDictionary::parse(&data) else {
+                continue;
+            };
+            let Some(pos) = dict
+                .entries
+                .iter()
+                .position(|en| en.id.map(|k| k.instance) == Some(id))
+            else {
                 continue;
             };
             let entry = &dict.entries[pos];
@@ -53,7 +62,7 @@ fn main() {
             }
             // raster
             let Some(raster_key) = entry.raster.clone() else {
-                println!("  无 raster"); 
+                println!("  无 raster");
                 continue;
             };
             let mut found = None;
@@ -61,7 +70,9 @@ fn main() {
                 if let Some(e2) = p2
                     .entries()
                     .iter()
-                    .find(|e2| e2.id.type_id == 0x2F4E_681C && e2.id.instance == raster_key.instance)
+                    .find(|e2| {
+                        e2.id.type_id == 0x2F4E_681C && e2.id.instance == raster_key.instance
+                    })
                     .cloned()
                 {
                     found = Some((n2.clone(), p2.clone(), e2));
@@ -69,7 +80,10 @@ fn main() {
                 }
             }
             let Some((pname, rpkg, re)) = found else {
-                println!("  raster {:08x} 未找到（可能在基础包）", raster_key.instance);
+                println!(
+                    "  raster {:08x} 未找到（可能在基础包）",
+                    raster_key.instance
+                );
                 continue;
             };
             let rdata = rpkg.read(&re).expect("read raster");
@@ -86,7 +100,9 @@ fn main() {
                     let v = raw[(y * w + x) as usize * 4 + ci];
                     *p = image::Rgba([255 - v, 255 - v, 255 - v, 255]);
                 }
-                let f = out.join("channels").join(format!("trace_{id:08x}_{cname}.png"));
+                let f = out
+                    .join("channels")
+                    .join(format!("trace_{id:08x}_{cname}.png"));
                 image::imageops::flip_vertical(&img).save(&f).unwrap();
                 println!("  通道 {cname} -> {}", f.display());
             }

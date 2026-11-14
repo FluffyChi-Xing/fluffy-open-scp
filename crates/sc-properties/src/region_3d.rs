@@ -26,8 +26,9 @@ pub struct RegionWaterParams {
 }
 
 pub fn region_water_params(package: &dbpf::Package, group: u32) -> Option<RegionWaterParams> {
-    let entry = package.entries().iter().find(|e|
-        e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x2FFD_7EED)?;
+    let entry = package.entries().iter().find(|e| {
+        e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x2FFD_7EED
+    })?;
     let bytes = package.read(entry).ok()?;
     let props = crate::PropertyFile::parse(&bytes).ok()?;
     Some(water_params_from_props(&props))
@@ -35,7 +36,9 @@ pub fn region_water_params(package: &dbpf::Package, group: u32) -> Option<Region
 
 fn water_params_from_props(props: &crate::PropertyFile) -> RegionWaterParams {
     let number = |hash| match &props.get(hash)?.kind {
-        crate::Kind::Scalar(crate::Value::Float(value)) if value.is_finite() && *value >= 0.0 => Some(*value),
+        crate::Kind::Scalar(crate::Value::Float(value)) if value.is_finite() && *value >= 0.0 => {
+            Some(*value)
+        }
         _ => None,
     };
     RegionWaterParams {
@@ -51,7 +54,11 @@ mod water_tests {
 
     #[test]
     fn water_parameters_preserve_zero_and_reject_invalid_values() {
-        let values = [(0x5EF6_BAD4u32, 0.0f32), (0x377C_2266, f32::NAN), (0x72BF_2867, -1.0)];
+        let values = [
+            (0x5EF6_BAD4u32, 0.0f32),
+            (0x377C_2266, f32::NAN),
+            (0x72BF_2867, -1.0),
+        ];
         let mut bytes = 3u32.to_be_bytes().to_vec();
         for (hash, value) in values {
             bytes.extend(hash.to_be_bytes());
@@ -64,7 +71,10 @@ mod water_tests {
         assert_eq!(params.time_step_factor, Some(0.0));
         assert_eq!(params.specular_power, None);
         assert_eq!(params.specular_scale, None);
-        assert_eq!(water_params_from_props(&crate::PropertyFile::default()).time_step_factor, None);
+        assert_eq!(
+            water_params_from_props(&crate::PropertyFile::default()).time_step_factor,
+            None
+        );
     }
 }
 
@@ -81,21 +91,34 @@ pub fn fnv1_lower(s: &str) -> u32 {
 /// Default cMaterialGroundType color faces. Assets stay in the user's App package.
 /// ED has a 20-byte header and little-endian A8R8G8B8 pixels (BGRA bytes).
 pub fn terrain_detail_pngs(package: &dbpf::Package) -> HashMap<String, Vec<u8>> {
-    ["dirt", "grass", "cliff", "sand"].into_iter().zip([
-        "terrain_dirtdetail", "terrain_grassdetail", "terrain_cliffx", "terrain_beach",
-    ]).filter_map(|(slot, name)| {
-        let entry = package.entries().iter().find(|e|
-            e.id.type_id == 0x03E4_21ED && e.id.group == 0 && e.id.instance == fnv1_lower(name))?;
-        let bytes = package.read(entry).ok()?;
-        if bytes.len() != 20 + 256 * 256 * 4 { return None; }
-        let pixels: Vec<u8> = bytes[20..].chunks_exact(4)
-            .flat_map(|p| [p[2], p[1], p[0], 255]).collect();
-        let image = RgbaImage::from_raw(256, 256, pixels)?;
-        let mut png = Vec::new();
-        image::DynamicImage::ImageRgba8(image).write_to(
-            &mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).ok()?;
-        Some((slot.to_string(), png))
-    }).collect()
+    ["dirt", "grass", "cliff", "sand"]
+        .into_iter()
+        .zip([
+            "terrain_dirtdetail",
+            "terrain_grassdetail",
+            "terrain_cliffx",
+            "terrain_beach",
+        ])
+        .filter_map(|(slot, name)| {
+            let entry = package.entries().iter().find(|e| {
+                e.id.type_id == 0x03E4_21ED && e.id.group == 0 && e.id.instance == fnv1_lower(name)
+            })?;
+            let bytes = package.read(entry).ok()?;
+            if bytes.len() != 20 + 256 * 256 * 4 {
+                return None;
+            }
+            let pixels: Vec<u8> = bytes[20..]
+                .chunks_exact(4)
+                .flat_map(|p| [p[2], p[1], p[0], 255])
+                .collect();
+            let image = RgbaImage::from_raw(256, 256, pixels)?;
+            let mut png = Vec::new();
+            image::DynamicImage::ImageRgba8(image)
+                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .ok()?;
+            Some((slot.to_string(), png))
+        })
+        .collect()
 }
 
 /// 4096² u16 高度场拼合（tile 头 20 B 跳过）。
@@ -135,10 +158,9 @@ pub fn assembled_ed(package: &dbpf::Package, group: u32) -> Option<(Vec<u8>, Vec
     let mut b2 = vec![0u8; 2048 * 2048];
     for (ty, row) in SHARED_ED_GRID.iter().enumerate() {
         for (tx, inst) in row.iter().enumerate() {
-            let e = package
-                .entries()
-                .iter()
-                .find(|e| e.id.type_id == 0x03E4_21ED && e.id.group == group && e.id.instance == *inst)?;
+            let e = package.entries().iter().find(|e| {
+                e.id.type_id == 0x03E4_21ED && e.id.group == group && e.id.instance == *inst
+            })?;
             let d = package.read(e).ok()?;
             if d.len() != 65556 {
                 return None;
@@ -272,9 +294,13 @@ pub fn plot_table(
         if e.id.type_id != 0x00B1_B104 || e.compressed_size > 60 {
             continue;
         }
-        let Ok(pf) = crate::PropertyFile::parse(&package.read(e).ok()?) else { continue };
-        if let Some(crate::Property { kind: crate::Kind::Scalar(crate::Value::Key(k)), .. }) =
-            pf.get(0xC194_9C4D)
+        let Ok(pf) = crate::PropertyFile::parse(&package.read(e).ok()?) else {
+            continue;
+        };
+        if let Some(crate::Property {
+            kind: crate::Kind::Scalar(crate::Value::Key(k)),
+            ..
+        }) = pf.get(0xC194_9C4D)
         {
             if k.instance == 0x51E7_A18D && k.group == group {
                 city_ids.push(e.id.group);
@@ -287,9 +313,14 @@ pub fn plot_table(
         if e.id.type_id != 0x00B1_B104 || e.id.instance != 0x2B9C_480C {
             continue;
         }
-        let Ok(pt) = crate::PropertyFile::parse(&package.read(e).ok()?) else { continue };
+        let Ok(pt) = crate::PropertyFile::parse(&package.read(e).ok()?) else {
+            continue;
+        };
         let ids: Vec<u32> = match pt.get(0x16B7_B1EF) {
-            Some(crate::Property { kind: crate::Kind::Array(vs), .. }) => vs
+            Some(crate::Property {
+                kind: crate::Kind::Array(vs),
+                ..
+            }) => vs
                 .iter()
                 .filter_map(|v| match v {
                     crate::Value::UInt32(x) => Some(*x),
@@ -301,7 +332,10 @@ pub fn plot_table(
         let ov = ids.iter().filter(|i| set.contains(i)).count();
         if best.as_ref().map(|(b, _, _, _)| ov > *b).unwrap_or(true) {
             let uids: Vec<String> = match pt.get(0x0543_BC96) {
-                Some(crate::Property { kind: crate::Kind::Array(vs), .. }) => vs
+                Some(crate::Property {
+                    kind: crate::Kind::Array(vs),
+                    ..
+                }) => vs
                     .iter()
                     .filter_map(|v| match v {
                         crate::Value::String8(s) => Some(s.clone()),
@@ -311,7 +345,10 @@ pub fn plot_table(
                 _ => vec![],
             };
             let pos: Vec<(f32, f32)> = match pt.get(0xF01D_E4B1) {
-                Some(crate::Property { kind: crate::Kind::Array(vs), .. }) => vs
+                Some(crate::Property {
+                    kind: crate::Kind::Array(vs),
+                    ..
+                }) => vs
                     .iter()
                     .filter_map(|v| match v {
                         crate::Value::Vector2(v) => Some((v[0], v[1])),
@@ -369,9 +406,13 @@ pub fn parse_region_templates(ep1: &dbpf::Package) -> Vec<RegionTemplate> {
             continue;
         }
         let Ok(d) = ep1.read(e) else { continue };
-        let Ok(txt) = std::str::from_utf8(&d) else { continue };
+        let Ok(txt) = std::str::from_utf8(&d) else {
+            continue;
+        };
         let txt = txt.trim_start_matches(|c: char| c != '{');
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(txt) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(txt) else {
+            continue;
+        };
         let name = v
             .get("name")
             .and_then(|x| x.as_str())
@@ -382,7 +423,11 @@ pub fn parse_region_templates(ep1: &dbpf::Package) -> Vec<RegionTemplate> {
         if let Some(map) = v.get("map") {
             if let Some(list) = map.get("cities").and_then(|c| c.as_array()) {
                 for c in list {
-                    let uid = c.get("uid").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let uid = c
+                        .get("uid")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let x = c.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0);
                     let y = c.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0);
                     let z = c.get("z").and_then(|x| x.as_f64());
@@ -391,7 +436,11 @@ pub fn parse_region_templates(ep1: &dbpf::Package) -> Vec<RegionTemplate> {
             }
             if let Some(list) = map.get("greatWorks").and_then(|c| c.as_array()) {
                 for g in list {
-                    let n = g.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let n = g
+                        .get("name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let x = g.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0);
                     let y = g.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0);
                     gws.push((n, x, y));
@@ -399,7 +448,17 @@ pub fn parse_region_templates(ep1: &dbpf::Package) -> Vec<RegionTemplate> {
             }
         }
         if !name.is_empty() {
-            out.push(RegionTemplate { region: bindings.iter().find(|b| b.metadata.group == e.id.group && b.metadata.instance == e.id.instance).map(|b| b.region), name, cities, great_works: gws });
+            out.push(RegionTemplate {
+                region: bindings
+                    .iter()
+                    .find(|b| {
+                        b.metadata.group == e.id.group && b.metadata.instance == e.id.instance
+                    })
+                    .map(|b| b.region),
+                name,
+                cities,
+                great_works: gws,
+            });
         }
     }
     out
@@ -409,27 +468,42 @@ pub fn parse_region_templates(ep1: &dbpf::Package) -> Vec<RegionTemplate> {
 /// 注册表为 Closure 编译 JS（非 JSON），按字面模式扫描：
 /// `Name:{Enabled:1,regionName:"AutomatedRegionTemplates.json!0x…"` 与
 /// `uid:{cityName:"…!0x…"`。
-pub fn parse_template_registry(game: &dbpf::Package) -> HashMap<String, (u32, HashMap<String, u32>)> {
+pub fn parse_template_registry(
+    game: &dbpf::Package,
+) -> HashMap<String, (u32, HashMap<String, u32>)> {
     let mut out = HashMap::new();
     for e in game.entries() {
         if e.id.type_id != 0x6777_1F5C {
             continue;
         }
         let Ok(d) = game.read(e) else { continue };
-        let Ok(js) = std::str::from_utf8(&d) else { continue };
+        let Ok(js) = std::str::from_utf8(&d) else {
+            continue;
+        };
         let marker = "regionName:\"AutomatedRegionTemplates.json!0x";
         let mut entries: Vec<(usize, String, u32)> = Vec::new(); // (pos, 模板名, 区域名ID)
         let mut from = 0usize;
         while let Some(rel) = js[from..].find(marker) {
             let pos = from + rel;
             let hex = &js[pos + marker.len()..(pos + marker.len() + 8).min(js.len())];
-            if let Ok(id) = u32::from_str_radix(hex.trim_end_matches(|c: char| !c.is_ascii_hexdigit()), 16) {
+            if let Ok(id) =
+                u32::from_str_radix(hex.trim_end_matches(|c: char| !c.is_ascii_hexdigit()), 16)
+            {
                 // 回溯模板名：前一 entry 结束符 `},` 之后、`:{Enabled:1,` 之前
                 let head = &js[..pos];
                 let name_start = head.rfind("},").map(|i| i + 2).unwrap_or(0);
                 let seg = head[name_start..].trim_start_matches(['\n', '\r', ' ']);
                 if let Some(colon) = seg.find(":{Enabled:1,") {
-                    entries.push((pos, seg[..colon].trim().rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_').next().unwrap_or("").to_string(), id));
+                    entries.push((
+                        pos,
+                        seg[..colon]
+                            .trim()
+                            .rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                            .next()
+                            .unwrap_or("")
+                            .to_string(),
+                        id,
+                    ));
                 }
             }
             from = pos + marker.len();
@@ -447,7 +521,9 @@ pub fn parse_template_registry(game: &dbpf::Package) -> HashMap<String, (u32, Ha
             while let Some(rel) = seg[from..].find(cmarker) {
                 let p = from + rel;
                 let hex = &seg[p + cmarker.len()..(p + cmarker.len() + 8).min(seg.len())];
-                if let Ok(id) = u32::from_str_radix(hex.trim_end_matches(|c: char| !c.is_ascii_hexdigit()), 16) {
+                if let Ok(id) =
+                    u32::from_str_radix(hex.trim_end_matches(|c: char| !c.is_ascii_hexdigit()), 16)
+                {
                     // uid 形如 `,1026:{cityName`——向前取连续数字
                     let head = &seg[..p];
                     let mut uid = String::new();
@@ -481,9 +557,13 @@ pub fn parse_locale_names(locale_pkg: &dbpf::Package) -> HashMap<u32, String> {
             continue;
         }
         let Ok(d) = locale_pkg.read(e) else { continue };
-        let Ok(txt) = std::str::from_utf8(&d) else { continue };
+        let Ok(txt) = std::str::from_utf8(&d) else {
+            continue;
+        };
         let txt = txt.trim_start_matches(|c: char| c != '{');
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(txt) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(txt) else {
+            continue;
+        };
         if let Some(obj) = v.as_object() {
             for (k, val) in obj {
                 let hex = k.trim_start_matches("0x");
@@ -502,8 +582,13 @@ pub fn parse_locale_names(locale_pkg: &dbpf::Package) -> HashMap<u32, String> {
 /// Kept as a small fallback for installations that ship only a Chinese locale.
 fn english_region_name(id: u32) -> Option<String> {
     static NAMES: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
-    NAMES.get_or_init(|| serde_json::from_str(include_str!("region_names_en.json"))
-        .expect("valid bundled English region names")).get(&format!("{id:08X}")).cloned()
+    NAMES
+        .get_or_init(|| {
+            serde_json::from_str(include_str!("region_names_en.json"))
+                .expect("valid bundled English region names")
+        })
+        .get(&format!("{id:08X}"))
+        .cloned()
 }
 
 /// 区域列表项（真名链解析后）。
@@ -537,13 +622,16 @@ pub fn region_list_named(
             let matched = templates.iter().find(|t| t.region == Some(r.group));
             let reg = matched.and_then(|t| registry_lookup(&registry, &t.name).cloned());
             let zh = if has_locale {
-                reg.as_ref().and_then(|(id, _)| locale_names.get(id).cloned())
+                reg.as_ref()
+                    .and_then(|(id, _)| locale_names.get(id).cloned())
             } else {
                 None
             };
-            let display_name =
-                zh.or_else(|| region_map::region_display_name(r.group, true).map(|s| s.to_string()));
-            let display_name_en = reg.as_ref().and_then(|(id, _)| english_region_name(*id))
+            let display_name = zh
+                .or_else(|| region_map::region_display_name(r.group, true).map(|s| s.to_string()));
+            let display_name_en = reg
+                .as_ref()
+                .and_then(|(id, _)| english_region_name(*id))
                 .or_else(|| matched.map(|t| t.name.clone()))
                 .or_else(|| region_map::region_display_name(r.group, false).map(|s| s.to_string()));
             RegionListItem {
@@ -560,8 +648,12 @@ pub fn region_list_named(
 /// Game visible-area property (cTerrainRegion::FillFromProps, 0x4261B0).
 /// Invalid/missing values fall back to the full source field, never plot extents.
 pub fn region_visible_size(package: &dbpf::Package, group: u32) -> f32 {
-    let value = package.entries().iter()
-        .find(|e| e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x51E7_A18D)
+    let value = package
+        .entries()
+        .iter()
+        .find(|e| {
+            e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x51E7_A18D
+        })
         .and_then(|e| package.read(e).ok())
         .and_then(|bytes| crate::PropertyFile::parse(&bytes).ok())
         .and_then(|pf| match pf.get(1581061855).map(|p| &p.kind) {
@@ -573,7 +665,9 @@ pub fn region_visible_size(package: &dbpf::Package, group: u32) -> f32 {
 
 fn validated_visible_size(value: Option<i32>) -> i32 {
     // Current mesh chunks are 2048m. Only accept supported aligned extents.
-    value.filter(|v| (2048..=32768).contains(v) && v % 4096 == 0).unwrap_or(32768)
+    value
+        .filter(|v| (2048..=32768).contains(v) && v % 4096 == 0)
+        .unwrap_or(32768)
 }
 
 #[cfg(test)]
@@ -582,14 +676,27 @@ mod visible_bounds_tests {
 
     #[test]
     fn english_names_resolve_registry_ids_and_serialize_for_viewer() {
-        assert_eq!(super::english_region_name(0x6779B9D2).as_deref(), Some("Trinity Point"));
-        assert_eq!(super::english_region_name(0xFC0C91CF).as_deref(), Some("Clearwater"));
-        assert_eq!(super::english_region_name(0xCF049F2D).as_deref(), Some("Norwich Hills"));
+        assert_eq!(
+            super::english_region_name(0x6779B9D2).as_deref(),
+            Some("Trinity Point")
+        );
+        assert_eq!(
+            super::english_region_name(0xFC0C91CF).as_deref(),
+            Some("Clearwater")
+        );
+        assert_eq!(
+            super::english_region_name(0xCF049F2D).as_deref(),
+            Some("Norwich Hills")
+        );
         assert_eq!(super::english_region_name(0), None);
         let plot = super::Region3DPlot {
             info: None,
-            x: 0.0, y: 0.0, z: 0.0, uid: "1027".into(),
-            name: Some("清水".into()), name_en: super::english_region_name(0xFC0C91CF),
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            uid: "1027".into(),
+            name: Some("清水".into()),
+            name_en: super::english_region_name(0xFC0C91CF),
             kind: "city".into(),
         };
         let json = serde_json::to_value(plot).unwrap();
@@ -627,12 +734,10 @@ pub fn region_3d(
     game: Option<&dbpf::Package>,
     locale: Option<&dbpf::Package>,
 ) -> Result<Region3D, Box<dyn std::error::Error>> {
-    let hgt = assembled_height(package, group)
-        .ok_or("区域高度场拼合失败（F0 tile 不足 341）")?;
+    let hgt = assembled_height(package, group).ok_or("区域高度场拼合失败（F0 tile 不足 341）")?;
     let (b0, b1, b2) =
         assembled_ed(package, group).ok_or("区域 ED 场拼合失败（ED tile 不足 341）")?;
-    let sea = region_map::region_water_level(package, group)
-        .unwrap_or(region_map::WATER_LEVEL);
+    let sea = region_map::region_water_level(package, group).unwrap_or(region_map::WATER_LEVEL);
     let sea_z = sea as f32 / 32.0 - 1024.0;
 
     // 先取地块表 + 模板 join（伟工位），据包围盒裁剪装配窗口
@@ -680,7 +785,11 @@ pub fn region_3d(
         }
     }
     // Descriptive metadata only; the renderer evaluates each texel independently.
-    let desert = if land_n > 0.0 { land_grass / land_n < 20.0 / 255.0 } else { false };
+    let desert = if land_n > 0.0 {
+        land_grass / land_n < 20.0 / 255.0
+    } else {
+        false
+    };
     let mut height_png = Vec::new();
     image::DynamicImage::ImageRgba8(hp).write_to(
         &mut std::io::Cursor::new(&mut height_png),
@@ -715,12 +824,13 @@ pub fn region_3d(
     let locale_names = locale.map(parse_locale_names).unwrap_or_default();
     let reg = matched.and_then(|t| registry_lookup(&registry, &t.name).cloned());
 
-    let city_info = game.map(|g| crate::region_city::registry(g, locale, None)).unwrap_or_default();
+    let city_info = game
+        .map(|g| crate::region_city::registry(g, locale, None))
+        .unwrap_or_default();
     let mut plots = Vec::new();
     let gw_z = |x: f64, y: f64| sample_z(x, y);
     for (uid, (px, py)) in uids.iter().zip(pos.iter()) {
-        let tpl_city = matched
-            .and_then(|t| t.cities.iter().find(|(u, _, _, _)| u == uid));
+        let tpl_city = matched.and_then(|t| t.cities.iter().find(|(u, _, _, _)| u == uid));
         let z = tpl_city
             .and_then(|(_, _, _, z)| *z)
             .map(|z| z as f32)
@@ -731,13 +841,19 @@ pub fn region_3d(
             .and_then(|id| locale_names.get(id))
             .cloned();
         plots.push(Region3DPlot {
-            info: reg.as_ref().and_then(|(_, cities)| cities.get(uid)).and_then(|id|city_info.get(id)).cloned(),
+            info: reg
+                .as_ref()
+                .and_then(|(_, cities)| cities.get(uid))
+                .and_then(|id| city_info.get(id))
+                .cloned(),
             x: *px,
             y: *py,
             z,
             uid: uid.clone(),
             name,
-            name_en: reg.as_ref().and_then(|(_, cities)| cities.get(uid))
+            name_en: reg
+                .as_ref()
+                .and_then(|(_, cities)| cities.get(uid))
                 .and_then(|id| english_region_name(*id)),
             kind: "city".into(),
         });
@@ -750,7 +866,8 @@ pub fn region_3d(
                 y: *y as f32,
                 z: gw_z(*x, *y),
                 uid: format!("greatwork:{n}"),
-                name: region_map::region_display_name(group, true).map(|_| "伟大工程位".to_string()),
+                name: region_map::region_display_name(group, true)
+                    .map(|_| "伟大工程位".to_string()),
                 name_en: None, // Generic site label is translated by the viewer.
                 kind: "greatwork".into(),
             });

@@ -8,8 +8,8 @@
 //!     <dict_group_hex> <dict_instance_hex> <pkg> [max_entries] [raster_pkg...]
 
 use dbpf::Package;
-use sc_properties::decal::DecalDictionary;
 use sc_properties::PROPERTY_RESOURCE_TYPE;
+use sc_properties::decal::DecalDictionary;
 
 const RASTER_TYPE: u32 = 0x2F4E_681C;
 
@@ -57,28 +57,45 @@ fn main() {
         if done >= max {
             break;
         }
-        let Some(raster_key) = entry.raster.clone() else { continue };
+        let Some(raster_key) = entry.raster.clone() else {
+            continue;
+        };
         // 先试裸 raster（0x2F4E681C），失败再试 RW4 纹理（0x2F4E681B，破洞族）
-        let rgba_width_height: Option<(Vec<u8>, u32, u32, String)> = find_raster(&packages, raster_key.instance)
-            .and_then(|(bytes, _)| {
-                let raster = rw4::RasterImage::parse(&bytes).ok()?;
-                let rgba = raster.decode_top_mip_rgba().ok()?;
-                Some((rgba, raster.width, raster.height, format!("raw pixFmt{}", raster.pixel_format)))
-            })
-            .or_else(|| find_rw4_texture(&packages, raster_key.instance));
+        let rgba_width_height: Option<(Vec<u8>, u32, u32, String)> =
+            find_raster(&packages, raster_key.instance)
+                .and_then(|(bytes, _)| {
+                    let raster = rw4::RasterImage::parse(&bytes).ok()?;
+                    let rgba = raster.decode_top_mip_rgba().ok()?;
+                    Some((
+                        rgba,
+                        raster.width,
+                        raster.height,
+                        format!("raw pixFmt{}", raster.pixel_format),
+                    ))
+                })
+                .or_else(|| find_rw4_texture(&packages, raster_key.instance));
         let Some((rgba, w, h, source)) = rgba_width_height else {
-            eprintln!("条目[{}] raster {instance2:08x} 未找到", entry.index, instance2 = raster_key.instance);
+            eprintln!(
+                "条目[{}] raster {instance2:08x} 未找到",
+                entry.index,
+                instance2 = raster_key.instance
+            );
             continue;
         };
         let n = (w * h) as usize;
-        let id = entry.id.map(|k| format!("{:08x}", k.instance)).unwrap_or_else(|| "?".into());
-        println!(
-            "\n条目[{}] id={} {}x{} {}",
-            entry.index, id, w, h, source
-        );
+        let id = entry
+            .id
+            .map(|k| format!("{:08x}", k.instance))
+            .unwrap_or_else(|| "?".into());
+        println!("\n条目[{}] id={} {}x{} {}", entry.index, id, w, h, source);
         // 每通道 mean/σ/唯一值
         let mut mean = [0f64; 4];
-        let mut uniq = [std::collections::BTreeSet::new(), Default::default(), Default::default(), Default::default()];
+        let mut uniq = [
+            std::collections::BTreeSet::new(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        ];
         for px in rgba.chunks_exact(4) {
             for c in 0..4 {
                 mean[c] += px[c] as f64;
@@ -99,7 +116,9 @@ fn main() {
         for (c, name) in ["R", "G", "B", "A"].iter().enumerate() {
             println!(
                 "  {name}: mean={:.1} σ={:.1} 唯一值={}",
-                mean[c], std[c], uniq[c].len()
+                mean[c],
+                std[c],
+                uniq[c].len()
             );
         }
         // 两两相关（0 通道 R 与 3 通道 A 等）
@@ -112,13 +131,24 @@ fn main() {
         };
         println!(
             "  corr R-G={:.3} R-B={:.3} G-B={:.3} | R-A={:.3} G-A={:.3} B-A={:.3}",
-            corr(0, 1), corr(0, 2), corr(1, 2), corr(0, 3), corr(1, 3), corr(2, 3)
+            corr(0, 1),
+            corr(0, 2),
+            corr(1, 2),
+            corr(0, 3),
+            corr(1, 3),
+            corr(2, 3)
         );
         // 权重和分布（掩码形态判据：Σc∈[0,255] 窄带=层掩码/覆盖度）
         let mut sum_hist = [0usize; 5]; // 0-16,16-64,64-128,128-240,240+
         for px in rgba.chunks_exact(4) {
             let s = px[0] as u32 + px[1] as u32 + px[2] as u32 + px[3] as u32;
-            let bucket = match s { 0..=16 => 0, 17..=64 => 1, 65..=128 => 2, 129..=240 => 3, _ => 4 };
+            let bucket = match s {
+                0..=16 => 0,
+                17..=64 => 1,
+                65..=128 => 2,
+                129..=240 => 3,
+                _ => 4,
+            };
             sum_hist[bucket] += 1;
         }
         println!(
@@ -150,7 +180,10 @@ fn find_rw4_texture(packages: &[Package], instance: u32) -> Option<(Vec<u8>, u32
             }
             let bytes = pkg.read(e).ok()?;
             let file = rw4::Rw4File::parse(&bytes).ok()?;
-            let number = file.sections_of_type(rw4::SectionType::TEXTURE).next()?.number;
+            let number = file
+                .sections_of_type(rw4::SectionType::TEXTURE)
+                .next()?
+                .number;
             let texture = file.decode_texture(&bytes, number).ok()?;
             let kind = match texture.format() {
                 rw4::TextureFormat::Dxt1 => "DXT1",
@@ -159,7 +192,12 @@ fn find_rw4_texture(packages: &[Package], instance: u32) -> Option<(Vec<u8>, u32
                 rw4::TextureFormat::Unknown(_) => "unknown",
             };
             let rgba = texture.decode_top_mip_rgba().ok()?;
-            return Some((rgba, u32::from(texture.width), u32::from(texture.height), format!("rw4 {kind}")));
+            return Some((
+                rgba,
+                u32::from(texture.width),
+                u32::from(texture.height),
+                format!("rw4 {kind}"),
+            ));
         }
     }
     None

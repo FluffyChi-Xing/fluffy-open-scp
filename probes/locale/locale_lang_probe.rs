@@ -18,8 +18,14 @@ fn load(path: &str) -> Locale {
 
 fn main() {
     for (lang, path) in [
-        ("zh-tw", r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\Locale\zh-tw\Data.package"),
-        ("en-us", r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\Locale\en-us\Data.package"),
+        (
+            "zh-tw",
+            r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\Locale\zh-tw\Data.package",
+        ),
+        (
+            "en-us",
+            r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\Locale\en-us\Data.package",
+        ),
     ] {
         let locale = load(path);
         // 抽样：遍历菜单表前几条字符串
@@ -35,7 +41,10 @@ fn main() {
                 if let Ok(items) = sc_properties::locale::parse_locale_items(&data) {
                     for item in items.iter().filter(|i| i.id.is_some()).take(3) {
                         if shown < 3 {
-                            println!("   样例: {}", item.text.chars().take(40).collect::<String>());
+                            println!(
+                                "   样例: {}",
+                                item.text.chars().take(40).collect::<String>()
+                            );
                             shown += 1;
                         }
                     }

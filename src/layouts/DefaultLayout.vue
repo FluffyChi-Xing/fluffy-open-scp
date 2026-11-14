@@ -34,6 +34,8 @@ const mobileMediaQuery = window.matchMedia("(max-width: 720px)");
 const currentPage = computed(() =>
   t(String(route.meta.titleKey ?? "navigation.home")),
 );
+/** 沉浸式路由（meta.fullbleed）：内容区去内边距撑满视口，隐藏页脚。 */
+const isFullbleed = computed(() => route.meta.fullbleed === true);
 const sidebarClass = computed(() => ({
   sidebar: true,
   "sidebar-collapsed": app.isSidebarCollapsed,
@@ -201,7 +203,7 @@ watch(
       :aria-label="$t('shell.closeNavigation')"
       @click="closeMobileNavigation"
     />
-    <div class="shell-body">
+    <div class="shell-body" :class="{ 'shell-fullbleed': isFullbleed }">
       <aside
         v-if="app.showMenu"
         :class="sidebarClass"
@@ -234,7 +236,7 @@ watch(
             @close-all="closeAllTabs"
           />
         </div>
-        <div class="content-frame">
+        <div class="content-frame" :class="{ 'content-fullbleed': isFullbleed }">
           <RouterView v-slot="{ Component }">
             <Transition name="page" mode="out-in">
               <div
@@ -246,7 +248,7 @@ watch(
             </Transition>
           </RouterView>
         </div>
-        <footer class="footer">
+        <footer v-if="!isFullbleed" class="footer">
           <span>{{ appConfig.name }}</span
           ><span>{{ $t("shell.footerStatus") }}</span>
         </footer>
@@ -315,6 +317,27 @@ watch(
   max-width: 100%;
   padding: 36px clamp(20px, 4vw, 56px) 0;
   width: 100%;
+}
+/* 沉浸式路由：视口高度锁定在 shell-body，页内自管滚动（文档工作区等） */
+.shell-body.shell-fullbleed {
+  height: calc(100vh - 56px);
+  min-height: 0;
+}
+.no-navbar .shell-body.shell-fullbleed {
+  height: 100vh;
+}
+.content-frame.content-fullbleed {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+}
+.content-fullbleed .route-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 .footer {
   color: var(--subtle-foreground);

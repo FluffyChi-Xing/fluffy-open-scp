@@ -5,9 +5,7 @@
 //! [`sc_properties::debug_tools`]（enable_debug_tools 探针的产品化，P0-2）。
 use serde::Serialize;
 
-use sc_properties::debug_tools::{
-    self, DebugToolPatch, DEFAULT_CATEGORY, DEFAULT_UI_CATEGORY,
-};
+use sc_properties::debug_tools::{self, DEFAULT_CATEGORY, DEFAULT_UI_CATEGORY, DebugToolPatch};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

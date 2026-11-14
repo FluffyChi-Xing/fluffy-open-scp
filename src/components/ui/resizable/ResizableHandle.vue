@@ -4,9 +4,12 @@ import { SplitterResizeHandle } from "reka-ui";
 interface Props {
   orientation: "horizontal" | "vertical";
   label: string;
+  hitAreaMargins?: { coarse: number; fine: number };
 }
 
-defineProps<Props>();
+withDefaults(defineProps<Props>(), {
+  hitAreaMargins: () => ({ coarse: 12, fine: 8 }),
+});
 </script>
 
 <template>
@@ -14,7 +17,7 @@ defineProps<Props>();
     class="resizable-handle"
     :class="`is-${orientation}`"
     :aria-label="label"
-    :hit-area-margins="{ coarse: 12, fine: 8 }"
+    :hit-area-margins="hitAreaMargins"
   >
     <span aria-hidden="true" />
   </SplitterResizeHandle>

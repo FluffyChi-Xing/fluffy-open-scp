@@ -8,6 +8,7 @@ import {
   type RasterSchema,
 } from "@/lib/raster-editor/schema";
 import { encodeRgbaPng } from "@/lib/raster-editor/png";
+import { lotSizeForImage } from "@/lib/lot-ground/ground";
 
 export function downloadJson(value: unknown, name: string) {
   const url = URL.createObjectURL(
@@ -70,6 +71,8 @@ export async function saveRasterCopy(
   const s = parseRasterSchema(value);
   if (!s.image || s.profile === "slot0")
     throw new Error(t("rasterEditor.text037"));
+  if (s.decal.sign?.effect === "marquee")
+    throw new Error(t("rasterEditor.sign.animatedExport"));
   if (kind === "raster" && s.source?.tgi?.typeId === 0x2f4e681b)
     throw new Error(t("rasterEditor.rw4Export"));
   const { width, height, data: rgbaBase64 } = s.image;
@@ -113,7 +116,12 @@ export async function saveRasterCopy(
       ...common,
       rasterTgi: resource(0x2f4e681c),
       lotTgi: resource(0x00b1b104),
+      lotSize: lotSizeForImage(s.lot.size, s.image?.width ?? 0, s.image?.height ?? 0),
       colors: s.lot.colors,
+      baseTile: s.lot.baseTile,
+      borderColors: s.lot.borderColors,
+      borderPatternIndices: s.lot.borderPatternIndices,
+      borderWidths: s.lot.borderWidths,
     });
   } else if (kind === "decal") {
     await tauriApi.raster.registerDecalEntry({
@@ -167,7 +175,17 @@ export async function loadLotCopy(
     );
     if (!materialSession.lotColorsAuthored?.some(Boolean))
       throw new Error(t("rasterEditor.missingLotMaterial"));
-    const material = { colors: materialSession.lotColors };
+    const material = {
+      colors: materialSession.lotColors,
+      baseTile: materialSession.lotBaseTile,
+      tilePeriod: materialSession.lotTilePeriod ?? undefined,
+      size: materialSession.lotSize ?? undefined,
+      colorHeights: materialSession.lotColorHeights,
+      borderHeights: materialSession.lotBorderHeights,
+      borderColors: materialSession.lotBorderColors,
+      borderPatternIndices: materialSession.lotBorderPatternIndices,
+      borderWidths: materialSession.lotBorderWidths,
+    };
     return {
       image: {
         width: image.width,

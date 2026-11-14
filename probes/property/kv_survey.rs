@@ -61,7 +61,11 @@ fn dump(package_path: &str, instance: u32) {
     );
     let data = package.read(&entry).unwrap();
     let file = PropertyFile::parse(&data).expect("parse");
-    println!("entries = {} (claimed {})", file.values.len(), file.claimed_count);
+    println!(
+        "entries = {} (claimed {})",
+        file.values.len(),
+        file.claimed_count
+    );
     let mut keys_with_keys = 0usize;
     let mut key_values = 0usize;
     for property in &file.values {
@@ -80,10 +84,7 @@ fn dump(package_path: &str, instance: u32) {
                 }
             }
             Kind::Array(values) => {
-                let key_count = values
-                    .iter()
-                    .filter(|v| matches!(v, Value::Key(_)))
-                    .count();
+                let key_count = values.iter().filter(|v| matches!(v, Value::Key(_))).count();
                 key_values += key_count;
                 if key_count > 0 {
                     keys_with_keys += 1;
@@ -154,9 +155,7 @@ fn refs(package_path: &str, instance: u32, lookups: &[String]) {
                 }
             }
         }
-        println!(
-            "  T {type_id:08X} G {group:08X} I {instance:08X} ← keys {hashes:?} → {found}"
-        );
+        println!("  T {type_id:08X} G {group:08X} I {instance:08X} ← keys {hashes:?} → {found}");
     }
 }
 

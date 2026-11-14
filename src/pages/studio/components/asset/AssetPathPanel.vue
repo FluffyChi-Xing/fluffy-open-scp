@@ -1,19 +1,30 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSelect from "@/components/ui/FSelect.vue";
-import type { PathEntrySummary, PathPointUnit } from "@/api/tauri";
+import type { PathPointUnit } from "@/api/tauri";
 import {
   pathPointPositions,
   validateWorkbenchPath,
   type WorkbenchPath,
-} from "./pathPlanning";
+} from "./path-planning/pathModel";
+import {
+  DEFAULT_PATH_TYPE,
+  PATH_TYPES,
+  entryHexLabel,
+  pathSemantics,
+  pathTypeSpec,
+  type PathTypeId,
+} from "./path-planning/pathTypes";
 
 /**
- * 路径规划面板（2026-10-27）：路径列表 + entry 选择器 + 校验徽章。
- * 几何（点/切线）挂在 pathPoint 单元，这里编辑路径语义（entry/scope/
- * roadConnect）与聚焦；绘制动作由工作台壳的 Draw 模式承接。
+ * 路径规划面板（2026-11-07 类型化重设计）：作者只选"是什么路"
+ * （人行道/普通车辆/校车引道/自定义 entry），entry/scope/roadConnect 由
+ * 构建器的 path_catalog 处理器换算写列。不再要求选包/选 property。
+ *
+ * 纯函数边界：类型配方在 path-planning/pathTypes.ts，校验在 pathModel.ts，
+ * 本组件只做展示与事件转发。
  */
 defineOptions({ name: "AssetPathPanel" });
 const props = defineProps<{
@@ -24,12 +35,9 @@ const props = defineProps<{
   editEnabled: boolean;
   /** 视口当前展示的 pathPoint 单元（校验与点位计数用）。 */
   pathPoints: PathPointUnit[];
-  entries: PathEntrySummary[];
-  entriesLoading: boolean;
 }>();
 const emit = defineEmits<{
-  create: [];
-  "begin-draw": [];
+  "begin-draw": [type: PathTypeId];
   "finish-draw": [];
   "undo-point": [];
   focus: [id: string | null];
@@ -39,6 +47,22 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
+/** 绘制类型：开始绘制时随路径实体一起落库（引擎语义由类型决定）。 */
+const selectedType = ref<PathTypeId>(DEFAULT_PATH_TYPE);
+/** 只有这两类是"常规"选择；custom 在路径行内作为高级项出现。 */
+const drawTypes = computed(() =>
+  PATH_TYPES.filter((spec) => spec.id !== "custom"),
+);
+const typeOptions = computed(() =>
+  PATH_TYPES.map((spec) => ({ label: t(spec.labelKey), value: spec.id })),
+);
+
+function onBeginDraw(): void {
+  if (!props.editEnabled) return;
+  emit("begin-draw", selectedType.value);
+}
+
+// ---- 已有路径列表 ----
 const byId = computed(() => {
   const map = new Map<string, PathPointUnit>();
   for (const unit of props.pathPoints) map.set(`pathPoint:${unit.index}`, unit);
@@ -49,7 +73,10 @@ interface PathRow {
   path: WorkbenchPath;
   points: number;
   issues: string[];
+  typeLabel: string;
   entryLabel: string;
+  scopeLabel: string;
+  roadConnect: boolean;
 }
 
 const rows = computed<PathRow[]>(() =>
@@ -59,26 +86,23 @@ const rows = computed<PathRow[]>(() =>
     const issues = validateWorkbenchPath(path, units).map((code) =>
       t(`studio.assetWorkbench.pathIssue.${code}`),
     );
-    const entry = props.entries.find(
-      (candidate) =>
-        candidate.instance.toString(16).toLowerCase() ===
-        (path.entry ?? "").toLowerCase(),
-    );
-    const entryLabel = entry
-      ? entry.transports.join(" / ") || `0x${entry.instance.toString(16)}`
-      : "";
-    return { path, points: positions.filter(Boolean).length, issues, entryLabel };
+    const spec = pathTypeSpec(path.type);
+    const semantics = pathSemantics(path.type, path.entry);
+    return {
+      path,
+      points: positions.filter(Boolean).length,
+      issues,
+      typeLabel: t(spec.labelKey),
+      entryLabel: entryHexLabel(semantics.entry),
+      scopeLabel: t(
+        semantics.scope === "global"
+          ? "studio.assetWorkbench.pathScopeGlobal"
+          : "studio.assetWorkbench.pathScopeLocal",
+      ),
+      roadConnect: semantics.roadConnect,
+    };
   }),
 );
-
-const entrySuggestions = computed(() => props.entries.slice(0, 32));
-
-function commitEntry(path: WorkbenchPath, raw: string): void {
-  const value = raw.trim().toLowerCase().replace(/^0x/, "");
-  emit("update", path.id, { entry: value || null });
-}
-
-const SCOPES = ["local", "regional"] as const;
 </script>
 
 <template>
@@ -87,34 +111,67 @@ const SCOPES = ["local", "regional"] as const;
       {{ t("studio.assetWorkbench.unlockFirst") }}
     </p>
     <template v-else>
-      <div class="path-actions">
-        <button
-          type="button"
-          class="path-btn primary"
-          :class="{ drawing }"
-          @click="drawing ? emit('finish-draw') : emit('begin-draw')"
-        >
-          <FIcon :name="drawing ? 'Square' : 'Spline'" :size="12" aria-label="" />
-          {{
-            drawing
-              ? t("studio.assetWorkbench.pathFinish")
-              : t("studio.assetWorkbench.pathDraw")
-          }}
-        </button>
-        <button
-          type="button"
-          class="path-btn"
-          :disabled="!drawing"
-          :title="t('studio.assetWorkbench.pathUndoPoint')"
-          @click="emit('undo-point')"
-        >
-          <FIcon name="Undo2" :size="12" aria-label="" />
-        </button>
-      </div>
-      <p v-if="drawing" class="path-hint" role="status">
-        {{ t("studio.assetWorkbench.pathDrawHint") }}
-      </p>
+      <!-- 类型卡：选"是什么路" → 开始绘制 -->
+      <section class="type-card">
+        <div class="type-head">
+          <span>{{ t("studio.assetWorkbench.pathTypeTitle") }}</span>
+        </div>
+        <div class="type-grid" role="radiogroup">
+          <button
+            v-for="spec in drawTypes"
+            :key="spec.id"
+            type="button"
+            role="radio"
+            class="type-row"
+            :class="{ selected: selectedType === spec.id }"
+            :aria-checked="selectedType === spec.id"
+            @click="selectedType = spec.id"
+          >
+            <FIcon :name="spec.icon" :size="14" aria-label="" />
+            <span class="type-text">
+              <span class="type-name">{{ t(spec.labelKey) }}</span>
+              <span class="type-hint">{{ t(spec.hintKey) }}</span>
+            </span>
+            <span class="type-entry">{{ entryHexLabel(spec.entry) }}</span>
+          </button>
+        </div>
+        <p class="path-hint type-note">
+          {{ t("studio.assetWorkbench.pathTypeHint") }}
+        </p>
+        <div class="path-actions">
+          <button
+            type="button"
+            class="path-btn primary draw"
+            :class="{ drawing }"
+            @click="drawing ? emit('finish-draw') : onBeginDraw()"
+          >
+            <FIcon
+              :name="drawing ? 'Square' : 'Spline'"
+              :size="12"
+              aria-label=""
+            />
+            {{
+              drawing
+                ? t("studio.assetWorkbench.pathFinish")
+                : t("studio.assetWorkbench.pathDraw")
+            }}
+          </button>
+          <button
+            type="button"
+            class="path-btn"
+            :disabled="!drawing"
+            :title="t('studio.assetWorkbench.pathUndoPoint')"
+            @click="emit('undo-point')"
+          >
+            <FIcon name="Undo2" :size="12" aria-label="" />
+          </button>
+        </div>
+        <p v-if="drawing" class="path-hint" role="status">
+          {{ t("studio.assetWorkbench.pathDrawHint") }}
+        </p>
+      </section>
 
+      <!-- 已有路径：类型 + 派生语义（只读展示） -->
       <div v-for="row in rows" :key="row.path.id" class="path-card">
         <div class="path-head">
           <button
@@ -153,63 +210,48 @@ const SCOPES = ["local", "regional"] as const;
           </button>
         </div>
         <label class="path-field">
+          <span>{{ t("studio.assetWorkbench.pathTypeTitle") }}</span>
+          <FSelect
+            class="path-input"
+            :model-value="row.path.type"
+            :options="typeOptions"
+            @update:model-value="
+              emit('update', row.path.id, {
+                type: String($event) as PathTypeId,
+              })
+            "
+          />
+        </label>
+        <div v-if="row.path.type === 'custom'" class="path-field">
           <span>{{ t("studio.assetWorkbench.pathEntry") }}</span>
           <input
             class="path-input"
             :value="row.path.entry ?? ''"
             :placeholder="t('studio.assetWorkbench.pathEntryPlaceholder')"
-            list="workbench-path-entries"
+            :aria-label="t('studio.assetWorkbench.pathEntry')"
             @change="
-              commitEntry(
-                row.path,
-                ($event.target as HTMLInputElement).value,
-              )
+              emit('update', row.path.id, {
+                entry: ($event.target as HTMLInputElement).value.trim() || null,
+              })
             "
           />
-        </label>
-        <p v-if="row.entryLabel" class="path-entry-label">{{ row.entryLabel }}</p>
-        <div class="path-row">
-          <label class="path-field">
-            <span>{{ t("studio.assetWorkbench.pathScope") }}</span>
-            <FSelect
-              class="path-input"
-              :model-value="row.path.scope"
-              :options="SCOPES.map((scope) => ({ label: scope, value: scope }))"
-              @update:model-value="
-                emit('update', row.path.id, {
-                  scope: String($event),
-                })
-              "
-            />
-          </label>
-          <label class="path-check">
-            <input
-              type="checkbox"
-              :checked="row.path.roadConnect"
-              @change="
-                emit('update', row.path.id, {
-                  roadConnect: ($event.target as HTMLInputElement).checked,
-                })
-              "
-            />
-            <span>{{ t("studio.assetWorkbench.pathRoadConnect") }}</span>
-          </label>
         </div>
+        <p class="path-semantics">
+          <FIcon name="Cpu" :size="11" aria-label="" />
+          <span>{{ t("studio.assetWorkbench.pathSemantics") }}</span>
+          <code>{{ row.typeLabel }}</code>
+          <code>{{ row.entryLabel }}</code>
+          <span class="path-badge">{{ row.scopeLabel }}</span>
+          <span v-if="row.roadConnect" class="path-badge">
+            {{ t("studio.assetWorkbench.pathRoadConnect") }}
+          </span>
+        </p>
         <ul v-if="row.issues.length" class="path-issues">
           <li v-for="issue in row.issues" :key="issue" class="path-issue">
             {{ issue }}
           </li>
         </ul>
       </div>
-      <datalist id="workbench-path-entries">
-        <option
-          v-for="entry in entrySuggestions"
-          :key="entry.instance"
-          :value="entry.instance.toString(16)"
-        >
-          {{ entry.transports.join(" / ") }}
-        </option>
-      </datalist>
       <p v-if="!paths.length" class="path-note">
         {{ t("studio.assetWorkbench.pathEmpty") }}
       </p>
@@ -224,13 +266,74 @@ const SCOPES = ["local", "regional"] as const;
   gap: 8px;
   padding: 8px;
 }
+.type-card {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px;
+}
+.type-head {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.type-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.type-row {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 8px;
+  padding: 7px 8px;
+  text-align: left;
+}
+.type-row:hover {
+  border-color: var(--border-strong);
+}
+.type-row.selected {
+  border-color: var(--primary);
+}
+.type-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.type-name {
+  font-size: 11.5px;
+}
+.type-hint {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.type-entry {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+}
+.type-note {
+  color: var(--muted-foreground);
+}
 .path-actions {
   display: flex;
   gap: 5px;
 }
 .path-btn {
   align-items: center;
-  background: var(--surface-elevated);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--foreground);
@@ -239,14 +342,20 @@ const SCOPES = ["local", "regional"] as const;
   font: inherit;
   font-size: 11px;
   gap: 4px;
+  justify-content: center;
   min-height: 26px;
   padding: 0 8px;
 }
 .path-btn.primary {
   flex: 1;
 }
-.path-btn.drawing {
+.path-btn.primary.draw {
+  background: var(--primary);
   border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+.path-btn.primary.drawing {
+  background: var(--surface);
   color: var(--primary);
 }
 .path-btn:disabled {
@@ -326,21 +435,29 @@ const SCOPES = ["local", "regional"] as const;
   min-width: 0;
   padding: 0 6px;
 }
-.path-row {
-  display: flex;
-  gap: 8px;
+.path-field :deep(.f-select) {
+  background: var(--surface);
+  font-size: 11px;
+  min-height: 24px;
+  padding: 0 6px;
 }
-.path-check {
+.path-semantics {
   align-items: center;
-  display: flex;
-  font-size: 10.5px;
-  gap: 4px;
-  margin-top: 12px;
-}
-.path-entry-label {
   color: var(--muted-foreground);
+  display: flex;
+  flex-wrap: wrap;
   font-size: 10px;
-  margin: -2px 0 0;
+  gap: 5px;
+  margin: 0;
+}
+.path-semantics code {
+  color: var(--foreground);
+  font-family: var(--font-mono, monospace);
+}
+.path-badge {
+  background: var(--surface-hover);
+  border-radius: 999px;
+  padding: 0 6px;
 }
 .path-issues {
   display: flex;

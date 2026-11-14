@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use sc_store::{FolderCacheEntry, Store, StoreError, WorkspaceConfig};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{State, command};
+use tauri::{AppHandle, Manager, State, command};
 
 use crate::activity::{AppState, CommandError};
 
@@ -21,18 +21,32 @@ const MAX_RELATIVE_PATH_BYTES: usize = 512;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CameraPackageRequest { pub source_path: String, pub output_path: String, pub max_zoom: f32, pub max_pitch: f32, pub dof_strength: f32 }
+pub struct CameraPackageRequest {
+    pub source_path: String,
+    pub output_path: String,
+    pub max_zoom: f32,
+    pub max_pitch: f32,
+    pub dof_strength: f32,
+}
 
 #[tauri::command]
 pub async fn build_camera_package(request: CameraPackageRequest) -> Result<String, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         use dbpf::{OverlayEntry, Package, ResourceId, write_uncompressed_overlay};
         use sc_properties::{Kind, PropertyFile, Value};
-        let source = Package::open(&request.source_path).map_err(|e| CommandError::new("camera_source_invalid", e.to_string()))?;
+        let source = Package::open(&request.source_path)
+            .map_err(|e| CommandError::new("camera_source_invalid", e.to_string()))?;
         let mut entries = Vec::new();
-        for entry in source.entries().iter().filter(|entry| entry.id.type_id == 0x00B1_B104 && entry.id.group == 0x4041_0100) {
-            let bytes = source.read(entry).map_err(|e| CommandError::new("camera_source_read_failed", e.to_string()))?;
-            let mut file = PropertyFile::parse(&bytes).map_err(|e| CommandError::new("camera_property_invalid", e.to_string()))?;
+        for entry in source
+            .entries()
+            .iter()
+            .filter(|entry| entry.id.type_id == 0x00B1_B104 && entry.id.group == 0x4041_0100)
+        {
+            let bytes = source
+                .read(entry)
+                .map_err(|e| CommandError::new("camera_source_read_failed", e.to_string()))?;
+            let mut file = PropertyFile::parse(&bytes)
+                .map_err(|e| CommandError::new("camera_property_invalid", e.to_string()))?;
             for property in &mut file.values {
                 let value = match property.hash {
                     0x00C7_C4FB => Some(request.max_zoom.max(100.0)),
@@ -40,16 +54,38 @@ pub async fn build_camera_package(request: CameraPackageRequest) -> Result<Strin
                     0x0F17_C26D => Some(request.dof_strength.clamp(0.0, 3.0)),
                     _ => None,
                 };
-                if let Some(number) = value { if let Kind::Scalar(Value::Float(current)) = &mut property.kind { *current = number; } }
+                if let Some(number) = value {
+                    if let Kind::Scalar(Value::Float(current)) = &mut property.kind {
+                        *current = number;
+                    }
+                }
             }
-            let data = file.encode_canonical().map_err(|e| CommandError::new("camera_property_encode_failed", e.to_string()))?;
-            entries.push(OverlayEntry::new(ResourceId { type_id: entry.id.type_id, group: entry.id.group, instance: entry.id.instance }, data));
+            let data = file
+                .encode_canonical()
+                .map_err(|e| CommandError::new("camera_property_encode_failed", e.to_string()))?;
+            entries.push(OverlayEntry::new(
+                ResourceId {
+                    type_id: entry.id.type_id,
+                    group: entry.id.group,
+                    instance: entry.id.instance,
+                },
+                data,
+            ));
         }
-        if entries.is_empty() { return Err(CommandError::new("camera_source_empty", "No Isometric Camera property resources were found")); }
-        let bytes = write_uncompressed_overlay(&entries).map_err(|e| CommandError::new("camera_package_build_failed", e.to_string()))?;
-        fs::write(&request.output_path, bytes).map_err(|e| CommandError::new("camera_package_write_failed", e.to_string()))?;
+        if entries.is_empty() {
+            return Err(CommandError::new(
+                "camera_source_empty",
+                "No Isometric Camera property resources were found",
+            ));
+        }
+        let bytes = write_uncompressed_overlay(&entries)
+            .map_err(|e| CommandError::new("camera_package_build_failed", e.to_string()))?;
+        fs::write(&request.output_path, bytes)
+            .map_err(|e| CommandError::new("camera_package_write_failed", e.to_string()))?;
         Ok(request.output_path)
-    }).await.map_err(|e| CommandError::internal(e.to_string()))?
+    })
+    .await
+    .map_err(|e| CommandError::internal(e.to_string()))?
 }
 
 #[derive(Debug)]
@@ -135,7 +171,7 @@ pub struct MoveRequest {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum WorkspaceError {
+pub(crate) enum WorkspaceError {
     #[error("workspace has not been configured")]
     NotConfigured,
     #[error("studio mod root has not been configured")]
@@ -725,6 +761,204 @@ pub async fn workspace_move(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+// ── 内部目录迁移（2026-10-29 目录治理）：历史数据同步 ──
+//
+// 启动时未配置的工作区根自动落到 exe 目录 docs/（internal_dirs）。历史
+// 用户配置的旧根目录保持不动，由「同步历史数据」按钮一次性把内容拷入
+// 内部目录后再切换配置——拷贝为合并语义（目标已存在条目跳过），符号
+// 链接一律跳过，与工作区其余安全口径一致。
+
+/// 同步遍历预算（文件+目录总数），超出即报错（宁可失败不可静默截断）。
+const LEGACY_SYNC_BUDGET: usize = 20_000;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacySyncStatus {
+    /// 新内部目录。
+    pub internal_dir: String,
+    /// 当前配置指向的旧目录；等于内部目录 = 无历史（前端隐藏按钮）。
+    pub legacy_dir: Option<String>,
+    /// 旧目录存在且有待同步条目（按钮置灰依据）。
+    pub can_sync: bool,
+    /// 待同步条目数（顶层可见条目）。
+    pub pending_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacySyncOutcome {
+    pub copied_count: u64,
+    /// 同步后的最新状态（配置已切到内部目录，can_sync 恒为 false）。
+    pub status: LegacySyncStatus,
+}
+
+/// 递归拷贝目录（合并语义）：目标已存在条目跳过，符号链接跳过；
+/// 返回拷贝的条目数（文件+目录）。预算耗尽报错，不静默截断。
+pub fn copy_tree_merge(
+    source: &Path,
+    target: &Path,
+    budget: &mut usize,
+) -> Result<u64, WorkspaceError> {
+    if *budget == 0 {
+        return Err(WorkspaceError::InvalidPath("sync budget exhausted".into()));
+    }
+    *budget -= 1;
+    let mut copied = 0u64;
+    if !target.is_dir() {
+        fs::create_dir(target)?;
+        copied += 1;
+    }
+    let mut children = fs::read_dir(source)?.collect::<Result<Vec<_>, _>>()?;
+    children.sort_by_key(|entry| entry.file_name());
+    for child in children {
+        if *budget == 0 {
+            return Err(WorkspaceError::InvalidPath("sync budget exhausted".into()));
+        }
+        *budget -= 1;
+        let path = child.path();
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        let dest = target.join(child.file_name());
+        if metadata.is_dir() {
+            copied += copy_tree_merge(&path, &dest, budget)?;
+        } else if metadata.is_file() && !dest.exists() {
+            fs::copy(&path, &dest)?;
+            copied += 1;
+        }
+    }
+    Ok(copied)
+}
+
+/// 目录内容计数：跳过符号链接；`count` 决定条目口径（文档工作区只数
+/// 文件夹与 .md，与 scan_entries 一致；模组根数全部顶层条目）。
+pub fn legacy_pending_count(root: &Path, count: impl Fn(&fs::DirEntry, bool) -> bool) -> u64 {
+    let Ok(children) = fs::read_dir(root) else {
+        return 0;
+    };
+    children
+        .flatten()
+        .filter(|entry| {
+            fs::symlink_metadata(entry.path())
+                .map(|metadata| {
+                    !metadata.file_type().is_symlink() && count(entry, metadata.is_dir())
+                })
+                .unwrap_or(false)
+        })
+        .count() as u64
+}
+
+pub fn legacy_status(
+    internal: &Path,
+    configured: Option<String>,
+    pending_of: impl Fn(&Path) -> u64,
+) -> LegacySyncStatus {
+    let internal_dir = internal.to_string_lossy().into_owned();
+    let Some(legacy) = configured else {
+        return LegacySyncStatus {
+            internal_dir,
+            legacy_dir: None,
+            can_sync: false,
+            pending_count: 0,
+        };
+    };
+    let legacy_path = PathBuf::from(&legacy);
+    // 同目录（已迁移/全新安装）或内部目录嵌在旧目录内（无法安全拷贝）
+    // 时都视为无历史；canonical 比对跨大小写/分隔符稳定。
+    let same = fs::canonicalize(&legacy_path)
+        .map(|canonical| canonical == internal)
+        .unwrap_or(false);
+    let nested = internal.starts_with(&legacy_path);
+    let (can_sync, pending_count) = if same || nested || !legacy_path.is_dir() {
+        (false, 0)
+    } else {
+        let pending = pending_of(&legacy_path);
+        (pending > 0, pending)
+    };
+    LegacySyncStatus {
+        internal_dir,
+        legacy_dir: Some(legacy),
+        can_sync,
+        pending_count,
+    }
+}
+
+#[command]
+pub async fn workspace_legacy_status(
+    state: State<'_, AppState>,
+) -> Result<LegacySyncStatus, CommandError> {
+    let store = Arc::clone(&state.store);
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let internal = crate::internal_dirs::docs_dir(&app)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let configured = store
+            .workspace_config()
+            .map_err(CommandError::from)?
+            .map(|config| config.root_path);
+        Ok(legacy_status(&internal, configured, |legacy| {
+            // 口径与 scan_entries 一致：文件夹 + .md 文件
+            let mut entries = Vec::new();
+            if fs::canonicalize(legacy)
+                .ok()
+                .and_then(|canonical| scan_entries(&canonical, &canonical, "", &mut entries).ok())
+                .is_some()
+            {
+                entries.len() as u64
+            } else {
+                0
+            }
+        }))
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[command]
+pub async fn workspace_sync_legacy(
+    state: State<'_, AppState>,
+) -> Result<LegacySyncOutcome, CommandError> {
+    let manager = Arc::clone(&state.workspace);
+    let store = Arc::clone(&state.store);
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = manager.lock().map_err(CommandError::from)?;
+        let internal = crate::internal_dirs::docs_dir(&app)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let legacy = store
+            .workspace_config()
+            .map_err(CommandError::from)?
+            .ok_or(CommandError::from(WorkspaceError::NotConfigured))?
+            .root_path;
+        let canonical_legacy = fs::canonicalize(&legacy)
+            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
+        if canonical_legacy == internal || internal.starts_with(&canonical_legacy) {
+            return Err(CommandError::from(WorkspaceError::InvalidPath(
+                "refusing to sync the internal folder into itself".into(),
+            )));
+        }
+        let mut budget = LEGACY_SYNC_BUDGET;
+        let copied_count = copy_tree_merge(&canonical_legacy, &internal, &mut budget)
+            .map_err(CommandError::from)?;
+        store
+            .set_workspace_config(&internal.to_string_lossy())
+            .map_err(CommandError::from)?;
+        refresh_cache(&store, &internal).map_err(CommandError::from)?;
+        Ok(LegacySyncOutcome {
+            copied_count,
+            status: LegacySyncStatus {
+                internal_dir: internal.to_string_lossy().into_owned(),
+                legacy_dir: Some(legacy),
+                can_sync: false,
+                pending_count: 0,
+            },
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
 // ── Code 工作台（M-CM1）：模组项目文件夹的通用文件浏览/读写 ──
 //
 // root = studio_config.mod_root 下的项目文件夹（模组列表「开发」按钮进入）。
@@ -732,8 +966,19 @@ pub async fn workspace_move(
 // `existing_path` 逐级校验符号链接并 canonicalize 归属，写入走 `write_atomic`。
 
 /// 项目 root 解析：modRoot（存在、非符号链接、canonicalize）→ 项目相对路径
-/// （同一套逐级防护）且必须是目录。
-fn code_root(store: &Store, project: &str) -> Result<PathBuf, WorkspaceError> {
+/// （同一套逐级防护）且必须是目录。供 `code_*` 命令与
+/// `asset_dependencies` 同步共用。
+/// Windows canonicalize 会带 \\?\ 前缀（UNC 为 \\?\UNC\）；还原常规形式。
+fn strip_extended_prefix(text: &str) -> String {
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    text.strip_prefix(r"\\?\")
+        .map(str::to_string)
+        .unwrap_or_else(|| text.to_string())
+}
+
+pub(crate) fn code_root(store: &Store, project: &str) -> Result<PathBuf, WorkspaceError> {
     let config = store.studio_config()?;
     let Some(mod_root) = config.mod_root else {
         return Err(WorkspaceError::ModRootNotConfigured);
@@ -924,12 +1169,16 @@ fn count_code_entries(nodes: &[CodeTreeNode]) -> (usize, usize) {
 
 #[command]
 pub async fn code_tree(
+    app: AppHandle,
     state: State<'_, AppState>,
     request: CodeProjectRequest,
 ) -> Result<CodeTreeResponse, CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        // asset 协议 scope 是运行时白名单（tauri.conf 仅 $TEMP）：项目目录
+        // 动态放行，否则前端 convertFileSrc 预览一律 403（2026-11-07 实证）。
+        let _ = app.asset_protocol_scope().allow_directory(&root, true);
         let mut budget = CodeScanBudget {
             remaining: MAX_CODE_TREE_ENTRIES,
             truncated: false,
@@ -938,7 +1187,7 @@ pub async fn code_tree(
             scan_code_dir(&root, &root, "", 0, &mut budget).map_err(CommandError::from)?;
         let (file_count, folder_count) = count_code_entries(&entries);
         Ok(CodeTreeResponse {
-            root_path: root.to_string_lossy().into_owned(),
+            root_path: strip_extended_prefix(&root.to_string_lossy()).replace('\\', "/"),
             file_count,
             folder_count,
             truncated: budget.truncated,
@@ -957,14 +1206,14 @@ pub async fn code_read_text(
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        let relative = validate_relative_path(&request.relative_path, false)
-            .map_err(CommandError::from)?;
+        let relative =
+            validate_relative_path(&request.relative_path, false).map_err(CommandError::from)?;
         let path = existing_path(&root, &relative).map_err(CommandError::from)?;
         if !path.is_file() {
             return Err(CommandError::from(WorkspaceError::NotFile));
         }
-        let metadata = fs::metadata(&path)
-            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
+        let metadata =
+            fs::metadata(&path).map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
         if metadata.len() > MAX_CODE_TEXT_BYTES as u64 {
             return Err(CommandError::from(WorkspaceError::TooLarge(
                 MAX_CODE_TEXT_BYTES,
@@ -995,6 +1244,55 @@ pub async fn code_read_text(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+/// 在系统文件管理器中打开项目根目录（Windows Explorer / macOS Finder / xdg-open）。
+#[command]
+pub async fn code_open_in_explorer(
+    state: State<'_, AppState>,
+    request: CodeProjectRequest,
+) -> Result<(), CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        open_path_in_file_manager(&root).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+fn open_path_in_file_manager(path: &Path) -> Result<(), WorkspaceError> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
+    {
+        let _ = path;
+        Err(WorkspaceError::Io(io::Error::other(
+            "open in file manager is not supported on this platform",
+        )))
+    }
+}
+
 #[command]
 pub async fn code_write_text(
     state: State<'_, AppState>,
@@ -1003,8 +1301,8 @@ pub async fn code_write_text(
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        let relative = validate_relative_path(&request.relative_path, false)
-            .map_err(CommandError::from)?;
+        let relative =
+            validate_relative_path(&request.relative_path, false).map_err(CommandError::from)?;
         let parent = existing_parent(&root, &relative).map_err(CommandError::from)?;
         let target = parent.join(
             relative
@@ -1069,8 +1367,8 @@ pub async fn code_delete_file(
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        let relative = validate_relative_path(&request.relative_path, false)
-            .map_err(CommandError::from)?;
+        let relative =
+            validate_relative_path(&request.relative_path, false).map_err(CommandError::from)?;
         let parent = existing_parent(&root, &relative).map_err(CommandError::from)?;
         let target = parent.join(
             relative
@@ -1081,9 +1379,7 @@ pub async fn code_delete_file(
             Ok(metadata) if metadata.file_type().is_symlink() => {
                 Err(CommandError::from(WorkspaceError::Symlink))
             }
-            Ok(metadata) if !metadata.is_file() => {
-                Err(CommandError::from(WorkspaceError::NotFile))
-            }
+            Ok(metadata) if !metadata.is_file() => Err(CommandError::from(WorkspaceError::NotFile)),
             Ok(_) => fs::remove_file(&target)
                 .map_err(|error| CommandError::from(WorkspaceError::Io(error))),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -1140,8 +1436,8 @@ pub async fn code_package_info(
     let bundled = crate::package_service::bundled_registry_path(&state.app);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        let relative = validate_relative_path(&request.relative_path, false)
-            .map_err(CommandError::from)?;
+        let relative =
+            validate_relative_path(&request.relative_path, false).map_err(CommandError::from)?;
         let path = existing_path(&root, &relative).map_err(CommandError::from)?;
         if !path.is_file() {
             return Err(CommandError::from(WorkspaceError::NotFile));
@@ -1159,8 +1455,7 @@ pub async fn code_package_info(
             bundled.as_deref(),
         );
         let (entry_count, decompressed_total, types) =
-            code_package_stats(&path, registry.as_deref())
-                .map_err(CommandError::from)?;
+            code_package_stats(&path, registry.as_deref()).map_err(CommandError::from)?;
         Ok(CodePackageInfo {
             relative_path: request.relative_path,
             size,
@@ -1279,10 +1574,37 @@ pub async fn code_package_entries(
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        let relative = validate_relative_path(&request.relative_path, false)
-            .map_err(CommandError::from)?;
+        let relative =
+            validate_relative_path(&request.relative_path, false).map_err(CommandError::from)?;
         let path = existing_path(&root, &relative).map_err(CommandError::from)?;
         code_package_entry_list(&path).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[command]
+pub async fn code_package_observable_units(
+    state: State<'_, AppState>,
+    request: CodePathRequest,
+) -> Result<Vec<u32>, CommandError> {
+    use crate::asset_build_m1::menu::{MENU_GROUP, PROPERTY_TYPE, UNIT_GROUP};
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        let relative =
+            validate_relative_path(&request.relative_path, false).map_err(CommandError::from)?;
+        let path = existing_path(&root, &relative).map_err(CommandError::from)?;
+        let package = open_mod_package(&path).map_err(CommandError::from)?;
+        let mut ids: Vec<_> = package.entries().iter().filter_map(|entry| {
+            let id = entry.id;
+            (id.type_id == PROPERTY_TYPE && id.group == UNIT_GROUP
+                && package.entry(dbpf::ResourceId { group: MENU_GROUP, ..id }).is_some())
+                .then_some(id.instance)
+        }).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        Ok(ids)
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
@@ -1304,8 +1626,7 @@ fn code_resource_preview_data(
         })
         .or_else(|| {
             package.entries().iter().find(|entry| {
-                entry.id.type_id == target.type_id
-                    && entry.id.instance == target.instance
+                entry.id.type_id == target.type_id && entry.id.instance == target.instance
             })
         })
         .ok_or(WorkspaceError::NotFound)?;
@@ -1400,8 +1721,8 @@ pub async fn code_resource_preview(
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        let relative = validate_relative_path(&request.relative_path, false)
-            .map_err(CommandError::from)?;
+        let relative =
+            validate_relative_path(&request.relative_path, false).map_err(CommandError::from)?;
         let path = existing_path(&root, &relative).map_err(CommandError::from)?;
         code_resource_preview_data(
             &path,
@@ -1438,10 +1759,7 @@ fn manifest_tgi(type_id: u32, group_id: u32, instance_id: u32) -> String {
 }
 
 /// 扫描项目文件夹生成清单：基础信息 + 每包条目统计 + TGI 覆盖清单。
-fn build_code_manifest(
-    root: &Path,
-    project: &str,
-) -> Result<serde_json::Value, WorkspaceError> {
+fn build_code_manifest(root: &Path, project: &str) -> Result<serde_json::Value, WorkspaceError> {
     use serde_json::json;
 
     let mut budget = CodeScanBudget {
@@ -1546,9 +1864,12 @@ pub async fn code_manifest(
 ) -> Result<CodeManifestResponse, CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard=crate::mod_flow::FLOW_LOCK.lock().map_err(|_|CommandError::internal("Workflow lock failed"))?;
+        let _guard = crate::mod_flow::FLOW_LOCK
+            .lock()
+            .map_err(|_| CommandError::internal("Workflow lock failed"))?;
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        let manifest_path = crate::mod_flow::safe_path(&root,CODE_MANIFEST_NAME).map_err(CommandError::internal)?;
+        let manifest_path = crate::mod_flow::safe_path(&root, CODE_MANIFEST_NAME)
+            .map_err(CommandError::internal)?;
         let existed = manifest_path.is_file();
         let mut manifest: serde_json::Value = if existed {
             let bytes = fs::read(&manifest_path).map_err(WorkspaceError::from)?;
@@ -1556,8 +1877,7 @@ pub async fn code_manifest(
                 CommandError::from(WorkspaceError::InvalidPath(error.to_string()))
             })?
         } else {
-            let value =
-                build_code_manifest(&root, &request.project).map_err(CommandError::from)?;
+            let value = build_code_manifest(&root, &request.project).map_err(CommandError::from)?;
             let mut pretty = serde_json::to_vec_pretty(&value).map_err(|error| {
                 CommandError::from(WorkspaceError::InvalidPath(error.to_string()))
             })?;
@@ -1567,24 +1887,59 @@ pub async fn code_manifest(
         };
         // Old generated inventories are community imports, not engine projects.
         // Preserve arbitrary third-party fields and never infer engine capability.
-        if !manifest.is_object(){return Err(CommandError::internal("Manifest must be an object"));}
-        if manifest["format"]==crate::mod_flow::FORMAT && manifest["origin"]=="openscp" {
-            let layout=crate::mod_flow::ensure_project_layout(&root,manifest["mod_type"].as_str().unwrap_or("assets")).map_err(CommandError::internal)?;
-            if manifest["resource_layout"]!=layout {
-                manifest["resource_layout"]=layout;
-                write_atomic(&manifest_path,&serde_json::to_vec_pretty(&manifest).map_err(|e|CommandError::internal(e.to_string()))?,true).map_err(CommandError::from)?;
+        if !manifest.is_object() {
+            return Err(CommandError::internal("Manifest must be an object"));
+        }
+        if manifest["format"] == crate::mod_flow::FORMAT && manifest["origin"] == "openscp" {
+            let layout = crate::mod_flow::ensure_project_layout(
+                &root,
+                manifest["mod_type"].as_str().unwrap_or("assets"),
+            )
+            .map_err(CommandError::internal)?;
+            if manifest["resource_layout"] != layout {
+                manifest["resource_layout"] = layout;
+                write_atomic(
+                    &manifest_path,
+                    &serde_json::to_vec_pretty(&manifest)
+                        .map_err(|e| CommandError::internal(e.to_string()))?,
+                    true,
+                )
+                .map_err(CommandError::from)?;
             }
         }
-        if !crate::mod_flow::engine_manifest(&manifest) && manifest["engine"]["enabled"]!=true {
-            let inventory=build_code_manifest(&root,&request.project).map_err(CommandError::from)?;
-            for key in ["name","description","created_at","engine","internal_dependencies","outer_dependencies"]{if manifest.get(key).is_none(){manifest[key]=inventory[key].clone();}}
-            for key in ["stats","packages","tgiCount","tgiTruncated","tgis"]{manifest[key]=inventory[key].clone();}
-            if manifest.get("origin").is_none() {manifest["origin"]=serde_json::json!("community");manifest["type"]=serde_json::json!("nonstandard");}
-            let game=store.app_settings().ok().flatten().and_then(|s|s.game_data_path);
-            manifest["override_detection"]=crate::mod_flow::detect_overrides(&root,game.as_deref().map(Path::new));
-            manifest["outer_dependencies"]=manifest["override_detection"]["mappings"].clone();
-            let pretty=serde_json::to_vec_pretty(&manifest).map_err(|e|CommandError::internal(e.to_string()))?;
-            write_atomic(&manifest_path,&pretty,true).map_err(CommandError::from)?;
+        if !crate::mod_flow::engine_manifest(&manifest) && manifest["engine"]["enabled"] != true {
+            let inventory =
+                build_code_manifest(&root, &request.project).map_err(CommandError::from)?;
+            for key in [
+                "name",
+                "description",
+                "created_at",
+                "engine",
+                "internal_dependencies",
+                "outer_dependencies",
+            ] {
+                if manifest.get(key).is_none() {
+                    manifest[key] = inventory[key].clone();
+                }
+            }
+            for key in ["stats", "packages", "tgiCount", "tgiTruncated", "tgis"] {
+                manifest[key] = inventory[key].clone();
+            }
+            if manifest.get("origin").is_none() {
+                manifest["origin"] = serde_json::json!("community");
+                manifest["type"] = serde_json::json!("nonstandard");
+            }
+            let game = store
+                .app_settings()
+                .ok()
+                .flatten()
+                .and_then(|s| s.game_data_path);
+            manifest["override_detection"] =
+                crate::mod_flow::detect_overrides(&root, game.as_deref().map(Path::new));
+            manifest["outer_dependencies"] = manifest["override_detection"]["mappings"].clone();
+            let pretty = serde_json::to_vec_pretty(&manifest)
+                .map_err(|e| CommandError::internal(e.to_string()))?;
+            write_atomic(&manifest_path, &pretty, true).map_err(CommandError::from)?;
         }
         Ok(CodeManifestResponse {
             existed,
@@ -1597,19 +1952,124 @@ pub async fn code_manifest(
 }
 
 #[derive(Deserialize)]
-pub struct FlowRequest { pub project:String, pub action:String, #[serde(default)] pub payload:serde_json::Value }
+pub struct FlowRequest {
+    pub project: String,
+    pub action: String,
+    #[serde(default)]
+    pub payload: serde_json::Value,
+}
 #[command]
-pub async fn code_flow(state:State<'_,AppState>,request:FlowRequest)->Result<serde_json::Value,CommandError>{
-    let store=Arc::clone(&state.store);
-    tauri::async_runtime::spawn_blocking(move||{
-        let root=code_root(&store,&request.project).map_err(CommandError::from)?;
-        crate::mod_flow::dispatch(&root,&request.project,&request.action,request.payload).map_err(|e|CommandError::new("flow_error",e))
-    }).await.map_err(|e|CommandError::internal(e.to_string()))?
+pub async fn code_flow(
+    state: State<'_, AppState>,
+    request: FlowRequest,
+) -> Result<serde_json::Value, CommandError> {
+    let store = Arc::clone(&state.store);
+    let blend_atlas = state
+        .app
+        .path()
+        .resolve("resources/blend-atlas", tauri::path::BaseDirectory::Resource)
+        .ok();
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        crate::mod_flow::dispatch(
+            &root,
+            &request.project,
+            &request.action,
+            request.payload,
+            blend_atlas.as_deref(),
+        )
+        .map_err(|e| CommandError::new("flow_error", e))
+    })
+    .await
+    .map_err(|e| CommandError::internal(e.to_string()))?
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copy_tree_merge_skips_existing_and_counts() {
+        let base = std::env::temp_dir().join(format!("openscp-sync-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let source = base.join("legacy");
+        let target = base.join("internal");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("a.md"), b"a").unwrap();
+        fs::write(source.join("nested/b.md"), b"b").unwrap();
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("a.md"), b"existing").unwrap();
+        let mut budget = LEGACY_SYNC_BUDGET;
+        let copied = copy_tree_merge(&source, &target, &mut budget).unwrap();
+        // a.md 已存在跳过；nested/ 目录 + nested/b.md 计 2 条
+        assert_eq!(copied, 2);
+        assert_eq!(fs::read(target.join("a.md")).unwrap(), b"existing");
+        assert_eq!(fs::read(target.join("nested/b.md")).unwrap(), b"b");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn copy_tree_merge_errors_when_budget_exhausted() {
+        let base = std::env::temp_dir().join(format!("openscp-sync-cap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let source = base.join("legacy");
+        fs::create_dir_all(&source).unwrap();
+        for index in 0..5 {
+            fs::write(source.join(format!("f{index}.md")), b"x").unwrap();
+        }
+        let target = base.join("internal");
+        let mut budget = 3;
+        assert!(copy_tree_merge(&source, &target, &mut budget).is_err());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn legacy_status_flags_only_syncable_history() {
+        let base = std::env::temp_dir().join(format!("openscp-legacy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let internal = base.join("internal");
+        fs::create_dir_all(&internal).unwrap();
+        let empty_legacy = base.join("empty-legacy");
+        fs::create_dir_all(&empty_legacy).unwrap();
+        let ready_legacy = base.join("ready-legacy");
+        fs::create_dir_all(ready_legacy.join("nested")).unwrap();
+        fs::write(ready_legacy.join("nested/a.md"), b"a").unwrap();
+        // 未配置 = 无历史
+        let none = legacy_status(&internal, None, |_| 7);
+        assert!(none.legacy_dir.is_none() && !none.can_sync);
+        // 同目录 = 已迁移/全新安装
+        let same = legacy_status(
+            &internal,
+            Some(internal.to_string_lossy().into_owned()),
+            |_| 7,
+        );
+        assert!(!same.can_sync && same.pending_count == 0);
+        // 内部目录嵌在旧目录内 = 无法安全拷贝
+        let nested = legacy_status(&internal, Some(base.to_string_lossy().into_owned()), |_| 7);
+        assert!(!nested.can_sync);
+        // 正常历史：有待同步条目
+        let ready = legacy_status(
+            &internal,
+            Some(ready_legacy.to_string_lossy().into_owned()),
+            |_| 2,
+        );
+        assert!(ready.can_sync && ready.pending_count == 2);
+        // 有目录但无条目 = 置灰
+        let empty = legacy_status(
+            &internal,
+            Some(empty_legacy.to_string_lossy().into_owned()),
+            |_| 0,
+        );
+        assert!(!empty.can_sync && empty.pending_count == 0);
+        // 目录不存在 = 置灰
+        let missing = legacy_status(
+            &internal,
+            Some(base.join("gone").to_string_lossy().into_owned()),
+            |_| 9,
+        );
+        assert!(!missing.can_sync);
+        let _ = fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn rejects_traversal_and_non_markdown_paths() {

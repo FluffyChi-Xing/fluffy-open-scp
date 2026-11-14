@@ -32,18 +32,24 @@ fn main() {
 
     let mut counts = vec![0usize; needles.len()];
     for path in &paths {
-        let Ok(package) = dbpf::Package::open(path) else { continue };
+        let Ok(package) = dbpf::Package::open(path) else {
+            continue;
+        };
         let label = path
             .split(['/', '\\'])
             .next_back()
             .unwrap_or(path)
             .to_string();
         for (index_in_package, entry) in package.entries().iter().enumerate() {
-            let Ok(data) = package.read(entry) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
             // 负载可能是二进制；按 latin1 角度做字节级搜索
             let lower: Vec<u8> = data.iter().map(|b| b.to_ascii_lowercase()).collect();
             for (index, needle) in needles.iter().enumerate() {
-                let Some(pos) = find(&lower, needle.as_bytes()) else { continue };
+                let Some(pos) = find(&lower, needle.as_bytes()) else {
+                    continue;
+                };
                 counts[index] += 1;
                 if counts[index] > limit {
                     continue;
@@ -62,7 +68,11 @@ fn main() {
                     .collect();
                 println!(
                     "[{needle}] {} idx={index_in_package} type=0x{:08X} group=0x{:08X} instance=0x{:08X} size={} @{pos}",
-                    label, entry.id.type_id, entry.id.group, entry.id.instance, data.len()
+                    label,
+                    entry.id.type_id,
+                    entry.id.group,
+                    entry.id.instance,
+                    data.len()
                 );
                 println!("    …{snippet}…");
             }

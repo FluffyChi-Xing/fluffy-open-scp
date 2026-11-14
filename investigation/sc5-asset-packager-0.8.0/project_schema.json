@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SC5 Asset Packager Project",
+  "type": "object",
+  "required": [
+    "schema",
+    "name",
+    "category",
+    "version",
+    "settings"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sc5.asset-project/1"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nameEn": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "education",
+        "park",
+        "power",
+        "water",
+        "sewage",
+        "garbage",
+        "fire",
+        "health",
+        "police",
+        "government",
+        "bus",
+        "streetcar",
+        "rail",
+        "harbor",
+        "ferry",
+        "airport",
+        "landmark",
+        "trade",
+        "mining",
+        "oil",
+        "electronics",
+        "gambling"
+      ],
+      "description": "Menu destination only; does not change tested Unit simulation behavior."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "cost",
+        "maintenancePerHour",
+        "geometryStrategy",
+        "materialStrategy"
+      ],
+      "properties": {
+        "cost": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maintenancePerHour": {
+          "type": "number",
+          "minimum": 0
+        },
+        "geometryStrategy": {
+          "enum": [
+            "stable_single_mesh",
+            "native_multi_mesh",
+            "experimental_hybrid_lod"
+          ]
+        },
+        "materialStrategy": {
+          "enum": [
+            "stable_baseline",
+            "compact_2048",
+            "high_quality_4096",
+            "experimental"
+          ]
+        },
+        "provideSimulationService": {
+          "type": "boolean"
+        },
+        "rotationDegrees": {
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ]
+        },
+        "nightEmissionPolicy": {
+          "enum": [
+            "night-only",
+            "preserve-source"
+          ]
+        },
+        "behaviorProfile": {
+          "enum": [
+            "legacy-display",
+            "native-park-w1-v1"
+          ],
+          "default": "legacy-display",
+          "description": "Independent from menu location. Native park recipe requires runtime testing."
+        },
+        "behaviorParameters": {
+          "type": "object",
+          "maxProperties": 0,
+          "description": "Custom effects are not supported yet."
+        }
+      }
+    },
+    "backend": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "menuIconImage": {
+      "type": "string",
+      "description": "Optional project-owned PNG path; empty uses generated icon."
+    }
+  }
+}

@@ -31,13 +31,27 @@ fn main() {
     let mut f0: HashMap<u32, Vec<u16>> = HashMap::new();
     for (i, d) in &f0_raw {
         if d.len() == 131072 {
-            f0.insert(*i, d.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
+            f0.insert(
+                *i,
+                d.chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect(),
+            );
         }
     }
     let ed: HashMap<u32, Vec<u8>> = ed_raw
         .iter()
         .filter(|(_, d)| d.len() == 65536)
-        .map(|(i, d)| (*i, d.iter().enumerate().filter(|(k, _)| k % 4 == 0).map(|(_, v)| *v).collect()))
+        .map(|(i, d)| {
+            (
+                *i,
+                d.iter()
+                    .enumerate()
+                    .filter(|(k, _)| k % 4 == 0)
+                    .map(|(_, v)| *v)
+                    .collect(),
+            )
+        })
         .collect();
     println!("F0 tiles {}  ED tiles {}", f0.len(), ed.len());
 
@@ -77,15 +91,25 @@ fn main() {
     println!("sea = {sea}");
 
     let mut plots: Vec<(f32, f32)> = Vec::new();
-    if let Some(pe) = p.entries().iter().find(|e| e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x51E7_A18D) {
+    if let Some(pe) = p.entries().iter().find(|e| {
+        e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x51E7_A18D
+    }) {
         if let Ok(region) = sc_properties::PropertyFile::parse(&p.read(pe).unwrap()) {
             if let Some(ptk) = region.get(0xFB7A_85A0).and_then(|pp| match &pp.kind {
                 sc_properties::Kind::Scalar(sc_properties::Value::Key(k)) => Some(k.instance),
                 _ => None,
             }) {
-                if let Some(pte) = p.entries().iter().find(|e| e.id.type_id == 0x00B1_B104 && e.id.instance == ptk) {
+                if let Some(pte) = p
+                    .entries()
+                    .iter()
+                    .find(|e| e.id.type_id == 0x00B1_B104 && e.id.instance == ptk)
+                {
                     if let Ok(pt) = sc_properties::PropertyFile::parse(&p.read(pte).unwrap()) {
-                        if let Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) = pt.get(0xF01D_E4B1) {
+                        if let Some(sc_properties::Property {
+                            kind: sc_properties::Kind::Array(vs),
+                            ..
+                        }) = pt.get(0xF01D_E4B1)
+                        {
                             for v in vs {
                                 if let sc_properties::Value::Vector2(v) = v {
                                     plots.push((v[0], v[1]));
@@ -107,7 +131,13 @@ fn main() {
     } else {
         "tmp/region_preview/9F735B20_ed_grid.txt".to_string()
     };
-    for (y, line) in std::fs::read_to_string(&ed_grid_path).unwrap().lines().filter(|l| !l.trim().is_empty()).take(16).enumerate() {
+    for (y, line) in std::fs::read_to_string(&ed_grid_path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .take(16)
+        .enumerate()
+    {
         for (x, v) in line.split(',').take(16).enumerate() {
             edgrid[y][x] = u32::from_str_radix(v.trim(), 16).unwrap_or(0);
         }
@@ -144,7 +174,12 @@ fn main() {
     let road_total = road.iter().filter(|r| **r).count();
     println!("road px: {road_total}");
 
-    for &(fx, fy, name) in &[(false, false, "identity"), (false, true, "yflip"), (true, false, "xflip"), (true, true, "rot180")] {
+    for &(fx, fy, name) in &[
+        (false, false, "identity"),
+        (false, true, "yflip"),
+        (true, false, "xflip"),
+        (true, true, "rot180"),
+    ] {
         let mut on_land = 0usize;
         let mut near_plot = 0usize;
         for y in 0..wm {

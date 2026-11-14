@@ -16,7 +16,10 @@ fn main() {
         }
     }
     for table in [0x50AA0BEAu32, 0x6C969DEE, 0x7B45C298] {
-        println!("{table:08X} copies: {:?}", counts.get(&table).map(|v| v.len()));
+        println!(
+            "{table:08X} copies: {:?}",
+            counts.get(&table).map(|v| v.len())
+        );
     }
     for e in package.entries() {
         if e.id.type_id == 0x0A98_EAF0 && e.id.instance == 0x6C969DEE {
@@ -24,7 +27,9 @@ fn main() {
             let s = String::from_utf8_lossy(&d);
             for key in ["\"0x0d364987\"", "\"0x0d2e3fd0\""] {
                 match s.find(key) {
-                    Some(pos) => println!("6C969DEE {}: {}", key, &s[pos..pos + 70.min(s.len() - pos)]),
+                    Some(pos) => {
+                        println!("6C969DEE {}: {}", key, &s[pos..pos + 70.min(s.len() - pos)])
+                    }
                     None => println!("6C969DEE {}: 无", key),
                 }
             }

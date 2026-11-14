@@ -20,7 +20,10 @@ fn main() {
                 })
             } else {
                 rw4::Rw4File::parse(&data).ok().and_then(|file| {
-                    let sec = file.sections_of_type(rw4::SectionType::TEXTURE).next()?.number;
+                    let sec = file
+                        .sections_of_type(rw4::SectionType::TEXTURE)
+                        .next()?
+                        .number;
                     let tex = file.decode_texture(&data, sec).ok()?;
                     let px = tex.decode_top_mip_rgba().ok()?;
                     Some((px, tex.width as usize, tex.height as usize))
@@ -33,7 +36,10 @@ fn main() {
                 });
                 let path = format!("{out}/tex_{:08X}_{:08X}.png", instance, e.id.type_id);
                 img.save(&path).expect("save");
-                println!("{path}: T {:08X} G {:08X} {}x{}", e.id.type_id, e.id.group, w, h);
+                println!(
+                    "{path}: T {:08X} G {:08X} {}x{}",
+                    e.id.type_id, e.id.group, w, h
+                );
                 return;
             }
         }

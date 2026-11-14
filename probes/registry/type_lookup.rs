@@ -5,7 +5,12 @@ fn main() {
     let registry = sc_registry::Registry::open(db).unwrap();
     for id in args {
         let v = u32::from_str_radix(id.trim_start_matches("0x"), 16).unwrap();
-        for (name, map) in [("filetype", registry.file_types()), ("grouptype", registry.group_types()), ("group", registry.groups()), ("instancetype", registry.instance_types())] {
+        for (name, map) in [
+            ("filetype", registry.file_types()),
+            ("grouptype", registry.group_types()),
+            ("group", registry.groups()),
+            ("instancetype", registry.instance_types()),
+        ] {
             if let Some(r) = map.get(&v) {
                 println!("{name} 0x{v:08X}: {}  // {}", r.name, r.comments);
             }

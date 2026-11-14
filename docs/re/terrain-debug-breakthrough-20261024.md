@@ -1,5 +1,7 @@
 # 地图 debug 工具突破与游戏侧验证边界
 
+2026-11-12 复核更新。本文的 `RunScriptBrushes` 和交互编辑器实现取自开发版样本。当前离线零售 EXE 的 `cTerrainSystem` 虚表缺少这些编辑接口，区域笔刷资源能否触发零售生成链仍待独立确认。菜单拒绝路径已按零售机器码复核。见[离线零售入口复核](terrain-debug-retail-entrypoints-20261112.md)。
+
 日期：2026-10-24。
 
 本文记录对 Reddit 所说“游戏运行时向地图添加地下资源”的复核结果。目标是把菜单、区域 brush、Terrain Editor、typed height map 和 341 资源写回链路逐段对拍，避免把残留的 Property 目录误判成可执行工具。

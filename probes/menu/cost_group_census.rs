@@ -29,17 +29,24 @@ fn i32_val(v: &Value) -> Option<i32> {
 fn main() {
     let paths: Vec<String> = std::env::args().skip(1).collect();
     // group -> (construction 数, maintenance 数, cost 数, 样例 (instance, c, m))
-    let mut census: BTreeMap<u32, (usize, usize, usize, Vec<(u32, Option<i32>, Option<i32>)>)> = BTreeMap::new();
+    let mut census: BTreeMap<u32, (usize, usize, usize, Vec<(u32, Option<i32>, Option<i32>)>)> =
+        BTreeMap::new();
     let (mut total_props, mut parsed, mut hit) = (0usize, 0usize, 0usize);
     for path in &paths {
-        let Ok(package) = dbpf::Package::open(path) else { continue };
+        let Ok(package) = dbpf::Package::open(path) else {
+            continue;
+        };
         for entry in package.entries() {
             if entry.id.type_id != TYPE_PROPERTY {
                 continue;
             }
             total_props += 1;
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             parsed += 1;
             let c = i32_of(&file, HASH_CONSTRUCTION);
             let m = i32_of(&file, HASH_MAINT);
@@ -74,9 +81,6 @@ fn main() {
             .map(|(i, c, m)| format!("{:08X}(c={:?},m={:?})", i, c, m))
             .collect::<Vec<_>>()
             .join(" ");
-        println!(
-            "{:08X} {:6} {:5} {:4}  {}",
-            group, nc, nm, np, samples
-        );
+        println!("{:08X} {:6} {:5} {:4}  {}", group, nc, nm, np, samples);
     }
 }

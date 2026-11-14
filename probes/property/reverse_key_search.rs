@@ -10,13 +10,19 @@ fn main() {
         .map(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).unwrap())
         .collect();
     for path in args {
-        let Ok(package) = dbpf::Package::open(&path) else { continue };
+        let Ok(package) = dbpf::Package::open(&path) else {
+            continue;
+        };
         for entry in package.entries() {
             if entry.id.type_id != 0x00B1_B104 {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             for prop in &file.values {
                 let mut hits = Vec::new();
                 for key in prop.keys() {

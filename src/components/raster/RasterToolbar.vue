@@ -4,19 +4,9 @@ const { t } = useI18n();
 import { computed } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
-import FSelect from "@/components/ui/FSelect.vue";
-import type { RasterTool, RasterProfile } from "@/lib/raster-editor/schema";
+import type { RasterTool } from "@/lib/raster-editor/schema";
 const tool = defineModel<RasterTool>("tool", { required: true });
-const layer = defineModel<number>("layer", { required: true });
-const props = withDefaults(
-  defineProps<{
-    profile?: RasterProfile;
-    canUndo: boolean;
-    canRedo: boolean;
-    lot: boolean;
-  }>(),
-  { profile: "rgba" },
-);
+defineProps<{ canUndo: boolean; canRedo: boolean; lot: boolean }>();
 const emit = defineEmits<{ undo: []; redo: [] }>();
 const tools = computed<{ id: RasterTool; label: string; icon: string }[]>(() => [
   { id: "brush", label: t("rasterEditor.text102"), icon: "Brush" },
@@ -52,20 +42,6 @@ const hint = (entry: { id: RasterTool; label: string }) =>
         <template #trigger><button type="button" :aria-label="t('rasterEditor.selectLayer')" :aria-pressed="tool === 'layer-picker'" @click="tool = 'layer-picker'"><FIcon name="Layers" :size="16" /></button></template>
       </FTooltip>
       <span class="toolbar-divider" aria-hidden="true" />
-      <label v-if="lot" class="material-layer-control">
-        <span>{{ t("rasterEditor.text117") }}</span>
-        <FSelect
-          class="layer-select"
-          :model-value="String(layer)"
-          :options="[
-            { value: '0', label: t('rasterEditor.text118') },
-            { value: '1', label: t('rasterEditor.text119') },
-            { value: '2', label: t('rasterEditor.text120') },
-            { value: '3', label: t('rasterEditor.text121') },
-          ]"
-          @update:model-value="layer = Number($event)"
-        />
-      </label>
       <FTooltip :text="t('rasterEditor.text111')"><template #trigger><button type="button" :aria-label="t('rasterEditor.text111')" :disabled="!canUndo" @click="emit('undo')"><FIcon name="Undo2" :size="16" /></button></template></FTooltip>
       <FTooltip :text="t('rasterEditor.text112')"><template #trigger><button type="button" :aria-label="t('rasterEditor.text112')" :disabled="!canRedo" @click="emit('redo')"><FIcon name="Redo2" :size="16" /></button></template></FTooltip>
     </div>
@@ -115,24 +91,6 @@ button:disabled {
   height: 20px;
   margin-inline: 3px;
   background: var(--border);
-}
-.material-layer-control {
-  align-items: center;
-  display: inline-flex;
-  flex: none;
-  gap: 6px;
-  white-space: nowrap;
-}
-.material-layer-control > span {
-  color: var(--muted-foreground);
-  font-size: 12px;
-}
-.layer-select {
-  width: 132px;
-}
-.layer-select :deep(.f-select) {
-  min-height: 30px;
-  padding-inline: 8px;
 }
 :focus-visible {
   outline: 2px solid var(--primary);

@@ -9,31 +9,46 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod annotations;
+pub(crate) mod asset_build_m0;
+pub mod asset_build_m1;
+pub(crate) mod asset_build_samples;
+mod asset_dependencies;
+mod atomic_fs;
+pub mod blend_native;
+mod blender_service;
+mod build_queue;
+mod debug_tools;
+mod effect_annotations;
+mod effect_resources;
 mod effect_service;
 mod game_assets;
-mod effect_resources;
-mod annotations;
-mod atomic_fs;
-mod debug_tools;
+mod game_launch;
+mod internal_dirs;
 mod locale_service;
+mod lot_model_blend;
 mod map_panel;
 mod media_tools;
-mod mod_project;
 mod mod_flow;
+pub mod road_asset;
+mod road_appearance_preview;
+mod mod_project;
+mod mod_project_repo;
 mod overrides;
+mod package_browser;
+mod package_service;
 mod pe_schema;
 mod prop_models;
 mod prop_models_section_dump;
-mod package_browser;
-mod package_service;
-mod raster_edit;
 mod raster_catalog;
+mod decal_library;
+mod raster_edit;
 mod render_telemetry;
 mod runtime_observer;
-mod game_launch;
 mod settings;
 mod stats;
-mod version_service;
+#[cfg(test)]
+mod test_scratch;
 mod workspace;
 mod wwise;
 
@@ -45,45 +60,45 @@ use annotations::{
     annotation_create, annotation_delete, annotation_topic_stats, annotation_update,
     annotations_for_tgi, annotations_list,
 };
+use effect_annotations::{
+    effect_annotation_create, effect_annotation_delete, effect_annotation_tag_stats,
+    effect_annotations_for_effect, effect_annotations_for_source, effect_annotations_list,
+};
 use locale_service::{locale_items, locale_tables, write_locale_overlay};
 use media_tools::{MediaTools, application_dir, resolve_tools};
 use mod_project::{
     mod_group_create, mod_group_delete, mod_group_list, mod_group_rename, mod_project_create,
     mod_project_delete, mod_project_list, mod_project_stats, mod_project_update, setup_status,
-    studio_complete_onboarding, studio_set_mod_root,
+    studio_complete_onboarding, studio_legacy_status, studio_set_mod_root, studio_sync_legacy,
 };
+use mod_project_repo::mod_project_repo_summary;
 use overrides::override_scan;
+use package_browser::{list_game_tree, list_package_files};
+use package_service::{
+    close_package, export, export_lot_model_blend, export_status, list_model_catalog,
+    list_path_entries, list_path_sources, list_prop_bin_catalog, list_resources, open_package,
+    patch_property_overlay, read_decal_dictionary, read_decal_images, read_ecogame_preview,
+    read_erz_preview, read_image_preview, read_lot_editor_session, read_lot_model_meshes,
+    read_property_preview, read_raster_preview, read_resource_bytes, read_resource_data,
+    read_resource_text, read_resource_text_range, read_rw4_material_textures, read_rw4_preview,
+    read_rw4_section_detail, read_sim_parts, read_wwise_bank, release_prop_model_packages,
+    resolve_name, resolve_names, resolve_prop_models, write_export_file,
+};
+use pe_schema::build_pe_schema;
 use raster_edit::{
     create_lot_overlay, list_property_documents, read_image_rgba, read_lot_material,
     read_raster_rgba, register_decal_entry, save_raster_overlay,
-};
-use package_browser::{list_game_tree, list_package_files};
-use pe_schema::build_pe_schema;
-use package_service::{
-    close_package, export, export_status, list_resources, open_package, patch_property_overlay,
-    read_decal_dictionary, read_decal_images, read_erz_preview, read_ecogame_preview, read_image_preview,
-    read_lot_editor_session, read_lot_model_meshes, read_property_preview, read_raster_preview,
-    read_sim_parts,
-    list_model_catalog, list_path_entries, list_prop_bin_catalog,
-    read_resource_bytes, read_resource_data, read_resource_text, read_resource_text_range,
-    read_rw4_material_textures, read_rw4_preview, read_rw4_section_detail,
-    read_wwise_bank, release_prop_model_packages, resolve_name, resolve_names,
-    resolve_prop_models, write_export_file,
 };
 use render_telemetry::{render_telemetry_clear, render_telemetry_record, render_telemetry_summary};
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
 use stats::package_statistics;
 use tauri::{Manager, PhysicalPosition};
-use version_service::{
-    version_capture_baseline, version_changeset_detail, version_delete_changeset,
-    version_list_changesets, version_list_targets, version_record_changeset, version_rollback,
-};
 use workspace::{
-    code_delete_file, code_manifest, code_package_entries, code_package_info, code_read_text,
-    code_resource_preview, code_tree, code_write_text, workspace_create_folder,
-    workspace_create_markdown,
-    workspace_get, workspace_list, workspace_move, workspace_read_markdown, workspace_rename,
-    workspace_set_root, workspace_write_markdown,
+    code_delete_file, code_manifest, code_open_in_explorer, code_package_entries,
+    code_package_info, code_read_text, code_resource_preview, code_tree, code_write_text,
+    workspace_create_folder, workspace_create_markdown, workspace_get, workspace_legacy_status,
+    workspace_list, workspace_move, workspace_read_markdown, workspace_rename, workspace_set_root,
+    workspace_sync_legacy, workspace_write_markdown,
 };
 
 #[tauri::command]
@@ -100,11 +115,33 @@ fn detect_media_tools() -> MediaTools {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Keep the development WebView2 profile beside target/debug.  The
+    // installed build has its own profile, so running the installed app and
+    // `tauri dev` cannot contend for the same WebView2 lock/cache.
+    #[cfg(debug_assertions)]
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+    {
+        let webview_data_dir = exe_dir.join(".webview2");
+        let _ = std::fs::create_dir_all(&webview_data_dir);
+        // `run` executes before Tauri starts its worker threads.
+        unsafe { std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", webview_data_dir) };
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let database_path = app.path().app_data_dir()?.join("openscp.db");
+            let data_root = internal_dirs::persistent_root(app.handle())?;
+            let database_path = data_root.join("openscp.db");
+            migrate_legacy_database(app, &database_path)?;
             let store = sc_store::Store::open(database_path)?;
+            // 目录治理（2026-10-29）：docs/mods 自动落在安装目录下，
+            // 未配置的工作区/模组根自动指向内部目录，无需手动指定。
+            internal_dirs::ensure_internal_roots(app.handle(), &store)?;
+            let build_queue = std::sync::Arc::new(build_queue::BuildQueueManager::new());
+            build_queue.start(app.handle().clone());
+            app.manage(build_queue);
             app.manage(AppState::new(app.handle().clone(), store));
             if let Some(window) = app.get_webview_window("main")
                 && let Some(monitor) = window.primary_monitor()?
@@ -122,9 +159,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            asset_build_m1::commands::asset_build_m1_build,
+            asset_build_m1::commands::asset_build_m1_check_behavior_bins,
+            asset_dependencies::sync_asset_dependencies,
+            build_queue::build_queue_enqueue,
+            build_queue::build_queue_enqueue_project,
+            build_queue::build_queue_list,
+            build_queue::build_queue_detail,
             map_panel::map_panel_list_regions,
             map_panel::map_panel_render_region,
             map_panel::map_panel_write_heightmap,
+            map_panel::map_panel_apply_terrain,
             map_panel::map_panel_region_3d,
             debug_tools::debug_tools_write_overlay,
             annotation_create,
@@ -133,6 +178,12 @@ pub fn run() {
             annotations_for_tgi,
             annotations_list,
             annotation_topic_stats,
+            effect_annotation_create,
+            effect_annotation_delete,
+            effect_annotations_for_effect,
+            effect_annotations_for_source,
+            effect_annotations_list,
+            effect_annotation_tag_stats,
             package_statistics,
             override_scan,
             locale_tables,
@@ -162,13 +213,6 @@ pub fn run() {
             game_assets::count_limits::game_count_limits_read,
             game_assets::count_limits::game_count_limits_patch,
             game_launch::launch_game,
-            version_list_targets,
-            version_list_changesets,
-            version_changeset_detail,
-            version_record_changeset,
-            version_capture_baseline,
-            version_rollback,
-            version_delete_changeset,
             list_game_tree,
             list_package_files,
             open_package,
@@ -176,13 +220,23 @@ pub fn run() {
             list_resources,
             read_resource_bytes,
             read_resource_data,
+            road_appearance_preview::read_road_appearance,
+            road_appearance_preview::read_road_recipe_appearance,
             read_resource_text,
             read_resource_text_range,
             read_lot_editor_session,
             effect_service::read_effect_preview,
+            effect_service::read_effect_detail,
             build_pe_schema,
-            list_model_catalog, list_path_entries, list_prop_bin_catalog,
-            read_lot_model_meshes, read_sim_parts, release_prop_model_packages, resolve_prop_models,
+            list_model_catalog,
+            list_path_entries,
+            list_path_sources,
+            list_prop_bin_catalog,
+            read_lot_model_meshes,
+            export_lot_model_blend,
+            read_sim_parts,
+            release_prop_model_packages,
+            resolve_prop_models,
             read_raster_preview,
             read_image_preview,
             write_export_file,
@@ -192,6 +246,8 @@ pub fn run() {
             read_raster_rgba,
             save_raster_overlay,
             list_property_documents,
+            decal_library::list_decal_library,
+            decal_library::resolve_workbench_decal,
             raster_catalog::list_raster_catalog,
             raster_catalog::read_raster_source,
             raster_catalog::read_lot_preview_atlases,
@@ -200,7 +256,8 @@ pub fn run() {
             create_lot_overlay,
             read_decal_dictionary,
             read_decal_images,
-            read_erz_preview, read_ecogame_preview,
+            read_erz_preview,
+            read_ecogame_preview,
             read_rw4_preview,
             read_rw4_material_textures,
             read_rw4_section_detail,
@@ -216,15 +273,19 @@ pub fn run() {
             workspace_get,
             workspace_set_root,
             workspace_list,
+            workspace_legacy_status,
+            workspace_sync_legacy,
             workspace_create_folder,
             workspace_read_markdown,
             workspace_write_markdown,
             code_tree,
             code_read_text,
             code_write_text,
+            code_open_in_explorer,
             code_delete_file,
             code_package_info,
             code_package_entries,
+            workspace::code_package_observable_units,
             code_resource_preview,
             code_manifest,
             workspace::code_flow,
@@ -235,10 +296,13 @@ pub fn run() {
             setup_status,
             studio_set_mod_root,
             studio_complete_onboarding,
+            studio_legacy_status,
+            studio_sync_legacy,
             mod_project_list,
             mod_project_create,
             mod_project_update,
             mod_project_delete,
+            mod_project_repo_summary,
             mod_group_list,
             mod_group_create,
             mod_group_rename,
@@ -247,4 +311,26 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn migrate_legacy_database<R: tauri::Runtime>(
+    app: &tauri::App<R>,
+    target: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if target.exists() {
+        return Ok(());
+    }
+    let legacy = app.path().app_data_dir()?.join("openscp.db");
+    if !legacy.is_file() {
+        return Ok(());
+    }
+    std::fs::copy(&legacy, target)?;
+    for suffix in ["-wal", "-shm"] {
+        let source = legacy.with_file_name(format!("openscp.db{suffix}"));
+        let destination = target.with_file_name(format!("openscp.db{suffix}"));
+        if source.is_file() {
+            let _ = std::fs::copy(source, destination);
+        }
+    }
+    Ok(())
 }

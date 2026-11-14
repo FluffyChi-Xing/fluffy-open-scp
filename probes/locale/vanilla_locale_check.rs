@@ -76,10 +76,7 @@ fn main() {
                 let oz = raw_items(o);
                 let zz = raw_items(z);
                 for k in oz.keys() {
-                    println!(
-                        "    overlay 键 {k}: 原版存在={}",
-                        zz.contains_key(k)
-                    );
+                    println!("    overlay 键 {k}: 原版存在={}", zz.contains_key(k));
                 }
                 if !identical {
                     println!("  overlay 原始字节: {}", fmt_bytes(o));
