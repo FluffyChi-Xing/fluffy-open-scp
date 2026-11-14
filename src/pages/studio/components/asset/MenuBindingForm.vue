@@ -1,9 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { command } from "@/api/tauri";
-import { tauriApi } from "@/api";
-import { useToast } from "@/composables/useToast";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FSelect from "@/components/ui/FSelect.vue";
@@ -15,6 +12,7 @@ import {
   type WorkbenchMenuBinding,
   type WorkbenchMenuEntry,
 } from "./menuBinding";
+import { useMenuImages } from "./useMenuImages";
 
 /**
  * 菜单绑定表单（项目配置页 / 画布菜单节点共用语义）：
@@ -26,7 +24,7 @@ const props = defineProps<{
   disabled?: boolean;
   /** 紧凑模式（画布节点内嵌）；默认表单模式。 */
   compact?: boolean;
-  /** 项目相对根：提供后显示图标/背景图选择按钮（导入 assets/textures）。 */
+  /** 项目相对根：提供后显示图标/背景图选择按钮（导入 assets/images）。 */
   project?: string;
 }>();
 const emit = defineEmits<{
@@ -34,8 +32,6 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const toast = useToast();
-const importingImage = ref(false);
 
 const dimensionOptions = computed(() => [
   { value: "city", label: t("studio.workbench.dimCity") },
@@ -97,65 +93,10 @@ function onCost(field: "constructionCost" | "maintenanceCost", event: Event): vo
   });
 }
 
-/** 上传框：选图 → 直接落入项目 assets/images 固定默认名（原图文件名不参与）。 */
-async function uploadMenuImage(field: "icon" | "marquee"): Promise<void> {
-  if (!props.project || importingImage.value) return;
-  const path = await tauriApi.workspace.pickImageFile(
-    t(
-      field === "icon"
-        ? "studio.assetWorkbench.menuIcon"
-        : "studio.assetWorkbench.menuMarquee",
-    ),
-  );
-  if (typeof path !== "string") return;
-  importingImage.value = true;
-  try {
-    const imported = await command<{ asset: string }>("code_flow", {
-      request: {
-        project: props.project,
-        action: "import-menu-image",
-        payload: { path, kind: field },
-      },
-    });
-    emit("update:menu", {
-      [field === "icon" ? "iconPng" : "marqueePng"]: imported.asset,
-    });
-  } catch (cause) {
-    toast.error(t("studio.assetWorkbench.importFailed"));
-    console.warn("[menu] image upload failed:", cause);
-  } finally {
-    importingImage.value = false;
-  }
-}
-
-/** 图片预览 = read-menu-image 返回的 base64 data URL。
- * 预览不走 asset 协议（scope 仅 $TEMP，项目目录图片必 403）。 */
-const iconPreview = ref("");
-const marqueePreview = ref("");
-async function refreshImagePreviews(): Promise<void> {
-  if (!props.project) return;
-  try {
-    for (const kind of ["icon", "marquee"] as const) {
-      const result = await command<{ data: string | null }>("code_flow", {
-        request: {
-          project: props.project,
-          action: "read-menu-image",
-          payload: { kind },
-        },
-      });
-      if (kind === "icon") iconPreview.value = result.data ?? "";
-      else marqueePreview.value = result.data ?? "";
-    }
-  } catch (cause) {
-    console.warn("[menu] image preview failed:", cause);
-  }
-}
-watch(
-  () => [props.menu.iconPng, props.menu.marqueePng] as const,
-  () => {
-    void refreshImagePreviews();
-  },
-  { immediate: true },
+const { previews, importingImage, uploadMenuImage } = useMenuImages(
+  () => props.project,
+  () => props.menu,
+  (patch) => emit("update:menu", patch),
 );
 
 const issues = computed(() => menuBindingIssues(props.menu));
@@ -257,8 +198,8 @@ function issueLabel(code: string): string {
             @click="uploadMenuImage('icon')"
           >
             <img
-              v-if="iconPreview"
-              :src="iconPreview"
+              v-if="previews.icon"
+              :src="previews.icon"
               :alt="t('studio.assetWorkbench.menuIconPreview')"
             />
             <span v-else class="mf-upload-empty">
@@ -284,8 +225,8 @@ function issueLabel(code: string): string {
             @click="uploadMenuImage('marquee')"
           >
             <img
-              v-if="marqueePreview"
-              :src="marqueePreview"
+              v-if="previews.marquee"
+              :src="previews.marquee"
               :alt="t('studio.assetWorkbench.menuMarqueePreview')"
             />
             <span v-else class="mf-upload-empty">

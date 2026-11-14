@@ -33,33 +33,42 @@ pub(super) fn write_asset(root: &Path, payload: &Value) -> Result<Value, String>
     }))
 }
 
-/// 菜单图片上传：源文件直接落到固定默认路径（打包只认这个名字，原图文件名
-/// 不参与）。icon = assets/images/menu-icon.png（必须 PNG）；marquee =
-/// assets/images/menu-marquee.png|.jpg（PNG/JPG）。重传覆盖。
-/// 菜单图片预览读取：固定路径 → base64 data URL。预览不走 asset 协议
-/// （tauri.conf 的 assetProtocol.scope 仅 $TEMP，项目目录图片必 403），
-/// 与 upload 对称、无 scope 依赖。
+/// 菜单图片预览读取项目绑定的路径，旧调用按类型查找默认文件。
 pub(super) fn read_menu_image(root: &Path, payload: &Value) -> Result<Value, String> {
     let kind = payload["kind"].as_str().unwrap_or("icon");
-    let relative = match kind {
+    let default = match kind {
         "icon" => "assets/images/menu-icon.png",
-        "marquee" => "assets/images/menu-marquee.png",
+        "marquee" => "assets/images/menu-marquee.jpg",
         _ => return Err("Unknown menu image kind".into()),
     };
-    let path = safe_path(root, relative)?;
+    let mut relative = payload["asset"].as_str().unwrap_or(default);
+    let mut path = safe_path(root, relative)?;
+    if payload["asset"].is_null() && kind == "marquee" && !path.is_file() {
+        relative = "assets/images/menu-marquee.png";
+        path = safe_path(root, relative)?;
+    }
     if !path.is_file() {
         return Ok(json!({ "asset": relative, "data": serde_json::Value::Null }));
     }
-    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-    use base64::Engine as _;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    let mime = "image/png";
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mime = match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" if kind == "marquee" => "image/jpeg",
+        _ => return Err("Unsupported menu image format".into()),
+    };
+    let image = describe(root, relative)?;
+    let encoded = image["base64"].as_str().ok_or("Missing menu image data")?;
     Ok(json!({
         "asset": relative,
         "data": format!("data:{mime};base64,{encoded}"),
     }))
 }
 
+/// 菜单图标保留 PNG，背景图统一转成 JPG，重传覆盖固定文件。
 pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, String> {
     let source = PathBuf::from(payload["path"].as_str().ok_or("Missing source path")?);
     let kind = payload["kind"].as_str().unwrap_or("icon");

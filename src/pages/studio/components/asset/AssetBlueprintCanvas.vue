@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { command } from "@/api/tauri";
-import { tauriApi } from "@/api";
 import {
   VueFlow,
   useVueFlow,
@@ -25,6 +23,7 @@ import {
   type WorkbenchMenuBinding,
   type WorkbenchMenuEntry,
 } from "./menuBinding";
+import { useMenuImages } from "./useMenuImages";
 import type { WorkbenchSourceKind } from "./useWorkbenchAsset";
 import LogicNodeCard from "./LogicNodeCard.vue";
 import BlueprintPortRow from "./BlueprintPortRow.vue";
@@ -307,43 +306,10 @@ function entryTargetOptions(dimension: MenuDimension) {
   ];
 }
 
-async function uploadMenuImage(kind: "icon" | "marquee"): Promise<void> {
-  const path = await tauriApi.workspace.pickImageFile(
-    t(kind === "icon" ? "studio.assetWorkbench.menuIcon" : "studio.assetWorkbench.menuMarquee"),
-  );
-  if (typeof path !== "string") return;
-  const imported = await command<{ asset: string }>("code_flow", {
-    request: { project: props.project, action: "import-menu-image", payload: { path, kind } },
-  });
-  emit("update:menu", { [kind === "icon" ? "iconPng" : "marqueePng"]: imported.asset });
-}
-const menuImageData = reactive<Record<string, string>>({});
-const menuImagePreview = (relative: string): string => {
-  if (!relative) return "";
-  return menuImageData[relative] ?? "";
-};
-watch(
-  () => [props.menu.iconPng, props.menu.marqueePng, props.project] as const,
-  async () => {
-    if (!props.project) return;
-    for (const kind of ["icon", "marquee"] as const) {
-      const relative = kind === "icon" ? props.menu.iconPng : props.menu.marqueePng;
-      if (!relative || menuImageData[relative]) continue;
-      try {
-        const result = await command<{ data: string | null }>("code_flow", {
-          request: {
-            project: props.project,
-            action: "read-menu-image",
-            payload: { kind },
-          },
-        });
-        if (result.data) menuImageData[relative] = result.data;
-      } catch (cause) {
-        console.warn("[menu] image preview failed:", cause);
-      }
-    }
-  },
-  { immediate: true },
+const { previews, importingImage, uploadMenuImage } = useMenuImages(
+  () => props.project,
+  () => props.menu,
+  (patch) => emit("update:menu", patch),
 );
 function onMenuPosition(event: Event) {
   const raw = (event.target as HTMLInputElement).value.trim();
@@ -614,13 +580,14 @@ function nodeTone(data: unknown): "warn" | "ok" {
                 <button
                   type="button"
                   class="wb-menu-image nodrag"
+                  :disabled="!project || importingImage"
                   :title="t('studio.assetWorkbench.menuIconUpload')"
                   :aria-label="t('studio.assetWorkbench.menuIconUpload')"
                   @click="uploadMenuImage('icon')"
                 >
                   <img
-                    v-if="menuImagePreview(menu.iconPng)"
-                    :src="menuImagePreview(menu.iconPng)"
+                    v-if="previews.icon"
+                    :src="previews.icon"
                     :alt="t('studio.assetWorkbench.menuIconPreview')"
                   />
                   <span v-else>{{ t("studio.assetWorkbench.menuIconUpload") }}</span>
@@ -628,13 +595,14 @@ function nodeTone(data: unknown): "warn" | "ok" {
                 <button
                   type="button"
                   class="wb-menu-image nodrag"
+                  :disabled="!project || importingImage"
                   :title="t('studio.assetWorkbench.menuMarqueeUpload')"
                   :aria-label="t('studio.assetWorkbench.menuMarqueeUpload')"
                   @click="uploadMenuImage('marquee')"
                 >
                   <img
-                    v-if="menuImagePreview(menu.marqueePng)"
-                    :src="menuImagePreview(menu.marqueePng)"
+                    v-if="previews.marquee"
+                    :src="previews.marquee"
                     :alt="t('studio.assetWorkbench.menuMarqueePreview')"
                   />
                   <span v-else>{{ t("studio.assetWorkbench.menuMarqueeUpload") }}</span>

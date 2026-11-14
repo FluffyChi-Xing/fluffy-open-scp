@@ -1198,6 +1198,64 @@ mod tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
+
+    #[test]
+    fn menu_image_preview_reads_uploaded_jpeg_and_bound_legacy_png() {
+        let f = Fixture::new();
+        let source = f.0.join("source.png");
+        let write_source = |color| {
+            image::RgbImage::from_pixel(2, 2, image::Rgb(color))
+                .save(&source)
+                .unwrap();
+        };
+        let upload = || {
+            dispatch(
+                &f.0,
+                "Example",
+                "import-menu-image",
+                json!({"kind": "marquee", "path": source}),
+                None,
+            )
+            .unwrap()
+        };
+        let preview = |asset: &Value| {
+            dispatch(
+                &f.0,
+                "Example",
+                "read-menu-image",
+                json!({"kind": "marquee", "asset": asset}),
+                None,
+            )
+            .unwrap()
+        };
+        write_source([255, 0, 0]);
+        let uploaded = upload();
+        let jpeg = preview(&uploaded["asset"]);
+        assert_eq!(jpeg["asset"], uploaded["asset"]);
+        assert_eq!(
+            jpeg["data"],
+            format!(
+                "data:image/jpeg;base64,{}",
+                uploaded["base64"].as_str().unwrap()
+            )
+        );
+
+        let legacy = "assets/images/menu-marquee.png";
+        fs::copy(&source, f.0.join(legacy)).unwrap();
+        assert!(
+            preview(&json!(legacy))["data"]
+                .as_str()
+                .unwrap()
+                .starts_with("data:image/png;base64,")
+        );
+        assert_eq!(preview(&Value::Null), jpeg);
+
+        write_source([0, 0, 255]);
+        let replaced = upload();
+        assert_eq!(replaced["asset"], uploaded["asset"]);
+        assert_ne!(preview(&replaced["asset"])["data"], jpeg["data"]);
+    }
+
     #[test]
     fn builds_real_dbpf_and_rejects_changed_inputs() {
         let f = Fixture::new();
