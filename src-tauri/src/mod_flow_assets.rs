@@ -194,8 +194,8 @@ fn import_blend(root: &Path, source: &Path, blend_atlas: Option<&Path>) -> Resul
     Ok(result)
 }
 
-// Invalidate results written before the standalone Rust import configuration.
-const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-12.3";
+// Invalidate cached exports that could include meshes outside the visible view layer.
+const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-15.1";
 
 fn blend_cache_key(source: &Path) -> Result<String, String> {
     let bytes = fs::read(source).map_err(|error| error.to_string())?;

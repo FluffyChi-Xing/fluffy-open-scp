@@ -240,6 +240,14 @@ def main():
     try:
         bpy.ops.wm.open_mainfile(filepath=source)
         scene = bpy.context.scene
+        view_layer = bpy.context.view_layer
+        # The Asset Editor exports meshes selected in the view layer.
+        # Use its visible meshes for the headless import instead of all data-blocks.
+        meshes = [
+            obj
+            for obj in view_layer.objects
+            if obj.type == "MESH" and obj.visible_get(view_layer=view_layer)
+        ]
         trees = {}
         for tree in bpy.data.node_groups:
             trees[tree.name] = dump_tree(tree)
@@ -263,7 +271,7 @@ def main():
                 if scene.unit_settings.system != "NONE"
                 else 1.0
             ),
-            "objects": [dump_object(obj) for obj in bpy.data.objects],
+            "objects": [dump_object(obj) for obj in meshes],
             "materials": [dump_material(material) for material in bpy.data.materials],
             "node_trees": trees,
             "images": images,

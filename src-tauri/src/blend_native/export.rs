@@ -401,8 +401,27 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
             if i128::from(layout.ng) * i128::from(layout.nc) * i128::from(layout.nr) > 20_000 {
                 return Err("单面窗户超过 20000，请检查窗户尺寸或面 UV".into());
             }
-            let style_entry = style_entry(input.index, &state.style)
+            let catalog_style = style_entry(input.index, &state.style);
+            let recovered = catalog_style.is_none();
+            let style_entry = catalog_style
+                .or_else(|| {
+                    super::window_signature::recover_window_entry(
+                        input.catalog,
+                        &state.style,
+                        material.prop_str("ny_resource_signature")?,
+                    )
+                })
                 .ok_or_else(|| format!("unknown window style {}", state.style))?;
+            let recovered_recipe_key = recovered.then(|| {
+                format!(
+                    "|{}|{}|{:?}|{:?}|{:?}",
+                    style_entry.pack,
+                    style_entry.recipe,
+                    style_entry.recipe_layer,
+                    style_entry.rect,
+                    style_entry.room_tile,
+                )
+            });
             let stored_seed = mesh
                 .face_attributes
                 .get("NY_Facade_nightseed")
@@ -472,7 +491,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                         };
                         let mut window_state = state.clone();
                         window_state.palette_row = window_palette_row;
-                        let window_key = recipe_key(
+                        let mut window_key = recipe_key(
                             Kind::Window,
                             Some(&style_entry),
                             &window_state,
@@ -481,6 +500,9 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                             variant,
                             group_mode,
                         );
+                        if let Some(key) = &recovered_recipe_key {
+                            window_key.push_str(key);
+                        }
                         let window_group = if let Some(index) = by_key.get(&window_key) {
                             *index
                         } else {
