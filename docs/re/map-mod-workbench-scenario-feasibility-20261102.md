@@ -186,7 +186,7 @@
 // 主路径：属性 0x0D4AE7FE 的 int 数组（≥2 项）直接作为 mMapBounds
 GetPropertyAsIntArray(list, 0x0D4AE7FE, &count, &cellBounds)
     → mMapBounds[0] = cellBounds[0]; mMapBounds[1] = cellBounds[1]
-// 回退：属性 0x086C1E0F 的 int = addOn，mMapBounds = 1 << addOn（addOn 默认 5）
+// 回退：属性 0x086C668F 的 int = addOn，mMapBounds = 1 << addOn（addOn 默认 5）
 ```
 
 实测（`map_scalars_probe` 扫 EcoGame 脚本包）：
