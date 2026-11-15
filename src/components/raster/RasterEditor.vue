@@ -24,7 +24,9 @@ import RasterToolbar from "./RasterToolbar.vue";
 import RasterParameterTable from "./RasterParameterTable.vue";
 import RasterSourcePanel from "./RasterSourcePanel.vue";
 import RasterMaterialPanel from "./RasterMaterialPanel.vue";
+import LotEdgeControls from "./LotEdgeControls.vue";
 import RasterPreviewPanel from "./RasterPreviewPanel.vue";
+import { reverseMaskRows } from "@/lib/lot-ground/maskRows";
 import RasterDecalPreview from "./RasterDecalPreview.vue";
 import DecalTypeTabs from "./sign/DecalTypeTabs.vue";
 import RasterSignControls from "./sign/RasterSignControls.vue";
@@ -265,7 +267,11 @@ function image(
 ) {
   replace(() =>
     session.install(
-      new RasterDocument(value.width, value.height, value.pixels),
+      new RasterDocument(
+        value.width,
+        value.height,
+        isLot.value ? reverseMaskRows(value.pixels, value.width, value.height) : value.pixels,
+      ),
       origin,
       t("rasterEditor.text002", { p0: origin.name }),
     ),
@@ -657,6 +663,7 @@ v-for="preset in signSizes" :key="preset.name" type="button" :disabled="locked"
               :parking-spacing="Math.max(1, Math.min(256, parkingSpacing || 1))"
               :fill-tolerance="Math.max(0, Math.min(510, tolerance || 0))"
               :quantized="profile === 'lot-mask'"
+              :north-up="isLot"
               :channel="channel"
               display-channel="rgba"
               :lot-layer="isLot ? ground.canvasLayer.value : null"
@@ -763,6 +770,13 @@ v-if="isSign" :layer="layer" :settings="signSettings" :colors="decal.colors"
             @update:slots="ground.setSlots"
             @update:base-tile="ground.setBaseTile"
             @remove="ground.remove"
+          />
+          <LotEdgeControls
+            v-if="doc && groundSlots[groundActive]"
+            v-model="lot"
+            :slot="groundActive"
+            :disabled="locked"
+            @change="changed"
           />
         </section>
         <section class="editor-controls">

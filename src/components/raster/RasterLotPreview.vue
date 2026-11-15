@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { isTauri } from "@/api";
 import { loadLotPreviewSession } from "./lotPreviewSession";
@@ -17,6 +17,7 @@ const props = defineProps<{
   target: RasterSource | null;
   material?: RasterSchema["lot"];
   texture: boolean;
+  eager?: boolean;
   renderMode?: "default" | "refined";
   albedoPng?: string | null;
 }>();
@@ -28,17 +29,14 @@ const bound = shallowRef<LotEditorSession | null>(null);
 const error = shallowRef("");
 const loading = shallowRef(false);
 const root = shallowRef<HTMLElement | null>(null);
-const visible = shallowRef(typeof IntersectionObserver === "undefined");
+const visible = shallowRef(props.eager || typeof IntersectionObserver === "undefined");
 let visibilityObserver: IntersectionObserver | null = null;
 onMounted(() => {
-  if (!root.value || typeof IntersectionObserver === "undefined") return;
+  if (props.eager || !root.value || typeof IntersectionObserver === "undefined") return;
+  // 预览会在面板和全屏之间移动，视口根仍会考虑滚动容器的裁剪。
   visibilityObserver = new IntersectionObserver(([entry]) => {
     visible.value = entry.isIntersecting;
-  }, {
-    // Lot 库卡片在 `.lot-library` / `.maw-inspector` 内，属性检视在 `.inspector`。
-    root: root.value.closest(".lot-library, .maw-inspector, .inspector"),
-    threshold: 0.01,
-  });
+  }, { threshold: 0.01 });
   visibilityObserver.observe(root.value);
 });
 let generation = 0;
@@ -57,7 +55,7 @@ watch(
       return;
     }
     const key = JSON.stringify([props.target, packages.opened.map((p) => p.package.packageId)]);
-    if (key === loadedKey && session.value) return;
+    if (key === loadedKey) return;
     session.value = null;
     bound.value = null;
     error.value = "";
@@ -96,6 +94,11 @@ const grouping = {
 const emptyMap = new Map();
 const emptySet = new Set<string>();
 const treeIds = new Set<number>();
+const edgePreviewKey = computed(() => JSON.stringify([
+  props.material?.borderWidths,
+  props.material?.colorHeights,
+  props.material?.borderHeights,
+]));
 </script>
 <template>
   <div ref="root" class="lot-preview">
@@ -107,7 +110,8 @@ const treeIds = new Set<number>();
       {{ t("rasterEditor.missingAtlas") }}
     </p>
     <PropertyEditorViewport
-      v-if="visible && (session?.lotSurfacePng || albedoPng)"
+      :key="edgePreviewKey"
+      v-if="visible && (session?.lotSurfacePng || albedoPng || (eager && !texture && !loading && png))"
       ground-only
       :model-payload="null"
       :model-lods="[]"

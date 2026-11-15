@@ -328,6 +328,7 @@ export const rasterZh = {
   text170: "选择 Raster 类型以开始",
   unsupportedPanelProfile: "请选择地面绘制或贴花绘制的 Raster 文档。",
   text171: "绘制参数",
+  lotEdge: { title: "路缘", width: "边框宽度", surface: "地面高度", border: "边框高度" },
   baseLayer: "底稿图层",
   drawingLayer: "绘制图层",
   showLayer: "显示底稿图层",
@@ -341,7 +342,7 @@ export const rasterZh = {
   layers: "Lot 分层示意",
   lot3d: "Lot 游戏材质预览",
   refreshPreview: "刷新游戏材质预览",
-  refreshPreviewHint: "点击右上角刷新按钮生成游戏材质预览。绘制后的变化也需要手动刷新。",
+  refreshPreviewHint: "刷新或展开可生成游戏材质预览。绘制后请刷新查看改动。",
   loadingPreview: "正在载入游戏地面材质…",
   previewError: "地面材质载入失败：",
   missingAtlas:
@@ -701,6 +702,7 @@ export const rasterEn = {
   text170: "Choose a Raster type to begin",
   unsupportedPanelProfile: "Choose a Raster document for ground or decal painting.",
   text171: "Painting controls",
+  lotEdge: { title: "Curb", width: "Border width", surface: "Surface height", border: "Border height" },
   baseLayer: "Base layer",
   drawingLayer: "Drawing layer",
   showLayer: "Show base layer",
@@ -714,7 +716,7 @@ export const rasterEn = {
   layers: "Lot layer illustration",
   lot3d: "Lot game material preview",
   refreshPreview: "Refresh game material preview",
-  refreshPreviewHint: "Use Refresh above to generate the game material preview. Refresh again after editing to see changes.",
+  refreshPreviewHint: "Refresh or expand to generate the game material preview. Refresh after editing to see your changes.",
   loadingPreview: "Loading game ground materials…",
   previewError: "Unable to load ground materials:",
   missingAtlas:

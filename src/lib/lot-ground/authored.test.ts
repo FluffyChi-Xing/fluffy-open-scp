@@ -37,6 +37,17 @@ describe("authored lot ground", () => {
     expect(authoredFromSchema(schemaFromAuthored(lot))).toEqual(lot);
   });
 
+  it("retains curb heights through project storage and workbench binding", () => {
+    const schema = schemaFromAuthored(lot);
+    schema.lot.colorHeights = [-2, -1, -2, -2];
+    schema.lot.borderHeights = [-2.5, 0, -2, -2];
+    const saved = authoredFromSchema(schema);
+    const meta = parseAuthoredLotMeta(JSON.stringify(saved.meta))!;
+    expect(schemaFromAuthored({ ...saved, meta }).lot.borderHeights).toEqual(schema.lot.borderHeights);
+    expect(authoredLotStyle({ ...saved, meta }).colorHeights).toEqual(schema.lot.colorHeights);
+    expect(authoredLotStyle(lot).colorHeights).toBeUndefined();
+  });
+
   it("validates the stored metadata", () => {
     expect(parseAuthoredLotMeta(JSON.stringify(lot.meta))).toEqual(lot.meta);
     expect(parseAuthoredLotMeta("{}")).toBeNull();

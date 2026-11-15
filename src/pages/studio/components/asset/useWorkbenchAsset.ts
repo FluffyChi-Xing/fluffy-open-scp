@@ -295,6 +295,8 @@ export function useWorkbenchAsset(project: string) {
       (color) => [...color] as [number, number, number],
     ),
     borderWidths: [...DRAFT_LOT_DEFAULTS.lotBorderWidths],
+    colorHeights: undefined as number[] | undefined,
+    borderHeights: undefined as number[] | undefined,
     borderPatternIndices: [0, 0, 0, 0],
     baseTile: 8,
     tilePeriod: null as [number, number] | null,
@@ -665,6 +667,8 @@ export function useWorkbenchAsset(project: string) {
         lotColorsAuthored: draftStyle.colorsAuthored,
         lotBorderColors: draftStyle.borderColors,
         lotBorderWidths: draftStyle.borderWidths,
+        lotColorHeights: draftStyle.colorHeights,
+        lotBorderHeights: draftStyle.borderHeights,
         lotBorderPatternIndices: draftStyle.borderPatternIndices,
         lotBaseTile: draftStyle.baseTile,
         lotOverlayBoxOffset: null,
@@ -729,6 +733,12 @@ export function useWorkbenchAsset(project: string) {
       hiddenUnitIds: [...current.hiddenUnits],
       groups: { ...current.groupVisibility },
     });
+    if (appliedAuthoredLot.value) {
+      Object.assign(document.lot as Record<string, unknown>, {
+        colorHeights: draftStyle.colorHeights?.slice(),
+        borderHeights: draftStyle.borderHeights?.slice(),
+      });
+    }
     writeDecalSources(document, current.flatUnits);
     const editor = document.editor as Record<string, unknown>;
     editor.workbench = {
@@ -1468,6 +1478,8 @@ export function useWorkbenchAsset(project: string) {
     if (session.lotBorderWidths?.length === 4) {
       draftStyle.borderWidths = [...session.lotBorderWidths];
     }
+    draftStyle.colorHeights = session.lotColorHeights?.slice();
+    draftStyle.borderHeights = session.lotBorderHeights?.slice();
     if (session.lotBorderPatternIndices?.length === 4) {
       draftStyle.borderPatternIndices = [...session.lotBorderPatternIndices];
     }
@@ -1534,6 +1546,8 @@ export function useWorkbenchAsset(project: string) {
     draftStyle.borderColors = DRAFT_LOT_DEFAULTS.lotBorderColors.map(
       (color) => [...color] as [number, number, number],
     );
+    draftStyle.colorHeights = undefined;
+    draftStyle.borderHeights = undefined;
     draftStyle.borderWidths = [...DRAFT_LOT_DEFAULTS.lotBorderWidths];
     draftStyle.borderPatternIndices = [0, 0, 0, 0];
     draftStyle.baseTile = 8;

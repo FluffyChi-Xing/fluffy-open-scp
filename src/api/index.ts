@@ -404,6 +404,8 @@ export const tauriApi = {
       borderPatternIndices?: number[];
       /** 边框带半宽。 */
       borderWidths?: number[];
+      colorHeights?: number[];
+      borderHeights?: number[];
       outputPath: string;
     }) => command<CreateLotOverlayResult>("create_lot_overlay", { request }),
   },

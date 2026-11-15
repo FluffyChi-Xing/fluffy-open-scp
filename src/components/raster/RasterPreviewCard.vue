@@ -4,11 +4,12 @@ import { useI18n } from "vue-i18n";
 import { Maximize2, RefreshCw, X } from "lucide-vue-next";
 import FSheet from "@/components/ui/FSheet.vue";
 defineProps<{ title: string; refreshable?: boolean }>();
-const emit = defineEmits<{ refresh: [] }>();
+const emit = defineEmits<{ refresh: []; expand: [] }>();
 const { t } = useI18n();
 const open = ref(false);
 const trigger = ref<HTMLButtonElement>();
 const closeButton = ref<HTMLButtonElement>();
+const fullscreenContent = ref<HTMLElement | null>(null);
 function closeOnEscape(event: KeyboardEvent) {
   if (open.value && event.key === "Escape") {
     event.stopImmediatePropagation();
@@ -38,6 +39,7 @@ function trapFocus(event: KeyboardEvent) {
   }
 }
 async function setOpen(value: boolean) {
+  if (value && !open.value) emit("expand");
   open.value = value;
   await nextTick();
   (value ? closeButton.value : trigger.value)?.focus();
@@ -61,9 +63,13 @@ async function setOpen(value: boolean) {
         </button>
       </div>
     </header>
-    <div v-if="!open" class="preview-content"><slot /></div>
+    <div class="preview-content">
+      <Teleport :to="fullscreenContent ?? 'body'" :disabled="!open || !fullscreenContent">
+        <slot />
+      </Teleport>
+    </div>
     <FSheet :open="open" :label="title" width="100vw" @update:open="setOpen">
-      <div v-if="open" class="fullscreen" @keydown.tab="trapFocus">
+      <div v-show="open" class="fullscreen" @keydown.tab="trapFocus">
         <header>
           <h3>{{ title }}</h3>
           <div class="header-actions">
@@ -79,7 +85,7 @@ async function setOpen(value: boolean) {
             </button>
           </div>
         </header>
-        <div class="preview-content"><slot /></div>
+        <div ref="fullscreenContent" class="preview-content" />
       </div>
     </FSheet>
   </section>

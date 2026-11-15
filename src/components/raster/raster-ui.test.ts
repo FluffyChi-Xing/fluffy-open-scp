@@ -1,6 +1,6 @@
 import { flushPromises, mount, shallowMount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { nextTick } from "vue";
+import { h, nextTick } from "vue";
 import { i18n } from "@/locales";
 import RasterSourcePanel from "./RasterSourcePanel.vue";
 import RasterEditor from "./RasterEditor.vue";
@@ -10,6 +10,7 @@ import RasterDecalPreview from "./RasterDecalPreview.vue";
 import RasterToolbar from "./RasterToolbar.vue";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
+import LotEdgeControls from "./LotEdgeControls.vue";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 import { catalogKey } from "@/lib/raster-editor/catalog";
 import FSelect from "@/components/ui/FSelect.vue";
@@ -24,6 +25,7 @@ const api = vi.hoisted(() => ({
   readDecalDictionary: vi.fn(),
   readRgba: vi.fn(),
   readLotEditorSession: vi.fn(),
+  readLotPreviewAtlases: vi.fn().mockResolvedValue(null),
   listPropertyDocuments: vi.fn(),
 }));
 vi.mock("@/api", () => ({
@@ -44,6 +46,36 @@ afterEach(() => {
 });
 
 describe("Raster editor regressions", () => {
+  it("edits the selected curb channel and relabels it when the locale changes", async () => {
+    const { lot } = useRasterSession();
+    const wrapper = mount(LotEdgeControls, {
+      global,
+      props: { modelValue: lot.value, slot: 2 },
+    });
+    i18n.global.locale.value = "zh-CN";
+    await nextTick();
+    expect(wrapper.text()).toContain("边框高度");
+    const width = wrapper.get<HTMLInputElement>('input[type="range"]');
+    expect(width.attributes()).toMatchObject({ min: "0", max: "0.5", step: "0.001" });
+    width.element.value = "0.353";
+    await width.trigger("input");
+    expect(width.element.valueAsNumber).toBe(0.353);
+    expect(wrapper.get(".lot-edge-width-value").text()).toBe("0.353");
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+    await width.trigger("change");
+    expect(wrapper.emitted("update:modelValue")?.[0]?.[0]).toMatchObject({
+      borderWidths: [0, 0, 0.353, 0],
+    });
+    await wrapper.findAll('input[type="number"]')[1].setValue("-2.5");
+    expect(wrapper.emitted("update:modelValue")?.[1]?.[0]).toMatchObject({
+      borderHeights: [0, 0, -2.5, 0],
+    });
+    i18n.global.locale.value = "en-US";
+    await nextTick();
+    expect(wrapper.text()).toContain("Border height");
+    wrapper.unmount();
+  });
+
   it.each([
     "decal-sign",
     "decal-graffiti",
@@ -325,6 +357,58 @@ describe("Raster editor regressions", () => {
     await nextTick();
     expect(document.activeElement).toBe(wrapper.get("button").element);
     wrapper.unmount();
+  });
+  it.each(["surface", null])("keeps the game-material viewport in fullscreen and back with atlas %s", async (atlas) => {
+    api.readLotEditorSession.mockResolvedValue({ lotSurfacePng: atlas });
+    api.readLotPreviewAtlases.mockResolvedValue(null);
+    api.listPropertyDocuments.mockResolvedValue([]);
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(private callback: IntersectionObserverCallback) {}
+      observe(target: Element) {
+        this.callback([{ isIntersecting: false, target } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      }
+      disconnect() {}
+    });
+    const wrapper = mount(RasterPreviewCard, {
+      props: { title: "Lot game materials" },
+      global: { ...global, stubs: { PropertyEditorViewport: true } },
+      attachTo: document.body,
+      slots: {
+        default: () => h(RasterLotPreview, {
+          raw: "mask",
+          png: "data:image/png;base64,mask",
+          width: 32,
+          height: 32,
+          metersPerPixel: 0.75,
+          colors: [],
+          target: { name: "Lot", packageId: 42, tgi: { typeId: 1, group: 2, instance: 3 } },
+          texture: false,
+          eager: true,
+          renderMode: "refined",
+        }),
+      },
+    });
+    try {
+      await flushPromises();
+      const preview = wrapper.getComponent(PropertyEditorViewport);
+      const viewport = preview.element;
+      expect(preview.props("lotSurfacePng")).toBe(atlas ? "data:image/png;base64,surface" : null);
+      expect(preview.props("lotMaskRawRgba")).toBe("mask");
+      const reads = api.readLotEditorSession.mock.calls.length;
+      expect(reads).toBeGreaterThan(0);
+      const trigger = wrapper.get("button");
+      await trigger.trigger("click");
+      await nextTick();
+      const dialog = document.querySelector('[role="dialog"][aria-label="Lot game materials"]')!;
+      expect(dialog.contains(viewport)).toBe(true);
+      expect(api.readLotEditorSession).toHaveBeenCalledTimes(reads);
+      dialog.querySelector("button")!.click();
+      await nextTick();
+      expect(wrapper.element.contains(viewport)).toBe(true);
+      expect(api.readLotEditorSession).toHaveBeenCalledTimes(reads);
+    } finally {
+      wrapper.unmount();
+    }
   });
   it("passes live raw mask data and game atlases into the Property Editor renderer", async () => {
     vi.stubGlobal("IntersectionObserver", class {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tauriApi } from "@/api";
 import { loadLotCopy, saveRasterCopy } from "./rasterIO";
 import { useRasterSession } from "./useRasterSession";
+import { rgbaToBase64 } from "@/lib/raster-editor/encoders";
 vi.mock("@/api", () => ({
   tauriApi: {
     packages: { saveFile: vi.fn(), readLotEditorSession: vi.fn() },
@@ -106,6 +107,35 @@ describe("native Raster copy adapters", () => {
     );
     s.sampling.value.metersPerPixel = 1;
     await expect(saveRasterCopy(s.snapshot(), "lot")).rejects.toThrow(/0.75/);
+  });
+  it("preserves an asymmetric Lot's columns and game row order through import and export", async () => {
+    const gameRows = new Uint8ClampedArray([
+      255, 0, 0, 17, 255, 0, 0, 23,
+      255, 0, 0, 31, 0, 0, 0, 0,
+      255, 0, 0, 47, 0, 0, 0, 0,
+    ]);
+    const rgbaBase64 = rgbaToBase64(gameRows);
+    vi.mocked(tauriApi.raster.readRgba).mockResolvedValue({
+      width: 2, height: 3, decodable: true, rgbaBase64,
+    } as never);
+    vi.mocked(tauriApi.packages.readLotEditorSession).mockResolvedValue({
+      lotColors: [[100, 100, 100, 0], [100, 100, 100, 0], [100, 100, 100, 0], [100, 100, 100, 0]],
+      lotColorsAuthored: [true, true, true, true],
+    } as never);
+    const copy = await loadLotCopy({
+      packageId: 2,
+      tgi: { typeId: 0x00b1b104, group: 2, instance: 3 },
+      lotMaskResolved: { typeId: 0x2f4e681c, group: 4, instance: 5 },
+    } as Parameters<typeof loadLotCopy>[0], []);
+    expect(copy.image.pixels).toEqual(new Uint8ClampedArray([
+      ...gameRows.slice(16), ...gameRows.slice(8, 16), ...gameRows.slice(0, 8),
+    ]));
+    const session = useRasterSession();
+    session.changeProfile("lot-mask");
+    session.create(2, 3);
+    session.doc.value!.pixels.set(copy.image.pixels);
+    await saveRasterCopy(session.snapshot(), "lot");
+    expect(tauriApi.raster.createLotOverlay).toHaveBeenCalledWith(expect.objectContaining({ rgbaBase64 }));
   });
   it("refuses resizing a Lot override", async () => {
     const s = useRasterSession();

@@ -29,6 +29,7 @@ import type { RasterTool } from "@/lib/raster-editor/schema";
 import { pickedLayer } from "@/lib/raster-editor/profileBehavior";
 import { lotRegion } from "@/lib/raster-editor/lotPaint";
 import { viewportToPixel } from "@/lib/raster-editor/viewport";
+import { oppositeMaskRow } from "@/lib/lot-ground/maskRows";
 
 /**
  * 绘制工具使用文档坐标。地面合成预览按屏幕密度绘制材质，通道视图按原始像素显示。
@@ -53,6 +54,7 @@ const props = defineProps<{
   /** Display channel is independent from the channel being painted. */
   displayChannel?: Channel;
   lotLayer?: number | null;
+  northUp?: boolean;
   lotBorderWidths?: number[];
   dataChannels?: boolean;
   paintPreview?: ((context: CanvasRenderingContext2D, doc: RasterDocument) => void) | null;
@@ -255,12 +257,14 @@ function toPixel(event: PointerEvent): { x: number; y: number } {
   const element = wrap.value!;
   const rect = element.getBoundingClientRect();
   // Wrapper border is outside the plane coordinate system.
-  return viewportToPixel(
+  const pixel = viewportToPixel(
     { x: event.clientX, y: event.clientY },
     { left: rect.left + element.clientLeft, top: rect.top + element.clientTop },
     pan.value,
     zoom.value,
   );
+  if (props.northUp) pixel.y = oppositeMaskRow(pixel.y, props.doc.height);
+  return pixel;
 }
 
 function constrainedEnd(from: { x: number; y: number }, to: { x: number; y: number }, shift: boolean) {
@@ -281,10 +285,11 @@ function constrainedEnd(from: { x: number; y: number }, to: { x: number; y: numb
 
 const cursorText = computed(() => {
   if (!cursor.value) return "";
-  const pixel = `${cursor.value.x}, ${cursor.value.y}`;
+  const row = props.northUp ? oppositeMaskRow(cursor.value.y, props.doc.height) : cursor.value.y;
+  const pixel = `${cursor.value.x}, ${row}`;
   if (!props.metersPerPixel) return pixel;
   const mx = ((cursor.value.x + 0.5) * props.metersPerPixel).toFixed(1);
-  const my = ((cursor.value.y + 0.5) * props.metersPerPixel).toFixed(1);
+  const my = ((row + 0.5) * props.metersPerPixel).toFixed(1);
   return `${pixel} px · ${mx}, ${my} m`;
 });
 
@@ -298,6 +303,7 @@ function parkingOptions() {
   return {
     length: Math.max(1, props.parkingLength ?? 13),
     spacing: Math.max(1, props.parkingSpacing ?? 6),
+    mirroredY: props.northUp,
   };
 }
 
@@ -773,7 +779,9 @@ watch(
     <div
       class="canvas-plane"
       :style="{
-        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+        transform: northUp
+          ? `translate(${pan.x}px, ${pan.y + doc.height * zoom}px) scale(${zoom}, ${-zoom})`
+          : `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         background: backdrop || checkerboard,
       }"
     >

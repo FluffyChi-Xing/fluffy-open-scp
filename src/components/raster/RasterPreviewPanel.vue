@@ -19,6 +19,7 @@ import {
   type RasterProfile,
 } from "@/lib/raster-editor/schema";
 import { composeGroundPixels } from "@/pages/packages/components/property-editor/groundCompose";
+import { reverseMaskRows } from "@/lib/lot-ground/maskRows";
 const props = defineProps<{
   target: RasterSource | null;
   material?: RasterSchema["lot"];
@@ -69,15 +70,23 @@ function refreshLotPreview() {
     texture: props.profile === "lot-texture",
   };
 }
+function prepareLotPreview() {
+  if (!lotSnapshot.value) refreshLotPreview();
+}
 watch(() => [props.doc, props.profile, props.target], () => { lotSnapshot.value = null; });
+function diagnosticPixels(pixels: Uint8ClampedArray) {
+  return props.profile === "lot-mask"
+    ? reverseMaskRows(pixels, props.doc.width, props.doc.height)
+    : pixels;
+}
 const preview = computed(() => {
   void previewVersion.value;
   return rgbaBase64ToPngDataUrl(
-    rgbaToBase64(
+    rgbaToBase64(diagnosticPixels(
       PROFILE_BEHAVIOR[props.profile].dataChannels
         ? dataChannelPixels(props.doc.pixels)
         : props.doc.pixels,
-    ),
+    )),
     props.doc.width,
     props.doc.height,
   );
@@ -85,7 +94,7 @@ const preview = computed(() => {
 const alphaPreview = computed(() => {
   void previewVersion.value;
   return rgbaBase64ToPngDataUrl(
-    rgbaToBase64(channelPixels(props.doc.pixels, "a")),
+    rgbaToBase64(diagnosticPixels(channelPixels(props.doc.pixels, "a"))),
     props.doc.width,
     props.doc.height,
   );
@@ -181,6 +190,7 @@ const currentLotAlbedoPng = computed(() => {
       v-if="profile.startsWith('lot-')"
       :title="t('rasterEditor.lot3d')"
       refreshable
+      @expand="prepareLotPreview"
       @refresh="refreshLotPreview"
     >
       <RasterLotPreview
@@ -194,6 +204,7 @@ const currentLotAlbedoPng = computed(() => {
         :target="lotSnapshot.target"
         :material="lotSnapshot.material"
         :texture="lotSnapshot.texture"
+        eager
         render-mode="refined"
       />
       <p v-else class="refresh-hint" role="status">{{ t('rasterEditor.refreshPreviewHint') }}</p>

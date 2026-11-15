@@ -231,6 +231,8 @@ export interface ParkingRowOptions {
   length: number;
   /** 相邻停车线沿拖拽方向的间距（px）。 */
   spacing: number;
+  /** A north-up Lot canvas reflects the stored Y axis. */
+  mirroredY?: boolean;
 }
 
 /**
@@ -254,8 +256,9 @@ export function strokeParkingRow(
   // 拖拽方向单位向量与右侧法线（屏幕 y 向下）
   const ux = dx / span;
   const uy = dy / span;
-  const nx = -uy;
-  const ny = ux;
+  const side = options.mirroredY ? -1 : 1;
+  const nx = -uy * side;
+  const ny = ux * side;
   let dirty: Rect | null = null;
   for (let t = 0; t <= span; t += options.spacing) {
     const cx = from.x + ux * t;

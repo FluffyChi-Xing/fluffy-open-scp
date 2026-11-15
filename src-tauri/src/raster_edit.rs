@@ -779,6 +779,10 @@ pub struct CreateLotOverlayRequest {
     pub border_pattern_indices: Option<[u8; 4]>,
     #[serde(default)]
     pub border_widths: Option<[f32; 4]>,
+    #[serde(default)]
+    pub color_heights: Option<[f32; 4]>,
+    #[serde(default)]
+    pub border_heights: Option<[f32; 4]>,
     pub output_path: String,
 }
 
@@ -813,6 +817,8 @@ fn build_new_lot_property(
     border_colors: [[u8; 3]; 4],
     border_pattern_indices: [u8; 4],
     border_widths: [f32; 4],
+    color_heights: Option<[f32; 4]>,
+    border_heights: Option<[f32; 4]>,
 ) -> sc_properties::PropertyFile {
     use sc_properties::{Kind, PropType, Property, PropertyEncoding, Value};
 
@@ -867,6 +873,16 @@ fn build_new_lot_property(
             kind: Kind::Scalar(Value::Float(border_widths[index])),
             encoding: PropertyEncoding::default(),
         });
+    }
+    for (hash, heights) in [(0x0D02_D58A, color_heights), (0x0D02_D58B, border_heights)] {
+        if let Some(heights) = heights {
+            values.push(Property {
+                hash,
+                prop_type: PropType::Vector4,
+                kind: Kind::Scalar(Value::Vector4(heights)),
+                encoding: PropertyEncoding::default(),
+            });
+        }
     }
     let claimed_count = values.len() as u32;
     sc_properties::PropertyFile {
@@ -936,6 +952,8 @@ pub async fn create_lot_overlay(
             request.border_colors.unwrap_or([[156; 3]; 4]),
             request.border_pattern_indices.unwrap_or([0; 4]),
             request.border_widths.unwrap_or([0.0; 4]),
+            request.color_heights,
+            request.border_heights,
         );
         let property_data = property.encode_canonical().map_err(|error| {
             RasterEditError::InvalidArgument(format!("lot property encode failed: {error}"))
@@ -1131,11 +1149,21 @@ mod tests {
             [[156; 3]; 4],
             [0; 4],
             [0.0; 4],
+            Some([-2.0, -1.0, -2.0, -2.0]),
+            Some([-2.5, 0.0, -2.0, -2.0]),
         );
 
         // 编码必须可逆，且 LotEditorDocument 能读回语义字段。
         let encoded = file.encode_canonical().unwrap();
         let reparsed = sc_properties::PropertyFile::parse(&encoded).unwrap();
+        assert!(matches!(
+            reparsed.get(0x0D02_D58A).and_then(|property| property.scalar()),
+            Some(sc_properties::Value::Vector4(heights)) if *heights == [-2.0, -1.0, -2.0, -2.0]
+        ));
+        assert!(matches!(
+            reparsed.get(0x0D02_D58B).and_then(|property| property.scalar()),
+            Some(sc_properties::Value::Vector4(heights)) if *heights == [-2.5, 0.0, -2.0, -2.0]
+        ));
         let document = sc_properties::LotEditorDocument::from_property_file(reparsed);
         assert_eq!(document.lot_size, Some([48.0, 96.0]));
         assert_eq!(
