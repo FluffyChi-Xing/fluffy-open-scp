@@ -42,6 +42,7 @@ import AssetLotLibrary from "./AssetLotLibrary.vue";
 import type { AuthoredLot } from "@/lib/lot-ground/authored";
 import AssetMaterialSlotsPanel from "./AssetMaterialSlotsPanel.vue";
 import PackageProjectForm from "./PackageProjectForm.vue";
+import VanillaVariantPicker from "./VanillaVariantPicker.vue";
 
 /**
  * Assets Mod 工作台（Blender 式三栏，2026-10-25 彻底重构）：
@@ -51,12 +52,40 @@ import PackageProjectForm from "./PackageProjectForm.vue";
  *  Schema(Monaco) + 检查器（原 property editor 右侧四页签）。
  * 资产来源：GLB/LOTM 文件（Blender 六槽烘焙管线）或 TGI 直接解析游戏包。
  */
-const props = defineProps<{ project: string }>();
+const props = defineProps<{
+  project: string;
+  variantSchemaPath?: string;
+  variantSource?: { packagePath: string; lot: string };
+}>();
 
 const { t } = useI18n();
 const toast = useToast();
-const asset = useWorkbenchAsset(props.project);
+const asset = useWorkbenchAsset(props.project, Boolean(props.variantSchemaPath));
 const ui = asset.ui;
+const variantPickerOpen = ref(false);
+const variantProject = computed(() => Boolean(props.variantSchemaPath));
+
+async function selectVariant(input: { gameData: string; scripts: string; unit: string; lot: string }) {
+  if (asset.savedDirty.value && !window.confirm(t("flow.variant.replaceScene"))) return false;
+  const registration = await tauriApi.workspace.vanillaVariantRegister({ project: props.project, ...input });
+  const tgi = parseTgiText(registration.lot);
+  if (!tgi) throw new Error(registration.lot);
+  await asset.openNative(registration.packagePath, tgi);
+  if (ui.value?.loadError || !(await asset.saveDocument())) throw new Error("variant scene");
+  selectedFile.value = null;
+  void treeRef.value?.refresh();
+  return true;
+}
+
+async function saveVariantScene() {
+  if (!asset.schemaDocument.value) {
+    variantPickerOpen.value = true;
+    return false;
+  }
+  return asset.saveDocument();
+}
+
+defineExpose({ saveVariantScene });
 // 两条竖分隔线相邻时，命中区也要保持独立。
 
 // ---- 顶部工具条状态（与 PropertyEditor 渲染控制同口径）----
@@ -465,6 +494,7 @@ function onTreeSelect(relativePath: string): void {
   selectedFile.value = relativePath;
 }
 async function onOpenAsset(relativePath: string): Promise<void> {
+  if (variantProject.value) return;
   selectedFile.value = null;
   await asset.openDraftAsset(relativePath);
   // 导入/打开后立刻落盘 assetPath，避免「视口已是新 LOTM、构建仍读旧 schema.model」
@@ -479,6 +509,7 @@ const tgiBusy = ref(false);
 const packageCandidates = ref<Tgi[]>([]);
 /** 树 .package 点击 → 读资源表 → 列出 Lot property 候选并打开选择页。 */
 async function onOpenPackage(relativePath: string) {
+  if (variantProject.value) return;
   selectedFile.value = null;
   packageCandidates.value = [];
   tgiPackagePath.value = relativePath;
@@ -694,8 +725,21 @@ async function onRemoveAsset() {
   }
 }
 
-onMounted(() => {
-  void asset.restoreFromProject();
+onMounted(async () => {
+  if (await asset.restoreFromProject()) return;
+  const source = props.variantSource;
+  if (!source) return;
+  const tgi = parseTgiText(source.lot);
+  if (!tgi) return;
+  try {
+    await asset.openNative(source.packagePath, tgi);
+    if (ui.value && !ui.value.loadError) {
+      await asset.saveDocument();
+      void treeRef.value?.refresh();
+    }
+  } catch {
+    toast.error(t("flow.variant.registerFailed"));
+  }
 });
 
 function templateOf(resourceId: number) {
@@ -743,7 +787,11 @@ function templateOf(resourceId: number) {
       </div>
 
       <div class="maw-actions">
-        <button type="button" class="maw-btn" @click="tgiSheetOpen = true">
+        <button v-if="variantProject" type="button" class="maw-btn" @click="variantPickerOpen = true">
+          <FIcon name="Search" :size="13" aria-label="" />
+          {{ t("flow.variant.choose") }}
+        </button>
+        <button v-else type="button" class="maw-btn" @click="tgiSheetOpen = true">
           <FIcon name="Hash" :size="13" aria-label="" />
           {{ t("studio.assetWorkbench.tgiParse") }}
         </button>
@@ -972,7 +1020,7 @@ function templateOf(resourceId: number) {
       </div>
     </header>
 
-    <SceneWorkbenchLayout>
+    <SceneWorkbenchLayout :hide-lower="variantProject">
       <template #files>
         <div class="maw-scroll-pane maw-tree-pane">
           <AssetSourceTree
@@ -980,6 +1028,7 @@ function templateOf(resourceId: number) {
             :project="props.project"
             :active-asset="asset.sourceAssetPath.value"
             :selected-path="selectedFile"
+            :read-only="variantProject"
             @select="onTreeSelect"
             @open-asset="onOpenAsset"
             @open-package="onOpenPackage"
@@ -1043,8 +1092,11 @@ function templateOf(resourceId: number) {
                 <div class="maw-empty-art" aria-hidden="true"></div>
                 <FIcon name="Box" :size="30" aria-label="" />
                 <strong>{{ t("studio.assetWorkbench.emptyTitle") }}</strong>
-                <p>{{ t("studio.assetWorkbench.emptyHint") }}</p>
-                <div class="maw-empty-actions">
+                <p>{{ t(variantProject ? "flow.variant.sceneHint" : "studio.assetWorkbench.emptyHint") }}</p>
+                <button v-if="variantProject" type="button" class="maw-btn primary" @click="variantPickerOpen = true">
+                  {{ t("flow.variant.choose") }}
+                </button>
+                <div v-else class="maw-empty-actions">
                   <button
                     type="button"
                     class="maw-btn primary"
@@ -1071,7 +1123,7 @@ function templateOf(resourceId: number) {
               </div>
             </div>
       </template>
-      <template #lower>
+      <template v-if="!variantProject" #lower>
             <AssetBlueprintCanvas
               :source-kind="asset.sourceKind.value"
               :source-label="asset.sourceLabel.value"
@@ -1163,6 +1215,7 @@ function templateOf(resourceId: number) {
                     :edit-enabled="editEnabled"
                     :edit-mode="ui.editMode"
                     :authored-bound="asset.appliedAuthoredLot.value"
+                    :allow-native-ground="variantProject"
                     @apply="onApplyLotPreset"
                     @apply-authored="onApplyAuthoredLot"
                     @authored-saved="onAuthoredLotSaved"
@@ -1212,6 +1265,13 @@ function templateOf(resourceId: number) {
       </template>
     </SceneWorkbenchLayout>
 
+    <VanillaVariantPicker
+      v-if="variantSchemaPath"
+      v-model:open="variantPickerOpen"
+      :project="project"
+      :schema-path="variantSchemaPath"
+      :select="selectVariant"
+    />
     <FSheet
       v-model:open="tgiSheetOpen"
       :label="t('studio.assetWorkbench.tgiParse')"

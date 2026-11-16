@@ -408,6 +408,16 @@ fn clean_new_road_project(folder: &Path) {
     let _ = fs::remove_dir(folder);
 }
 
+fn clean_new_vanilla_variant_project(folder: &Path) {
+    let _ = fs::remove_file(folder.join(crate::asset_build_m1::vanilla_variant::PENDING_PROJECT));
+    let _ = fs::remove_file(folder.join("package.json"));
+    let _ = fs::remove_file(folder.join(crate::asset_build_m1::vanilla_variant::SCHEMA_PATH));
+    for path in ["schemas/vanilla_variant", "schemas", "assets/properties", "assets/textures", "assets", "build"] {
+        let _ = fs::remove_dir(folder.join(path));
+    }
+    let _ = fs::remove_dir(folder);
+}
+
 #[tauri::command]
 pub async fn mod_project_list(
     state: State<'_, AppState>,
@@ -454,7 +464,7 @@ pub async fn mod_project_create(
         }
         fs::create_dir(&folder)?;
         let mod_type=request.mod_type.as_deref().unwrap_or("assets");
-        if !["map","code","assets","gameplay","road"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
+        if !["map","code","assets","gameplay","road","vanilla_variant"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
         let mut metadata=serde_json::json!({"format":"openscp.mod","manifest_version":2,"origin":"openscp","name":name,"version":"0.1.0","description":request.description.as_deref().unwrap_or(""),"author":request.author.as_deref().unwrap_or(""),"mod_type":mod_type,"created_at":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"engine":{"enabled":false,"version":1},"internal_dependencies":{},"outer_dependencies":[]});
         if mod_type == "road" {
             let game_data = store.app_settings().ok().flatten().and_then(|settings| settings.game_data_path);
@@ -469,7 +479,12 @@ pub async fn mod_project_create(
             }
         }
         let manifest_bytes = serde_json::to_vec_pretty(&metadata).unwrap();
-        if let Err(error) = crate::atomic_fs::write_atomic(&folder.join("package.json"), &manifest_bytes, false) {
+        let metadata_path = if mod_type == "vanilla_variant" {
+            crate::asset_build_m1::vanilla_variant::PENDING_PROJECT
+        } else {
+            "package.json"
+        };
+        if let Err(error) = crate::atomic_fs::write_atomic(&folder.join(metadata_path), &manifest_bytes, false) {
             if mod_type == "road" {
                 clean_new_road_project(&folder);
             } else {
@@ -477,7 +492,7 @@ pub async fn mod_project_create(
             }
             return Err(error.into());
         }
-        if mod_type != "road" {
+        if mod_type != "road" && mod_type != "vanilla_variant" {
             crate::mod_flow::ensure_project_layout(&folder,mod_type)
                 .map_err(|e|ModProjectError::Io(io::Error::other(e)))?;
         }
@@ -495,6 +510,8 @@ pub async fn mod_project_create(
                 let _ = fs::remove_file(folder.join("package.json"));
                 if mod_type == "road" {
                     clean_new_road_project(&folder);
+                } else if mod_type == "vanilla_variant" {
+                    clean_new_vanilla_variant_project(&folder);
                 } else {
                     let _ = fs::remove_dir(&folder);
                 }

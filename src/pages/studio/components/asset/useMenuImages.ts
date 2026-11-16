@@ -10,7 +10,7 @@ type MenuImageKind = keyof typeof menuImageFields;
 
 export function useMenuImages(
   getProject: () => string | undefined,
-  getMenu: () => WorkbenchMenuBinding,
+  getMenu: () => Pick<WorkbenchMenuBinding, "iconPng" | "marqueePng">,
   updateMenu: (patch: Partial<WorkbenchMenuBinding>) => void,
 ) {
   const { t } = useI18n();

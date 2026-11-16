@@ -355,7 +355,7 @@ const NATIVE_SURFACE_MODEL_INSTANCE: u32 = 0xA0DA_9E6C;
 /// scene 列合成 ground_source——地面 exemplar（native_lot 契约）+ authored
 /// mask raster。与 donor 快照同形，native_profile::build 原样消费；菜单/
 /// 行为骨架继续由 reference.package 提供（那部分 donor 不能省）。
-fn authored_ground_snapshot(
+pub(super) fn authored_ground_snapshot(
     root: &std::path::Path,
     document: &SceneDocument,
 ) -> Result<Option<(connector::Resources, ResourceId)>, String> {

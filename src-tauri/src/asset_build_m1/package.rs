@@ -276,6 +276,9 @@ fn build_from_schema_inner(
     raw_schema: &str,
     progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
 ) -> Result<M1BuildResult, String> {
+    if let Some(request) = super::vanilla_variant::preflight(root, raw_schema)? {
+        return super::vanilla_variant::build(root, raw_schema, request, progress);
+    }
     let plan = plan_from_schema(raw_schema)?;
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     if !root.is_dir() {

@@ -66,3 +66,22 @@ it("allows building configuration to replace the center and keeps the library an
     wrapper.unmount();
   }
 });
+
+it("keeps the scene and inspector visible without mounting the variant blueprint", () => {
+  const wrapper = mount(SceneWorkbenchLayout, {
+    props: { hideLower: true },
+    global: { plugins: [i18n] },
+    slots: {
+      viewport: () => h("div", { "data-test": "scene" }),
+      lower: () => h("div", { "data-test": "blueprint" }),
+      inspector: () => h("div", { "data-test": "inspector" }),
+    },
+  });
+  try {
+    expect(wrapper.get("#maw-center").find('[data-test="scene"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="blueprint"]').exists()).toBe(false);
+    expect(wrapper.get("#maw-right-inspector").find('[data-test="inspector"]').exists()).toBe(true);
+  } finally {
+    wrapper.unmount();
+  }
+});

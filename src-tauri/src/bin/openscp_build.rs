@@ -31,7 +31,11 @@ fn main() {
                 std::process::exit(2);
             }
         }, schema.clone())
-    } else if let Some((path, raw)) = road_asset::project_schema(&root).unwrap_or_else(|error| {
+    } else if let Some((path, raw)) = fluffy_open_scp_lib::asset_build_m1::vanilla_variant_project_schema(&root)
+        .and_then(|schema| match schema {
+            Some(schema) => Ok(Some(schema)),
+            None => road_asset::project_schema(&root),
+        }).unwrap_or_else(|error| {
         eprintln!("discover asset schema: {error}");
         std::process::exit(2);
     }) {

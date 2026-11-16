@@ -24,6 +24,8 @@ import {
   type LogicNode,
 } from "./logicGraph";
 import type { WorkbenchMenuBinding } from "./menuBinding";
+import VanillaVariantMenuForm from "./VanillaVariantMenuForm.vue";
+import VanillaPowerProductionForm from "./VanillaPowerProductionForm.vue";
 
 /**
  * package.json 可视化配置（HBuilderX manifest.json 式分类表单）。
@@ -64,6 +66,8 @@ const TABS: { id: TabId; icon: string; labelKey: string }[] = [
   { id: "advanced", icon: "Braces", labelKey: "studio.assetWorkbench.projectConfig.tabAdvanced" },
 ];
 const activeTab = ref<TabId>("basic");
+const isVanillaVariant = computed(() => manifest.value?.mod_type === "vanilla_variant");
+const tabs = computed(() => isVanillaVariant.value ? TABS.filter((tab) => tab.id !== "behavior") : TABS);
 
 // ---- package.json 读写 ----
 const manifest = ref<Record<string, unknown> | null>(null);
@@ -73,10 +77,33 @@ const loading = ref(false);
 const loadError = ref("");
 const saving = ref(false);
 const saveError = ref("");
+const utilityLoadFailed = ref(false);
+const powerLoadFailed = ref(false);
 
 async function readManifest(): Promise<void> {
-  const doc = await tauriApi.workspace.codeReadText(props.project, "package.json");
+  const project = props.project;
+  const doc = await tauriApi.workspace.codeReadText(project, "package.json");
   const parsed = JSON.parse(doc.content) as Record<string, unknown>;
+  const source = parsed.vanillaVariant as VariantConfig | undefined;
+  utilityLoadFailed.value = false;
+  if (parsed.mod_type === "vanilla_variant" && source?.unit && !source.utilityFieldsVersion) {
+    try {
+      const available = await tauriApi.workspace.vanillaVariantUtilityFields(project);
+      source.fields = { ...available, ...source.fields };
+      source.utilityFieldsVersion = 1;
+    } catch {
+      if (project === props.project) utilityLoadFailed.value = true;
+    }
+  }
+  powerLoadFailed.value = false;
+  if (parsed.mod_type === "vanilla_variant" && source?.unit && source.powerProduction === undefined) {
+    try {
+      source.powerProduction = await tauriApi.workspace.vanillaVariantPowerFields(project);
+    } catch {
+      if (project === props.project) powerLoadFailed.value = true;
+    }
+  }
+  if (project !== props.project) return;
   manifest.value = parsed;
   baseline.value = JSON.stringify(parsed);
   revision.value = doc.revision;
@@ -119,6 +146,55 @@ function stringField(key: string): string {
 function setStringField(key: string, value: string): void {
   if (!manifest.value) return;
   manifest.value = { ...manifest.value, [key]: value };
+}
+
+type VariantConfig = {
+  title: string;
+  description?: string;
+  iconPng?: string;
+  marqueePng?: string;
+  unit: string;
+  lot: string;
+  utilityFieldsVersion?: number;
+  powerProduction?: Awaited<ReturnType<typeof tauriApi.workspace.vanillaVariantPowerFields>>;
+  fields: Record<string, { hash: string; original: number; value: number; consumerBound?: boolean }>;
+};
+const variant = computed(() => manifest.value?.vanillaVariant as VariantConfig | undefined);
+function patchPowerField(group: string, field: string, value: number) {
+  const entry = variant.value?.powerProduction?.[group]?.[field];
+  if (entry) entry.value = value;
+}
+const utilityGroups = {
+  power: ["powerAmount", "powerCapacity", "powerInterval"],
+  water: ["waterAmount", "waterCapacity", "waterInterval"],
+};
+const utilityFields = new Set(Object.values(utilityGroups).flat());
+const variantFieldGroups = computed(() => {
+  const groups = {
+    costs: ["constructionCost", "maintenanceCost"],
+    ...utilityGroups,
+    labor: ["minimumWorkers", "jobsW1", "jobsW2", "jobsW3", "workersW1", "workersW2", "workersW3"],
+    production: ["productionInterval", "productionAmount"],
+    education: ["studentCapacity"],
+  };
+  const fields = Object.entries(variant.value?.fields ?? {});
+  const assigned = new Set(Object.values(groups).flat());
+  return [
+    ...Object.entries(groups).map(([id, keys]) => ({ id, fields: fields.filter(([key]) => keys.includes(key)) })),
+    { id: "other", fields: fields.filter(([key]) => !assigned.has(key)) },
+  ].filter((group) => group.fields.length > 0);
+});
+function patchVariantField(field: string, event: Event) {
+  const input = event.target as HTMLInputElement;
+  const value = input.valueAsNumber;
+  const entry = variant.value?.fields[field];
+  if (!entry) return;
+  if (Number.isFinite(value) && value >= 0 && (!utilityFields.has(field) || input.validity.valid)) {
+    entry.value = value;
+  } else {
+    input.value = String(entry.value);
+    if (utilityFields.has(field)) toast.error(t("flow.variant.utilityIntegerRequired"));
+  }
 }
 
 // ---- 高级 JSON ----
@@ -260,6 +336,14 @@ const dependencies = computed<Record<string, unknown>>(() => {
     ? (value as Record<string, unknown>)
     : {};
 });
+const variantDependencies = computed(() => {
+  const report = dependencies.value.vanillaVariant as { resources?: { mode?: string }[] } | undefined;
+  const rows = Array.isArray(report?.resources) ? report.resources : [];
+  return {
+    count: rows.length,
+    unresolved: rows.filter((row) => row.mode === "unresolved").length,
+  };
+});
 function dependencyResources(): Record<string, unknown> {
   const value = dependencies.value.resources;
   return value && typeof value === "object"
@@ -302,6 +386,17 @@ async function save(): Promise<void> {
       manifest.value = parsed;
       advancedDirty.value = false;
     }
+    for (const [amountName, capacityName, intervalName] of Object.values(utilityGroups)) {
+      const fields = variant.value?.fields;
+      const amount = fields?.[amountName];
+      const capacity = fields?.[capacityName];
+      const interval = fields?.[intervalName];
+      if (amount && capacity && [amount, capacity, interval].some((field) => field && field.value !== field.original)
+        && capacity.value < amount.value) {
+        saveError.value = t("flow.variant.utilityCapacityTooSmall", { field: t(`flow.variant.${capacityName}`) });
+        return;
+      }
+    }
     if (manifestDirty.value && manifest.value) {
       const written = await tauriApi.workspace.codeWriteText(
         props.project,
@@ -330,6 +425,8 @@ async function save(): Promise<void> {
 }
 
 const tabHint = computed(() => {
+  if (isVanillaVariant.value && activeTab.value === "building") return t("flow.variant.propertiesHint");
+  if (isVanillaVariant.value && activeTab.value === "menu") return t("flow.variant.parkHint");
   switch (activeTab.value) {
     case "menu":
       return t("studio.assetWorkbench.projectConfig.menuHint", {
@@ -386,7 +483,7 @@ const tabHint = computed(() => {
     <div v-else-if="manifest" class="ppf-body">
       <nav class="ppf-nav" role="tablist">
         <button
-          v-for="tab in TABS"
+          v-for="tab in tabs"
           :key="tab.id"
           type="button"
           role="tab"
@@ -459,6 +556,12 @@ const tabHint = computed(() => {
         </div>
 
         <!-- 菜单 -->
+        <div v-else-if="activeTab === 'menu' && isVanillaVariant">
+          <VanillaVariantMenuForm
+            v-if="variant" :project="project" :unit="variant.unit" :menu="variant" :disabled="saving"
+            @update="Object.assign(variant, $event)" />
+          <p v-else class="ppf-empty">{{ t("flow.variant.sceneHint") }}</p>
+        </div>
         <MenuBindingForm
           v-else-if="activeTab === 'menu'"
           :menu="menu"
@@ -469,7 +572,33 @@ const tabHint = computed(() => {
 
         <!-- 建筑属性 -->
         <div v-else-if="activeTab === 'building'" class="ppf-fields">
-          <template v-if="infoParams && infoNode">
+          <template v-if="isVanillaVariant">
+            <p v-if="utilityLoadFailed" class="ppf-empty" role="status">{{ t("flow.variant.utilityLoadFailed") }}</p>
+            <p v-if="powerLoadFailed" class="ppf-empty" role="status">{{ t("flow.variant.powerLoadFailed") }}</p>
+            <VanillaPowerProductionForm
+              v-if="variant?.powerProduction"
+              :groups="variant.powerProduction"
+              :disabled="saving"
+              @change="patchPowerField" />
+            <details v-for="(group, index) in variantFieldGroups" :key="group.id" class="ppf-field-group" :open="index === 0">
+              <summary>{{ t("flow.variant.fieldGroup", { name: t(`flow.variant.groups.${group.id}`), count: group.fields.length }) }}</summary>
+              <p v-if="group.fields.some(([, field]) => field.consumerBound === false)" class="ppf-utility-hint">
+                {{ t("flow.variant.utilityUnbound") }}
+              </p>
+              <div class="ppf-fields">
+                <label v-for="[name, field] in group.fields" :key="name" class="ppf-field">
+                  <span>{{ t(`flow.variant.${name}`, name) }}</span>
+                  <input
+                    type="number" :min="utilityFields.has(name) && name.endsWith('Interval') ? 1 : 0"
+                    :max="utilityFields.has(name) ? 16777216 : undefined" :step="utilityFields.has(name) ? 1 : 'any'"
+                    :value="field.value" :disabled="saving" @change="patchVariantField(name, $event)" />
+                  <small>{{ t("flow.variant.originalValue", { value: field.original }) }} · <code>{{ field.hash }}</code></small>
+                </label>
+              </div>
+            </details>
+            <p v-if="!variantFieldGroups.length" class="ppf-empty">{{ t(variant ? "flow.variant.noEditableFields" : "flow.variant.sceneHint") }}</p>
+          </template>
+          <template v-else-if="infoParams && infoNode">
             <label
               v-for="field in (['w1', 'w2', 'w3', 'minWorkers'] as const)"
               :key="field"
@@ -600,6 +729,15 @@ const tabHint = computed(() => {
         </div>
 
         <!-- 依赖与资源 -->
+        <div v-else-if="activeTab === 'dependencies' && isVanillaVariant" class="ppf-deps">
+          <div v-if="variant" class="ppf-deps-grid ppf-variant-deps">
+            <div><span>{{ t("flow.variant.unit") }}</span><code>{{ variant.unit }}</code></div>
+            <div><span>{{ t("flow.variant.lot") }}</span><code>{{ variant.lot }}</code></div>
+            <div><span>{{ t("flow.variant.references") }}</span><strong>{{ variantDependencies.count }}</strong></div>
+            <div><span>{{ t("flow.variant.unresolvedReferences") }}</span><strong>{{ variantDependencies.unresolved }}</strong></div>
+          </div>
+          <p v-else class="ppf-empty">{{ t("flow.variant.sceneHint") }}</p>
+        </div>
         <div v-else-if="activeTab === 'dependencies'" class="ppf-deps">
           <div class="ppf-deps-grid">
             <div>
@@ -922,6 +1060,14 @@ const tabHint = computed(() => {
   gap: 10px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+.ppf-field-group { grid-column: 1 / -1; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.ppf-field-group summary { padding: 10px 12px; font-weight: 600; cursor: pointer; }
+.ppf-field-group summary:hover { background: var(--surface-hover); }
+.ppf-field-group > .ppf-fields { padding: 0 12px 12px; }
+.ppf-utility-hint { padding: 0 12px 10px; color: var(--muted-foreground); font-size: 12px; }
+.ppf-variant-deps { grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)); }
+.ppf-variant-deps > div { min-width: 0; }
+.ppf-variant-deps code { white-space: normal; overflow-wrap: anywhere; }
 .ppf-deps-grid div {
   background: var(--surface-elevated);
   border: 1px solid var(--border);

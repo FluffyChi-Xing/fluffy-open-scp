@@ -40,6 +40,8 @@ pub mod native_lot;
 pub mod native_model;
 pub mod native_profile;
 mod package;
+pub(crate) mod vanilla_variant;
+pub use vanilla_variant::project_schema as vanilla_variant_project_schema;
 pub mod patch;
 pub mod path_catalog;
 mod vehicle_paths;

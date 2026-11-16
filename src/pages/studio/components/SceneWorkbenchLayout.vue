@@ -8,6 +8,7 @@ import {
 
 const { t } = useI18n();
 const columnHandleMargins = { coarse: 0, fine: 0 };
+defineProps<{ hideLower?: boolean }>();
 </script>
 
 <template>
@@ -22,6 +23,7 @@ const columnHandleMargins = { coarse: 0, fine: 0 };
     />
     <ResizablePanel id="maw-center" :default-size="57" :min-size="0">
       <slot v-if="$slots.center" name="center" />
+      <slot v-else-if="hideLower" name="viewport" />
       <Resizable v-else class="maw-column" direction="vertical">
         <ResizablePanel id="maw-viewport" :default-size="64" :min-size="0">
           <slot name="viewport" />

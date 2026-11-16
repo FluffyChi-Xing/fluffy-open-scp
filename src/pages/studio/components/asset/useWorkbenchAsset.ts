@@ -257,7 +257,7 @@ function groupUnits(units: LotUnitDto[]): UnitGrouping {
   return result;
 }
 
-export function useWorkbenchAsset(project: string) {
+export function useWorkbenchAsset(project: string, nativeGroundEditable = false) {
   // ---- 会话状态（native / draft 二选一激活）----
   const sourceKind = ref<WorkbenchSourceKind>("none");
   const draftSceneOpen = ref(false);
@@ -593,6 +593,7 @@ export function useWorkbenchAsset(project: string) {
   const ui = computed(() => {
     if (sourceKind.value === "native" && nativeSession.value) {
       const session = nativeSession.value;
+      const ground = nativeGroundEditable && appliedAuthoredLot.value ? draftStyle : null;
       return {
         editMode: "native" as const,
         loading: session.loading.value,
@@ -608,19 +609,19 @@ export function useWorkbenchAsset(project: string) {
         hiddenUnits: session.hiddenUnits.value,
         groupVisibility: session.groupVisibility,
         lotSize: session.lotSize.value,
-        lotTilePeriod: session.lotTilePeriod.value,
+        lotTilePeriod: ground?.tilePeriod ?? session.lotTilePeriod.value,
         lotPlacement: session.lotPlacement.value,
-        lotColors: session.lotColors.value,
-        lotColorsAuthored: session.lotColorsAuthored.value,
-        lotBorderColors: session.lotBorderColors.value,
-        lotBorderWidths: session.lotBorderWidths.value,
-        lotBorderPatternIndices: session.lotBorderPatternIndices.value,
-        lotBaseTile: session.lotBaseTile.value,
+        lotColors: ground?.colors ?? session.lotColors.value,
+        lotColorsAuthored: ground?.colorsAuthored ?? session.lotColorsAuthored.value,
+        lotBorderColors: ground?.borderColors ?? session.lotBorderColors.value,
+        lotBorderWidths: ground?.borderWidths ?? session.lotBorderWidths.value,
+        lotBorderPatternIndices: ground?.borderPatternIndices ?? session.lotBorderPatternIndices.value,
+        lotBaseTile: ground?.baseTile ?? session.lotBaseTile.value,
         lotOverlayBoxOffset: session.lotOverlayBoxOffset.value,
         lotModelBBoxCenter: session.lotModelBBoxCenter.value,
-        lotMaskPng: session.lotMaskPng.value,
-        lotMaskRawRgba: session.lotMaskRawRgba.value,
-        lotAlbedoPng: session.lotAlbedoPng.value,
+        lotMaskPng: ground?.maskPng ?? session.lotMaskPng.value,
+        lotMaskRawRgba: ground?.maskRawRgba ?? session.lotMaskRawRgba.value,
+        lotAlbedoPng: ground?.albedoPng ?? session.lotAlbedoPng.value,
         lotSurfacePng: session.lotSurfacePng.value,
         lotNormalAtlasPng: session.lotNormalAtlasPng.value,
         decalTextures: decalPreviews.texturesFor(session.flatUnits.value, session.session.value?.decalTextures ?? []),
@@ -762,7 +763,7 @@ export function useWorkbenchAsset(project: string) {
       materialSlots:
         sourceKind.value === "native" ? undefined : draftMaterialSlots.value,
       lotStyle:
-        sourceKind.value === "native"
+        sourceKind.value === "native" && !(nativeGroundEditable && appliedAuthoredLot.value)
           ? undefined
           : {
               colors: draftStyle.colors.map(
@@ -869,6 +870,13 @@ export function useWorkbenchAsset(project: string) {
     const absolute = /^[A-Za-z]:[\\/]|^[\\/]/.test(packagePath)
       ? packagePath
       : joinProjectPath(packagePath);
+    if (nativeGroundEditable) {
+      const directory = absolute.replace(/[\\/][^\\/]+$/, "");
+      await Promise.allSettled(
+        ["SimCity_Game.package", "SimCity_Graphics.package", "SimCityDataEP1.package", "SimCity_App.package"]
+          .map((name) => tauriApi.packages.open(`${directory}/${name}`)),
+      );
+    }
     const opened = await tauriApi.packages.open(absolute);
     if (epoch !== loadEpoch) return;
     const packageId = opened.package.packageId;
@@ -1513,13 +1521,14 @@ export function useWorkbenchAsset(project: string) {
 
   /** 绑定项目内自绘地面：尺寸/材质/遮罩来自存档，地表图集取游戏共享图集。 */
   async function applyAuthoredLot(lot: AuthoredLot): Promise<[number, number]> {
-    if (!draftSceneOpen.value) {
+    const native = nativeGroundEditable && sourceKind.value === "native";
+    if (!draftSceneOpen.value && !native) {
       throw new Error("lot_apply_native");
     }
     const { lotSize, ...style } = authoredLotStyle(lot);
     const atlas = await tauriApi.raster.readLotPreviewAtlases().catch(() => null);
     const dataUrl = (value?: string | null) => (value ? `data:image/png;base64,${value}` : null);
-    draftLotSize.value = lotSize;
+    if (!native) draftLotSize.value = lotSize;
     Object.assign(draftStyle, style, {
       // 默认渲染模式用 albedo 平面贴图；缺省会回退到 LC mask 并被 alphaTest 镂空。
       albedoPng: authoredAlbedoDataUrl(lot),
@@ -1532,8 +1541,8 @@ export function useWorkbenchAsset(project: string) {
     // 永远构建失败（sourceLot.tgi is required）。要脱离 donor 用
     // resetDraftStyle() 显式解除。
     appliedAuthoredLot.value = true;
-    groundSnapshotDirty.value = true;
-    return lotSize;
+    if (!native) groundSnapshotDirty.value = true;
+    return native ? (ui.value?.lotSize ?? lotSize) : lotSize;
   }
 
   function resetDraftStyle() {
@@ -1828,6 +1837,11 @@ export function useWorkbenchAsset(project: string) {
         await openNative(workbench.packagePath, workbench.tgi);
         streetFacingDegrees.value = restoredStreetFacing;
         await restoreUnits(parsed);
+        if (nativeGroundEditable && workbench.lotStyle?.authored) {
+          const { loadAuthoredLot } = await import("./authoredLotStore");
+          const authored = await loadAuthoredLot(project);
+          if (authored) await applyAuthoredLot(authored);
+        }
         void restorePlacedPropModels(parsed);
         return true;
       }

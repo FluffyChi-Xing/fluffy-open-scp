@@ -582,6 +582,13 @@ pub async fn build_queue_enqueue_project(
     label: Option<String>,
 ) -> Result<Json, crate::activity::CommandError> {
     let root_path = Path::new(&root);
+    if let Some((path, raw)) = crate::asset_build_m1::vanilla_variant_project_schema(root_path)
+        .map_err(|error| crate::activity::CommandError::new("vanilla_variant_schema_invalid", error))?
+    {
+        let job = queue.enqueue(&root, raw, label)
+            .map_err(|error| crate::activity::CommandError::new("build_queue_enqueue_failed", error))?;
+        return Ok(serde_json::json!({ "jobId": job, "schema": path, "logic": null }));
+    }
     if let Some((path, raw)) = crate::road_asset::project_schema(root_path)
         .map_err(|error| crate::activity::CommandError::new("road_schema_invalid", error))?
     {

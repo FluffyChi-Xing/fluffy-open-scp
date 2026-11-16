@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
-import { isTauri } from "@/api";
+import { isTauri, tauriApi } from "@/api";
 import { useModProjectsStore } from "@/stores/modProjects";
 import type { ModProjectView } from "@/api/tauri";
 import CodeWorkbench from "../components/CodeWorkbench.vue";
@@ -31,6 +31,24 @@ const project = computed(
 );
 
 const tab = ref<RepoTab>("code");
+const supportedPowerProject = ref<string>();
+const powerRevision = ref(0);
+watch(
+  [() => project.value?.folderExists ? project.value.relPath : undefined, powerRevision],
+  async ([path], _, onCleanup) => {
+    let cancelled = false;
+    onCleanup(() => { cancelled = true; });
+    supportedPowerProject.value = undefined;
+    if (!isTauri() || !path) return;
+    try {
+      const profile = await tauriApi.workspace.vanillaVariantPowerFields(path);
+      if (!cancelled && profile && Object.keys(profile).length) supportedPowerProject.value = path;
+    } catch {
+      // An uninitialized or unreadable project has no confirmed capability.
+    }
+  },
+  { immediate: true },
+);
 
 const tabs = computed(() => [
   { id: "code" as const, label: t("studio.repo.tabCode"), icon: "CodeXml", disabled: false },
@@ -147,6 +165,9 @@ watch(
             statusLabel(project.status)
           }}</span>
           <span class="private-pill">{{ $t("studio.repo.private") }}</span>
+          <span v-if="supportedPowerProject === project.relPath" class="status-pill active">
+            {{ t("flow.variant.specialPropertiesSupported") }}
+          </span>
         </div>
         <p v-if="project.description" class="repo-desc">
           {{ project.description }}
@@ -191,6 +212,7 @@ watch(
             :project="project"
             embedded
             @close="selectTab('code', false)"
+            @variant-registered="powerRevision += 1"
           />
         </div>
 

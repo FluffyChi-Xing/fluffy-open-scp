@@ -39,6 +39,7 @@ import { isEngineManifest } from './mod-flow/contracts';
 import StandardModEditorPanel from './StandardModEditorPanel.vue';
 import RoadAssetWorkbench from "./road/RoadAssetWorkbench.vue";
 import ModAssetWorkbench from './asset/ModAssetWorkbench.vue';
+import VanillaVariantPicker from "./asset/VanillaVariantPicker.vue";
 
 /**
  * Code 工作台（M-CM1 文件浏览 + M-CM2 解析预览）：
@@ -60,7 +61,7 @@ const props = withDefaults(
   }>(),
   { embedded: false },
 );
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; variantRegistered: [] }>();
 
 const { t, locale } = useI18n();
 const toast = useToast();
@@ -110,6 +111,7 @@ const moreOpen = ref(false);
 const notesOpen = ref(false);
 const engineEnabled = ref(false);
 const projectManifest = shallowRef<Record<string, unknown>>({});
+const manifestReady = ref(false);
 const engineReady = ref(false);
 const initializeOpen = ref(false);
 const flowPanel = ref<InstanceType<typeof ModFlowWorkbench> | null>(null);
@@ -130,6 +132,7 @@ const standardModKind = computed(() => {
  */
 const buildBusy = ref(false);
 const roadWorkbench = ref<InstanceType<typeof RoadAssetWorkbench> | null>(null);
+const variantWorkbench = ref<InstanceType<typeof ModAssetWorkbench> | null>(null);
 const buildActivity = useBuildActivityStore();
 
 async function buildM1InBackground(): Promise<boolean> {
@@ -138,6 +141,7 @@ async function buildM1InBackground(): Promise<boolean> {
   buildBusy.value = true;
   try {
     if (isRoadProject.value && !(await roadWorkbench.value?.save())) return false;
+    if (isVanillaVariant.value && !(await variantWorkbench.value?.saveVariantScene())) return false;
     const submitted = await tauriApi.buildQueue.enqueueProject(
       root,
       props.project.name,
@@ -173,9 +177,33 @@ async function buildM1InBackground(): Promise<boolean> {
 }
 
 const isRoadProject = computed(() => engineEnabled.value && standardModKind.value === "road");
+const isVanillaVariant = computed(() => standardModKind.value === "vanilla_variant");
+const variantSource = computed(() => {
+  const source = projectManifest.value.vanillaVariant as { packagePath?: unknown; lot?: unknown } | undefined;
+  return typeof source?.packagePath === "string" && typeof source.lot === "string"
+    ? { packagePath: source.packagePath, lot: source.lot }
+    : undefined;
+});
+const variantSchemaPath = computed(() =>
+  typeof projectManifest.value.vanillaVariantSchema === "string"
+    ? projectManifest.value.vanillaVariantSchema
+    : "schemas/vanilla_variant/asset.schema.json",
+);
+const variantSetupOpen = computed(() => isVanillaVariant.value && !variantSource.value);
+
+async function initializeVanillaVariant(source: { gameData: string; scripts: string; unit: string; lot: string }) {
+  const project = props.project.relPath;
+  await tauriApi.workspace.vanillaVariantRegister({ project, ...source });
+  if (project !== props.project.relPath) return false;
+  await loadTree(true);
+  if (variantSource.value) emit("variantRegistered");
+  return Boolean(variantSource.value);
+}
 
 const projectBuildAvailable = computed(
-  () => (standardModKind.value === "assets" || isRoadProject.value) && Boolean(props.project.folderPath),
+  () => manifestReady.value
+    && (standardModKind.value === "assets" || isRoadProject.value || (isVanillaVariant.value && variantSource.value))
+    && Boolean(props.project.folderPath),
 );
 
 async function buildDeployAndLaunch() {
@@ -271,6 +299,8 @@ async function loadTree(keepSelection = false) {
     }
   } catch {
     /* 清单生成失败不阻断浏览 */
+  } finally {
+    if (request === treeRequest) manifestReady.value = true;
   }
 }
 
@@ -451,6 +481,7 @@ function resetWorkbench() {
   manifestCreated.value = null;
   engineEnabled.value = false;
   projectManifest.value = {};
+  manifestReady.value = false;
   engineReady.value = false;
   clearViewer();
 }
@@ -490,11 +521,11 @@ watch(
           <FIcon :name="buildBusy ? 'Loader2' : 'Hammer'" :size="13" aria-label="" />
           {{ t(buildBusy ? 'studio.assetWorkbench.buildEnqueueing' : 'flow.build') }}
         </button>
-        <button v-if="engineEnabled && !isRoadProject" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
+        <button v-if="engineEnabled && !isRoadProject && !isVanillaVariant" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
           <FIcon :name="deployBusy ? 'Loader2' : 'Play'" :size="13" aria-label="" />
           {{ t(deployBusy ? 'flow.buildDeploying' : 'flow.buildDeploy') }}
         </button>
-        <button v-else-if="!engineEnabled" class="refresh-button" :disabled="loading || !tree" @click="initializeOpen = true">{{ t('flow.initialize') }}</button>
+        <button v-else-if="manifestReady && !engineEnabled && !isVanillaVariant" class="refresh-button" :disabled="loading || !tree" @click="initializeOpen = true">{{ t('flow.initialize') }}</button>
         <span v-if="tree" class="tree-stats">
           {{
             $t("studio.code.stats", {
@@ -534,6 +565,28 @@ watch(
       <FIcon name="FolderOpen" :size="20" aria-label="" />
       <p>{{ fatalMessage }}</p>
     </div>
+
+    <p v-else-if="!manifestReady" class="empty-state" role="status">{{ t("common.loading") }}</p>
+
+    <VanillaVariantPicker
+      v-else-if="variantSetupOpen"
+      :key="project.relPath"
+      :open="true"
+      :project="project.relPath"
+      :schema-path="variantSchemaPath"
+      :select="initializeVanillaVariant"
+      inline
+    />
+
+    <ModAssetWorkbench
+      v-else-if="isVanillaVariant"
+      ref="variantWorkbench"
+      :key="project.relPath"
+      :project="project.relPath"
+      :variant-schema-path="variantSchemaPath"
+      :variant-source="variantSource"
+      class="asset-workbench-host"
+    />
 
     <RoadAssetWorkbench
       v-else-if="isRoadProject"

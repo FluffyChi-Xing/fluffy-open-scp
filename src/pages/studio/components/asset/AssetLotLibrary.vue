@@ -29,6 +29,7 @@ const props = defineProps<{
   editMode: "native" | "draft";
   /** 当前地块绑定的是自绘地面。 */
   authoredBound: boolean;
+  allowNativeGround?: boolean;
 }>();
 const emit = defineEmits<{
   apply: [preset: LotPresetRef];
@@ -156,7 +157,7 @@ watch(
     <AssetAuthoredLotSection
       :project="project"
       :edit-enabled="editEnabled"
-      :edit-mode="editMode"
+      :edit-mode="allowNativeGround ? 'draft' : editMode"
       :bound="authoredBound"
       @apply="emit('applyAuthored', $event)"
       @saved="emit('authoredSaved', $event)"

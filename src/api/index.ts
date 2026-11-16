@@ -265,6 +265,23 @@ export const tauriApi = {
     // ── Code 工作台（模组项目文件夹的通用文件） ──
     codeTree: (project: string) =>
       command<CodeTreeResponse>("code_tree", { request: { project } }),
+    vanillaVariantLookup: (request: { gameData: string; scripts: string; menu?: string; tgi?: string }) =>
+      command<Array<{ name: string; unit: string; lot: string; primary: boolean; matched: boolean }>>(
+        "vanilla_variant_lookup", { request },
+      ),
+    vanillaVariantRegister: (request: {
+      project: string; gameData: string; scripts: string; unit: string; lot: string;
+    }) => command<{ gameData: string; scripts: string; packagePath: string; unit: string; lot: string }>(
+      "vanilla_variant_register", { request },
+    ),
+    vanillaVariantUtilityFields: (project: string) =>
+      command<Record<string, { hash: string; original: number; value: number; consumerBound: boolean }>>(
+        "vanilla_variant_utility_fields", { project },
+      ),
+    vanillaVariantPowerFields: (project: string) =>
+      command<Record<string, Record<string, { hash: string; original: number; value: number }>> | null>(
+        "vanilla_variant_power_fields", { project },
+      ),
     codeReadText: (project: string, relativePath: string) =>
       command<CodeTextDocument>("code_read_text", {
         request: { project, relativePath },

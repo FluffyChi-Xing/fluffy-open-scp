@@ -1871,6 +1871,13 @@ pub async fn code_manifest(
         let manifest_path = crate::mod_flow::safe_path(&root, CODE_MANIFEST_NAME)
             .map_err(CommandError::internal)?;
         let existed = manifest_path.is_file();
+        let pending = root.join(crate::asset_build_m1::vanilla_variant::PENDING_PROJECT);
+        if !existed && pending.is_file() {
+            let bytes = fs::read(&pending).map_err(WorkspaceError::from)?;
+            let manifest = serde_json::from_slice(&bytes)
+                .map_err(|error| CommandError::internal(error.to_string()))?;
+            return Ok(CodeManifestResponse { existed: false, created: false, manifest });
+        }
         let mut manifest: serde_json::Value = if existed {
             let bytes = fs::read(&manifest_path).map_err(WorkspaceError::from)?;
             serde_json::from_slice(&bytes).map_err(|error| {
