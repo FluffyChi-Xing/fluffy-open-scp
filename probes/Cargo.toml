@@ -21,6 +21,11 @@ serde_json = "1"
 flate2 = "1"
 sha2 = "0.10"
 
+# runtime —— validate a single Menu2 change before a live experiment
+[[example]]
+name = "package_reload_prepare"
+path = "runtime/package_reload_prepare.rs"
+
 [[example]]
 name = "building_economy_audit"
 path = "property/building_economy_audit.rs"
