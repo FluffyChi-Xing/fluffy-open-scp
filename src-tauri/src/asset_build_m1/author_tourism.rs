@@ -41,7 +41,7 @@ pub(super) fn selected(nodes: &[serde_json::Value]) -> bool {
     let mut tourism = false;
     for node in nodes {
         match node["type"].as_str() {
-            Some("education") => return false,
+            Some("education" | "commercial") => return false,
             Some("residence") => {
                 // Copan contributes its residential fields and bundles through
                 // Templates::patch after the landmark Unit is built.

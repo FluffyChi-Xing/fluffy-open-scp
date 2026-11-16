@@ -2287,6 +2287,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         let bytes = final_resources.get(&id).ok_or("COMMERCIAL_RESOURCE: Unit")?;
         let unit = PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
         recipe.verify(&unit)?;
+        recipe.verify_mixed_capacity(&unit, id, &final_resources)?;
         recipe.verify_lot(&final_resources, &ResourceId { group: super::menu::lot_group(), ..id })?;
         final_contract.detail["commercial"] = serde_json::to_value(recipe).map_err(|error| error.to_string())?;
     }

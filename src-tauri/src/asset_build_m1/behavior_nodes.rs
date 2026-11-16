@@ -556,7 +556,7 @@ pub(super) fn compile_with_profile(
     resolved.author_tourism = author_tourism;
     let office = super::behavior_office::select(nodes)?;
     let labor = office.as_ref().map(|office| office.labor(labor)).or(labor);
-    let commercial = super::behavior_commercial::select(nodes)?;
+    let commercial = super::behavior_commercial::select(nodes, labor)?;
     let labor = commercial.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
     let hotel = super::behavior_hotel::select(nodes)?;
     let labor = hotel.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
@@ -569,7 +569,7 @@ pub(super) fn compile_with_profile(
     if templates.land_value() {
         intent.landvalue = false;
     }
-    let native_tourism = super::behavior_tourism::select(nodes)?;
+    let native_tourism = super::behavior_tourism::select(nodes, commercial.is_some())?;
     if native_tourism.is_some() && !author_tourism {
         // This recipe installs the visitor bundles explicitly, independent of
         // the identity chosen for education, park and labor.
@@ -685,7 +685,7 @@ pub(super) fn compile_with_profile(
         super::behavior_family::apply_to_behavior(&mut resolved, &family);
     }
     if let Some(recipe) = native_tourism {
-        recipe.apply(&mut resolved)?;
+        recipe.apply(&mut resolved, commercial.is_some())?;
         resolved.native_tourism = Some(recipe);
     }
     templates.reconcile(&mut resolved);

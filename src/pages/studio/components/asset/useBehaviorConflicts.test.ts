@@ -70,6 +70,8 @@ it("rejects incompatible choices and the fifth behavior with a toast", () => {
         title: "Potential behavior conflict",
         message: expect.stringContaining("Tourism may conflict with Hotel"),
       });
+      const retail = addLogicNode(core.graph, leafSpec("commercial"), [0, 0]);
+      expect(canAdd(retail.graph, "tourism")).toBe(true);
       expect(canAdd(full, "residence")).toBe(false);
       expect(toast.toasts.value.at(-1)?.message).toContain("up to 4");
       return () => null;

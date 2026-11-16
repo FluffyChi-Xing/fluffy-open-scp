@@ -31,30 +31,33 @@ describe("BehaviorLeafSheet", () => {
     try {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
-      const shoppers = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[4];
+      const shoppers = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[1];
       expect(shoppers.value).toBe("9");
-      expect(shoppers.closest("label")?.textContent?.trim()).toBe("顾客容量");
+      expect(shoppers.closest("label")?.textContent?.trim()).toBe("中收入顾客 ($$)");
       i18n.global.locale.value = "en-US";
       await nextTick();
-      expect(shoppers.closest("label")?.textContent?.trim()).toBe("Shopper capacity");
+      expect(shoppers.closest("label")?.textContent?.trim()).toBe("Medium-wealth shoppers ($$)");
       shoppers.value = "15";
       shoppers.dispatchEvent(new Event("change", { bubbles: true }));
       await nextTick();
       dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      expect(wrapper.emitted("apply")).toEqual([[{ type: "commercial", shoppers: 15 }]]);
+      expect(wrapper.emitted("apply")).toEqual([[{
+        type: "commercial", commercialProfile: "ground-mall-mixed-v1",
+        shoppers: undefined, shoppersW1: 0, shoppersW2: 15, shoppersW3: 0, goods: 9,
+      }]]);
     } finally {
       wrapper.unmount();
     }
   });
 
-  it("changes retail customer tiers while keeping explicit job overrides", async () => {
+  it("shows only capacity fields and directs staffing to building properties", async () => {
     i18n.global.locale.value = "zh-CN";
     const wrapper = mount(BehaviorLeafSheet, {
       attachTo: document.body,
       global: { plugins: [i18n] },
       props: {
-        node: { ...node, id: "leaf-retail-wealth", position: [0, 0] },
-        params: { type: "commercial", commercialProfile: "ground-commercial-w2-v1", w1: 6 },
+        node: { ...node, position: [0, 0] },
+        params: { type: "commercial", shoppers: 20, goods: 20 },
         labelKey: "studio.assetWorkbench.logicNode.leafCommercial",
         trigger: null,
       },
@@ -62,24 +65,42 @@ describe("BehaviorLeafSheet", () => {
     try {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
-      const trigger = dialog.querySelector<HTMLButtonElement>(".f-select")!;
-      trigger.click();
-      await nextTick();
-      const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
-      expect(options.map((option) => option.textContent?.trim())).toEqual([
-        "低收入商业 ($)", "中收入商业 ($$)", "高收入商业 ($$$)",
-      ]);
-      options[2].click();
+      expect(dialog.querySelectorAll('input[type="number"]')).toHaveLength(4);
+      expect(dialog.textContent).toContain("劳工在建筑属性中设置");
       i18n.global.locale.value = "en-US";
       await nextTick();
-      expect(trigger.textContent?.trim()).toBe("High-wealth retail ($$$)");
+      expect(dialog.textContent).toContain("Set staffing in Building Properties");
+      expect(dialog.querySelector('[role="alert"]')).toBeNull();
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it("adds another customer tier while keeping the saved tier and goods", async () => {
+    i18n.global.locale.value = "zh-CN";
+    const wrapper = mount(BehaviorLeafSheet, {
+      attachTo: document.body,
+      global: { plugins: [i18n] },
+      props: {
+        node: { ...node, id: "leaf-retail-wealth", position: [0, 0] },
+        params: { type: "commercial", commercialProfile: "ground-commercial-w2-v1", shoppers: 6 },
+        labelKey: "studio.assetWorkbench.logicNode.leafCommercial",
+        trigger: null,
+      },
+    });
+    try {
+      await nextTick();
+      const dialog = document.querySelector('[role="dialog"]')!;
       const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
-      expect(fields[0].value).toBe("6");
-      expect(fields[4].placeholder).toBe("7");
-      expect(fields[5].placeholder).toBe("15");
+      expect([...fields].map((field) => field.value)).toEqual(["0", "6", "0", "18"]);
+      fields[0].value = "25";
+      fields[0].dispatchEvent(new Event("change", { bubbles: true }));
+      await nextTick();
+      expect(dialog.textContent).toContain("共享接待容量 31");
       dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       expect(wrapper.emitted("apply")).toEqual([[
-        { type: "commercial", commercialProfile: "ground-commercial-w3-v1", w1: 6 },
+        { type: "commercial", commercialProfile: "ground-mall-mixed-v1", shoppers: undefined,
+          shoppersW1: 25, shoppersW2: 6, shoppersW3: 0, goods: 18 },
       ]]);
     } finally {
       wrapper.unmount();

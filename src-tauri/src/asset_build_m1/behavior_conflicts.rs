@@ -63,6 +63,14 @@ fn bundles(node: &Value) -> Result<BTreeSet<u32>, String> {
     Ok(bundles)
 }
 
+fn shared_retail_shopper_bin(first: u32, second: u32, bin: u32) -> bool {
+    let retail = |id| matches!(id, 0x3A82_63E1..=0x3A82_63E3)
+        || super::behavior_commercial_mixed::STREET.contains(&id);
+    let tourist = |id| matches!(id, 0x75D2_2FD0..=0x75D2_2FD2);
+    matches!(bin, 0xC1F5_69B9 | 0xCE6E_3D2D)
+        && ((retail(first) && tourist(second)) || (tourist(first) && retail(second)))
+}
+
 pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
     let nodes = parse_nodes(nodes)?;
     let added = nodes
@@ -102,7 +110,10 @@ pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
                 for bin in added_bins
                     .iter()
                     .copied()
-                    .filter(|bin| other_bins.contains(bin))
+                    .filter(|bin| {
+                        other_bins.contains(bin)
+                            && !shared_retail_shopper_bin(added_bundle, other_bundle, *bin)
+                    })
                 {
                     collisions
                         .entry(bin)
@@ -130,6 +141,19 @@ pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn retail_and_tourism_intentionally_share_one_shopper_pool() {
+        let nodes = [
+            json!({"id":"retail","type":"commercial","params":{"commercialProfile":"ground-megatower-mall-w2-v1","shoppers":20}}),
+            json!({"id":"tourism","type":"tourism","params":{"tourismProfile":"native-tourism-v1","shoppers":175}}),
+        ];
+        let program = compile(None, &nodes).unwrap();
+        assert!(program.native_tourism.is_some());
+        assert!(!program.set_float_fields.contains_key(&0x0AD6_A725));
+        assert!(check(&nodes, "tourism").unwrap().conflicts.is_empty());
+        assert!(check(&nodes, "retail").unwrap().conflicts.is_empty());
+    }
 
     #[test]
     fn reports_real_open_shopper_overlap_between_park_and_tourism() {

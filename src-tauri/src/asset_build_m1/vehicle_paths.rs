@@ -2,6 +2,7 @@
 //! Sink rows come from the native Unit bundles. The paired Lot columns are
 //! read by cTransportTraffic::AddSinkPositionsFromDataPaths.
 
+use super::behavior_commercial_mall as mall;
 use super::behavior_templates::{ENABLE, EXCLUDED, array, key};
 use super::property_edit::{encode, set_array_with_flags, set_scalar};
 use super::scene::SceneDocument;
@@ -69,6 +70,9 @@ const OTHER_ARRIVALS: &[(u32, &[u32])] = &[
     (0x75D2_2FD2, &[0x75D2_2FD2]),
     (0x6C04_2366, &[0xD10F_7B4E, 0x6688_3F3B, 0x8365_DE58]),
     (0x3A82_63E2, &[0x8A97_E8AF, 0xAD48_46DB]),
+    (0x1C1F_5978, &[0x6CCF_B5D2, 0x14A0_C36E]),
+    (mall::STREET_SHOPPERS, mall::STREET_CARS),
+    (0x1C1F_597A, &[0x0633_8F6C, 0x9AB9_A878]),
 ];
 
 pub(super) fn authored(document: Option<&SceneDocument>) -> bool {
@@ -106,7 +110,14 @@ fn receivers(unit: &PropertyFile) -> Result<(Vec<Value>, bool), String> {
         }
     };
     collect(&mut sinks, OTHER_ARRIVALS);
-    let open_commute = sinks.is_empty() || active.contains(&0x1E16_EDA9);
+    // Ground retail installs the same labor provider alongside its shoppers.
+    // Customer arrivals must not suppress its independent commute sinks.
+    let retail = active.contains(&0xD07C_5A04)
+        && active
+            .iter()
+            .any(|&id| matches!(id, 0x3A82_63E1..=0x3A82_63E3)
+                || super::behavior_commercial_mixed::STREET.contains(&id));
+    let open_commute = sinks.is_empty() || active.contains(&0x1E16_EDA9) || retail;
     if open_commute {
         collect(&mut sinks, COMMUTE);
     }
@@ -220,6 +231,22 @@ pub(super) fn verify(unit: &[u8], lot: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retail_vehicle_receivers_include_customers_and_commuters() {
+        let mut unit = PropertyFile::default();
+        set_array_with_flags(
+            &mut unit,
+            ENABLE[3],
+            PropType::Key,
+            vec![key(0x3A82_63E2), key(0xD07C_5A04)],
+            0x809C,
+        );
+        let (sinks, open_commute) = receivers(&unit).unwrap();
+        assert!(open_commute);
+        assert!(sinks.contains(&key(0x8A97_E8AF)));
+        assert!(sinks.contains(&key(0xADAF_4C17)));
+    }
 
     #[test]
     fn office_entrance_requires_active_receivers_and_clears_only_flag_49() {

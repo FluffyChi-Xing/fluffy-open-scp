@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useId } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSelect from "@/components/ui/FSelect.vue";
@@ -7,7 +7,7 @@ import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
 import BlueprintPortRow from "./BlueprintPortRow.vue";
 import ResidenceBehaviorFields from "./ResidenceBehaviorFields.vue";
 import type { ResidenceParams } from "./residenceBehavior";
-import { COMMERCIAL_DEFAULTS, COMMERCIAL_FIELDS, commercialDefaults, type CommercialParams } from "./commercialBehavior";
+import { COMMERCIAL_FIELDS, COMMERCIAL_SHOPPER_FIELDS, MIXED_COMMERCIAL, commercialValues, type CommercialParams } from "./commercialBehavior";
 import { OFFICE_DEFAULTS, OFFICE_FIELDS, type OfficeParams } from "./officeBehavior";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -49,27 +49,28 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const commercialId = useId();
 const hotelRooms = computed(() => (props.params as { rooms?: number | null }).rooms);
 function updateHotelRooms(event: Event): void {
   const input = event.target as HTMLInputElement;
   emit("update-params", { rooms: input.value === "" && !input.validity.badInput ? null : input.valueAsNumber });
 }
 const commercialParams = computed(() => props.params as CommercialParams);
-const retailDefaults = computed(() => commercialDefaults(commercialParams.value.commercialProfile) ?? COMMERCIAL_DEFAULTS);
-const retailProfiles = computed(() => [
-  { value: "ground-commercial-w1-v1", label: t("studio.assetWorkbench.behaviorSheet.commercialW1") },
-  { value: "ground-commercial-w2-v1", label: t("studio.assetWorkbench.behaviorSheet.commercialW2") },
-  { value: "ground-commercial-w3-v1", label: t("studio.assetWorkbench.behaviorSheet.commercialW3") },
-  ...(!commercialParams.value.commercialProfile
-    ? [{ value: "", label: t("studio.assetWorkbench.behaviorSheet.commercialLegacy") }]
-    : []),
-]);
+const retailValues = computed(() => commercialValues(commercialParams.value));
+const retailTotal = computed(() => COMMERCIAL_SHOPPER_FIELDS.reduce(
+  (total, field) => total + (retailValues.value?.[field] ?? 0), 0,
+));
 
 function patchRetail(field: (typeof COMMERCIAL_FIELDS)[number], event: Event): void {
   const input = event.target as HTMLInputElement;
-  const value = input.value === "" && !input.validity.badInput ? null : input.valueAsNumber;
-  emit("update-params", { [field]: value });
+  const value = input.value === "" && !input.validity.badInput
+    ? (field === "goods" ? 750 : 0)
+    : input.valueAsNumber;
+  emit("update-params", {
+    ...retailValues.value,
+    commercialProfile: MIXED_COMMERCIAL,
+    shoppers: undefined,
+    [field]: value,
+  });
 }
 const landFields = computed<readonly (keyof LandvalueParams)[]>(() =>
   (props.params as LandvalueParams).landValueProfile
@@ -431,29 +432,19 @@ const leafOptions = computed(() =>
       </template>
 
       <template v-else-if="leafType === 'commercial'">
-        <div class="logic-field">
-          <label :for="commercialId">{{ t("studio.assetWorkbench.behaviorSheet.commercialProfile") }}</label>
-          <FSelect
-            :id="commercialId"
-            :options="retailProfiles"
-            :model-value="commercialParams.commercialProfile ?? ''"
-            :disabled="disabled"
-            @change="emit('update-params', { commercialProfile: $event || undefined })"
-          />
-        </div>
         <label v-for="field in COMMERCIAL_FIELDS" :key="field" class="logic-field">
           <span>{{ t(`studio.assetWorkbench.leaf.commercial.${field}`) }}</span>
           <input
             type="number"
-            :min="field === 'minWorkers' || field === 'shoppers' || field === 'goods' ? 1 : 0"
+            :min="field === 'goods' ? 1 : 0"
             max="100000"
             step="1"
-            :value="commercialParams[field] ?? (commercialParams.commercialProfile ? '' : retailDefaults[field])"
-            :placeholder="String(retailDefaults[field])"
+            :value="retailValues?.[field]"
             :disabled="disabled"
             @change="patchRetail(field, $event)"
           />
         </label>
+        <p class="logic-field">{{ t("studio.assetWorkbench.behaviorSheet.commercialTotal", { count: retailTotal }) }}</p>
       </template>
 
       <label v-else-if="leafType === 'hotel'" class="logic-field">

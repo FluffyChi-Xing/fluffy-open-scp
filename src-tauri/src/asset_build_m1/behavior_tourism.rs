@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const PROFILE: &str = "native-tourism-v1";
-const TOURIST_BUNDLES: [u32; 4] = [0xE153_69A2, 0x75D2_2FD2, 0x75D2_2FD1, 0x75D2_2FD0];
+pub(super) const TOURIST_BUNDLES: [u32; 4] = [0xE153_69A2, 0x75D2_2FD2, 0x75D2_2FD1, 0x75D2_2FD0];
 use super::behavior_hotel::INTAKE as HOTEL_W2;
 const ENABLE_ROWS: [u32; 4] = [0x0A02_09A2, 0x0A02_09A3, 0x0A02_09A4, 0x0A02_09A5];
 const EXCLUDE_ROW: u32 = 0x0A02_09B2;
@@ -30,14 +30,14 @@ pub(super) struct NativeTourism {
     lodging: bool,
 }
 
-pub(super) fn select(nodes: &[Value]) -> Result<Option<NativeTourism>, String> {
+pub(super) fn select(nodes: &[Value], retail: bool) -> Result<Option<NativeTourism>, String> {
     let mut tourism = nodes.iter().filter(|node| node["type"] == "tourism");
-    let Some(first) = tourism.find(|node| !node["params"]["tourismProfile"].is_null()) else {
+    let Some(first) = tourism.find(|node| retail || !node["params"]["tourismProfile"].is_null()) else {
         return Ok(None);
     };
     let node = first["id"].as_str().unwrap_or("tourism");
     let params = &first["params"];
-    if params["tourismProfile"] != PROFILE
+    if (params["tourismProfile"] != PROFILE && !(retail && params["tourismProfile"].is_null()))
         || nodes
             .iter()
             .filter(|node| node["type"] == "tourism")
@@ -68,6 +68,11 @@ pub(super) fn select(nodes: &[Value]) -> Result<Option<NativeTourism>, String> {
         Value::Null => false,
         _ => return Err(format!("TOURISM_PARAMETER: {node}/lodging")),
     };
+    if retail && (lodging || ["templateInstance", "removeBundles", "removeFields"]
+        .into_iter().any(|key| !params[key].is_null()))
+    {
+        return Err(format!("TOURISM_PROFILE: {node}"));
+    }
     let shoppers = number("shoppers", 175.0, 1.0)?;
     if shoppers.fract() != 0.0 {
         return Err(format!("TOURISM_PARAMETER: {node}/shoppers"));
@@ -93,7 +98,7 @@ impl NativeTourism {
             .chain(self.lodging.then_some(HOTEL_W2))
     }
 
-    pub(super) fn apply(&self, program: &mut ResolvedBehavior) -> Result<(), String> {
+    pub(super) fn apply(&self, program: &mut ResolvedBehavior, retail: bool) -> Result<(), String> {
         // 971A4B13 and the visitor bundles consume the same native Float.
         // Preserve the hotel's value for both mappings when lodging is enabled.
         let shared_capacity = if self.lodging { 68.0 } else { 2100.0 };
@@ -111,6 +116,11 @@ impl NativeTourism {
             (0x0C0F_2290, 36.0),
             (0x0C0F_228C, 6.0),
         ] {
+            // The store owns the shared shopper pool, goods and freight
+            // parameters. Tourists retain their own souvenir pool.
+            if retail && matches!(hash, 0x0AD6_A725 | 0x0DA3_EE15 | 0x0C0F_2290 | 0x0C0F_228C) {
+                continue;
+            }
             program.record_float(hash, value, &self.node)?;
             program.remove_fields.retain(|field| *field != hash);
         }

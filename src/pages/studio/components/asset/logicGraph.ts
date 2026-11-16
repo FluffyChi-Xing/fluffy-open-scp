@@ -12,7 +12,7 @@
  * 数值并确保对应 utility bundle——不能只写数值。
  */
 
-import { validCommercial, type CommercialParams } from "./commercialBehavior";
+import { MIXED_COMMERCIAL, validCommercial, type CommercialParams } from "./commercialBehavior";
 import { validOffice, type OfficeParams } from "./officeBehavior";
 import { residenceCapacityError, type ResidenceParams } from "./residenceBehavior";
 import behaviorPolicy from "@/lib/asset-behavior-policy.json";
@@ -250,7 +250,7 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     icon: "Store",
     labelKey: "studio.assetWorkbench.logicNode.leafCommercial",
     hintKey: "studio.assetWorkbench.logicNode.leafCommercialHint",
-    defaultParams: () => ({ type: "commercial", commercialProfile: "ground-commercial-w2-v1" }),
+    defaultParams: () => ({ type: "commercial", commercialProfile: MIXED_COMMERCIAL }),
   },
   {
     kind: "behavior-leaf",
@@ -748,7 +748,13 @@ export function normalizeLogicGraph(raw: unknown): LogicGraph {
   if (typeof record.params === "object" && record.params !== null) {
     for (const [id, params] of Object.entries(record.params)) {
       if (!seen.has(id) || typeof params !== "object" || params === null) continue;
-      graph.params[id] = params as LogicParams;
+      const config = params as LogicParams;
+      if ("type" in config && config.type === "commercial") {
+        const { type, commercialProfile, shoppers, shoppersW1, shoppersW2, shoppersW3, goods } = config;
+        graph.params[id] = { type, commercialProfile, shoppers, shoppersW1, shoppersW2, shoppersW3, goods };
+      } else {
+        graph.params[id] = config;
+      }
     }
   }
   // 旧图迁移（2026-11-11）：老图只有 w1/w2/w3/minWorkers。补 workers 总额，

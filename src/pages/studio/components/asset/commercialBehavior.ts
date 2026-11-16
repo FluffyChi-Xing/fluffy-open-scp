@@ -1,32 +1,50 @@
-import { OFFICE_FIELDS } from "./officeBehavior";
-
-export const COMMERCIAL_DEFAULTS = { w1: 3, w2: 2, w3: 1, minWorkers: 3, shoppers: 9, goods: 9 } as const;
-export const COMMERCIAL_FIELDS = [...OFFICE_FIELDS, "shoppers", "goods"] as const;
+export const COMMERCIAL_DEFAULTS = { shoppers: 9, goods: 9 } as const;
+export const MIXED_COMMERCIAL = "ground-mall-mixed-v1";
+export const COMMERCIAL_SHOPPER_FIELDS = ["shoppersW1", "shoppersW2", "shoppersW3"] as const;
+export const COMMERCIAL_FIELDS = [...COMMERCIAL_SHOPPER_FIELDS, "goods"] as const;
 export const COMMERCIAL_PROFILES = {
-  "ground-commercial-w1-v1": { w1: 5, w2: 2, w3: 0, minWorkers: 3, shoppers: 10, goods: 21 },
-  "ground-commercial-w2-v1": { w1: 3, w2: 2, w3: 1, minWorkers: 3, shoppers: 8, goods: 18 },
-  "ground-commercial-w3-v1": { w1: 1, w2: 2, w3: 2, minWorkers: 3, shoppers: 7, goods: 15 },
+  "ground-commercial-w1-v1": { shoppers: 10, goods: 21 },
+  "ground-commercial-w2-v1": { shoppers: 8, goods: 18 },
+  "ground-commercial-w3-v1": { shoppers: 7, goods: 15 },
+  "ground-megatower-mall-w2-v1": { shoppers: 180, goods: 750 },
 } as const;
-export type CommercialProfile = keyof typeof COMMERCIAL_PROFILES;
+export type CommercialProfile = keyof typeof COMMERCIAL_PROFILES | typeof MIXED_COMMERCIAL;
 
 export type CommercialParams = {
   type: "commercial";
   commercialProfile?: CommercialProfile;
+  shoppers?: number | null;
 } & Partial<Record<(typeof COMMERCIAL_FIELDS)[number], number | null>>;
 
-export function commercialDefaults(profile?: CommercialProfile) {
-  return profile ? COMMERCIAL_PROFILES[profile] : COMMERCIAL_DEFAULTS;
+export function commercialValues(params: CommercialParams) {
+  if (params.commercialProfile === MIXED_COMMERCIAL) {
+    return {
+      shoppersW1: params.shoppersW1 ?? 60,
+      shoppersW2: params.shoppersW2 ?? 60,
+      shoppersW3: params.shoppersW3 ?? 60,
+      goods: params.goods ?? 750,
+    };
+  }
+  const profile = params.commercialProfile;
+  const defaults = profile ? COMMERCIAL_PROFILES[profile] : COMMERCIAL_DEFAULTS;
+  if (!defaults) return undefined;
+  const capacity = params.shoppers ?? defaults.shoppers;
+  const low = profile === "ground-commercial-w1-v1";
+  const high = profile === "ground-commercial-w3-v1";
+  return {
+    shoppersW1: low ? capacity : 0,
+    shoppersW2: !low && !high ? capacity : 0,
+    shoppersW3: high ? capacity : 0,
+    goods: params.goods ?? defaults.goods,
+  };
 }
 
 export function validCommercial(params: CommercialParams): boolean {
-  const defaults = commercialDefaults(params.commercialProfile);
-  if (!defaults) return false;
-  const [w1, w2, w3, minimum, shoppers, goods] = COMMERCIAL_FIELDS.map(
-    (field) => params[field] ?? defaults[field],
-  );
-  const total = w1 + w2 + w3;
-  return [w1, w2, w3, minimum, shoppers, goods].every(Number.isInteger) &&
-    w1 >= 0 && w2 >= 0 && w3 >= 0 && total <= 100_000 &&
-    minimum >= 1 && minimum <= total &&
-    shoppers >= 1 && shoppers <= 100_000 && goods >= 1 && goods <= 100_000;
+  const values = commercialValues(params);
+  if (!values) return false;
+  const tiers = COMMERCIAL_SHOPPER_FIELDS.map((field) => values[field]);
+  const total = tiers.reduce((sum, value) => sum + value, 0);
+  return tiers.every((value) => Number.isInteger(value) && value >= 0)
+    && total >= 1 && total <= 100_000
+    && Number.isInteger(values.goods) && values.goods >= 1 && values.goods <= 100_000;
 }

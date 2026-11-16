@@ -282,9 +282,6 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     if !program.author_tourism {
         ensure_behavior_invariants(ctx, &unit_id, &program)?;
     }
-    if let Some(recipe) = &program.native_tourism {
-        recipe.verify(ctx, &unit_id, &lot_id)?;
-    }
     if let Some(office) = &program.office {
         let bytes = ctx.resources.get(&unit_id).ok_or("OFFICE_RESOURCE: Unit")?;
         let unit = office.patch(bytes)?;
@@ -299,8 +296,20 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         recipe.verify_lot(ctx.resources.all(), &lot_id)?;
         let bytes = ctx.resources.get(&unit_id).ok_or("COMMERCIAL_RESOURCE: Unit")?;
         let unit = recipe.patch(bytes)?;
+        let unit = if let Some((unit, id, bundle)) = recipe.bind_mixed_capacity(&unit, unit_id)? {
+            if ctx.resources.get(&id).is_some() {
+                return Err("COMMERCIAL_BUNDLE: mixed-capacity resource collision".into());
+            }
+            ctx.resources.insert(id, bundle);
+            unit
+        } else {
+            unit
+        };
         ctx.resources.insert(unit_id, unit);
         changed.push(serde_json::json!({"resource": unit_id.to_string(), "commercial": recipe}));
+    }
+    if let Some(recipe) = &program.native_tourism {
+        recipe.verify(ctx, &unit_id, &lot_id)?;
     }
 
     if let Some(recipe) = &program.hotel {

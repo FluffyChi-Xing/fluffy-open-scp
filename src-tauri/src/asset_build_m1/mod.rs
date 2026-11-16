@@ -16,6 +16,8 @@ mod behavior_residence_fill;
 mod behavior_residence_wealth;
 mod behavior_office;
 mod behavior_commercial;
+mod behavior_commercial_mall;
+mod behavior_commercial_mixed;
 mod behavior_commercial_wealth;
 mod authored_reference;
 mod behavior_tourism;
