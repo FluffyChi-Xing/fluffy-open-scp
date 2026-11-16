@@ -757,6 +757,14 @@ name = "edgewater_surface_data"
 path = "region/edgewater_surface_data.rs"
 
 [[example]]
+name = "edgewater_aligned_surface"
+path = "region/edgewater_aligned_surface.rs"
+
+[[example]]
+name = "edgewater_groundfix_pair"
+path = "region/edgewater_groundfix_pair.rs"
+
+[[example]]
 name = "region_state_probe"
 path = "region/region_state_probe.rs"
 
