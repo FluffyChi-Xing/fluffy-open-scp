@@ -63,11 +63,11 @@ const messages = {
       studioDiagnostics: "复写检测",
       studioMap: "地图面板",
       studioI18n: "文本编辑",
-      studioProperty: "属性编辑",
+
       studioRaster: "Raster 绘制",
       studioUI: "UI 工作台",
       studioCamera: "摄像机开发",
-      studioOverview: "面板总览",
+
       studioProject: "项目详情",
     },
     assetCapture: {
@@ -596,7 +596,7 @@ const messages = {
       projects: {
         title: "项目管理",
         description: "把模组开发组织成项目：分组、状态与统计，一屏掌握。",
-        overviewLink: "面板总览",
+
         devRootLabel: "项目管理目录",
         devRootMissing: "未配置",
         newProject: "新建项目",
@@ -894,30 +894,7 @@ const messages = {
         discard: "丢弃新条目",
       },
       eyebrow: "OpenSCP mod studio",
-      title: "面板总览",
-      description:
-        "七个功能面板的开发阶段地图：解析、编辑、构建、校验——按阶段查看各面板的状态与说明。",
-      baseline: "解析底座已就绪 · 写回链路待验证",
-      pipelineLabel: "开发管线",
-      stages: {
-        resolve: "解析",
-        edit: "编辑",
-        build: "构建",
-        verify: "校验",
-      },
-      stageEmpty: {
-        resolve:
-          "解析底座（DBPF / RW4 / property）已在核心 crate 中就绪，无独立面板。",
-        edit: "规划中的编辑面板将陆续加入。",
-        build: "构建管线等待编辑面板产出后接入。",
-        verify: "暂无校验面板。",
-      },
       backToStudio: "返回开发工作台",
-      footer: "设计文档：docs/roadmap/workspace-panels.md",
-      stub: {
-        scopeTitle: "规划范围",
-        prereqTitle: "前置条件",
-      },
       ui: {
         toolbar: "预览工具栏",
         prev: "上一个屏幕",
@@ -1061,21 +1038,6 @@ const messages = {
             "按功能分组的屏幕标签",
             "右侧编辑 Sheet（当前为占位）",
             "CSS/图片资产浏览与复写检测联动",
-          ],
-        },
-        property: {
-          title: "Property 编辑器",
-          status: "排期中",
-          description:
-            "0x00B1B104 属性表的完整读写：类型化键值树、哈希（大端 FNV-1）反查、菜单注册 property 的向导式新建。",
-          meta: "WP1 · sc-properties crate 扩展写回",
-          prereq:
-            "sc-properties 增加序列化（写回）能力；哈希反查依赖 sc-registry。",
-          features: [
-            "类型化属性树编辑（数值/字符串/列表）",
-            "哈希 ↔ 名称双向解析",
-            "菜单/子菜单注册向导（property + 布局 + locale 一次串起）",
-            "导出可读 JSON/TXT 与回导",
           ],
         },
         raster: {
@@ -2767,11 +2729,11 @@ const messages = {
       studioDiagnostics: "Override scan",
       studioMap: "Map panel",
       studioI18n: "Locale editor",
-      studioProperty: "Property editor",
+
       studioRaster: "Raster paint",
       studioUI: "UI workbench",
       studioCamera: "Camera development",
-      studioOverview: "Panel overview",
+
       studioProject: "Project detail",
     },
     assetCapture: {
@@ -3314,7 +3276,7 @@ const messages = {
         title: "Project management",
         description:
           "Organize mod development into projects: groups, status and stats at a glance.",
-        overviewLink: "Panel overview",
+
         devRootLabel: "Mod project root",
         devRootMissing: "Not configured",
         newProject: "New project",
@@ -3620,31 +3582,7 @@ const messages = {
         discard: "Discard entry",
       },
       eyebrow: "OpenSCP mod studio",
-      title: "Panel overview",
-      description:
-        "A stage-by-stage map of the seven feature panels — resolve, edit, build and verify — with each panel's status and notes.",
-      baseline: "Parsing foundation ready · write-back pending",
-      pipelineLabel: "Development pipeline",
-      stages: {
-        resolve: "Resolve",
-        edit: "Edit",
-        build: "Build",
-        verify: "Verify",
-      },
-      stageEmpty: {
-        resolve:
-          "The parsing foundation (DBPF / RW4 / property) already lives in the core crates — no separate panel.",
-        edit: "Planned editing panels will land here.",
-        build:
-          "The build pipeline connects once editing panels produce output.",
-        verify: "No verification panel yet.",
-      },
       backToStudio: "Back to mod studio",
-      footer: "Design doc: docs/roadmap/workspace-panels.md",
-      stub: {
-        scopeTitle: "Planned scope",
-        prereqTitle: "Prerequisites",
-      },
       ui: {
         toolbar: "Preview toolbar",
         prev: "Previous screen",
@@ -3792,21 +3730,6 @@ const messages = {
             "Function-group screen chips",
             "Right-side edit sheet (placeholder for now)",
             "CSS/image browsing wired into the override scan",
-          ],
-        },
-        property: {
-          title: "Property editor",
-          status: "Scheduled",
-          description:
-            "Full read/write for 0x00B1B104 property lists: a typed key-value tree, big-endian FNV-1 hash resolution, and a wizard for menu-registration properties.",
-          meta: "WP1 · sc-properties write-back",
-          prereq:
-            "Serialization (write-back) in sc-properties; hash reverse lookup via sc-registry.",
-          features: [
-            "Typed property tree editing (numbers / strings / lists)",
-            "Two-way hash ↔ name resolution",
-            "Menu/submenu registration wizard (property + layout + locale in one pass)",
-            "Readable JSON/TXT export and re-import",
           ],
         },
         raster: {

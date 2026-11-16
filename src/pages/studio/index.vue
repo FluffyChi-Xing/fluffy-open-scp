@@ -15,7 +15,6 @@ import type { ModProjectView } from "@/api/tauri";
 /**
  * 开发工作台 = 项目管理面板：统计仪表盘 + 项目列表。
  * 「详情」进入 GitHub-repo 形态项目页（Code / Develop / Actions / Settings）；
- * 原多工具卡片页在 /studio/overview（头部"面板总览"进入）。
  */
 const { t } = useI18n();
 const toast = useToast();
@@ -94,12 +93,6 @@ function statusLabel(status: string): string {
           $t("studio.projects.description")
         }}</FTypography>
       </div>
-      <nav class="heading-links">
-        <RouterLink class="overview-link" to="/studio/overview">
-          <FIcon name="LayoutDashboard" :size="13" aria-label="" />
-          {{ $t("studio.projects.overviewLink") }}
-        </RouterLink>
-      </nav>
     </header>
 
     <template v-if="isTauri()">
@@ -312,25 +305,6 @@ function statusLabel(status: string): string {
   font-weight: 750;
   letter-spacing: 0.08em;
   margin: 0 0 10px;
-}
-.heading-links {
-  padding-top: 26px;
-}
-.overview-link {
-  align-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  display: inline-flex;
-  font-size: 12px;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0 12px;
-  text-decoration: none;
-}
-.overview-link:hover {
-  background: var(--surface-hover);
-  color: var(--foreground);
 }
 .root-bar {
   align-items: center;
