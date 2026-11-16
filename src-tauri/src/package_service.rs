@@ -108,6 +108,33 @@ impl PackageManager {
             .ok_or(PackageError::PackageNotFound(id))
     }
 
+    /// Internal preview dependencies share the existing canonical package handle.
+    pub(crate) fn open_reusable(&self, path: &Path) -> Result<u64, PackageError> {
+        let canonical = fs::canonicalize(path)?;
+        let mut packages = self
+            .packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?;
+        if let Some((&id, _)) = packages
+            .iter()
+            .find(|(_, package)| package.path() == canonical)
+        {
+            return Ok(id);
+        }
+        if packages.len() >= MAX_OPEN_PACKAGES {
+            return Err(PackageError::PackageLimitExceeded(MAX_OPEN_PACKAGES));
+        }
+        let package = Arc::new(Package::open(&canonical)?);
+        let id = self.next_package_id.fetch_add(1, Ordering::Relaxed);
+        if id == 0 {
+            return Err(PackageError::InvalidArgument(
+                "package id space exhausted".into(),
+            ));
+        }
+        packages.insert(id, package);
+        Ok(id)
+    }
+
     /// 所有已打开包的快照（跨包资源查找用，如 LotMask）。
     fn all_packages(&self) -> Result<Vec<Arc<Package>>, PackageError> {
         Ok(self

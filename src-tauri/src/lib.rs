@@ -53,6 +53,7 @@ mod settings;
 mod stats;
 #[cfg(test)]
 mod test_scratch;
+mod city_camera;
 mod workspace;
 mod wwise;
 
@@ -299,7 +300,9 @@ pub fn run() {
             code_resource_preview,
             code_manifest,
             workspace::code_flow,
-            workspace::build_camera_package,
+            city_camera::read_city_camera,
+            city_camera::city_camera_preview_packages,
+            city_camera::export_city_camera,
             workspace_create_markdown,
             workspace_rename,
             workspace_move,
