@@ -44,7 +44,7 @@ watch(
     try {
       const document = await tauriApi.workspace.codeReadText(path, "package.json");
       const manifest = JSON.parse(document.content);
-      kind = String(manifest.mod_type ?? "");
+      kind = manifest.build?.kind === "road" ? "road" : String(manifest.mod_type ?? "");
     } catch {
       // Older projects can have no manifest until their first Develop session.
     }
@@ -53,7 +53,7 @@ watch(
   { immediate: true },
 );
 const showCapture = computed(() =>
-  projectKind.value !== undefined,
+  projectKind.value !== undefined && projectKind.value !== "road",
 );
 const supportedPowerProject = ref<string>();
 const powerRevision = ref(0);
@@ -244,6 +244,7 @@ watch(
           <BuildActionsPanel
             v-if="project.folderPath"
             :project="project.folderPath"
+            :road="projectKind === 'road'"
           />
         </section>
 

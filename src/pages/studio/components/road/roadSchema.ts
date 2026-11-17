@@ -25,6 +25,8 @@ export interface RoadSchema {
   identity: number;
   title: string;
   description: string;
+  unitCost?: number | null;
+  frontageEnabled?: boolean;
   gamePackage: string;
   scriptsPackage: string;
   streetlights?: Streetlights;
@@ -46,6 +48,12 @@ export function parseRoadSchema(content: string): RoadSchema {
     !value ||
     value.format !== "openscp.road-asset/1" ||
     !Object.hasOwn(recipes, value.recipe) ||
+    (value.frontageEnabled !== undefined &&
+      typeof value.frontageEnabled !== "boolean") ||
+    (value.unitCost != null &&
+      (!Number.isFinite(value.unitCost) ||
+        !Number.isFinite(Math.fround(value.unitCost)) ||
+        value.unitCost < 0)) ||
     (value.baseRecipe !== undefined &&
       !pavedRecipes.includes(value.baseRecipe)) ||
     (value.menu !== undefined &&

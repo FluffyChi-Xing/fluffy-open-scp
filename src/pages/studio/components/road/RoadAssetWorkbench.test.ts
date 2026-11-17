@@ -26,6 +26,8 @@ it("requires a paved base before offering strips and keeps the cross-section emp
     manifestRevision: "a",
     schemaRevision: "b",
   };
+  const locale = i18n.global.locale.value;
+  i18n.global.locale.value = "zh-CN";
   vi.mocked(command).mockResolvedValue(project);
   const wrapper = shallowMount(RoadAssetWorkbench, {
     props: { project: "roads", manifest: project.manifest },
@@ -41,6 +43,17 @@ it("requires a paved base before offering strips and keeps the cross-section emp
   });
   try {
     await flushPromises();
+    const frontage = wrapper.getComponent({ name: "Switch" });
+    expect(frontage.props("modelValue")).toBe(true);
+    expect(frontage.props("ariaLabel")).toBe("允许划区和建筑贴路");
+    frontage.vm.$emit("update:modelValue", false);
+    await wrapper.vm.$nextTick();
+    expect(frontage.props("modelValue")).toBe(false);
+    i18n.global.locale.value = "en-US";
+    await wrapper.vm.$nextTick();
+    expect(frontage.props("ariaLabel")).toBe(
+      "Allow zoning and roadside building placement",
+    );
     expect(wrapper.findComponent({ name: "RoadStripLibrary" }).exists()).toBe(
       false,
     );
@@ -59,6 +72,14 @@ it("requires a paved base before offering strips and keeps the cross-section emp
       wrapper.getComponent({ name: "RoadDraftSection" }).props("strips"),
     ).toEqual([]);
     const library = wrapper.getComponent({ name: "RoadStripLibrary" });
+    expect(Boolean(
+      basePicker.element.compareDocumentPosition(frontage.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    )).toBe(true);
+    expect(Boolean(
+      frontage.element.compareDocumentPosition(library.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    )).toBe(true);
     expect(library.props("widths").forward).toBe(4.5);
     library.vm.$emit("add", "forward");
     await wrapper.vm.$nextTick();
@@ -77,6 +98,7 @@ it("requires a paved base before offering strips and keeps the cross-section emp
     );
   } finally {
     wrapper.unmount();
+    i18n.global.locale.value = locale;
     vi.mocked(command).mockReset();
   }
 });

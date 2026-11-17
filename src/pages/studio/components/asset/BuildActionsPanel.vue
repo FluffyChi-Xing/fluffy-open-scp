@@ -18,6 +18,7 @@ import { buildQueueErrorKey } from "@/lib/buildQueueError";
  */
 const props = defineProps<{
   project: string;
+  road?: boolean;
   /** 场景编辑器刚入队的任务；打开面板时自动展开详情。 */
   focusJobId?: string | null;
 }>();
@@ -213,6 +214,14 @@ function toggleStep(stage: string) {
 }
 
 function buildError(message: string): string {
+  if (/\broad_frontage_donor_missing\b/.test(message)) return t("roadAsset.frontage.donorMissing");
+  if (/\broad_unit_cost_invalid\b/.test(message)) return t("roadAsset.project.unitCostInvalid");
+  if (/\broad_unit_cost_resource_missing\b/.test(message)) return t("roadAsset.project.unitCostResourceMissing");
+  if (/\broad_draft_end_cap_missing\b/.test(message)) return t("roadAsset.project.endCapMissing");
+  const roadDiagnostic = message.match(/\broad_draft_(layout_unsupported|empty|base_invalid)\b/);
+  if (roadDiagnostic?.[1] === "layout_unsupported") return t("roadAsset.draft.unsupported");
+  if (roadDiagnostic?.[1] === "empty") return t("roadAsset.draft.emptyBuild");
+  if (roadDiagnostic?.[1] === "base_invalid") return t("roadAsset.draft.chooseBase");
   const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT))\b/);
   if (behaviorDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${behaviorDiagnostic[1]}`);
   const queueError = buildQueueErrorKey(message);
@@ -313,7 +322,7 @@ async function enqueueSchema() {
                 ? t("studio.assetWorkbench.actionsBuildProjectSchema", {
                     path: projectSchema,
                   })
-                : t("studio.assetWorkbench.actionsBuildProjectHint")
+                : t(road ? "roadAsset.actionsHint" : "studio.assetWorkbench.actionsBuildProjectHint")
             }}
           </p>
         </div>
@@ -337,7 +346,7 @@ async function enqueueSchema() {
                 : t("studio.assetWorkbench.actionsBuildProject")
             }}</strong>
             <small>{{
-              t("studio.assetWorkbench.actionsBuildProjectCaption")
+              t(road ? "roadAsset.compileStage" : "studio.assetWorkbench.actionsBuildProjectCaption")
             }}</small>
           </span>
         </button>

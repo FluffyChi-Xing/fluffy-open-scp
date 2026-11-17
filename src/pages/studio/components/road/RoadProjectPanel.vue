@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
+import MonacoEditor from "@/components/ui/MonacoEditor.vue";
 import ProjectConfigTabs from "../asset/ProjectConfigTabs.vue";
 import RoadProjectMenu from "./RoadProjectMenu.vue";
 import { recipeDraft, type RecipeId, type RoadSchema } from "./roadSchema";
@@ -17,7 +18,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   metadata: [field: keyof typeof props.metadata, value: string];
-  menu: [patch: Partial<Pick<RoadSchema, "title" | "description" | "menu">>];
+  menu: [
+    patch: Partial<Pick<RoadSchema, "title" | "description" | "menu" | "unitCost">>,
+  ];
 }>();
 const { t } = useI18n();
 const icons = {
@@ -283,7 +286,7 @@ const report = computed(() => {
         </template>
         <template v-else>
           <p>{{ t("roadAsset.project.savedJson") }}</p>
-          <pre>{{ JSON.stringify(manifest, null, 2) }}</pre>
+          <MonacoEditor :value="JSON.stringify(manifest, null, 2)" language="json" />
         </template>
       </div>
     </div>
@@ -382,9 +385,5 @@ ul {
 }
 ol li {
   justify-content: space-between;
-}
-pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 </style>

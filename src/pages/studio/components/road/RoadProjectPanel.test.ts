@@ -4,6 +4,10 @@ import { expect, it, vi } from "vitest";
 import { i18n } from "@/locales";
 import RoadProjectPanel from "./RoadProjectPanel.vue";
 
+vi.mock("@/components/ui/MonacoEditor.vue", () => ({
+  default: { name: "MonacoEditor", props: ["value", "language", "editable"], template: "<div />" },
+}));
+
 vi.mock("../asset/useMenuImages", () => ({
   useMenuImages: () => ({
     previews: { icon: "", marquee: "" },
@@ -61,6 +65,14 @@ it("uses categorized cards for the live road, editable menu and saved dependenci
     expect(panel.emitted("menu")?.[0]).toEqual([{ title: "New road" }]);
     await panel.get('input[type="number"]').setValue("123");
     expect(panel.emitted("menu")?.[1]).toEqual([{ menu: { position: 123 } }]);
+    const cost = () => panel.get('input[aria-describedby="road-unit-cost-hint"]');
+    expect(cost().element.parentElement?.textContent).toContain("每米建造费用");
+    await cost().setValue("0");
+    await cost().setValue("");
+    expect(panel.emitted("menu")?.slice(2)).toEqual([
+      [{ unitCost: 0 }],
+      [{ unitCost: null }],
+    ]);
     await navigate(2);
     expect(panel.text()).toContain("总宽 4.5 米");
     expect(panel.text()).toContain("1 个分隔带");
@@ -73,8 +85,13 @@ it("uses categorized cards for the live road, editable menu and saved dependenci
     i18n.global.locale.value = "en-US";
     await nextTick();
     expect(panel.text()).toContain("Dependencies");
+    await navigate(1);
+    expect(cost().element.parentElement?.textContent).toContain("Construction cost per metre");
     await navigate(4);
-    expect(panel.get("pre").text()).toContain("test-sha");
+    const editor = panel.getComponent({ name: "MonacoEditor" });
+    expect(editor.props("language")).toBe("json");
+    expect(editor.props("editable")).not.toBe(true);
+    expect(editor.props("value")).toContain("test-sha");
   } finally {
     panel.unmount();
     i18n.global.locale.value = locale;

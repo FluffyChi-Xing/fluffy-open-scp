@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { Switch } from "@/components/ui/switch";
 import { computed, ref, shallowRef, useId, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FButton from "@/components/ui/FButton.vue";
 import FSelect from "@/components/ui/FSelect.vue";
 import SceneWorkbenchLayout from "../SceneWorkbenchLayout.vue";
 import AssetSourceTree from "../asset/AssetSourceTree.vue";
@@ -194,9 +196,7 @@ function addStrip(kind: StripKind) {
 function buildIssue(): string | undefined {
   if (!draft.value || nativeRecipe.value) return;
   if (!baseRecipe.value) return "roadAsset.draft.chooseBase";
-  return draft.value.length
-    ? "roadAsset.draft.unsupported"
-    : "roadAsset.draft.emptyBuild";
+  return draft.value.length ? undefined : "roadAsset.draft.emptyBuild";
 }
 
 function setComponent(component: RoadComponent, enabled: boolean) {
@@ -273,16 +273,17 @@ defineExpose({ save, buildIssue });
         :disabled="saving"
         :aria-label="t('roadAsset.name')"
       />
-      <button
+      <FButton
         v-if="schema"
-        type="button"
+        variant="primary"
+        size="sm"
         :disabled="
           (!dirty && !needsManifestSync) || saving || !schema.title.trim()
         "
         @click="save"
       >
         {{ t(saving ? "roadAsset.saving" : "roadAsset.save") }}
-      </button>
+      </FButton>
       <span v-if="status && !(status === 'saved' && dirty)" role="status">
         {{ t(`roadAsset.${status}`) }}
       </span>
@@ -387,49 +388,62 @@ defineExpose({ save, buildIssue });
               }}
             </button>
           </div>
-          <div v-if="draft" class="custom-library">
-            <div class="base-recipe">
-              <label :for="baseRecipeId">{{
-                t("roadAsset.draft.baseRecipe")
-              }}</label>
-              <FSelect
-                :id="baseRecipeId"
-                :model-value="baseRecipe ?? t('roadAsset.draft.chooseBase')"
-                :options="baseOptions"
-                @update:model-value="chooseBase"
-              />
+          <div class="road-library">
+            <div class="road-options">
+              <div v-if="draft" class="base-recipe">
+                <label :for="baseRecipeId">{{
+                  t("roadAsset.draft.baseRecipe")
+                }}</label>
+                <FSelect
+                  :id="baseRecipeId"
+                  :model-value="baseRecipe ?? t('roadAsset.draft.chooseBase')"
+                  :options="baseOptions"
+                  @update:model-value="chooseBase"
+                />
+              </div>
+              <label class="frontage-option">
+                {{ t("roadAsset.frontage.enabled") }}
+                <Switch
+                  :model-value="schema.frontageEnabled ?? true"
+                  :disabled="saving"
+                  :aria-label="t('roadAsset.frontage.enabled')"
+                  @update:model-value="schema.frontageEnabled = $event"
+                />
+              </label>
             </div>
-            <RoadStripLibrary
-              v-if="baseRecipe"
-              :widths="widths"
-              @add="addStrip"
-            />
-            <p
-              v-if="baseRecipe && draft.length && !nativeRecipe"
-              class="build-note"
-            >
-              {{ t("roadAsset.draft.unsupported") }}
-            </p>
+            <template v-if="draft">
+              <RoadStripLibrary
+                v-if="baseRecipe"
+                :widths="widths"
+                @add="addStrip"
+              />
+              <p
+                v-if="baseRecipe && draft.length && !nativeRecipe"
+                class="build-note"
+              >
+                {{ t("roadAsset.draft.authoredBuildHint") }}
+              </p>
+            </template>
+            <template v-else>
+              <div>
+                <button type="button" class="start-draft" @click="startDraft">
+                  {{ t("roadAsset.draft.startEmpty") }}
+                </button>
+                <RoadComponentPalette
+                  :recipe="schema.recipe"
+                  :composition="schema.composition"
+                  @toggle="toggleComponent"
+                />
+              </div>
+              <RoadRecipeLibrary
+                :selected="schema.recipe"
+                :options="pavedRecipes"
+                :streetlights="schema.streetlights ?? 'original'"
+                @select="select"
+                @lighting="schema.streetlights = $event"
+              />
+            </template>
           </div>
-          <template v-else>
-            <div>
-              <button type="button" class="start-draft" @click="startDraft">
-                {{ t("roadAsset.draft.startEmpty") }}
-              </button>
-              <RoadComponentPalette
-                :recipe="schema.recipe"
-                :composition="schema.composition"
-                @toggle="toggleComponent"
-              />
-            </div>
-            <RoadRecipeLibrary
-              :selected="schema.recipe"
-              :options="pavedRecipes"
-              :streetlights="schema.streetlights ?? 'original'"
-              @select="select"
-              @lighting="schema.streetlights = $event"
-            />
-          </template>
         </div>
       </template>
     </SceneWorkbenchLayout>
@@ -479,7 +493,7 @@ button:disabled {
 .side {
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 .inputs {
   display: flex;
@@ -489,10 +503,23 @@ button:disabled {
   font-size: 11px;
   border-bottom: 1px solid var(--border);
 }
-.custom-library {
-  grid-row: 2 / 4;
+.road-library {
   min-height: 0;
   overflow: auto;
+}
+.road-options {
+  display: grid;
+  gap: 8px;
+  padding: 10px 10px 4px;
+  font-size: 12px;
+}
+.frontage-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-block-size: 28px;
+  cursor: pointer;
 }
 .build-note {
   margin: 8px 10px;
@@ -501,8 +528,6 @@ button:disabled {
 .base-recipe {
   display: grid;
   gap: 6px;
-  margin: 10px;
-  font-size: 12px;
 }
 .draft-hint {
   display: grid;

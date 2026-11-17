@@ -10,7 +10,9 @@ const props = defineProps<{
   saving: boolean;
 }>();
 const emit = defineEmits<{
-  update: [patch: Partial<Pick<RoadSchema, "title" | "description" | "menu">>];
+  update: [
+    patch: Partial<Pick<RoadSchema, "title" | "description" | "menu" | "unitCost">>,
+  ];
 }>();
 const { t } = useI18n();
 
@@ -51,6 +53,18 @@ function setPosition(event: Event) {
     updateMenu({ position: value });
   } else {
     input.value = String(props.schema.menu?.position ?? "");
+  }
+}
+
+function setUnitCost(event: Event) {
+  const input = event.currentTarget as HTMLInputElement;
+  const value = input.valueAsNumber;
+  if (!input.value && !input.validity.badInput) {
+    emit("update", { unitCost: null });
+  } else if (value >= 0 && Number.isFinite(Math.fround(value))) {
+    emit("update", { unitCost: value });
+  } else {
+    input.value = String(props.schema.unitCost ?? "");
   }
 }
 </script>
@@ -96,6 +110,20 @@ function setPosition(event: Event) {
           @change="setPosition"
         />
       </label>
+      <label>
+        {{ t("roadAsset.project.unitCost") }}
+        <input
+          type="number"
+          min="0"
+          step="any"
+          :value="schema.unitCost ?? ''"
+          :disabled="saving"
+          :placeholder="t('roadAsset.project.donorDefault')"
+          aria-describedby="road-unit-cost-hint"
+          @change="setUnitCost"
+        />
+      </label>
+      <p id="road-unit-cost-hint">{{ t("roadAsset.project.unitCostHint") }}</p>
     </section>
     <div class="artwork">
       <section v-for="image in images" :key="image.kind" class="card">

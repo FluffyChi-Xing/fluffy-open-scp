@@ -9,9 +9,13 @@ use std::{
     sync::mpsc::Sender,
 };
 
+mod authored;
+mod authored_graphics;
+mod cost;
 pub(crate) mod composition;
 mod dependencies;
 mod draft;
+mod frontage;
 pub(crate) mod draft_preview;
 mod manifest;
 mod menu;
@@ -62,6 +66,8 @@ struct RoadSchema {
     identity: u32,
     title: String,
     description: String,
+    unit_cost: Option<f32>,
+    frontage_enabled: Option<bool>,
     game_package: String,
     scripts_package: String,
     #[serde(default)]
@@ -263,6 +269,7 @@ fn parse(raw: &str) -> Result<RoadSchema, String> {
     if schema.format != FORMAT || schema.identity == 0 || schema.title.trim().is_empty() {
         return Err("road_schema_invalid".into());
     }
+    cost::validate(schema.unit_cost)?;
     schema.composition.validate(schema.recipe)?;
     if schema.base_recipe == Some(Recipe::Dirt) {
         return Err("road_draft_base_invalid".into());
@@ -329,6 +336,7 @@ fn lower(
     schema: &RoadSchema,
     game: &Package,
     scripts: &Package,
+    authored: Option<&authored::Layout>,
 ) -> Result<Vec<OverlayEntry>, String> {
     let (menu_id, donor) = schema.recipe.donor();
     let id = schema.identity;
@@ -376,7 +384,7 @@ fn lower(
 
     let simulation = payload(scripts, property_id(SIM, donor))?;
     let appearance = payload(game, property_id(GRAPHICS, donor))?;
-    let sim = PropertyFile::parse(&simulation).map_err(|e| e.to_string())?;
+    let mut sim = PropertyFile::parse(&simulation).map_err(|e| e.to_string())?;
     let mut graphics = PropertyFile::parse(&appearance).map_err(|e| e.to_string())?;
     replace_text(&mut graphics, PATH_TITLE, id, 1)?;
     let parent = match sim.get(sc_properties::PARENT_HASH).and_then(|p| p.scalar()) {
@@ -384,6 +392,12 @@ fn lower(
         _ => return Err("road_simulation_parent_missing".into()),
     };
     let layout = property(scripts, property_id(parent.group, parent.instance))?;
+    let simulation = if let Some(unit_cost) = schema.unit_cost {
+        cost::apply(unit_cost, scripts, &mut sim)?;
+        sim.encode_canonical().map_err(|e| e.to_string())?
+    } else {
+        simulation
+    };
     let rows = layout
         .get(0x0BD8_1A2D)
         .and_then(|p| p.array())
@@ -411,17 +425,28 @@ fn lower(
     }
 
     let custom = customize_streetlights(schema, game, &mut graphics)?;
-    let composed = if schema.composition.active() {
+    let composed = if let Some(plan) = authored {
+        authored_graphics::graphics(schema, plan, game, scripts, &mut graphics)?
+    } else if schema.composition.active() {
         composition::graphics(schema, game, scripts, &mut graphics)?
     } else {
         Vec::new()
     };
-    let (simulation, custom_layout) = if schema.composition.tram {
+    let (mut simulation, mut custom_layout) = if let Some(plan) = authored {
+        let (simulation, entry) = authored::simulation(schema, plan, sim, layout)?;
+        (simulation, Some(entry))
+    } else if schema.composition.tram {
         let (simulation, entry) = composition::simulation(schema, scripts, sim, layout)?;
         (simulation, Some(entry))
     } else {
         (simulation, None)
     };
+    let frontage_enabled = schema.frontage_enabled.unwrap_or(true);
+    if let Some(entry) = &mut custom_layout {
+        entry.data = frontage::encode(&entry.data, scripts, frontage_enabled)?;
+    } else if !frontage_enabled {
+        simulation = frontage::encode(&simulation, scripts, false)?;
+    }
     let appearance = graphics.encode_canonical().map_err(|e| e.to_string())?;
     let title = serde_json::to_string(schema.title.trim()).map_err(|e| e.to_string())?;
     let description =
@@ -461,17 +486,24 @@ pub fn build(
     emit(events::started(stage, Json::Null));
     let outcome = (|| -> Result<_, String> {
         let mut schema = parse(raw)?;
+        let mut authored = None;
         if let Some(section) = &schema.section {
-            schema.recipe = draft::resolve(section)?;
-            if schema.base_recipe.is_some_and(|base| base != schema.recipe) {
-                return Err("road_draft_layout_unsupported".into());
+            let original = draft::resolve(section);
+            match (schema.base_recipe, original) {
+                (None, result) => schema.recipe = result?,
+                (Some(base), Ok(recipe)) if base == recipe => schema.recipe = recipe,
+                (Some(_), Err(error)) if section.is_empty() => return Err(error),
+                (Some(base), _) => {
+                    schema.recipe = base;
+                    authored = Some(authored::plan(section, base)?);
+                }
             }
             schema.streetlights = Streetlights::Original;
             schema.composition = composition::Composition::default();
         }
         let game = open_source(&root, &schema.game_package)?;
         let scripts = open_source(&root, &schema.scripts_package)?;
-        let entries = lower(&root, &schema, &game, &scripts)?;
+        let entries = lower(&root, &schema, &game, &scripts, authored.as_ref())?;
         let bytes = dbpf::write_uncompressed_overlay(&entries).map_err(|e| e.to_string())?;
         let sha256 = crate::mod_flow::digest(&bytes);
         let folder = format!(".build/{sha256}");

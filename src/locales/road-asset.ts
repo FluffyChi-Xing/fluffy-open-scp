@@ -1,4 +1,8 @@
 export const roadAssetEn = {
+  frontage: {
+    enabled: "Allow zoning and roadside building placement",
+    donorMissing: "The base road is missing the properties needed to generate roadside lots.",
+  },
   project: {
     heading: "Project manifest",
     tabs: {
@@ -26,6 +30,11 @@ export const roadAssetEn = {
     menuEntry: "In-game road menu entry",
     nativeCategory: "Menu categories come from the road template.",
     position: "Menu order",
+    unitCost: "Construction cost per metre (§)",
+    unitCostHint: "Leave blank to use the base road’s cost. Enter 0 for free construction.",
+    unitCostInvalid: "Enter a finite construction cost of zero or more.",
+    unitCostResourceMissing: "The base road’s construction budget resource could not be found.",
+    endCapMissing: "The base road’s end-cap models could not be found.",
     donorDefault: "Use original road setting",
     inputFiles: "Project inputs",
     buildDependencies: "Package dependencies",
@@ -60,6 +69,8 @@ export const roadAssetEn = {
   },
   name: "Road name",
   compileStage: "Compile road package",
+  actionsHint:
+    "Build a road package from the saved cross-section and menu settings.",
   library: "Original road recipes",
   streetlights: "Ground road streetlights",
   lighting: {
@@ -93,7 +104,9 @@ export const roadAssetEn = {
     remove: "Remove component",
     emptyBuild: "Add road components before building a package.",
     unsupported:
-      "You can save this layout. Package export currently requires a cross-section that matches the selected road recipe.",
+      "This layout cannot be packed. Custom ground roads need one sidewalk on each outer edge and two contiguous, opposing sets of one to three equal-width car lanes. Custom tram layouts are not supported yet.",
+    authoredBuildHint:
+      "You can build custom ground roads with two opposing groups of equal-width car lanes and sidewalks on both edges.",
   },
   dropRecipe: "Choose or drop a recipe",
   components: {
@@ -140,6 +153,10 @@ export const roadAssetEn = {
 } as const;
 
 export const roadAssetZh = {
+  frontage: {
+    enabled: "允许划区和建筑贴路",
+    donorMissing: "基础道路缺少生成路边地块所需的属性。",
+  },
   project: {
     heading: "项目清单",
     tabs: {
@@ -163,6 +180,11 @@ export const roadAssetZh = {
     menuEntry: "游戏内道路菜单条目",
     nativeCategory: "菜单分类沿用道路配方。",
     position: "菜单排序",
+    unitCost: "每米建造费用（§）",
+    unitCostHint: "留空沿用基础道路的造价，填 0 可免费建造。",
+    unitCostInvalid: "请输入大于等于 0 的有限造价。",
+    unitCostResourceMissing: "找不到基础道路的建造预算资源。",
+    endCapMissing: "找不到基础道路的圆头端点模型。",
     donorDefault: "使用原版道路设置",
     inputFiles: "项目输入文件",
     buildDependencies: "资源包依赖",
@@ -195,6 +217,7 @@ export const roadAssetZh = {
   },
   name: "道路名称",
   compileStage: "构建道路资源包",
+  actionsHint: "按已保存的横断面和菜单设置构建道路资源包。",
   library: "原版道路配方",
   streetlights: "地面道路路灯",
   lighting: { original: "两侧", left: "左侧", right: "右侧", none: "无" },
@@ -223,7 +246,9 @@ export const roadAssetZh = {
     remove: "移除组件",
     emptyBuild: "请先添加道路组件，再构建资源包。",
     unsupported:
-      "可以保存此布局。目前只有与所选道路配方一致的横断面可以导出资源包。",
+      "此断面无法打包。自定义地面道路需在两侧最外缘各放一条人行道，车道分为两组连续的反向车流，每组 1 至 3 条且全部等宽。自定义电车断面暂未支持。",
+    authoredBuildHint:
+      "支持构建两侧有人行道、车道分为两组等宽反向车流的自定义地面道路。",
   },
   dropRecipe: "选择配方或将配方拖到此处",
   components: {

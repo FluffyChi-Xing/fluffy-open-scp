@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-enum StripKind {
+pub(super) enum StripKind {
     Forward,
     Backward,
     Walk,
@@ -18,8 +18,8 @@ enum StripKind {
 #[serde(deny_unknown_fields)]
 pub(super) struct Strip {
     id: String,
-    kind: StripKind,
-    width: f64,
+    pub(super) kind: StripKind,
+    pub(super) width: f64,
 }
 
 pub(super) fn deserialize_section<'de, D: Deserializer<'de>>(
@@ -40,12 +40,22 @@ pub(super) fn valid(section: &[Strip]) -> bool {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Template {
-    lanes: usize,
-    width: f64,
-    offset: f64,
-    walk_width: f64,
-    walk_offset: f64,
+pub(super) struct Template {
+    pub lanes: usize,
+    pub width: f64,
+    pub offset: f64,
+    pub walk_width: f64,
+    pub walk_offset: f64,
+}
+
+pub(super) fn native_template(recipe: Recipe) -> Result<Template, String> {
+    let templates: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../src/pages/studio/components/road/roadRecipes.json"
+    ))
+    .map_err(|error| error.to_string())?;
+    let name = serde_json::to_value(recipe).map_err(|error| error.to_string())?;
+    let name = name.as_str().ok_or("road_draft_base_invalid")?;
+    serde_json::from_value(templates[name].clone()).map_err(|error| error.to_string())
 }
 
 impl Template {

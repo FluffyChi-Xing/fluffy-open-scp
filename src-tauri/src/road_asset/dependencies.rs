@@ -46,6 +46,7 @@ fn candidates(owner: ResourceId, field: u32, key: Key) -> Vec<ResourceId> {
             result.extend([id(0x2F4E_681C, 0, instance), id(0x2F4E_681B, 0, instance)]);
         }
         0x0C36_D30D => result.push(property_id(0x4000_2D00, instance)),
+        0x0E76_A7E3 => result.push(property_id(0x40E0_C100, instance)),
         _ => {}
     }
     result

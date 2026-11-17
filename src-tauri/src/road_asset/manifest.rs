@@ -98,6 +98,12 @@ pub(super) fn sync(
     } else if let Some(build) = manifest["build"].as_object_mut() {
         build.remove("baseRecipe");
     }
+    if let Some(unit_cost) = schema.unit_cost {
+        manifest["build"]["unitCost"] = json!(unit_cost);
+    } else if let Some(build) = manifest["build"].as_object_mut() {
+        build.remove("unitCost");
+    }
+    manifest["build"]["frontageEnabled"] = json!(schema.frontage_enabled.unwrap_or(true));
     manifest["menu"] = json!({
         "title": schema.title, "description": schema.description,
         "position": schema.menu.position,
@@ -213,8 +219,11 @@ mod tests {
         super::super::initialize_project(&root, "Example", None, &mut manifest).unwrap();
         write(&root, &manifest).unwrap();
         let state = read(&root).unwrap();
+        assert_eq!(state["manifest"]["build"]["frontageEnabled"], true);
         let mut schema = state["schema"].clone();
         schema["title"] = json!("Tree boulevard");
+        schema["unitCost"] = json!(12.5);
+        schema["frontageEnabled"] = json!(false);
         schema["gamePackage"] = json!("inputs/SimCity_Game.package");
         schema["menu"] = json!({"position": 123, "iconPng": "assets/images/menu.png"});
         let request = json!({
@@ -224,6 +233,8 @@ mod tests {
         let revised = save(&root, &request).unwrap();
         let path = revised["manifest"]["build"]["schema"].as_str().unwrap();
         assert!(path.starts_with("schemas/road/revisions/"));
+        assert_eq!(revised["manifest"]["build"]["unitCost"], 12.5);
+        assert_eq!(revised["manifest"]["build"]["frontageEnabled"], false);
         assert_eq!(revised["manifest"]["menu"]["position"], 123);
         assert_eq!(revised["manifest"]["menu"]["title"], "Tree boulevard");
         assert_eq!(

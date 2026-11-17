@@ -36,13 +36,13 @@ impl Composition {
     }
 }
 
-fn column(file: &PropertyFile, hash: u32) -> Result<&[Value], String> {
+pub(super) fn column(file: &PropertyFile, hash: u32) -> Result<&[Value], String> {
     file.get(hash)
         .and_then(|p| p.array())
         .ok_or_else(|| format!("road_composition_column_missing {hash:08X}"))
 }
 
-fn key_mut(file: &mut PropertyFile, hash: u32) -> Result<&mut Key, String> {
+pub(super) fn key_mut(file: &mut PropertyFile, hash: u32) -> Result<&mut Key, String> {
     match file
         .values
         .iter_mut()
@@ -54,7 +54,7 @@ fn key_mut(file: &mut PropertyFile, hash: u32) -> Result<&mut Key, String> {
     }
 }
 
-fn row(file: &PropertyFile, hash: u32, instance: u32) -> Result<usize, String> {
+pub(super) fn row(file: &PropertyFile, hash: u32, instance: u32) -> Result<usize, String> {
     column(file, hash)?
         .iter()
         .position(|v| matches!(v, Value::Key(k) if k.instance == instance))
@@ -63,7 +63,7 @@ fn row(file: &PropertyFile, hash: u32, instance: u32) -> Result<usize, String> {
 
 // Copy every target column from the matching native row. The only optional
 // donor column with a nonzero added value is the tree's end clearance.
-fn append_component(
+pub(super) fn append_component(
     target: &mut PropertyFile,
     donor: &PropertyFile,
     index: usize,
