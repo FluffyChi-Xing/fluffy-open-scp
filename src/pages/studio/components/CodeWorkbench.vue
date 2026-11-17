@@ -141,6 +141,13 @@ async function buildM1InBackground(): Promise<boolean> {
   buildBusy.value = true;
   try {
     if (isRoadProject.value && !(await roadWorkbench.value?.save())) return false;
+    if (isRoadProject.value) {
+      const issue = roadWorkbench.value?.buildIssue();
+      if (issue) {
+        toast.error(t(issue));
+        return false;
+      }
+    }
     if (isVanillaVariant.value && !(await variantWorkbench.value?.saveVariantScene())) return false;
     const submitted = await tauriApi.buildQueue.enqueueProject(
       root,

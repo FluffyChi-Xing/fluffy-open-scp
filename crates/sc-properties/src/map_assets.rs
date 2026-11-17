@@ -256,6 +256,40 @@ pub fn road_appearance(
     ))
 }
 
+/// Render a composed extrusion before it has been written to a package.
+pub fn composed_road_appearance(
+    game: &dbpf::Package,
+    instance: u32,
+    appearance: PropertyFile,
+    dependencies: &[&dbpf::Package],
+) -> RoadAssets {
+    let packages: Vec<_> = std::iter::once(game)
+        .chain(dependencies.iter().copied())
+        .collect();
+    render_road_appearances(
+        [(instance, appearance)],
+        |group, id| {
+            let mut definition = prop_across(&packages, group, id)?;
+            // The game uses Tree descriptors. The preview can draw their
+            // matching meshes directly (Packager build_prop_library.py:13).
+            let mesh = match (group, id) {
+                (0x0D94_2043, 0x41C2_D443) => 0x4DF4_3690,
+                (0x0D94_2043, 0xC8B4_254B) => 0x1113_B131,
+                _ => return Some(definition),
+            };
+            let model = definition.values.iter_mut().find(|p| p.hash == 0x0D8C_29C3)?;
+            model.kind = Kind::Scalar(Value::Key(crate::Key {
+                instance: mesh,
+                type_id: 0x2F4E_681B,
+                group: 0,
+            }));
+            Some(definition)
+        },
+        &packages,
+        true,
+    )
+}
+
 fn prop_across(packages: &[&dbpf::Package], group: u32, instance: u32) -> Option<PropertyFile> {
     let read = |group, instance| {
         let tgi = dbpf::ResourceId {

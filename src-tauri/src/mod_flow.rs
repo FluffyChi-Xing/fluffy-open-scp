@@ -31,7 +31,7 @@ pub fn ensure_project_layout(root: &Path, mod_type: &str) -> Result<Value, Strin
             "assets/materials",
             "assets/audio",
         ],
-        "road" => vec!["assets/roads"],
+        "road" => vec!["assets/roads", "assets/images"],
         "vanilla_variant" => vec!["assets/properties", "assets/textures"],
         "gameplay" => vec!["assets/properties", "assets/tuning", "assets/localization"],
         _ => return Err("Unknown mod type".into()),
@@ -53,6 +53,8 @@ pub fn dispatch(
     let _guard = FLOW_LOCK.lock().map_err(|_| "Workflow lock failed")?;
     let string = |key: &str| payload[key].as_str().unwrap_or("");
     match action {
+        "road-project-read" => crate::road_asset::read_project(root),
+        "road-project-save" => crate::road_asset::save_project(root, &payload),
         "import-asset" => asset_inputs::import(root, &payload, blend_atlas),
         "import-menu-image" => asset_inputs::import_menu_image(root, &payload),
         "read-menu-image" => asset_inputs::read_menu_image(root, &payload),

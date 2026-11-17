@@ -80,7 +80,7 @@ pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, S
         .and_then(|x| x.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    let relative = match (kind, extension.as_str()) {
+    let mut relative = match (kind, extension.as_str()) {
         ("icon", "png") => "assets/images/menu-icon.png".to_string(),
         ("marquee", "png") | ("marquee", "jpg") | ("marquee", "jpeg") => {
             "assets/images/menu-marquee.jpg".to_string()
@@ -96,6 +96,10 @@ pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, S
             .encode_image(&image::DynamicImage::ImageRgb8(image.to_rgb8()))
             .map_err(|e| e.to_string())?;
         bytes = jpg;
+    }
+    if payload["contentAddressed"] == true {
+        relative = format!("assets/images/road-{kind}-{}.{}", digest(&bytes),
+            if kind == "icon" { "png" } else { "jpg" });
     }
     let target = safe_path(root, &relative)?;
     fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;

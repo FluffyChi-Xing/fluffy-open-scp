@@ -1,6 +1,6 @@
 use crate::activity::{AppState, CommandError};
 use crate::package_service::{TgiDto, locate_sim_source_packages};
-use sc_properties::map_assets::{RoadAssets, road_appearance};
+use sc_properties::map_assets::{RoadAssets, composed_road_appearance, road_appearance};
 use std::sync::Arc;
 use tauri::State;
 
@@ -44,6 +44,8 @@ pub(crate) async fn read_road_recipe_appearance(
     recipe: crate::road_asset::Recipe,
     future: bool,
     streetlights: crate::road_asset::Streetlights,
+    composition: Option<crate::road_asset::composition::Composition>,
+    draft_assets: Option<bool>,
 ) -> Result<(u32, RoadAssets), CommandError> {
     use crate::road_asset::{Recipe, Streetlights};
     use dbpf::{Package, ResourceId};
@@ -87,8 +89,20 @@ pub(crate) async fn read_road_recipe_appearance(
         .filter_map(|name| Package::open(game.path().with_file_name(name)).ok())
         .collect::<Vec<_>>();
         let dependencies = siblings.iter().collect::<Vec<_>>();
-        let mut assets =
-            road_appearance(&game, key.group, key.instance, &dependencies).ok_or_else(missing)?;
+        let composition = composition.unwrap_or_default();
+        let mut assets = if composition.active() {
+            let appearance = crate::road_asset::property(
+                &game,
+                crate::road_asset::property_id(key.group, key.instance),
+            )
+            .and_then(|base| {
+                crate::road_asset::composition::appearance(&game, recipe, composition, future, base)
+            })
+            .map_err(CommandError::internal)?;
+            composed_road_appearance(&game, key.instance, appearance, &dependencies)
+        } else {
+            road_appearance(&game, key.group, key.instance, &dependencies).ok_or_else(missing)?
+        };
         // Develop shows an at-grade sample. The resource inspector still
         // exposes the entire extrusion, including below-grade wall panels.
         if let Some(ribbons) = assets.ribbons.get_mut(&key.instance) {
@@ -109,6 +123,10 @@ pub(crate) async fn read_road_recipe_appearance(
                     Streetlights::None => false,
                 }
             });
+        }
+        if draft_assets.unwrap_or_default() {
+            crate::road_asset::draft_preview::append(&game, &dependencies, future, &mut assets)
+                .map_err(CommandError::internal)?;
         }
         Ok((key.instance, assets))
     })

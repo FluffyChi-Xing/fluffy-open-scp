@@ -1,0 +1,58 @@
+{
+  "dirt": {
+    "lanes": 1,
+    "width": 4.5,
+    "offset": 0.5,
+    "walkWidth": 4,
+    "walkOffset": 8,
+    "surface": "gravel"
+  },
+  "lowStreet": {
+    "lanes": 1,
+    "width": 4.5,
+    "offset": 0,
+    "walkWidth": 3,
+    "walkOffset": 9,
+    "surface": "asphalt"
+  },
+  "mediumStreet": {
+    "lanes": 2,
+    "width": 3.2,
+    "offset": 0,
+    "walkWidth": 3,
+    "walkOffset": 9,
+    "surface": "asphalt"
+  },
+  "highStreet": {
+    "lanes": 2,
+    "width": 4.4,
+    "offset": 0,
+    "walkWidth": 3,
+    "walkOffset": 9,
+    "surface": "asphalt"
+  },
+  "mediumAvenue": {
+    "lanes": 2,
+    "width": 5.45,
+    "offset": 4.5,
+    "walkWidth": 3,
+    "walkOffset": 21.15,
+    "surface": "asphalt"
+  },
+  "highAvenue": {
+    "lanes": 3,
+    "width": 5.45,
+    "offset": 4,
+    "walkWidth": 3,
+    "walkOffset": 21.15,
+    "surface": "asphalt"
+  },
+  "streetcar": {
+    "lanes": 3,
+    "width": 4.5,
+    "offset": 6,
+    "walkWidth": 2.85,
+    "walkOffset": 21.15,
+    "surface": "asphalt"
+  }
+}

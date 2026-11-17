@@ -12,6 +12,7 @@ export function useMenuImages(
   getProject: () => string | undefined,
   getMenu: () => Pick<WorkbenchMenuBinding, "iconPng" | "marqueePng">,
   updateMenu: (patch: Partial<WorkbenchMenuBinding>) => void,
+  contentAddressed = false,
 ) {
   const { t } = useI18n();
   const toast = useToast();
@@ -52,7 +53,7 @@ export function useMenuImages(
       );
       if (typeof path !== "string" || getProject() !== project) return;
       const imported = await command<{ asset: string }>("code_flow", {
-        request: { project, action: "import-menu-image", payload: { path, kind } },
+        request: { project, action: "import-menu-image", payload: { path, kind, ...(contentAddressed ? { contentAddressed } : {}) } },
       });
       if (getProject() !== project) return;
       updateMenu({ [menuImageFields[kind]]: imported.asset });

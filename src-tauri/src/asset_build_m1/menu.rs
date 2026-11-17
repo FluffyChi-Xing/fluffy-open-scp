@@ -2142,7 +2142,7 @@ mod tests {
 /// 128×128 工具图标 PNG：`iconPng` 指向项目内真实 PNG 时原样使用；
 /// 缺失/非法文件 fail-closed（不再静默回退占位图——r10 类"图没换也没人
 /// 知道"的静默失败必须消失）。空串 = 生成占位棋盘。
-fn build_icon_png(
+pub(crate) fn build_icon_png(
     spec: &MenuRegistrationSpec,
     instance: u32,
     root: &std::path::Path,
@@ -2194,7 +2194,7 @@ fn build_icon_png(
 
 /// 454×263 rollover 大图 JPG：`marqueePng` 指向项目内真实 JPG 时原样使用；
 /// 缺失/非 JPG 时 fail-closed。空串 = 生成占位横幅。
-fn build_marquee_jpg(
+pub(crate) fn build_marquee_jpg(
     spec: &MenuRegistrationSpec,
     instance: u32,
     root: &std::path::Path,

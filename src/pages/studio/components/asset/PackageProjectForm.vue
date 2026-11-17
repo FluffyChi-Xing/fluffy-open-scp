@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProjectConfigTabs from "./ProjectConfigTabs.vue";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -481,20 +482,7 @@ const tabHint = computed(() => {
       {{ t("studio.assetWorkbench.projectConfig.loadFailed", { error: loadError }) }}
     </p>
     <div v-else-if="manifest" class="ppf-body">
-      <nav class="ppf-nav" role="tablist">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          type="button"
-          role="tab"
-          :aria-selected="activeTab === tab.id"
-          :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          <FIcon :name="tab.icon" :size="13" aria-label="" />
-          {{ t(tab.labelKey) }}
-        </button>
-      </nav>
+      <ProjectConfigTabs v-model="activeTab" :tabs="tabs" :label="t('studio.assetWorkbench.projectConfig.title')" />
 
       <div class="ppf-content">
         <p class="ppf-hint">{{ tabHint }}</p>
@@ -871,39 +859,6 @@ const tabHint = computed(() => {
   display: flex;
   flex: 1;
   min-height: 0;
-}
-.ppf-nav {
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 168px;
-  padding: 10px 8px;
-  overflow-y: auto;
-}
-.ppf-nav button {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: flex;
-  font: inherit;
-  font-size: 12px;
-  gap: 7px;
-  min-height: 32px;
-  padding: 0 9px;
-  text-align: left;
-}
-.ppf-nav button:hover {
-  background: var(--surface-hover);
-  color: var(--foreground);
-}
-.ppf-nav button.active {
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
-  color: var(--primary);
-  font-weight: 600;
 }
 .ppf-content {
   display: flex;
