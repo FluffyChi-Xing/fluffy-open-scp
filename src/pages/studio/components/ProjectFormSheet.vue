@@ -146,7 +146,7 @@ async function submit() {
         ><FDropdownSelect
           v-model="modType"
           :options="
-            ['map', 'code', 'assets', 'road', 'gameplay', 'vanilla_variant'].map((value) => ({
+            ['map', 'map_resources', 'code', 'assets', 'road', 'gameplay', 'vanilla_variant'].map((value) => ({
               value,
               label: value === 'road' ? t('roadAsset.title') : t(`flow.${value}`),
             }))

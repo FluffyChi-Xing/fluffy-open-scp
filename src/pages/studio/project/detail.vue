@@ -12,6 +12,7 @@ import BuildActionsPanel from "../components/asset/BuildActionsPanel.vue";
 import ProjectRepoCodeTab from "../components/project-detail/ProjectRepoCodeTab.vue";
 import ProjectRepoSettingsTab from "../components/project-detail/ProjectRepoSettingsTab.vue";
 import ProjectAssetCaptureTab from "../components/project-detail/ProjectAssetCaptureTab.vue";
+import ProjectMapCaptureTab from "../components/project-detail/ProjectMapCaptureTab.vue";
 
 /**
  * 项目详情页（GitHub repo 形态）：
@@ -31,6 +32,29 @@ const project = computed(
 );
 
 const tab = ref<RepoTab>("code");
+const projectKind = ref<string>();
+watch(
+  () => project.value?.folderExists ? project.value.relPath : undefined,
+  async (path, _, onCleanup) => {
+    let current = true;
+    onCleanup(() => { current = false; });
+    projectKind.value = undefined;
+    if (!path || !isTauri()) return;
+    let kind = "";
+    try {
+      const document = await tauriApi.workspace.codeReadText(path, "package.json");
+      const manifest = JSON.parse(document.content);
+      kind = String(manifest.mod_type ?? "");
+    } catch {
+      // Older projects can have no manifest until their first Develop session.
+    }
+    if (current) projectKind.value = kind;
+  },
+  { immediate: true },
+);
+const showCapture = computed(() =>
+  projectKind.value !== undefined,
+);
 const supportedPowerProject = ref<string>();
 const powerRevision = ref(0);
 watch(
@@ -82,7 +106,7 @@ const tabs = computed(() => [
     icon: "Terminal",
     disabled: !(project.value?.folderExists ?? false),
   },
-]);
+].filter((item) => item.id !== "capture" || showCapture.value));
 
 function statusLabel(status: string): string {
   const key = `studio.dashboard.status.${status}`;
@@ -108,7 +132,7 @@ function syncTabFromQuery() {
     "settings",
     "capture",
   ];
-  if (!allowed.includes(raw as RepoTab) || raw === "issues") {
+  if (!allowed.includes(raw as RepoTab) || raw === "issues" || (raw === "capture" && !showCapture.value)) {
     tab.value = "code";
     return;
   }
@@ -135,7 +159,7 @@ onMounted(async () => {
 });
 
 watch(
-  () => [route.params.id, route.query.tab, project.value?.id] as const,
+  () => [route.params.id, route.query.tab, project.value?.id, showCapture.value] as const,
   () => syncTabFromQuery(),
 );
 </script>
@@ -229,8 +253,13 @@ watch(
           :groups="store.groups"
           @remove="onRemove"
         />
+        <ProjectMapCaptureTab
+          v-else-if="tab === 'capture' && projectKind === 'map_resources'"
+          :key="project.id"
+          :project="project.relPath"
+        />
         <ProjectAssetCaptureTab
-          v-else-if="tab === 'capture'"
+          v-else-if="tab === 'capture' && showCapture"
           :key="project.id"
           :project="project.relPath"
         />

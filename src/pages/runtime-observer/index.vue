@@ -322,7 +322,7 @@ onBeforeUnmount(release);
 
         <section class="capture-toolbar" :aria-label="t('runtimeObserver.control')">
           <CaptureFilters v-model="observation" :disabled="status.running || busy || stopping" />
-          <div v-if="!observation.startsWith('city:')" class="toolbar-profile">
+          <div v-if="!observation.startsWith('city:') && observation !== 'map:resources'" class="toolbar-profile">
             <label class="profile-picker"><span>{{ t("runtimeObserver.profileLabel") }}</span><FSelect v-model="profile" :options="profileOptions" :disabled="status.running || busy" :aria-label="t('runtimeObserver.profileLabel')" /></label>
             <p class="profile-description">{{ t(`runtimeObserver.profile.${profile}.description`) }}</p>
           </div>
@@ -337,6 +337,11 @@ onBeforeUnmount(release);
           {{ status.status?.ready
             ? t("observerMenu.cityStatus", { matched: status.status.matched, tracked: status.status.tracked })
             : status.running ? t("observerMenu.cityWaiting") : "" }}
+        </p>
+        <p v-if="capturedObservation === 'map:resources' && !error" role="status" class="scope-hint">
+          {{ status.status?.ready
+            ? t("observerMenu.mapStatus", { tracked: status.status.tracked })
+            : status.running ? t("observerMenu.mapWaiting") : "" }}
         </p>
         <LogStream :key="`capture-${captureEpoch}`" :rows="status.recent" :target="captureTarget" />
       </TabsContent>

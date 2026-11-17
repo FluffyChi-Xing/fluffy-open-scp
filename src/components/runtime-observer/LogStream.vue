@@ -16,10 +16,11 @@ import { useToast } from "@/composables/useToast";
 const props = defineProps<{
   rows: Record<string, unknown>[];
   metric?: string;
+  mapLayer?: string;
   scope?: "ui" | "building" | "agent";
   target?: string;
 }>();
-const { t } = useI18n();
+const { t, n } = useI18n();
 const toast = useToast();
 const query = ref("");
 const instance = ref("");
@@ -43,6 +44,14 @@ watch(
   { immediate: true },
 );
 function text(row: Record<string, unknown>) {
+  if (row.channel === "map.resource") {
+    return t("observerMenu.mapChange", {
+      count: n(Number(row.changedCells)),
+      increased: n(Number(row.increased)),
+      decreased: n(Number(row.decreased)),
+      net: n(Number(row.amountDelta), { signDisplay: "exceptZero" }),
+    });
+  }
   if (row.channel === "asset.resource") {
     const format = (value: unknown) => {
       if (row.source === "graphics-interiors") {
@@ -188,6 +197,7 @@ const lines = computed(() =>
           x.row.observationScope === props.scope) &&
         matchesBridgeTarget(props.target, x.row) &&
         (!props.metric || x.row.metric === props.metric) &&
+        (!props.mapLayer || x.row.name === props.mapLayer) &&
         (!instance.value ||
           `${x.row.unitSlot} / ${x.row.unitStamp}` === instance.value) &&
         (!query.value.trim() ||
@@ -259,6 +269,7 @@ async function copyLogs() {
   }
 }
 function lineName(row: Record<string, unknown>) {
+  if (row.channel === "map.resource") return t(`mapResources.${row.name}`);
   if (row.channel === "event" && row.eventID === 182429322)
     return t("observerMenu.speedChanged");
   if (row.channel === "event")

@@ -315,7 +315,7 @@ impl BuildQueueManager {
                         let payload = serde_json::json!({
                             "jobId": job_id,
                             "label": job.label,
-                            "totalStages": if crate::road_asset::is_schema(&job.schema) { 1 } else { crate::asset_build_m1::stages::CHAIN.len() },
+                            "totalStages": stage_count(&job.schema),
                             "event": event,
                         });
                         let _ = app.emit(BUILD_QUEUE_EVENT, payload);
@@ -325,7 +325,9 @@ impl BuildQueueManager {
             });
             let root = Path::new(&job.project_root);
             std::panic::catch_unwind(|| {
-                if crate::road_asset::is_schema(&job.schema) {
+                if crate::map_resources::is_schema(&job.schema) {
+                    crate::map_resources::build(root, &job.schema, tx)
+                } else if crate::road_asset::is_schema(&job.schema) {
                     crate::road_asset::build(root, &job.schema, Some(tx))
                 } else {
                     crate::asset_build_m1::build_from_schema_with_progress(root, &job.schema, Some(tx))
@@ -392,7 +394,7 @@ impl BuildQueueManager {
                 "startedAtMs": job.started_at_ms,
                 "finishedAtMs": job.finished_at_ms,
                 "durationMs": job.duration_ms,
-                "totalStages": if crate::road_asset::is_schema(&job.schema) { 1 } else { crate::asset_build_m1::stages::CHAIN.len() },
+                "totalStages": stage_count(&job.schema),
             });
             let _ = app.emit(BUILD_QUEUE_EVENT, payload);
         }
@@ -467,6 +469,7 @@ fn result_summary(result: &crate::asset_build_m1::M1BuildResult) -> Json {
         "sha256": result.sha256,
         "buildHash": result.build_hash,
         "resourceCount": result.resource_count,
+        "scope": result.scope,
         "deltaMode": result.delta_mode,
         "menuInstance": result.menu_instance,
         "scene": result.scene,
@@ -560,6 +563,16 @@ mod tests {
     }
 }
 
+fn stage_count(schema: &str) -> usize {
+    if crate::map_resources::is_schema(schema) {
+        crate::map_resources::STAGES
+    } else if crate::road_asset::is_schema(schema) {
+        1
+    } else {
+        crate::asset_build_m1::stages::CHAIN.len()
+    }
+}
+
 // ---- tauri 命令层(前端 Actions 页/api 的唯一入口) ----
 
 #[tauri::command]
@@ -582,6 +595,13 @@ pub async fn build_queue_enqueue_project(
     label: Option<String>,
 ) -> Result<Json, crate::activity::CommandError> {
     let root_path = Path::new(&root);
+    if let Some(raw) = crate::map_resources::project_schema(root_path)
+        .map_err(|e| crate::activity::CommandError::new("map_resources_schema_invalid", e))?
+    {
+        let job = queue.enqueue(&root, raw, label)
+            .map_err(|e| crate::activity::CommandError::new("build_queue_enqueue_failed", e))?;
+        return Ok(serde_json::json!({ "jobId": job, "schema": crate::map_resources::SCHEMA_PATH, "logic": null }));
+    }
     if let Some((path, raw)) = crate::asset_build_m1::vanilla_variant_project_schema(root_path)
         .map_err(|error| crate::activity::CommandError::new("vanilla_variant_schema_invalid", error))?
     {

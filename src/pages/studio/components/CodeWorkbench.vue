@@ -38,6 +38,7 @@ import FlowInitializeSheet from './mod-flow/FlowInitializeSheet.vue';
 import { isEngineManifest } from './mod-flow/contracts';
 import StandardModEditorPanel from './StandardModEditorPanel.vue';
 import RoadAssetWorkbench from "./road/RoadAssetWorkbench.vue";
+import MapResourceWorkbench from "./map-resources/MapResourceWorkbench.vue";
 import ModAssetWorkbench from './asset/ModAssetWorkbench.vue';
 import VanillaVariantPicker from "./asset/VanillaVariantPicker.vue";
 
@@ -132,6 +133,7 @@ const standardModKind = computed(() => {
  */
 const buildBusy = ref(false);
 const roadWorkbench = ref<InstanceType<typeof RoadAssetWorkbench> | null>(null);
+const mapResourceWorkbench = ref<InstanceType<typeof MapResourceWorkbench> | null>(null);
 const variantWorkbench = ref<InstanceType<typeof ModAssetWorkbench> | null>(null);
 const buildActivity = useBuildActivityStore();
 
@@ -148,6 +150,7 @@ async function buildM1InBackground(): Promise<boolean> {
         return false;
       }
     }
+    if (isMapResourceProject.value && !(await mapResourceWorkbench.value?.save())) return false;
     if (isVanillaVariant.value && !(await variantWorkbench.value?.saveVariantScene())) return false;
     const submitted = await tauriApi.buildQueue.enqueueProject(
       root,
@@ -184,6 +187,7 @@ async function buildM1InBackground(): Promise<boolean> {
 }
 
 const isRoadProject = computed(() => engineEnabled.value && standardModKind.value === "road");
+const isMapResourceProject = computed(() => standardModKind.value === "map_resources");
 const isVanillaVariant = computed(() => standardModKind.value === "vanilla_variant");
 const variantSource = computed(() => {
   const source = projectManifest.value.vanillaVariant as { packagePath?: unknown; lot?: unknown } | undefined;
@@ -209,7 +213,7 @@ async function initializeVanillaVariant(source: { gameData: string; scripts: str
 
 const projectBuildAvailable = computed(
   () => manifestReady.value
-    && (standardModKind.value === "assets" || isRoadProject.value || (isVanillaVariant.value && variantSource.value))
+    && (standardModKind.value === "assets" || isRoadProject.value || isMapResourceProject.value || (isVanillaVariant.value && variantSource.value))
     && Boolean(props.project.folderPath),
 );
 
@@ -528,7 +532,7 @@ watch(
           <FIcon :name="buildBusy ? 'Loader2' : 'Hammer'" :size="13" aria-label="" />
           {{ t(buildBusy ? 'studio.assetWorkbench.buildEnqueueing' : 'flow.build') }}
         </button>
-        <button v-if="engineEnabled && !isRoadProject && !isVanillaVariant" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
+        <button v-if="engineEnabled && !isRoadProject && !isVanillaVariant && !isMapResourceProject" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
           <FIcon :name="deployBusy ? 'Loader2' : 'Play'" :size="13" aria-label="" />
           {{ t(deployBusy ? 'flow.buildDeploying' : 'flow.buildDeploy') }}
         </button>
@@ -615,11 +619,11 @@ watch(
     <Resizable
       v-else
       direction="horizontal"
-      auto-save-id="openscp:code-workbench:v1"
+      :auto-save-id="isMapResourceProject ? 'openscp:map-resources:v1' : 'openscp:code-workbench:v1'"
       class="code-shell"
     >
       <!-- 左：项目目录树 -->
-      <ResizablePanel id="code-tree" :default-size="26" :min-size="16">
+      <ResizablePanel id="code-tree" :default-size="isMapResourceProject ? 18 : 26" :min-size="isMapResourceProject ? 12 : 16">
         <div class="tree-panel">
           <div v-if="tree?.truncated" class="tree-warning">
             {{ $t("studio.code.truncated") }}
@@ -666,9 +670,18 @@ watch(
       />
 
       <!-- 右：地图 Mod 编辑器+流程画布上下分 -->
-      <ResizablePanel id="code-viewer" :default-size="74" :min-size="40">
+      <ResizablePanel id="code-viewer" :default-size="isMapResourceProject ? 82 : 74" :min-size="40">
+        <MapResourceWorkbench
+          v-if="isMapResourceProject"
+          :key="project.relPath"
+          ref="mapResourceWorkbench"
+          :project="project.relPath"
+          :overview="selected?.relativePath === 'package.json'"
+          @back="clearViewer"
+          @saved="loadTree(true)"
+        />
         <Resizable
-          v-if="engineEnabled"
+          v-else-if="engineEnabled"
           direction="vertical"
           auto-save-id="openscp:code-standard-workbench:v1"
           class="standard-workbench"

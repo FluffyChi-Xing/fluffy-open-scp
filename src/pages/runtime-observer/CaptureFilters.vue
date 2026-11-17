@@ -7,14 +7,17 @@ import { buildingGroups, developmentGroups } from "./cityCatalog";
 defineProps<{ disabled: boolean }>();
 const model = defineModel<string>({ required: true });
 const { t } = useI18n();
-const scope = shallowRef("ui");
+const captureScopes = ["ui", "building", "agent", "map"] as const;
+type CaptureScope = typeof captureScopes[number];
+const scope = shallowRef<CaptureScope>("ui");
 const section = shallowRef("city");
 const category = shallowRef("power");
 
 const scopes = computed(() =>
-  ["ui", "building", "agent"].map((value) => ({
+  captureScopes.map((value) => ({
     value,
-    label: t(value === "building" ? "observerMenu.buildings" : `runtimeObserver.scope.${value}.label`),
+    label: t(value === "building" ? "observerMenu.buildings"
+      : value === "map" ? "observerMenu.mapResources" : `runtimeObserver.scope.${value}.label`),
   })),
 );
 const sections = computed(() =>
@@ -45,14 +48,14 @@ const agents = computed(() =>
   })),
 );
 
-function chooseScope(value: string) {
+function chooseScope(value: CaptureScope) {
   scope.value = value;
-  model.value =
-    value === "ui"
-      ? "ui:all"
-      : value === "agent"
-        ? agents.value[0].value
-        : (units.value[0]?.value ?? "");
+  model.value = {
+    ui: "ui:all",
+    map: "map:resources",
+    agent: agents.value[0].value,
+    building: units.value[0]?.value ?? "",
+  }[value];
 }
 function chooseSection(value: string) {
   section.value = value;
@@ -146,6 +149,7 @@ function chooseCategory(value: string) {
       </div>
       <p>{{ t("runtimeObserver.scope.agent.hint") }}</p>
     </div>
+    <p v-else-if="scope === 'map'">{{ t("observerMenu.mapHint") }}</p>
     <p v-else>{{ t("runtimeObserver.scope.ui.hint") }}</p>
   </div>
 </template>

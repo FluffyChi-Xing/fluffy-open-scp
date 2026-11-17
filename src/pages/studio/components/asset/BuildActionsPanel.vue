@@ -58,6 +58,12 @@ const selectedSteps = computed(() =>
   selectedJob.value ? stepsFromEvents(selectedJob.value.events) : [],
 );
 
+function stageLabel(stage: string) {
+  if (stage === "road::compile") return t("roadAsset.compileStage");
+  if (stage.startsWith("map_resources::")) return t(`mapResources.${stage.split("::")[1]}`);
+  return stage;
+}
+
 function stepsFromEvents(events: StageEventDto[]): StepView[] {
   const order: string[] = [];
   const map = new Map<string, StepView>();
@@ -421,7 +427,7 @@ async function enqueueSchema() {
                     :size="12"
                     aria-label=""
                   />
-                  <span class="stage-name">{{ step.stage === "road::compile" ? t("roadAsset.compileStage") : step.stage }}</span>
+                  <span class="stage-name">{{ stageLabel(step.stage) }}</span>
                   <span class="stage-duration">{{
                     formatDuration(step.durationMs)
                   }}</span>
@@ -438,6 +444,9 @@ async function enqueueSchema() {
               {{ t("studio.assetWorkbench.actionsResources") }}:
               {{ job.result.resourceCount }} · sha256
               {{ String(job.result.sha256 ?? "").slice(0, 12) }}…
+              <template v-if="String(job.result.scope ?? '').startsWith('map_resources')">
+                <br />{{ t("mapResources.output") }} <code class="break-all">{{ job.result.path }}</code>
+              </template>
             </p>
           </div>
         </li>

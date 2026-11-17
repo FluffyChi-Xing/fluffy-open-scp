@@ -464,8 +464,12 @@ pub async fn mod_project_create(
         }
         fs::create_dir(&folder)?;
         let mod_type=request.mod_type.as_deref().unwrap_or("assets");
-        if !["map","code","assets","gameplay","road","vanilla_variant"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
+        if !["map","code","assets","gameplay","road","vanilla_variant","map_resources"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
         let mut metadata=serde_json::json!({"format":"openscp.mod","manifest_version":2,"origin":"openscp","name":name,"version":"0.1.0","description":request.description.as_deref().unwrap_or(""),"author":request.author.as_deref().unwrap_or(""),"mod_type":mod_type,"created_at":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"engine":{"enabled":false,"version":1},"internal_dependencies":{},"outer_dependencies":[]});
+        if mod_type == "map_resources" {
+            metadata["engine"]["enabled"] = serde_json::json!(true);
+            metadata["build"] = serde_json::json!({"kind":mod_type,"schema":crate::map_resources::SCHEMA_PATH});
+        }
         if mod_type == "road" {
             let game_data = store.app_settings().ok().flatten().and_then(|settings| settings.game_data_path);
             if let Err(error) = crate::road_asset::initialize_project(

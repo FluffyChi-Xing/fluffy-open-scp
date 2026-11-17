@@ -35,6 +35,7 @@ export const flowZh = {
   code: "Code Mod",
   assets: "Assets Mod",
   vanilla_variant: "原版变体",
+  map_resources: "地图资源编辑",
   variant: {
     title: "菜单名称",
     choose: "选择原版建筑",
@@ -270,6 +271,7 @@ export const flowEn = {
   code: "Code Mod",
   assets: "Assets Mod",
   vanilla_variant: "Vanilla Variant",
+  map_resources: "Map Resources",
   variant: {
     title: "Menu name",
     choose: "Choose vanilla building",

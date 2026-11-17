@@ -32,6 +32,7 @@ mod internal_dirs;
 mod locale_service;
 mod lot_model_blend;
 mod map_panel;
+mod map_resources;
 mod media_tools;
 mod mod_flow;
 pub mod road_asset;

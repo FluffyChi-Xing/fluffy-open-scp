@@ -27,7 +27,7 @@ function errorCode(cause: unknown) {
   return "failed";
 }
 
-export function useAssetCapture(project: string) {
+export function useAssetCapture(project: string, mode: "asset" | "map" = "asset") {
   const processes = shallowRef<GameProcess[]>([]);
   const builds = shallowRef<{ path: string; ids: number[] }[]>([]);
   const targetKey = shallowRef("");
@@ -58,10 +58,10 @@ export function useAssetCapture(project: string) {
     try {
       const [games, summary] = await Promise.all([
         runtimeObserver.listProcesses(),
-        tauriApi.studio.projects.repoSummary(project),
+        mode === "asset" ? tauriApi.studio.projects.repoSummary(project) : null,
       ]);
       const results = await Promise.allSettled(
-        summary.releases.slice(0, 8).map(async ({ relativePath }) => {
+        (summary?.releases ?? []).slice(0, 8).map(async ({ relativePath }) => {
           const ids = await command<number[]>("code_package_observable_units", {
             request: { project, relativePath },
           });
@@ -113,14 +113,16 @@ export function useAssetCapture(project: string) {
 
   async function start() {
     const target = targets.value.find((entry) => entry.key === targetKey.value);
-    if (!pid.value || !target || busy.value || directory) return;
+    if (!pid.value || (mode === "asset" && !target) || busy.value || directory) return;
     busy.value = true;
     error.value = "";
     try {
       const next = await command<ObserverStatus>("observer_start", {
         pid: pid.value,
         seconds: 300,
-        unitEntry: target.iid,
+        ...(mode === "map"
+          ? { observation: "map:resources", projectCapture: true }
+          : { unitEntry: target?.iid }),
       });
       if (!next.directory) throw new Error("observer_session_missing");
       if (!active) {
