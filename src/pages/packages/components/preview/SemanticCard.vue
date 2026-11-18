@@ -493,11 +493,13 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
 
 <style scoped>
 .semantic-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
-  padding: 4px 2px;
+  padding: 14px;
 }
 .alert-row {
   align-items: center;
