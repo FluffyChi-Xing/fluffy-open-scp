@@ -42,6 +42,10 @@ const emit = defineEmits<{ open: [file: PackageFile] }>();
   height: 100%;
   min-height: 0;
   overflow: auto;
+  scrollbar-width: none;
+}
+.folder-tree::-webkit-scrollbar {
+  display: none;
 }
 .panel-label {
   background: var(--surface);
