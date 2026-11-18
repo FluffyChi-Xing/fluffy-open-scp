@@ -14,6 +14,8 @@
       {
         "label": "main",
         "title": "OpenSCP",
+        "visible": false,
+        "backgroundColor": "#0C152A",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

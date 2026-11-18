@@ -137,6 +137,23 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .on_page_load({
+            // The initial document contains the loading screen. Its Vue import
+            // runs independently, so a slow route cannot delay window reveal.
+            let reveal_main = std::sync::Once::new();
+            move |webview, payload| {
+                if webview.label() == "main"
+                    && payload.event() == tauri::webview::PageLoadEvent::Finished
+                    && payload.url().as_str() != "about:blank"
+                {
+                    reveal_main.call_once(|| {
+                        if let Err(error) = webview.window().show() {
+                            eprintln!("Failed to show the OpenSCP window: {error}");
+                        }
+                    });
+                }
+            }
+        })
         .setup(|app| {
             let data_root = internal_dirs::persistent_root(app.handle())?;
             let database_path = data_root.join("openscp.db");
