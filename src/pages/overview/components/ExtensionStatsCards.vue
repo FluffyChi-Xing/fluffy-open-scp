@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FStatValue from "@/components/ui/FStatValue.vue";
 import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -126,7 +127,7 @@ function sparkTip(points: { label: string; value: number }[], format: (n: number
             <span class="metric-title">{{ t("home.cardCountMix") }}</span>
           </header>
           <div class="metric-value-row">
-            <strong class="metric-value">{{ formatCompact(totals.entryCount) }}</strong>
+            <strong class="metric-value"><FStatValue :value="formatCompact(totals.entryCount)" /></strong>
             <span class="metric-sub">{{ t("home.fileCount") }}</span>
           </div>
           <ul class="rank-bars" :aria-label="t('home.cardCountMix')">
@@ -156,12 +157,12 @@ function sparkTip(points: { label: string; value: number }[], format: (n: number
         </article>
 
         <!-- 窄卡：可识别覆盖 -->
-        <article class="metric-card span-4">
+        <article class="metric-card span-4 coverage-card">
           <header class="metric-head">
             <span class="metric-title">{{ t("home.cardCoverage") }}</span>
           </header>
           <div class="metric-value-row">
-            <strong class="metric-value">{{ formatPercent(coverage, 2) }}</strong>
+            <strong class="metric-value"><FStatValue :value="formatPercent(coverage, 2)" /></strong>
             <span
               class="trend"
               :class="coverage >= 90 ? 'up' : coverage >= 70 ? 'flat' : 'down'"
@@ -187,7 +188,7 @@ function sparkTip(points: { label: string; value: number }[], format: (n: number
             <span class="metric-title">{{ t("home.cardEntries") }}</span>
           </header>
           <div class="metric-value-row">
-            <strong class="metric-value">{{ formatCompact(totals.entryCount) }}</strong>
+            <strong class="metric-value"><FStatValue :value="formatCompact(totals.entryCount)" /></strong>
             <span class="metric-sub">{{ t("home.acrossPackages", { n: stats.packages.length }) }}</span>
           </div>
           <svg
@@ -219,7 +220,7 @@ function sparkTip(points: { label: string; value: number }[], format: (n: number
             <span class="metric-title">{{ t("home.cardPayload") }}</span>
           </header>
           <div class="metric-value-row">
-            <strong class="metric-value">{{ formatBytes(totals.decompressedSize) }}</strong>
+            <strong class="metric-value"><FStatValue :value="formatBytes(totals.decompressedSize)" /></strong>
             <span class="metric-sub">{{ t("home.decompressed") }}</span>
           </div>
           <svg
@@ -252,7 +253,7 @@ function sparkTip(points: { label: string; value: number }[], format: (n: number
           </header>
           <div class="metric-value-row">
             <strong class="metric-value">
-              {{ ratio == null ? "—" : `${ratio.toFixed(2)}×` }}
+              <FStatValue :value="ratio == null ? '—' : `${ratio.toFixed(2)}×`" />
             </strong>
             <span class="metric-sub">{{ t("home.cardCompressionSub") }}</span>
           </div>
@@ -418,6 +419,9 @@ function sparkTip(points: { label: string; value: number }[], format: (n: number
 .span-8 { grid-column: span 8; }
 .span-4 { grid-column: span 4; }
 .span-3 { grid-column: span 3; }
+.coverage-card {
+  height: fit-content;
+}
 .metric-head {
   align-items: center;
   display: flex;

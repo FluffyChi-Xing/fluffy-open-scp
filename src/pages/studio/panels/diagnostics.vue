@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FStatValue from "@/components/ui/FStatValue.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
@@ -142,7 +143,7 @@ async function pickExtraRoot() {
     <template v-if="result && !scanning">
       <section class="stats-row" :aria-label="t('studio.diagnostics.statsLabel')">
         <article v-for="item in statItems" :key="item.key" class="stat-card">
-          <span class="stat-value">{{ item.value.toLocaleString() }}</span>
+          <span class="stat-value"><FStatValue :value="$n(item.value)" /></span>
           <span class="stat-label">{{
             t(`studio.diagnostics.stats.${item.key}`)
           }}</span>

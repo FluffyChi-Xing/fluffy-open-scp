@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, watch } from "vue";
 import { AnimatePresence, motion, useReducedMotion } from "motion-v";
 import { useToast } from "@/composables/useToast";
+import { motionExit, motionSpring } from "@/lib/motion/presets";
 
 const { toasts, dismiss } = useToast();
 
@@ -19,15 +20,15 @@ const toastMotion = computed(() =>
         transition: { duration: 0.12 },
       }
     : {
-        initial: { opacity: 0, x: 32, scale: 0.96 },
+        initial: { opacity: 0, x: 40, scale: 0.96 },
         animate: { opacity: 1, x: 0, scale: 1 },
         exit: {
           opacity: 0,
           x: 40,
           scale: 0.96,
-          transition: { duration: 0.16, ease: [0.4, 0, 1, 1] as const },
+          transition: motionExit,
         },
-        transition: { type: "spring" as const, stiffness: 460, damping: 34, mass: 0.8 },
+        transition: motionSpring,
       },
 );
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -65,7 +66,7 @@ onBeforeUnmount(() => {
           v-for="toast in toasts"
           :key="toast.id"
           v-bind="toastMotion"
-          layout
+          :layout="!reduced"
           class="f-toast"
           :class="`f-toast-${toast.tone}`"
         >
@@ -142,9 +143,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .f-toast {
   --toast-tone: var(--info);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(20px) saturate(130%);
-  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  background: var(--card-material);
+  backdrop-filter: var(--card-filter);
   border: 1px solid color-mix(in srgb, var(--toast-tone) 42%, var(--border));
   border-radius: var(--radius-lg);
   box-shadow:

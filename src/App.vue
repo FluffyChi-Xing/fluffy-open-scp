@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
+import { MotionConfig } from 'motion-v'
+import { motionSpring } from '@/lib/motion/presets'
 import FToastHost from '@/components/ui/FToastHost.vue'
 import { usePressMotion } from '@/lib/motion/press'
 import { useBuildActivityStore } from '@/stores/buildActivity'
@@ -14,6 +16,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <RouterView />
-  <FToastHost />
+  <MotionConfig reduced-motion="user" :transition="motionSpring">
+    <RouterView />
+    <FToastHost />
+  </MotionConfig>
 </template>

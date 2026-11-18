@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import FStatValue from "@/components/ui/FStatValue.vue";
 import type { ModProjectStats } from "@/api/tauri";
 
 /**
@@ -197,7 +198,7 @@ function statusLabel(status: string): string {
   <section class="dashboard" :aria-label="$t('studio.dashboard.title')">
     <div class="kpi-row">
       <div v-for="kpi in kpis" :key="kpi.label" class="kpi-card">
-        <span class="kpi-value">{{ kpi.value }}</span>
+        <span class="kpi-value"><FStatValue :value="kpi.value" /></span>
         <span class="kpi-label">{{ kpi.label }}</span>
       </div>
     </div>

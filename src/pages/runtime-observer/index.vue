@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FStatValue from "@/components/ui/FStatValue.vue";
 import {
   computed,
   onActivated,
@@ -298,24 +299,26 @@ onBeforeUnmount(release);
           <dl class="metrics">
             <div class="metric-card">
               <dt>{{ t("runtimeObserver.records") }}</dt>
-              <dd>{{ status.records }}</dd>
+              <dd><FStatValue :value="$n(status.records)" /></dd>
             </div>
             <div class="metric-card">
               <dt>{{ t("runtimeObserver.eventTotal") }}</dt>
-              <dd>{{ events }}</dd>
+              <dd><FStatValue :value="$n(events)" /></dd>
             </div>
             <div class="metric-card">
               <dt>{{ t("runtimeObserver.eventCamera") }}</dt>
               <dd>
-                {{
-                  (status.eventCounts["205419630"] ?? 0) +
-                  (status.eventCounts["205419631"] ?? 0)
-                }}
+                <FStatValue
+                  :value="$n(
+                    (status.eventCounts['205419630'] ?? 0) +
+                    (status.eventCounts['205419631'] ?? 0)
+                  )"
+                />
               </dd>
             </div>
             <div class="metric-card">
               <dt>{{ t("runtimeObserver.synced") }}</dt>
-              <dd>{{ status.synced }}</dd>
+              <dd><FStatValue :value="$n(status.synced)" /></dd>
             </div>
           </dl>
         </section>

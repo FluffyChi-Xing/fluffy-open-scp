@@ -9,7 +9,7 @@ const open = defineModel<boolean>('open', { default: false })
 const anchor = useTemplateRef<HTMLElement>('anchor')
 const panel = useTemplateRef<HTMLElement>('panel')
 const { panelStyle } = useFloatingMenu(open, anchor, panel, props.width)
-usePanelEnter(open, panel, { scaleFrom: 0.97, yFrom: -6, stiffness: 460, damping: 34 })
+usePanelEnter(open, panel)
 </script>
 
 <template><span ref="anchor" class="f-popover-anchor" @click="open = !open"><slot name="trigger" /></span><Teleport to="body"><div v-if="open" ref="panel" class="f-popover-panel" :style="[panelStyle, { width: `${props.width}px` }]"><slot /></div></Teleport></template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FStatValue from "@/components/ui/FStatValue.vue";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -29,7 +30,7 @@ function date(value: number) {
 </script>
 
 <template>
-  <section class="runtime-card" aria-labelledby="runtime-card-title">
+  <section class="runtime-card ui-glass-card" aria-labelledby="runtime-card-title">
     <div class="intro">
       <span class="icon"
         ><FIcon name="Terminal" :size="20" aria-label=""
@@ -43,7 +44,7 @@ function date(value: number) {
     </div>
     <div class="saved-summary">
       <span>{{ t("runtimeObserver.overview.recent") }}</span>
-      <strong>{{ saved.length.toLocaleString(locale) }}</strong>
+      <strong><FStatValue :value="saved.length.toLocaleString(locale)" /></strong>
     </div>
     <div class="latest">
       <template v-if="saved.length">

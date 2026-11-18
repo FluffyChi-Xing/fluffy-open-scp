@@ -1,11 +1,12 @@
 import { onBeforeUnmount, onMounted } from "vue";
 import { useAnimate, useReducedMotion } from "motion-v";
+import { motionEaseOut, motionSpring } from "./presets";
 
 /**
  * 全局按压反馈（motion-v）。
  *
  * 用事件委托监听整个文档，因此不需要在几百个 `<button>` 上逐个加指令：
- * 指针按下把元素缩到 0.965，松开用 spring 弹回。只作用于可交互元素，
+ * 指针按下时缩小，松开时平滑复位。只作用于可交互元素，
  * 尊重 `prefers-reduced-motion`，并可通过 `data-press="off"` 退出。
  *
  * 纯表现层：不改变任何点击行为，也不阻止默认事件。
@@ -13,7 +14,7 @@ import { useAnimate, useReducedMotion } from "motion-v";
 
 const INTERACTIVE = "button, [role='button'], [data-press]";
 const OPT_OUT = "[data-press='off']";
-const PRESS_SCALE = 0.965;
+const PRESS_SCALE = 0.94;
 
 /** 事件目标 → 需要做按压反馈的元素（纯函数，单测覆盖）。 */
 export function resolvePressTarget(target: EventTarget | null): HTMLElement | null {
@@ -41,7 +42,7 @@ export function usePressMotion() {
     animate(
       element,
       { scale: PRESS_SCALE },
-      { duration: 0.09, ease: [0.2, 0, 0, 1] },
+      { duration: 0.09, ease: motionEaseOut },
     ).finished?.catch?.(() => {});
   }
 
@@ -52,7 +53,7 @@ export function usePressMotion() {
     animate(
       element,
       { scale: 1 },
-      { type: "spring", stiffness: 520, damping: 26, mass: 0.5 },
+      motionSpring,
     ).finished?.catch?.(() => {});
   }
 

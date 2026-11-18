@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onActivated } from "vue";
+import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
+import FStatValue from "@/components/ui/FStatValue.vue";
 import { useOpenScpOverview } from "@/composables/useOpenScpOverview";
 import { usePackageStats } from "@/composables/usePackageStats";
 import { useRenderTelemetry } from "@/composables/useRenderTelemetry";
@@ -11,6 +13,7 @@ import RuntimeLogsCard from "./components/RuntimeLogsCard.vue";
 import RenderStatsCard from "./components/RenderStatsCard.vue";
 
 const overview = useOpenScpOverview();
+const { n: formatNumber } = useI18n();
 const { snapshot, loading, error, demo } = overview;
 let activatedOnce = false;
 onActivated(() => {
@@ -71,25 +74,25 @@ function age(timestamp: number) {
           <FIcon name="Package" :size="18" aria-label="" /><span>{{
             $t("home.packages")
           }}</span
-          ><strong>{{ snapshot.packages }}</strong>
+          ><strong><FStatValue :value="formatNumber(snapshot.packages)" /></strong>
         </article>
         <article class="metric-card">
           <FIcon name="Database" :size="18" aria-label="" /><span>{{
             $t("home.resources")
           }}</span
-          ><strong>{{ snapshot.resources.toLocaleString() }}</strong>
+          ><strong><FStatValue :value="formatNumber(snapshot.resources)" /></strong>
         </article>
         <article class="metric-card">
           <FIcon name="Boxes" :size="18" aria-label="" /><span>{{
             $t("home.assets")
           }}</span
-          ><strong>{{ snapshot.assets }}</strong>
+          ><strong><FStatValue :value="formatNumber(snapshot.assets)" /></strong>
         </article>
         <article class="metric-card metric-alert">
           <FIcon name="CircleAlert" :size="18" aria-label="" /><span>{{
             $t("home.failedOperations")
           }}</span
-          ><strong>{{ snapshot.failedOperations }}</strong>
+          ><strong><FStatValue :value="formatNumber(snapshot.failedOperations)" /></strong>
         </article>
       </section>
       <RuntimeLogsCard :events="snapshot.recentEvents" />
@@ -317,7 +320,7 @@ function age(timestamp: number) {
   grid-column: 2;
   grid-row: 1;
 }
-.metric-card span {
+.metric-card > span {
   grid-column: 1;
   grid-row: 1;
   color: var(--muted-foreground);

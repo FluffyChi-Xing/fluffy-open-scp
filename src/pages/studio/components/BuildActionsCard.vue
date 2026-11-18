@@ -50,7 +50,7 @@ watch(lastProjectRoot, pickDefault);
 </script>
 
 <template>
-  <section class="actions-card">
+  <section class="actions-card ui-glass-card">
     <div class="card-head">
       <div class="card-brand">
         <span class="card-mark" aria-hidden="true">

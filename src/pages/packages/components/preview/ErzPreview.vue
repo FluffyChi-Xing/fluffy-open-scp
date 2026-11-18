@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import FStatValue from "@/components/ui/FStatValue.vue";
 import type { ErzPreview } from "@/api/tauri";
 
 const props = defineProps<{ preview: ErzPreview }>();
-const { t } = useI18n();
+const { t, n: num } = useI18n();
 
 const data = computed(() => props.preview.data);
 
 function hex32(value: number) {
   return `0x${value.toString(16).padStart(8, "0").toUpperCase()}`;
-}
-
-function num(value: number) {
-  return value.toLocaleString();
 }
 
 const stats = computed(() => [
@@ -88,7 +85,7 @@ const hiddenConstants = computed(() =>
     <div class="erz-grid" role="table" aria-label="ERZ">
       <div v-for="s in stats" :key="s.label" class="erz-stat" role="row">
         <span class="erz-stat-label">{{ s.label }}</span>
-        <span class="erz-stat-value">{{ s.value }}</span>
+        <span class="erz-stat-value"><FStatValue :value="s.value" /></span>
         <span class="erz-stat-hint">{{ s.hint }}</span>
       </div>
     </div>
