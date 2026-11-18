@@ -8,7 +8,7 @@ use crate::{
 };
 use dbpf::{OverlayEntry, Package, ResourceId};
 use serde_json::{Value as Json, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const TEMPLATE: &str = "OpenSCPHalfCoast";
 const SITE: i32 = 1026;
@@ -204,12 +204,11 @@ fn terrain_entries(
     }
     push_prop(&mut entries, target_table, &table)?;
 
-    for entry in sources
-        .terrain
-        .entries()
-        .iter()
-        .filter(|e| e.id.type_id == PROP && e.id.group == DONOR_REGION)
-    {
+    for entry in sources.terrain.entries().iter().filter(|e| {
+        e.id.type_id == PROP
+            && e.id.group == DONOR_REGION
+            && e.id.instance != water_bounds::INSTANCE
+    }) {
         let mut props = props_at(sources.terrain, entry.id)?;
         remap_property_keys(&mut props, &groups);
         if entry.id.instance == 0x51e7a18d {
@@ -246,10 +245,26 @@ fn terrain_entries(
             field.push(generated.heights[row + x.saturating_sub(start).min(HEIGHT_SIDE - 1)]);
         }
     }
-    for mut entry in heightmap_entries(sources.terrain, DONOR_REGION, &field)? {
+    let mut terrain = heightmap_entries(sources.terrain, DONOR_REGION, &field)?;
+    let tiles: HashMap<_, _> = terrain.iter().map(|e| (e.id.instance, &e.data)).collect();
+    let bounds = water_bounds::from_f0(|instance| {
+        tiles
+            .get(&instance)
+            .map(|tile| tile.as_slice())
+            .ok_or_else(|| format!("Missing regional F0 tile {instance:08X}"))
+    })?;
+    let min_max_id = id(PROP, region_group(), water_bounds::INSTANCE);
+    let mut props = props_at(sources.terrain, id(PROP, DONOR_REGION, min_max_id.instance))?;
+    set(
+        &mut props,
+        water_bounds::HEIGHT_MIN_MAX,
+        Kind::Array(bounds),
+    )?;
+    push_prop(&mut entries, min_max_id, &props)?;
+    for entry in &mut terrain {
         entry.id.group = region_group();
-        entries.push(entry);
     }
+    entries.extend(terrain);
 
     let mut ed_count = 0;
     for entry in sources
@@ -727,6 +742,16 @@ pub fn verify_coastal_region(
         })
     {
         return Err("Regional F0 crop does not match the city heightfield".into());
+    }
+    let min_max = props_at(package, id(PROP, region_group(), water_bounds::INSTANCE))?;
+    let expected_bounds =
+        water_bounds::from_f0(|instance| read(package, id(F0, region_group(), instance)))?;
+    if min_max
+        .get(water_bounds::HEIGHT_MIN_MAX)
+        .and_then(|p| p.array())
+        != Some(expected_bounds.as_slice())
+    {
+        return Err("Regional water LOD bounds do not match the F0 tiles".into());
     }
     let city_tiles = package
         .entries()

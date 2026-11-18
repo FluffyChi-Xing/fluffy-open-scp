@@ -2,6 +2,7 @@
 mod bootstrap;
 mod preview;
 mod retail;
+mod water_bounds;
 
 pub use retail::{
     RegionBuildReport, RegionLocale, RetailSources, build_coastal_region, verify_coastal_region,
