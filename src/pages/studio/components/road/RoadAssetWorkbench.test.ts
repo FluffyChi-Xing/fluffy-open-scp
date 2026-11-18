@@ -90,10 +90,24 @@ it("requires a paved base before offering strips and keeps the cross-section emp
       },
     );
     await chooseBase("mediumStreet");
+    const [, lightingPicker] = wrapper.findAllComponents({ name: "FSelect" });
+    expect(lightingPicker.props("options")).toContainEqual({
+      value: "both",
+      label: "Both sides",
+    });
+    lightingPicker.vm.$emit("update:modelValue", "right");
+    i18n.global.locale.value = "zh-CN";
+    await wrapper.vm.$nextTick();
+    expect(lightingPicker.props("modelValue")).toBe("right");
+    expect(lightingPicker.props("options")).toContainEqual({
+      value: "right",
+      label: "右侧",
+    });
     expect(wrapper.getComponent({ name: "RoadPreview" }).props()).toMatchObject(
       {
         recipe: "mediumStreet",
         draft: [{ kind: "forward", width: 4.5 }],
+        streetlights: "right",
       },
     );
   } finally {

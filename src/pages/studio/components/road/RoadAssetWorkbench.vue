@@ -18,12 +18,14 @@ import RoadRecipeLibrary from "./RoadRecipeLibrary.vue";
 import RoadStripLibrary from "./RoadStripLibrary.vue";
 import {
   matchingRecipe,
+  draftStreetlightOptions,
   parseRoadSchema,
   pavedRecipes,
   recipes,
   type PavedRecipe,
   type RecipeId,
   type RoadSchema,
+  type Streetlights,
 } from "./roadSchema";
 import { availableComponents, type RoadComponent } from "./roadComposition";
 import {
@@ -39,6 +41,13 @@ const props = defineProps<{
 }>();
 const { t } = useI18n();
 const baseRecipeId = useId();
+const streetlightsId = useId();
+const lightingOptions = computed(() =>
+  draftStreetlightOptions.map((value) => ({
+    value,
+    label: t(value === "original" ? "roadAsset.lighting.default" : `roadAsset.lighting.${value}`),
+  })),
+);
 const baseOptions = computed(() =>
   pavedRecipes.map((recipe) => ({
     value: recipe,
@@ -90,6 +99,7 @@ const widths = computed(() => {
 const nativeRecipe = computed(() => {
   if (!schema.value) return undefined;
   if (!draft.value) return schema.value.recipe;
+  if (schema.value.streetlights && schema.value.streetlights !== "original") return undefined;
   const match = matchingRecipe(draft.value);
   return match === baseRecipe.value ? match : undefined;
 });
@@ -182,8 +192,15 @@ function startDraft() {
 
 function chooseBase(value: string) {
   const recipe = value as PavedRecipe;
-  if (schema.value && pavedRecipes.includes(recipe))
+  if (schema.value && pavedRecipes.includes(recipe)) {
     schema.value.baseRecipe = recipe;
+    if (recipe === "streetcar") delete schema.value.streetlights;
+  }
+}
+
+function chooseLighting(value: string) {
+  const next = value as Streetlights;
+  if (schema.value && draftStreetlightOptions.includes(next)) schema.value.streetlights = next;
 }
 
 function addStrip(kind: StripKind) {
@@ -323,9 +340,7 @@ defineExpose({ save, buildIssue });
           :game-package="schema.gamePackage"
           :recipe="previewRecipe"
           :draft="nativeRecipe ? undefined : draft"
-          :streetlights="
-            draft ? 'original' : (schema.streetlights ?? 'original')
-          "
+          :streetlights="schema.streetlights ?? 'original'"
           :composition="draft ? undefined : schema.composition"
         />
         <div v-else-if="draft" class="draft-hint" role="status">
@@ -410,6 +425,15 @@ defineExpose({ save, buildIssue });
                   @update:model-value="schema.frontageEnabled = $event"
                 />
               </label>
+              <div v-if="draft && baseRecipe && baseRecipe !== 'streetcar'" class="base-recipe">
+                <label :for="streetlightsId">{{ t("roadAsset.streetlights") }}</label>
+                <FSelect
+                  :id="streetlightsId"
+                  :model-value="schema.streetlights ?? 'original'"
+                  :options="lightingOptions"
+                  @update:model-value="chooseLighting"
+                />
+              </div>
             </div>
             <template v-if="draft">
               <RoadStripLibrary

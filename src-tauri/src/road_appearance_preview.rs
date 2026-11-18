@@ -117,7 +117,7 @@ pub(crate) async fn read_road_recipe_appearance(
                     return true;
                 }
                 match streetlights {
-                    Streetlights::Original => true,
+                    Streetlights::Original | Streetlights::Both => true,
                     Streetlights::Left => part.offset[0] < 0.0,
                     Streetlights::Right => part.offset[0] > 0.0,
                     Streetlights::None => false,
@@ -125,8 +125,14 @@ pub(crate) async fn read_road_recipe_appearance(
             });
         }
         if draft_assets.unwrap_or_default() {
-            crate::road_asset::draft_preview::append(&game, &dependencies, future, &mut assets)
-                .map_err(CommandError::internal)?;
+            crate::road_asset::draft_preview::append(
+                &game,
+                &dependencies,
+                future,
+                streetlights,
+                &mut assets,
+            )
+            .map_err(CommandError::internal)?;
         }
         Ok((key.instance, assets))
     })

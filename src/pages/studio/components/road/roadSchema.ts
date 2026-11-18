@@ -17,7 +17,10 @@ export const streetlightOptions = [
   "right",
   "none",
 ] as const;
-export type Streetlights = (typeof streetlightOptions)[number];
+export const draftStreetlightOptions = [
+  "original", "both", "left", "right", "none",
+] as const;
+export type Streetlights = (typeof draftStreetlightOptions)[number];
 
 export interface RoadSchema {
   format: "openscp.road-asset/1";
@@ -73,10 +76,12 @@ export function parseRoadSchema(content: string): RoadSchema {
     (value.composition !== undefined &&
       !isRoadComposition(value.composition, value.recipe)) ||
     (value.streetlights !== undefined &&
-      !streetlightOptions.includes(value.streetlights)) ||
+      !draftStreetlightOptions.includes(value.streetlights)) ||
     (value.streetlights &&
       value.streetlights !== "original" &&
-      value.recipe !== "highStreet") ||
+      (value.section !== undefined
+        ? value.baseRecipe === undefined || value.baseRecipe === "streetcar"
+        : value.recipe !== "highStreet" || value.streetlights === "both")) ||
     !Number.isInteger(value.identity) ||
     value.identity <= 0 ||
     value.identity > 0xffffffff ||

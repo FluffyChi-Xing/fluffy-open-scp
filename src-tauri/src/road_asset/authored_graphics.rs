@@ -3,7 +3,7 @@ use super::{
     authored::Layout,
     composition,
     draft::{StripKind, native_template},
-    property, property_id,
+    property, property_id, streetlight,
 };
 use dbpf::{OverlayEntry, Package, ResourceId};
 use sc_properties::{Key, Kind, PropertyFile, Value, flatten_parent_inheritance};
@@ -341,6 +341,20 @@ pub(super) fn graphics(
                     Some([position, 0.0, 0.0]),
                 )?;
             }
+        }
+        if trees_visible {
+            let [left, .., right] = plan.bands.as_slice() else {
+                return Err("road_streetlight_donor_invalid".into());
+            };
+            let right_offset = (right.width / 2.0 - streetlight::INSET).max(0.0);
+            let left_offset = (left.width / 2.0 - streetlight::INSET).max(0.0);
+            streetlight::append(
+                &mut target,
+                game,
+                mask != 0,
+                schema.streetlights,
+                [left.position - left_offset, right.position + right_offset],
+            )?;
         }
         if caps {
             entries.extend(end_cap::append(

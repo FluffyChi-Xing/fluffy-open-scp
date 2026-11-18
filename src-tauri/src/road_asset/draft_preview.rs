@@ -1,4 +1,4 @@
-use super::{GRAPHICS, Recipe, property, property_id};
+use super::{GRAPHICS, Recipe, Streetlights, property, property_id, streetlight};
 use dbpf::Package;
 use sc_properties::{
     Value,
@@ -30,6 +30,7 @@ pub(crate) fn append(
     game: &Package,
     dependencies: &[&Package],
     future: bool,
+    lighting: Streetlights,
     assets: &mut RoadAssets,
 ) -> Result<(), String> {
     // Component banks are preview-only keys, distinct from native path IDs.
@@ -86,5 +87,25 @@ pub(crate) fn append(
         .collect();
     assets.sweeps.insert(3, sweeps);
     assets.models.extend(tree_assets.models);
+    let enabled = streetlight::sides(lighting);
+    if enabled != [false; 2] {
+        let source = streetlight::source(game, future)?;
+        let mut lamps = composed_road_appearance(game, 4, source, dependencies);
+        let sweeps: Vec<_> = lamps
+            .sweeps
+            .remove(&4)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|sweep| {
+                sweep.model == streetlight::model(future)
+                    && enabled[usize::from(sweep.offset[0] > 0.0)]
+            })
+            .collect();
+        if sweeps.len() != enabled.into_iter().filter(|side| *side).count() {
+            return Err("road_streetlight_donor_invalid".into());
+        }
+        assets.sweeps.insert(4, sweeps);
+        assets.models.extend(lamps.models);
+    }
     Ok(())
 }

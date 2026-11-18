@@ -11,14 +11,15 @@ use std::{
 
 mod authored;
 mod authored_graphics;
-mod cost;
 pub(crate) mod composition;
+mod cost;
 mod dependencies;
 mod draft;
-mod frontage;
 pub(crate) mod draft_preview;
+mod frontage;
 mod manifest;
 mod menu;
+mod streetlight;
 
 pub(crate) use manifest::{read as read_project, save as save_project};
 
@@ -87,6 +88,7 @@ struct RoadSchema {
 pub(crate) enum Streetlights {
     #[default]
     Original,
+    Both,
     Left,
     Right,
     None,
@@ -424,7 +426,11 @@ fn lower(
         }
     }
 
-    let custom = customize_streetlights(schema, game, &mut graphics)?;
+    let custom = if authored.is_none() {
+        customize_streetlights(schema, game, &mut graphics)?
+    } else {
+        None
+    };
     let composed = if let Some(plan) = authored {
         authored_graphics::graphics(schema, plan, game, scripts, &mut graphics)?
     } else if schema.composition.active() {
@@ -491,14 +497,17 @@ pub fn build(
             let original = draft::resolve(section);
             match (schema.base_recipe, original) {
                 (None, result) => schema.recipe = result?,
-                (Some(base), Ok(recipe)) if base == recipe => schema.recipe = recipe,
+                (Some(base), Ok(recipe))
+                    if base == recipe && matches!(schema.streetlights, Streetlights::Original) =>
+                {
+                    schema.recipe = recipe
+                }
                 (Some(_), Err(error)) if section.is_empty() => return Err(error),
                 (Some(base), _) => {
                     schema.recipe = base;
                     authored = Some(authored::plan(section, base)?);
                 }
             }
-            schema.streetlights = Streetlights::Original;
             schema.composition = composition::Composition::default();
         }
         let game = open_source(&root, &schema.game_package)?;

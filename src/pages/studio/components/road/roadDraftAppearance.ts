@@ -6,6 +6,7 @@ import { recipes, type PavedRecipe } from "./roadSchema";
 const DIVIDER_BANK = 1;
 const TRACK_BANK = 2;
 const TREE_BANK = 3;
+const STREETLIGHT_BANK = 4;
 
 function slice(ribbon: RoadRibbon, first: number, last: number): RoadRibbon {
   const reversed = ribbon.scale[0] < 0;
@@ -54,7 +55,8 @@ export function composeRoadDraftAppearance(
   const ribbons: RoadRibbon[] = [];
   const sweeps: RoadAppearance["sweeps"][string] = [];
   const unsupportedComponents: string[] = [];
-  let left = -strips.reduce((sum, strip) => sum + strip.width, 0) / 2;
+  const halfWidth = strips.reduce((sum, strip) => sum + strip.width, 0) / 2;
+  let left = -halfWidth;
 
   for (const strip of strips) {
     const center = left + strip.width / 2;
@@ -152,6 +154,17 @@ export function composeRoadDraftAppearance(
         })),
       );
     }
+  }
+
+  for (const lamp of assets.sweeps[STREETLIGHT_BANK] ?? []) {
+    const leftSide = lamp.offset[0] < 0;
+    const walk = leftSide ? strips[0] : strips.at(-1);
+    if (walk?.kind !== "walk") continue;
+    const inset = Math.min(0.5, walk.width / 2);
+    sweeps.push({
+      ...lamp,
+      offset: [(leftSide ? -1 : 1) * (halfWidth - inset), lamp.offset[1], lamp.offset[2]],
+    });
   }
 
   const textureIds = new Set(ribbons.map(({ texture }) => String(texture)));

@@ -76,6 +76,8 @@ export const roadAssetEn = {
   streetlights: "Ground road streetlights",
   lighting: {
     original: "Both sides",
+    default: "Default",
+    both: "Both sides",
     left: "Left side",
     right: "Right side",
     none: "None",
@@ -222,7 +224,7 @@ export const roadAssetZh = {
   actionsHint: "按已保存的横断面和菜单设置构建道路资源包。",
   library: "原版道路配方",
   streetlights: "地面道路路灯",
-  lighting: { original: "两侧", left: "左侧", right: "右侧", none: "无" },
+  lighting: { original: "两侧", default: "默认", both: "两侧", left: "左侧", right: "右侧", none: "无" },
   crossSection: "横断面",
   strips: {
     forward: "正向汽车道",
