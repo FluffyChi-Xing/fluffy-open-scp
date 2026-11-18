@@ -178,10 +178,8 @@ pub(super) fn simulation(
         return Err("road_draft_width_missing".into());
     }
     field.kind = Kind::Scalar(Value::Float(plan.width));
-    // InitPieceTypeInfos uses these links to switch to native bridge/tunnel
-    // pieces. Those pieces have independent widths and textures.
-    sim.values
-        .retain(|field| !matches!(field.hash, 0x0E09_30E9 | 0x0E09_30F1));
+    // Keep the base recipe's bridge and tunnel PathEntry links. The placement
+    // tool switches to those native pieces independently of the ground layout.
     let link = composition::key_mut(&mut sim, sc_properties::PARENT_HASH)?;
     link.group = 0x48E0_C400;
     link.instance = schema.identity;

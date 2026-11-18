@@ -19,6 +19,7 @@ pub(crate) mod draft_preview;
 mod frontage;
 mod manifest;
 mod menu;
+mod piece_variants;
 mod streetlight;
 
 pub(crate) use manifest::{read as read_project, save as save_project};
@@ -388,6 +389,9 @@ fn lower(
     let appearance = payload(game, property_id(GRAPHICS, donor))?;
     let mut sim = PropertyFile::parse(&simulation).map_err(|e| e.to_string())?;
     let mut graphics = PropertyFile::parse(&appearance).map_err(|e| e.to_string())?;
+    if authored.is_some() {
+        piece_variants::validate(&sim, game, scripts)?;
+    }
     replace_text(&mut graphics, PATH_TITLE, id, 1)?;
     let parent = match sim.get(sc_properties::PARENT_HASH).and_then(|p| p.scalar()) {
         Some(Value::Key(key)) if key.instance != 0 => key,
