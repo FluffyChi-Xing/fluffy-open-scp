@@ -1175,19 +1175,63 @@ pub async fn code_read_text(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
-/// 在系统文件管理器中打开项目根目录（Windows Explorer / macOS Finder / xdg-open）。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeExplorerRequest {
+    pub project: String,
+    pub relative_path: Option<String>,
+}
+
+/// 在系统文件管理器中打开项目目录或定位其中的文件。
 #[command]
 pub async fn code_open_in_explorer(
     state: State<'_, AppState>,
-    request: CodeProjectRequest,
+    request: CodeExplorerRequest,
 ) -> Result<(), CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        open_path_in_file_manager(&root).map_err(CommandError::from)
+        let result = match request.relative_path {
+            None => open_path_in_file_manager(&root),
+            Some(relative) => {
+                let relative = validate_relative_path(&relative, false).map_err(CommandError::from)?;
+                let file = existing_path(&root, &relative).map_err(CommandError::from)?;
+                if !file.is_file() {
+                    return Err(CommandError::from(WorkspaceError::NotFound));
+                }
+                reveal_file_in_file_manager(&file)
+            }
+        };
+        result.map_err(CommandError::from)
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+fn reveal_file_in_file_manager(path: &Path) -> Result<(), WorkspaceError> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let path = strip_extended_prefix(&path.to_string_lossy());
+        std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{path}\""))
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        open_path_in_file_manager(path.parent().ok_or(WorkspaceError::NotFound)?)
+    }
 }
 
 fn open_path_in_file_manager(path: &Path) -> Result<(), WorkspaceError> {

@@ -1,7 +1,7 @@
 //! 项目详情页（GitHub-repo 形态）只读摘要：Releases / Languages / package.json 元数据。
 //!
 //! 与 `code_tree` 解耦：语言统计跳过 `.build` 等产物目录，避免构建产物淹没占比；
-//! Releases 只扫描 `.build/<hash>/packages/*.package`。
+//! Releases 读取构建目录及其 packages 子目录中的包。
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -156,6 +156,9 @@ fn scan_languages(
 
 fn scan_releases(root: &Path) -> Vec<ModProjectRelease> {
     let build_root = root.join(".build");
+    if !fs::symlink_metadata(&build_root).is_ok_and(|meta| meta.is_dir()) {
+        return Vec::new();
+    }
     let Ok(hashes) = fs::read_dir(&build_root) else {
         return Vec::new();
     };
@@ -176,30 +179,38 @@ fn scan_releases(root: &Path) -> Vec<ModProjectRelease> {
         {
             continue;
         }
-        let packages_dir = hash_entry.path().join("packages");
-        let Ok(packages) = fs::read_dir(&packages_dir) else {
-            continue;
-        };
-        for package_entry in packages.flatten() {
-            let path = package_entry.path();
-            let Ok(package_meta) = fs::symlink_metadata(&path) else {
+        let build_dir = hash_entry.path();
+        let packages_dir = build_dir.join("packages");
+        for (dir, prefix) in [
+            (build_dir, format!(".build/{build_hash}")),
+            (packages_dir, format!(".build/{build_hash}/packages")),
+        ] {
+            if !fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
+                continue;
+            }
+            let Ok(packages) = fs::read_dir(dir) else {
                 continue;
             };
-            if !package_meta.is_file() {
-                continue;
+            for package_entry in packages.flatten() {
+                let path = package_entry.path();
+                let name = package_entry.file_name().to_string_lossy().into_owned();
+                if extension_of(&name) != "package" {
+                    continue;
+                }
+                let Ok(package_meta) = fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if !package_meta.is_file() {
+                    continue;
+                }
+                releases.push(ModProjectRelease {
+                    relative_path: format!("{prefix}/{name}"),
+                    name,
+                    build_hash: build_hash.clone(),
+                    size: package_meta.len(),
+                    modified_ms: modified_ms(&path),
+                });
             }
-            let name = package_entry.file_name().to_string_lossy().into_owned();
-            if !name.to_ascii_lowercase().ends_with(".package") {
-                continue;
-            }
-            let relative_path = format!(".build/{build_hash}/packages/{name}");
-            releases.push(ModProjectRelease {
-                name,
-                relative_path,
-                build_hash: build_hash.clone(),
-                size: package_meta.len(),
-                modified_ms: modified_ms(&path),
-            });
         }
     }
     releases.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms).then(a.name.cmp(&b.name)));
@@ -308,6 +319,8 @@ mod tests {
             b"pkg",
         );
         write_file(&root.join(".build/abc123/packages/demo.package"), b"pkg!!");
+        write_file(&root.join(".build/def456/road.package"), b"road");
+        write_file(&root.join(".build/queue/ignored.package"), b"queue");
         // 产物不应进入语言统计
         write_file(&root.join(".build/noise.bin"), b"xxxxxxxx");
 
@@ -315,8 +328,13 @@ mod tests {
         assert_eq!(summary.author, "Ada");
         assert_eq!(summary.version, "1.2.3");
         assert_eq!(summary.mod_type, "assets");
-        assert_eq!(summary.releases.len(), 1);
-        assert_eq!(summary.releases[0].name, "demo.package");
+        assert_eq!(summary.releases.len(), 2);
+        assert!(summary.releases.iter().any(|r| {
+            r.relative_path == ".build/abc123/packages/demo.package" && r.size == 5
+        }));
+        assert!(summary.releases.iter().any(|r| {
+            r.relative_path == ".build/def456/road.package" && r.size == 4
+        }));
         assert!(summary
             .languages
             .iter()

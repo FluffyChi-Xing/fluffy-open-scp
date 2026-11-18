@@ -17,6 +17,7 @@ import type { CodeTreeResponse } from "@/api/tauri";
  * 工具栏「在文件夹中打开」唤起系统资源管理器。
  */
 const props = defineProps<{ projectRelPath: string }>();
+const emit = defineEmits<{ refresh: [] }>();
 const { t } = useI18n();
 const toast = useToast();
 
@@ -69,6 +70,11 @@ async function openInFolder() {
   }
 }
 
+function refresh() {
+  void loadTree();
+  emit("refresh");
+}
+
 function toggle(node: CodeTreeNodeDto | { relativePath: string; kind: string }) {
   if (node.kind !== "folder") return;
   const next = new Set(expanded.value);
@@ -111,7 +117,7 @@ watch(
         type="button"
         :disabled="loading"
         :title="$t('studio.code.refresh')"
-        @click="loadTree"
+        @click="refresh"
       >
         <FIcon
           :name="loading ? 'Loader2' : 'RefreshCw'"

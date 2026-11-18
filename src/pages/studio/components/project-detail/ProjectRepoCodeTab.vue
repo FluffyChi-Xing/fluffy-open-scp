@@ -128,6 +128,14 @@ async function loadReadme() {
   }
 }
 
+async function revealRelease(relativePath: string) {
+  try {
+    await tauriApi.workspace.codeOpenInExplorer(props.project.relPath, relativePath);
+  } catch {
+    toast.error(t("studio.repo.openFolderFailed"));
+  }
+}
+
 function openReadmeSheet() {
   readmeDraft.value = `# ${props.project.name}\n\n`;
   readmeError.value = "";
@@ -206,6 +214,7 @@ watch(
       <ProjectRepoFileTree
         v-if="project.folderExists"
         :project-rel-path="project.relPath"
+        @refresh="loadSummary"
       />
       <p v-else class="panel-empty">{{ $t("studio.projects.folderMissing") }}</p>
 
@@ -289,7 +298,14 @@ watch(
             v-for="release in summary?.releases ?? []"
             :key="release.relativePath"
           >
-            <strong>{{ release.name }}</strong>
+            <button
+              class="release-package"
+              type="button"
+              :title="t('studio.repo.revealRelease', { name: release.name })"
+              @click="revealRelease(release.relativePath)"
+            >
+              {{ release.name }}
+            </button>
             <small
               >{{ formatCodeSize(release.size) }} ·
               {{ dateFormatter.format(new Date(release.modifiedMs)) }}</small
@@ -501,8 +517,24 @@ watch(
   display: grid;
   gap: 2px;
 }
-.release-list strong {
+.release-package {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
   font-size: 12.5px;
+  font-weight: 650;
+  justify-self: start;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 0;
+  text-align: start;
+}
+.release-package:hover,
+.release-package:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
 }
 .release-list small,
 .release-list code {

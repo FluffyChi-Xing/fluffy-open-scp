@@ -1258,7 +1258,7 @@ export interface ModProjectStats {
   statusCounts: ModStatusCount[];
   recentActivity: ModDailyCount[];
 }
-/** 项目详情页 Releases：`.build/<hash>/packages/*.package`。 */
+/** 项目详情页 Releases：构建目录及其 packages 子目录中的资源包。 */
 export interface ModProjectRelease {
   name: string;
   relativePath: string;
