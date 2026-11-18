@@ -48,17 +48,6 @@ export default {
       },
     },
     {
-      name: "studio-i18n",
-      path: "studio/i18n",
-      component: () => import("@/pages/studio/panels/i18n.vue"),
-      meta: {
-        titleKey: "navigation.studioI18n",
-        icon: "globe",
-        groupKey: "navigation.modding",
-        order: 20,
-      },
-    },
-    {
       name: "studio-raster",
       path: "studio/raster",
       component: () => import("@/pages/studio/panels/raster.vue"),

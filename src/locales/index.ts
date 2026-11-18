@@ -69,7 +69,6 @@ const messages = {
       studio: "开发工作台",
       studioDiagnostics: "复写检测",
       studioMap: "地图面板",
-      studioI18n: "文本编辑",
 
       studioRaster: "Raster 绘制",
       studioUI: "UI 工作台",
@@ -934,26 +933,6 @@ const messages = {
           ep1: "EP1 未来城市",
         },
       },
-      i18n: {
-        overlayExported: "Overlay 已导出，共 {entries} 个资源，{bytes} 字节",
-        overlayMerged: "，合并保留 {count} 个资源",
-        overlayExportFailed: "Overlay 导出失败",
-        mockNotice:
-          "Locale 编辑需要 Tauri 运行时读取本地 package，浏览器预览模式下不可用。",
-        needPackage: "请先在资源浏览页打开包含 locale 字符串表的 package。",
-        selectPackage: "选择已打开的 package",
-        tablesLabel: "Locale 字符串表",
-        noTables: "此 package 中没有 locale 字符串表（类型 0x0A98EAF0）。",
-        pickTable: "在左侧选择一个字符串表开始编辑。",
-        filterPlaceholder: "筛选：键或文本",
-        colKey: "键",
-        colText: "文本",
-        revert: "还原此条",
-        revertAll: "全部还原",
-        exportOverlay: "导出 overlay package",
-        saving: "导出中…",
-        dirtyCount: "{n} 条已修改",
-      },
       diagnostics: {
         mockNotice:
           "复写检测需要 Tauri 运行时读取本地 package 索引，浏览器预览模式下不可用。",
@@ -1084,20 +1063,6 @@ const messages = {
             "覆盖链展示（原版 → mod1 → mod2）",
             "被复写资源的内容 diff",
             "编辑面板保存前的复写警告",
-          ],
-        },
-        i18n: {
-          title: "Locale 文本编辑",
-          status: "可用",
-          description:
-            "stringID → 译文的键值编辑：双栏表格改写 locale 字符串，是最短的写回链路试金石——脏标记、条目重建、确定性输出全部在此验证。",
-          meta: "WP2 · 明文写回 · 不需要 RefPack 重压缩",
-          prereq: "DBPF 明文写回（条目不带压缩标记），RefPack 重压缩后置。",
-          features: [
-            "locale 表双栏（原文/译文）编辑",
-            "stringID 悬停预览与引用跳转",
-            "写回链路：脏标记 → 重建条目 → 输出 package",
-            "保存前 TGI 复写警告",
           ],
         },
         ui: {
@@ -2810,7 +2775,6 @@ const messages = {
       studio: "Mod studio",
       studioDiagnostics: "Override scan",
       studioMap: "Map panel",
-      studioI18n: "Locale editor",
 
       studioRaster: "Raster paint",
       studioUI: "UI workbench",
@@ -3697,27 +3661,6 @@ const messages = {
           ep1: "EP1 Cities of Tomorrow",
         },
       },
-      i18n: {
-        overlayExported: "Exported overlay with {entries} resources ({bytes} bytes)",
-        overlayMerged: ", kept {count} existing resources",
-        overlayExportFailed: "Could not export overlay",
-        mockNotice:
-          "Locale editing needs the Tauri runtime to read local packages and is unavailable in browser preview.",
-        needPackage:
-          "Open a package containing locale string tables in the resources page first.",
-        selectPackage: "Opened package",
-        tablesLabel: "Locale string tables",
-        noTables: "No locale string tables (type 0x0A98EAF0) in this package.",
-        pickTable: "Pick a string table on the left to start editing.",
-        filterPlaceholder: "Filter: key or text",
-        colKey: "Key",
-        colText: "Text",
-        revert: "Revert this row",
-        revertAll: "Revert all",
-        exportOverlay: "Export overlay package",
-        saving: "Exporting…",
-        dirtyCount: "{n} rows modified",
-      },
       diagnostics: {
         mockNotice:
           "The override scan needs the Tauri runtime to read local package indexes and is unavailable in browser preview.",
@@ -3849,21 +3792,6 @@ const messages = {
             "Override chains (vanilla → mod1 → mod2)",
             "Content diff for overridden resources",
             "Override warnings before any panel saves",
-          ],
-        },
-        i18n: {
-          title: "Locale editor",
-          status: "Available",
-          description:
-            "Edit locale strings as a stringID → text table: a two-column editor that doubles as the shortest write-back proving ground — dirty tracking, entry rebuild and deterministic output are all validated here first.",
-          meta: "WP2 · plain-text write-back · no RefPack recompression",
-          prereq:
-            "Plain DBPF write-back (uncompressed entries); RefPack recompression deferred.",
-          features: [
-            "Two-column locale table (source / translation)",
-            "stringID hover preview and reference jumps",
-            "Write-back chain: dirty tracking → entry rebuild → package output",
-            "TGI override warning on save",
           ],
         },
         ui: {
