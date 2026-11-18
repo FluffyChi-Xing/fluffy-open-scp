@@ -8,7 +8,9 @@ use super::{
 use dbpf::{OverlayEntry, Package, ResourceId};
 use sc_properties::{Key, Kind, PropertyFile, Value, flatten_parent_inheritance};
 
+mod end_cap;
 mod junction;
+mod mesh;
 
 const APPEARANCE: u32 = 0x0955_8B7E;
 const COMPONENT: u32 = 0x0D94_2043;
@@ -76,15 +78,12 @@ fn vector2(file: &PropertyFile, field: u32) -> Result<[f32; 2], String> {
     }
 }
 
-fn add_ribbon(
-    target: &mut PropertyFile,
+fn sample_ribbon(
     donor: &PropertyFile,
     index: usize,
     mut ribbon: PropertyFile,
-    id: ResourceId,
-    band: &super::authored::Band,
     fraction: [f32; 2],
-) -> Result<OverlayEntry, String> {
+) -> Result<(PropertyFile, [f32; 3], f32), String> {
     let width = vector2(&ribbon, 0x0D94_2BD1)?[0];
     let Some(Value::Vector3(source_scale)) = composition::column(donor, SCALE)?.get(index) else {
         return Err("road_draft_ribbon_missing".into());
@@ -110,6 +109,19 @@ fn add_ribbon(
             .ok_or("road_draft_ribbon_missing")?;
         field.kind = Kind::Scalar(Value::Vector2([left + (right - left) * t, y]));
     }
+    Ok((ribbon, *source_scale, width))
+}
+
+fn add_ribbon(
+    target: &mut PropertyFile,
+    donor: &PropertyFile,
+    index: usize,
+    ribbon: PropertyFile,
+    id: ResourceId,
+    band: &super::authored::Band,
+    fraction: [f32; 2],
+) -> Result<OverlayEntry, String> {
+    let (ribbon, source_scale, width) = sample_ribbon(donor, index, ribbon, fraction)?;
     composition::append_component(target, donor, index, None)?;
     set_last(target, OFFSET, Value::Vector3([band.position, 0.0, 0.0]))?;
     set_last(
@@ -130,73 +142,6 @@ fn add_ribbon(
         id,
         ribbon.encode_canonical().map_err(|e| e.to_string())?,
     ))
-}
-
-fn append_end_caps(
-    target: &mut PropertyFile,
-    donor: &PropertyFile,
-    plan: &Layout,
-    native_half_width: f32,
-    required: bool,
-) -> Result<(), String> {
-    let error = "road_draft_end_cap_missing";
-    let [left, .., right] = plan.bands.as_slice() else {
-        return Err(error.into());
-    };
-    let left_edge = left.position - left.width / 2.0;
-    let right_edge = right.position + right.width / 2.0;
-    let center = (right_edge + left_edge) / 2.0;
-    let factor = (right_edge - left_edge) / (native_half_width * 2.0);
-    let models = composition::column(donor, MODEL)?;
-    let scales = composition::column(donor, SCALE)?;
-    let offsets = composition::column(donor, OFFSET)?;
-    let sweep = composition::column(donor, SWEEP_OFFSET)?;
-    let mut caps = [0, 0];
-    // InitExtrusionComponents identifies endpoint models by these two row tags.
-    for (index, tag) in composition::column(donor, TAGS)?.iter().enumerate() {
-        let Value::Key(tag) = tag else {
-            return Err(error.into());
-        };
-        let side = match tag.instance {
-            START_CAP => 0,
-            END_CAP => 1,
-            _ => continue,
-        };
-        let (
-            Some(Value::Key(model)),
-            Some(Value::Vector3([sx, sy, sz])),
-            Some(Value::Vector3([x, y, z])),
-            Some(Value::Float(sweep_offset)),
-        ) = (
-            models.get(index),
-            scales.get(index),
-            offsets.get(index),
-            sweep.get(index),
-        )
-        else {
-            return Err(error.into());
-        };
-        if model.instance == 0 || !factor.is_finite() || factor <= 0.0 {
-            return Err(error.into());
-        }
-        composition::append_component(target, donor, index, None)?;
-        set_last(
-            target,
-            OFFSET,
-            Value::Vector3([center + x * factor, y * factor, *z]),
-        )?;
-        set_last(
-            target,
-            SCALE,
-            Value::Vector3([sx * factor, sy * factor, *sz]),
-        )?;
-        set_last(target, SWEEP_OFFSET, Value::Float(sweep_offset * factor))?;
-        caps[side] += 1;
-    }
-    if (required && caps[0] == 0) || caps[0] != caps[1] {
-        return Err(error.into());
-    }
-    Ok(())
 }
 
 pub(super) fn graphics(
@@ -258,6 +203,9 @@ pub(super) fn graphics(
         let target_id = property_id(APPEARANCE, instance);
         reserve(target_id)?;
         let mut junction_bands = junction::Bands::new(game, plan)?;
+        let mut surfaces = Vec::with_capacity(plan.bands.len());
+        let mut ribbons = Vec::with_capacity(plan.bands.len());
+        let mut tree_positions = Vec::new();
         for (index, band) in plan.bands.iter().enumerate() {
             let side = if band.position < 0.0 { -1.0 } else { 1.0 };
             let (source, source_index, sample_width) = match band.kind {
@@ -298,6 +246,20 @@ pub(super) fn graphics(
             } else {
                 [1.0 - fraction, 1.0]
             };
+            let (sample, _, _) = sample_ribbon(source, source_index, ribbon.clone(), slice)?;
+            surfaces.push(mesh::Surface::from_ribbon(&sample)?);
+            ribbons.push((source, source_index, ribbon, slice));
+            if trees_visible && band.kind == StripKind::Trees {
+                tree_positions.push(band.position);
+            }
+        }
+        let mesh_shoulders = junction_bands.mesh_shoulders(&surfaces);
+        for (index, (source, source_index, ribbon, slice)) in ribbons.into_iter().enumerate() {
+            let band = &plan.bands[index];
+            let group = junction_bands.group(index, band.position);
+            if mesh_shoulders[group] {
+                continue;
+            }
             let digest = crate::mod_flow::digest(
                 format!("openscp/road/ribbon/{instance:08X}/{index}").as_bytes(),
             );
@@ -330,16 +292,6 @@ pub(super) fn graphics(
                     slice,
                 )?);
             }
-            if trees_visible && band.kind == StripKind::Trees {
-                for tree in tree_rows {
-                    composition::append_component(
-                        &mut target,
-                        &trees,
-                        tree,
-                        Some([band.position, 0.0, 0.0]),
-                    )?;
-                }
-            }
         }
         for (group, table) in junction_bands.into_tables().into_iter().enumerate() {
             let digest = crate::mod_flow::digest(
@@ -349,7 +301,6 @@ pub(super) fn graphics(
                 COMPONENT,
                 u32::from_str_radix(&digest[..8], 16).map_err(|e| e.to_string())?,
             );
-            reserve(id)?;
             let side = if group < 2 { -1.0 } else { 1.0 };
             let x = if matches!(group, 0 | 3) {
                 template.walk_offset
@@ -357,6 +308,21 @@ pub(super) fn graphics(
                 template.offset + template.lanes as f64 * template.width / 2.0
             };
             let row = source_row(&donor, (side * x) as f32)?;
+            if mesh_shoulders[group] {
+                let model = mesh::id(instance, "shoulder", group);
+                entries.extend(junction::append_shoulder(
+                    &mut target,
+                    &donor,
+                    row,
+                    group,
+                    plan,
+                    &surfaces,
+                    model,
+                    &mut reserve,
+                )?);
+                continue;
+            }
+            reserve(id)?;
             entries.push(junction::append(
                 &mut target,
                 &donor,
@@ -366,16 +332,35 @@ pub(super) fn graphics(
                 id,
             )?);
         }
+        for position in tree_positions {
+            for tree in tree_rows {
+                composition::append_component(
+                    &mut target,
+                    &trees,
+                    tree,
+                    Some([position, 0.0, 0.0]),
+                )?;
+            }
+        }
         if caps {
-            append_end_caps(
+            entries.extend(end_cap::append(
                 &mut target,
                 &donor,
                 plan,
-                (template.walk_offset + template.walk_width) as f32,
+                &surfaces,
+                instance,
                 mask == 0,
-            )?;
+                &mut reserve,
+            )?);
         }
-        junction::align_bounds(&mut target, &ordinary, game, plan)?;
+        let bounds = property_id(COMPONENT, mesh::id(instance, "junction-width", 0).instance);
+        reserve(bounds)?;
+        entries.push(junction::align_bounds(
+            &mut target,
+            &ordinary,
+            plan,
+            bounds,
+        )?);
         let count = composition::column(&target, KEYS)?.len();
         if count == 0
             || target
@@ -392,6 +377,9 @@ pub(super) fn graphics(
             target.encode_canonical().map_err(|e| e.to_string())?,
         ));
     }
+    // InitFromSegments gets the arm width from the active draw mode. Use the
+    // authored width during valid placement as well as after construction.
+    composition::key_mut(graphics, 0x0953_2377)?.instance = schema.identity;
     let field = graphics
         .values
         .iter_mut()
