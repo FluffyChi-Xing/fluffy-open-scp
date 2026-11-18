@@ -515,6 +515,15 @@ pub fn read_state(bytes: &[u8]) -> Result<RegionState, String> {
     read_state_prefix(bytes).map(|(state, _)| state)
 }
 
+/// Offsets of the EcoMap table and the first record after the path set.
+pub(crate) fn read_bootstrap_layout(
+    bytes: &[u8],
+) -> Result<(RegionState, std::ops::Range<usize>), String> {
+    let (maps, ..) = map_reader(bytes)?;
+    let (state, end) = read_state_prefix(bytes)?;
+    Ok((state, maps.pos - 8..end.pos))
+}
+
 fn read_state_prefix(bytes: &[u8]) -> Result<(RegionState, Reader<'_>), String> {
     let (mut r, version, environment, n, map_version) = map_reader(bytes)?;
     let mut maps = Vec::new();

@@ -766,6 +766,10 @@ name = "edgewater_aligned_surface"
 path = "region/edgewater_aligned_surface.rs"
 
 [[example]]
+name = "half_coast_contour_candidate"
+path = "region/half_coast_contour_candidate.rs"
+
+[[example]]
 name = "edgewater_groundfix_pair"
 path = "region/edgewater_groundfix_pair.rs"
 

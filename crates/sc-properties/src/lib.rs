@@ -41,6 +41,7 @@ mod model;
 pub mod play_area;
 pub mod region_3d;
 pub mod region_bootstrap;
+pub mod region_authoring;
 pub mod region_city;
 pub mod region_map;
 pub mod region_state;
