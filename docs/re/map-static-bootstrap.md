@@ -148,3 +148,11 @@ cargo check -p fluffy-open-scp
 
 - 已部署文件 `000_Map_E41A82B8_Resources.package`
 - 从 `SimCityData` 实测的 SHA-256 为 `71a5f36ccb67492dba0bdd09ee0535df6c380175b56d4b010b927c27c8168d1f`
+
+同日，用户反馈新版包的认领界面煤炭条仍显示 0 档。部署件 SHA-256 为 `bee28aa4e22b61d9e1cc5b3c2af70cd19dd1d2e4ef849d79ae22d6008fb39a00`，其中游戏内脚本 `7CCC548C` 的格蘭港煤炭已是 1 档。认领弹窗使用启动器 `cMyGamesUIHandler`，而在用 `000_LauncherTweak.package` 的 `696447EA` 仍为 0 档。
+
+构建现在同步更新两个脚本的目标评级。安装目录有 LauncherTweak 时，继承它的启动器脚本，只改对应城市的档位。`000_0_Map_*` 在目前安装目录的同级注册顺序中排在 LauncherTweak 之前。
+
+同日，用户用新存档验收通过，格蘭港认领卡的煤炭条显示 1 档。部署的 `000_0_Map_E41A82B8_Resources.package` 与测试产物的 SHA-256 均为 `63be94b0a06d1b43b5a7799aa1e4985e4dd2829d1b54b22d673bb5ed934366f3`。
+
+玩家在地图编辑器涂抹或擦除资源后保存并构建即可。构建引擎根据编辑后的格网计算相应城市的煤炭、原矿、原油和城市地下水评级，并将修改过的资源评级同步写入两套认领界面脚本。评级由构建生成，无需手填项目字段。

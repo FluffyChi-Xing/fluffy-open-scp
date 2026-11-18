@@ -446,17 +446,22 @@ pub fn build(
                 entries.push(OverlayEntry::new(city.id, packed));
             }
         }
+        let mut package_prefix = "000_Map";
         if save.is_none() {
             let group =
                 u32::from_str_radix(&schema.source.group, 16).map_err(|err| err.to_string())?;
-            if let Some(overlay) = selection_ratings::overlay(
+            let (overlays, earlier_name) = selection_ratings::overlays(
                 &schema.source.package_path,
                 group,
                 &cities,
                 &rating_totals,
-            )? {
-                entries.push(overlay);
+            )?;
+            if earlier_name {
+                // The retail resource manager uses the first registered
+                // equal-priority package. This sorts before LauncherTweak.
+                package_prefix = "000_0_Map";
             }
+            entries.extend(overlays);
         }
         let count = entries.len() + patched_saves;
         if count == 0 {
@@ -486,7 +491,7 @@ pub fn build(
         let path = safe_path(
             &root,
             &format!(
-                ".build/{hash}/000_Map_{}_Resources.package",
+                ".build/{hash}/{package_prefix}_{}_Resources.package",
                 schema.source.group
             ),
         )?;
@@ -594,14 +599,20 @@ mod tests {
                 let (baseline, _, _) = load(&parsed.source).unwrap();
                 let id = baseline.iter().find(|city| city.site == site).unwrap().id;
                 let entry = written.entry(id).unwrap();
-                assert_eq!(result.resource_count, 2);
-                let registry = sc_properties::region_city::registry(&written, None, None);
+                assert_eq!(result.resource_count, 3);
                 let city_name = if source["group"] == "E41A82B8" {
                     0x3A4B861A
                 } else {
                     0x195F151C
                 };
-                assert_eq!(registry[&city_name].coal, Some(1));
+                for script in [selection_ratings::UI_ID, selection_ratings::LAUNCHER_ID] {
+                    let bytes = written.read(written.entry(script).unwrap()).unwrap();
+                    let text = std::str::from_utf8(&bytes).unwrap();
+                    assert_eq!(
+                        selection_ratings::field(text, city_name, "coal").unwrap().1,
+                        1
+                    );
+                }
                 assert_eq!(digest(&fs::read(&result.path).unwrap()), result.sha256);
                 written.read(entry).unwrap()
             } else {
