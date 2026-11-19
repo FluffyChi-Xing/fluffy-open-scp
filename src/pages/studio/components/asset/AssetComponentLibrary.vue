@@ -16,7 +16,7 @@ import {
   propSemanticCategory,
   type AssetCategory,
 } from "@/pages/packages/components/property-editor/assetCategories";
-import SpawnerLibraryPanel from "@/pages/packages/components/unit-inspector/SpawnerLibraryPanel.vue";
+import SpawnerLibraryPanel from "./PerformanceLibraryPanel.vue";
 import AssetDecalLibrary from "./AssetDecalLibrary.vue";
 import type { PlacePayload } from "./useWorkbenchAsset";
 
@@ -378,8 +378,8 @@ function beginEffectDrag(event: PointerEvent, entry: EffectCatalogEntry) {
   });
 }
 
-function onSpawnerPlace() {
-  emit("place", { kind: "spawner" });
+function onSpawnerPlace(selection: { performancePreset?: string }) {
+  emit("place", { kind: "spawner", ...selection });
 }
 </script>
 

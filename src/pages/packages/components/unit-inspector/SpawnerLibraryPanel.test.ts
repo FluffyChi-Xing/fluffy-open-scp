@@ -14,10 +14,10 @@ it("offers one anchor and translates the mounted placement control", async () =>
   try {
     expect(panel.findAll("button")).toHaveLength(1);
     const anchor = panel.get("button");
-    expect(anchor.text()).toBe("通用锚点");
+    expect(anchor.text()).toBe("锚点");
     i18n.global.locale.value = "en-US";
     await nextTick();
-    expect(anchor.text()).toBe("General anchor");
+    expect(anchor.text()).toBe("Anchor");
     await anchor.trigger("pointerdown");
     expect(panel.emitted("place")).toEqual([[]]);
   } finally {

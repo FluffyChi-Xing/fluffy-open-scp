@@ -653,6 +653,8 @@ export interface PathPointUnit {
   fields: UnitFieldDto[];
 }
 export interface SpawnerUnit {
+  /** Optional explicit vignette recipes; absent retains legacy automatic selection. */
+  performancePresets?: string[];
   kind: "spawner";
   index: number;
   transform: UnitTransformDto | null;

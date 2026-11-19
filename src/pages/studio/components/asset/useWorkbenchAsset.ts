@@ -61,6 +61,7 @@ import {
 } from "@/lib/lot-ground/authored";
 import { loadAuthoredLot } from "./authoredLotStore";
 import type { BlendSceneDocument } from "./blendSceneTypes";
+import { performancePreset, performancePlacements, writePerformanceBindings, restorePerformanceBindings } from "./performanceBindings";
 import { writeSceneLightControls, restoreSceneLightControls } from "./blendSceneProjection";
 import { createPlacedDecal, restoreDecalSources, useWorkbenchDecals, writeDecalSources, type DecalSelection } from "./workbenchDecals";
 import { draftPropResourceIds, emptyDraftPropModels, loadDraftPropModels, loadPlacedPropModel } from "./workbenchPropModels";
@@ -169,6 +170,7 @@ export interface PlacePayload {
   bin?: number;
   /** 生成器预设名字 id（引擎 FNV-1 哈希；null/缺省 = 未命名锚点）。 */
   spawnerId?: number | null;
+  performancePreset?: string;
   /** 效果目录卡携带的 effect TGI（语义 tag 目录）；缺省 = 空白效果。 */
   effectId?: Tgi;
 }
@@ -744,6 +746,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
       });
     }
     writeSceneLightControls(document, current.flatUnits);
+    writePerformanceBindings(document, current.flatUnits);
     writeDecalSources(document, current.flatUnits);
     const editor = document.editor as Record<string, unknown>;
     editor.workbench = {
@@ -1326,6 +1329,21 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
         fields: [],
       } as unknown as LotUnitDto;
     } else if (payload.kind === "spawner") {
+      if (payload.performancePreset) {
+        const preset = performancePreset(payload.performancePreset);
+        if (!preset) return null;
+        const fallbackId = fnv1NameId(suggestAnchorName(ui.value?.flatUnits ?? []));
+        const placements = performancePlacements(preset, position, nextIndexOf("spawner"), fallbackId, ui.value?.flatUnits ?? []);
+        for (const placed of placements) {
+          if (placed.existing) edit.setUnitFields(unitId(placed.unit), { performancePresets: placed.unit.performancePresets });
+          else edit.addUnit(placed.unit);
+          markUnitFamily(placed.unit);
+        }
+        const selected = placements[0];
+        if (!selected) return null;
+        selectUnit(unitId(selected.unit));
+        return unitId(selected.unit);
+      }
       // 预设锚点带名字 id；未给预设时按当前 lot 生成不重复的可读名字，
       // 保证「放下即有名字」——写入端已收紧为「无名字拒绝写」。
       const presetId =
@@ -1586,6 +1604,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     const epoch = loadEpoch;
     const restored = unitsFromSchema(document);
     restoreSceneLightControls(document, restored);
+    restorePerformanceBindings(document, restored);
     restoreDecalSources(document, restored);
     await decalPreviews.restore(restored);
     if (epoch !== loadEpoch || current.edit !== ui.value?.edit) return;

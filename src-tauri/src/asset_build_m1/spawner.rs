@@ -137,6 +137,8 @@ const TOURISM: Recipe = Recipe {
 
 #[path = "spawner_ground.rs"]
 mod ground;
+#[path = "performance_bindings.rs"]
+mod explicit;
 
 fn recipes(program: &ResolvedBehavior) -> Result<Vec<&'static Recipe>, String> {
     let mut selected = Vec::new();
@@ -164,6 +166,7 @@ pub(super) fn has_recipes(
     program: &ResolvedBehavior,
     scene: Option<&SceneDocument>,
 ) -> Result<bool, String> {
+    if scene.is_some_and(|s| !s.performance_presets.is_empty()) { return Ok(true); }
     Ok(!recipes(program)?.is_empty() || ground::select(program, scene).is_some())
 }
 
@@ -288,6 +291,9 @@ pub(super) fn bind(
     scene: Option<&SceneDocument>,
     rotation: u32,
 ) -> Result<Option<Bindings>, String> {
+    if let Some(scene) = scene.filter(|s| !s.performance_presets.is_empty()) {
+        return explicit::bind(bytes, scene, rotation).map(Some);
+    }
     let mut recipes = recipes(program)?;
     let ground = if recipes.is_empty() {
         ground::select(program, scene)
@@ -474,6 +480,9 @@ pub(super) fn verify_ground_output(
     program: &ResolvedBehavior,
     scene: Option<&SceneDocument>,
 ) -> Result<(), String> {
+    if let Some(scene) = scene.filter(|s| !s.performance_presets.is_empty()) {
+        return explicit::verify(bytes.ok_or("[performance] missing final Lot")?, scene);
+    }
     if recipes(program)?.is_empty()
         && let Some(recipe) = ground::select(program, scene)
     {
