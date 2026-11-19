@@ -162,7 +162,7 @@ function onStageKey(event: KeyboardEvent, action: () => void) {
         <div class="lot-card-meta">
           <span class="lot-card-name">{{ t("rasterEditor.ground.workbench.authoredName") }}</span>
           <span class="lot-card-size">
-            {{ preview.lot.meta.size[0] }} × {{ preview.lot.meta.size[1] }} m
+            {{ preview.lot.meta.size[0].toFixed(1) }} × {{ preview.lot.meta.size[1].toFixed(1) }} m
           </span>
           <button
             type="button"

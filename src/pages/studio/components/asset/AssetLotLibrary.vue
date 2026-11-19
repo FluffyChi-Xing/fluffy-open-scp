@@ -214,7 +214,7 @@ watch(
                   {{ hex32(entry.tgi.instance) }}
                 </code>
                 <span v-if="entry.lotSize" class="lot-card-size">
-                  {{ entry.lotSize[0] }} × {{ entry.lotSize[1] }} m
+                  {{ entry.lotSize[0].toFixed(1) }} × {{ entry.lotSize[1].toFixed(1) }} m
                 </span>
                 <button
                   type="button"
