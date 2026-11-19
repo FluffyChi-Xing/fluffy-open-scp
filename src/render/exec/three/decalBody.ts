@@ -167,7 +167,7 @@ export async function buildDecalBody(
   const family: EngineFamily = route.family;
   if (family === "sdf") state.neonAnimated = true;
 
-  const addFloatQuad = () => {
+  const addFloatQuad = (authoredFallback = false) => {
     const floatMaterial = input.engineMaterials
       ? createEngineDecalMaterial(THREE, family, {
           map: decoded,
@@ -198,11 +198,13 @@ export async function buildDecalBody(
     for (let i = 0; i < quadUv.count; i += 1) quadUv.setX(i, 1 - quadUv.getX(i));
     quadUv.needsUpdate = true;
     const quad = new THREE.Mesh(quadGeometry, floatMaterial);
-    quad.position.z = (dataDepth ?? 0) / 2;
+    // A dropped authoring preview must remain above the drop surface, rather
+    // than at the far end of a donor's (possibly downward-facing) volume.
+    quad.position.z = authoredFallback ? (frame.axisZ.z < 0 ? -0.02 : 0.02) : (dataDepth ?? 0) / 2;
     group.add(quad);
     state.fallback += 1;
   };
-  if (route.surface === "plane") addFloatQuad();
+  if (route.surface === "plane") addFloatQuad(!!unit.decalSource);
 
   const depthZ = dataDepth ?? halfScale * 2.5;
   const projector = {
@@ -259,7 +261,12 @@ export async function buildDecalBody(
     if (filtered !== clipped) clipped.dispose();
     if (filtered) geometries.push(filtered);
   }
-  if (!geometries.length) return group;
+  if (!geometries.length) {
+    // Native scene decals remain projection-only. Library placements carry
+    // their own source and need a visible editing surface before attachment.
+    if (unit.decalSource && route.surface !== "plane") addFloatQuad(true);
+    return group;
+  }
   for (const geometry of geometries) {
     const uv = geometry.attributes.uv;
     for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
