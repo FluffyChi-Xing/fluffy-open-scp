@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ProjectConfigTabs from "./ProjectConfigTabs.vue";
+import ProjectConfigOverview from "./ProjectConfigOverview.vue";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -57,8 +58,9 @@ const { t } = useI18n();
 const toast = useToast();
 const behaviorConflicts = useBehaviorConflicts();
 
-type TabId = "basic" | "menu" | "building" | "behavior" | "dependencies" | "advanced";
+type TabId = "overview" | "basic" | "menu" | "building" | "behavior" | "dependencies" | "advanced";
 const TABS: { id: TabId; icon: string; labelKey: string }[] = [
+  { id: "overview", icon: "ListChecks", labelKey: "studio.assetWorkbench.projectConfig.tabOverview" },
   { id: "basic", icon: "FileText", labelKey: "studio.assetWorkbench.projectConfig.tabBasic" },
   { id: "menu", icon: "Menu", labelKey: "studio.assetWorkbench.projectConfig.tabMenu" },
   { id: "building", icon: "Users", labelKey: "studio.assetWorkbench.projectConfig.tabBuilding" },
@@ -66,7 +68,7 @@ const TABS: { id: TabId; icon: string; labelKey: string }[] = [
   { id: "dependencies", icon: "Network", labelKey: "studio.assetWorkbench.projectConfig.tabDependencies" },
   { id: "advanced", icon: "Braces", labelKey: "studio.assetWorkbench.projectConfig.tabAdvanced" },
 ];
-const activeTab = ref<TabId>("basic");
+const activeTab = ref<TabId>("overview");
 const isVanillaVariant = computed(() => manifest.value?.mod_type === "vanilla_variant");
 const tabs = computed(() => isVanillaVariant.value ? TABS.filter((tab) => tab.id !== "behavior") : TABS);
 
@@ -429,6 +431,8 @@ const tabHint = computed(() => {
   if (isVanillaVariant.value && activeTab.value === "building") return t("flow.variant.propertiesHint");
   if (isVanillaVariant.value && activeTab.value === "menu") return t("flow.variant.parkHint");
   switch (activeTab.value) {
+    case "overview":
+      return t("studio.assetWorkbench.overviewHint");
     case "menu":
       return t("studio.assetWorkbench.projectConfig.menuHint", {
         path: props.documentPath,
@@ -488,7 +492,8 @@ const tabHint = computed(() => {
         <p class="ppf-hint">{{ tabHint }}</p>
 
         <!-- 基础配置 -->
-        <div v-if="activeTab === 'basic'" class="ppf-fields">
+        <ProjectConfigOverview v-if="activeTab === 'overview'" :project="project" :manifest="manifest" :menu="menu" :logic="logic" :variant="isVanillaVariant" :advanced-text="advancedDirty ? advancedText : undefined" />
+        <div v-else-if="activeTab === 'basic'" class="ppf-fields">
           <label class="ppf-field">
             <span>{{ t("studio.assetWorkbench.projectConfig.name") }}</span>
             <input

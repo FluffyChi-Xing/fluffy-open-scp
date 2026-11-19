@@ -1192,6 +1192,11 @@ const messages = {
           "逻辑编排：菜单 {menu} · 岗位 {labor} · 行为节点 {behaviors}",
         dependencySyncFailed:
           "文档已保存，但 package.json dependencies 同步失败：{error}",
+        overviewHint: "只读汇总当前编辑中的配置，包含尚未保存的修改。展开各项检查，需修改时切换到对应页签。",
+        overviewEmpty: "未设置",
+        overviewYes: "已启用",
+        overviewNo: "已关闭",
+        overviewFields: { enabled: "启用", label: "菜单名称", uiPosition: "面板排序", iconPng: "菜单图标", marqueePng: "菜单背景图", constructionCost: "建造成本", maintenanceCost: "维护成本", entries: "目标菜单", dimension: "维度", categoryInstance: "菜单容器 ID", id: "标识", fields: "建筑字段", powerProduction: "电力生产", hash: "属性 ID", original: "原始值", value: "当前值", params: "参数", type: "类型", schedule: "八班排班", mode: "模式", rate: "速率", amount: "数量", capacity: "容量", nodes: "构建节点", internal_dependencies: "节点依赖", dependencies: "依赖与资源", resources: "资源", statics: "静态文件", pathEntries: "路径条目", menu: "菜单依赖", path: "路径", role: "用途", manifest_version: "清单版本", title: "标题", unit: "建筑 Unit", lot: "地块 Lot" },
         projectConfig: {
           title: "package.json 项目配置",
           unsaved: "未保存",
@@ -1201,6 +1206,7 @@ const messages = {
           saveFailed: "保存失败：{error}",
           loading: "正在读取 package.json…",
           loadFailed: "读取 package.json 失败：{error}",
+          tabOverview: "概览",
           tabBasic: "基础配置",
           tabMenu: "菜单",
           tabBuilding: "建筑属性",
@@ -3919,6 +3925,11 @@ const messages = {
         lotLibraryTab: "Lot library",
         dependencySyncFailed:
           "Document saved, but package.json dependencies sync failed: {error}",
+        overviewHint: "Read-only summary of the current configuration, including unsaved edits. Expand sections to review; switch to the corresponding tab to edit.",
+        overviewEmpty: "Not set",
+        overviewYes: "Enabled",
+        overviewNo: "Disabled",
+        overviewFields: { enabled: "Enabled", label: "Menu name", uiPosition: "Panel order", iconPng: "Menu icon", marqueePng: "Menu background", constructionCost: "Construction cost", maintenanceCost: "Maintenance cost", entries: "Target menus", dimension: "Dimension", categoryInstance: "Menu container ID", id: "ID", fields: "Building fields", powerProduction: "Power production", hash: "Property ID", original: "Original value", value: "Current value", params: "Parameters", type: "Type", schedule: "Eight-shift schedule", mode: "Mode", rate: "Rate", amount: "Amount", capacity: "Capacity", nodes: "Build nodes", internal_dependencies: "Node dependencies", dependencies: "Dependencies and resources", resources: "Resources", statics: "Static files", pathEntries: "Path entries", menu: "Menu dependencies", path: "Path", role: "Role", manifest_version: "Manifest version", title: "Title", unit: "Building Unit", lot: "Lot" },
         projectConfig: {
           title: "package.json project config",
           unsaved: "Unsaved",
@@ -3928,6 +3939,7 @@ const messages = {
           saveFailed: "Save failed: {error}",
           loading: "Reading package.json…",
           loadFailed: "Failed to read package.json: {error}",
+          tabOverview: "Overview",
           tabBasic: "Basics",
           tabMenu: "Menu",
           tabBuilding: "Building",
