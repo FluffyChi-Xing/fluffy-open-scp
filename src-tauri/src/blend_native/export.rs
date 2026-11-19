@@ -1158,7 +1158,7 @@ fn legacy_decor_entry(style: &str) -> Option<Entry> {
     })
 }
 
-fn bounds_origin(bundle: &Bundle) -> [f64; 3] {
+pub(crate) fn bounds_origin(bundle: &Bundle) -> [f64; 3] {
     let mut min = [f64::INFINITY; 3];
     let mut max = [f64::NEG_INFINITY; 3];
     let mut found = false;

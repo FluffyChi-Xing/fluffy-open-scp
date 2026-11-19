@@ -44,6 +44,10 @@ pub(crate) fn run_script(script: &Path, script_args: &[String]) -> Result<Output
     run_script_with_startup(script, script_args, &[])
 }
 
+pub(crate) fn read_scene_script(script: &Path, args: &[String]) -> Result<Output, String> {
+    run_script_with_startup(script, args, &["--factory-startup", "--disable-autoexec", "--python-exit-code", "1"])
+}
+
 fn run_script_with_startup(
     script: &Path,
     script_args: &[String],

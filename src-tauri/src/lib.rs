@@ -21,6 +21,8 @@ mod building_motion_timeline;
 mod building_vertex_motion;
 pub mod blend_native;
 mod blender_service;
+mod blend_scene;
+mod blend_scene_ground;
 mod build_queue;
 mod debug_tools;
 mod effect_annotations;

@@ -1,0 +1,5326 @@
+{
+  "props": {
+    "street_furniture": {
+      "resourceId": "9375C65E",
+      "preferredBin": 0
+    },
+    "tree_a": {
+      "resourceId": "14984C68",
+      "preferredBin": 12
+    },
+    "tree_b": {
+      "resourceId": "14984C69",
+      "preferredBin": 11
+    },
+    "tree_c": {
+      "resourceId": "14984C6A",
+      "preferredBin": 10
+    },
+    "tree_conifer": {
+      "resourceId": "14984C6B",
+      "preferredBin": 9
+    }
+  },
+  "effects": {
+    "beacon": {
+      "label": "航空红色闪灯",
+      "effectId": "A4EF4407"
+    },
+    "flare": {
+      "label": "炼油厂火炬",
+      "effectId": "0AA09454"
+    },
+    "native_001e9447": {
+      "label": "白色柔光点〔贴图推定〕 · 001E9447",
+      "effectId": "001E9447"
+    },
+    "native_00299fea": {
+      "label": "科技园厂房｜白色烟团序列〔贴图推定〕 · 00299FEA",
+      "effectId": "00299FEA"
+    },
+    "native_0072bcf3": {
+      "label": "优雅赌场｜红色花瓣图集〔贴图推定〕 · 0072BCF3",
+      "effectId": "0072BCF3"
+    },
+    "native_0092ca19": {
+      "label": "千禧年廣場(§§§)｜白色柔光点〔贴图推定〕 · 0092CA19",
+      "effectId": "0092CA19"
+    },
+    "native_009937e7": {
+      "label": "国际机场伟大工程｜模型实例（待辨认）〔来源〕 · 009937E7",
+      "effectId": "009937E7"
+    },
+    "native_00b0122e": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · 00B0122E",
+      "effectId": "00B0122E"
+    },
+    "native_00e78f6c": {
+      "label": "蓝色圆点图钉图标＋白色列车图标〔贴图推定〕 · 00E78F6C",
+      "effectId": "00E78F6C"
+    },
+    "native_0104dfbb": {
+      "label": "高级煤矿｜锥形灯束〔贴图推定〕 · 0104DFBB",
+      "effectId": "0104DFBB"
+    },
+    "native_015120d0": {
+      "label": "馬克六號空氣濾淨冠樓｜白色烟团序列〔贴图推定〕 · 015120D0",
+      "effectId": "015120D0"
+    },
+    "native_016f18df": {
+      "label": "外部组件（待辨认） · 016F18DF",
+      "effectId": "016F18DF"
+    },
+    "native_01db3b98": {
+      "label": "廢物減量樓層｜白色烟团序列〔贴图推定〕 · 01DB3B98",
+      "effectId": "01DB3B98"
+    },
+    "native_02015c92": {
+      "label": "白色碎石序列＋白色柔光点〔贴图推定〕 · 02015C92",
+      "effectId": "02015C92"
+    },
+    "native_0210d559": {
+      "label": "分布模型（待辨认） · 0210D559",
+      "effectId": "0210D559"
+    },
+    "native_022521a4": {
+      "label": "灰色烟团序列＋橙色火焰序列〔贴图推定〕 · 022521A4",
+      "effectId": "022521A4"
+    },
+    "native_02263e5e": {
+      "label": "绿色倾倒液体图标〔贴图推定〕 · 02263E5E",
+      "effectId": "02263E5E"
+    },
+    "native_0254f46a": {
+      "label": "黄色集装箱图标〔贴图推定〕 · 0254F46A",
+      "effectId": "0254F46A"
+    },
+    "native_02600143": {
+      "label": "嵌套粒子＋模型实例＋灯光（待辨认） · 02600143",
+      "effectId": "02600143"
+    },
+    "native_0325583a": {
+      "label": "笔刷·区域·confluence·石油 · 0325583A",
+      "effectId": "0325583A"
+    },
+    "native_03283fe7": {
+      "label": "锥形灯束〔贴图推定〕 · 03283FE7",
+      "effectId": "03283FE7"
+    },
+    "native_03c7ca46": {
+      "label": "灰色碎石序列〔贴图推定〕 · 03C7CA46",
+      "effectId": "03C7CA46"
+    },
+    "native_03ed5158": {
+      "label": "廢物減量樓層｜白色柔光点〔贴图推定〕 · 03ED5158",
+      "effectId": "03ED5158"
+    },
+    "native_040fe71b": {
+      "label": "橙色火焰序列〔贴图推定〕 · 040FE71B",
+      "effectId": "040FE71B"
+    },
+    "native_0413a8d4": {
+      "label": "蓝色闪电分叉＋暖色星芒光晕〔贴图推定〕 · 0413A8D4",
+      "effectId": "0413A8D4"
+    },
+    "native_04152ee0": {
+      "label": "科幻赌场｜白色柔光点＋紫色飞行器图标〔贴图推定〕 · 04152EE0",
+      "effectId": "04152EE0"
+    },
+    "native_046508b8": {
+      "label": "暖色星芒光晕〔贴图推定〕 · 046508B8",
+      "effectId": "046508B8"
+    },
+    "native_04a2cc4e": {
+      "label": "白色细圆环〔贴图推定〕 · 04A2CC4E",
+      "effectId": "04A2CC4E"
+    },
+    "native_04c8dc12": {
+      "label": "橙色难受表情图标〔贴图推定〕 · 04C8DC12",
+      "effectId": "04C8DC12"
+    },
+    "native_050782e8": {
+      "label": "暖色星芒光晕＋金色细点序列〔贴图推定〕 · 050782E8",
+      "effectId": "050782E8"
+    },
+    "native_0523fa87": {
+      "label": "抽取艙｜白色小点序列〔贴图推定〕 · 0523FA87",
+      "effectId": "0523FA87"
+    },
+    "native_052a96a8": {
+      "label": "馬克六號空氣濾淨冠樓｜声音＋模型实例（待辨认）〔来源〕 · 052A96A8",
+      "effectId": "052A96A8"
+    },
+    "native_054e0bc5": {
+      "label": "笔刷·区域·littlegorge·地形 · 054E0BC5",
+      "effectId": "054E0BC5"
+    },
+    "native_055b26b8": {
+      "label": "蓝色圆点图钉图标＋白色轮船图标〔贴图推定〕 · 055B26B8",
+      "effectId": "055B26B8"
+    },
+    "native_055f055d": {
+      "label": "屏幕效果（待辨认） · 055F055D",
+      "effectId": "055F055D"
+    },
+    "native_0596a256": {
+      "label": "白色柔光点＋蓝色电弧〔贴图推定〕 · 0596A256",
+      "effectId": "0596A256"
+    },
+    "native_05c0937f": {
+      "label": "太空中心伟大工程｜白色柔光晕＋半球柔光〔贴图推定〕 · 05C0937F",
+      "effectId": "05C0937F"
+    },
+    "native_05c14f9b": {
+      "label": "蓝色水龙头图标〔贴图推定〕 · 05C14F9B",
+      "effectId": "05C14F9B"
+    },
+    "native_05f0ed4c": {
+      "label": "灯光（待辨认） · 05F0ED4C",
+      "effectId": "05F0ED4C"
+    },
+    "native_05fe304a": {
+      "label": "白色烟团序列〔贴图推定〕 · 05FE304A",
+      "effectId": "05FE304A"
+    },
+    "native_06123ac3": {
+      "label": "蓝色水滴图钉图标＋白色Omega图标〔贴图推定〕 · 06123AC3",
+      "effectId": "06123AC3"
+    },
+    "native_062381f5": {
+      "label": "地下水数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 062381F5",
+      "effectId": "062381F5"
+    },
+    "native_065508c5": {
+      "label": "暖色星芒光晕〔贴图推定〕 · 065508C5",
+      "effectId": "065508C5"
+    },
+    "native_066484a7": {
+      "label": "白色烟团序列〔贴图推定〕 · 066484A7",
+      "effectId": "066484A7"
+    },
+    "native_0693f2b0": {
+      "label": "蓝色水滴图钉图标＋白色纯色片〔贴图推定〕 · 0693F2B0",
+      "effectId": "0693F2B0"
+    },
+    "native_06d19e08": {
+      "label": "宗教場所：教堂｜彩色玻璃窗〔贴图推定〕 · 06D19E08",
+      "effectId": "06D19E08"
+    },
+    "native_07284d4c": {
+      "label": "蓝色水滴图钉图标＋白色列车图标〔贴图推定〕 · 07284D4C",
+      "effectId": "07284D4C"
+    },
+    "native_07796914": {
+      "label": "煤矿｜白色烟团序列〔贴图推定〕 · 07796914",
+      "effectId": "07796914"
+    },
+    "native_07d11db7": {
+      "label": "灰色烟团序列〔贴图推定〕 · 07D11DB7",
+      "effectId": "07D11DB7"
+    },
+    "native_07e7fabe": {
+      "label": "声音（待辨认） · 07E7FABE",
+      "effectId": "07E7FABE"
+    },
+    "native_0807dd70": {
+      "label": "模型实例＋外部组件（待辨认） · 0807DD70",
+      "effectId": "0807DD70"
+    },
+    "native_081e62c8": {
+      "label": "外部组件（待辨认） · 081E62C8",
+      "effectId": "081E62C8"
+    },
+    "native_082f1526": {
+      "label": "嵌套粒子＋声音＋灯光（待辨认） · 082F1526",
+      "effectId": "082F1526"
+    },
+    "native_08c5026b": {
+      "label": "笔刷·区域·reflection·矿石 · 08C5026B",
+      "effectId": "08C5026B"
+    },
+    "native_08d2046c": {
+      "label": "蓝色圆点图钉图标＋白色气瓶图标〔贴图推定〕 · 08D2046C",
+      "effectId": "08D2046C"
+    },
+    "native_08d8aed8": {
+      "label": "笔刷·区域·caspiar·水域 · 08D8AED8",
+      "effectId": "08D8AED8"
+    },
+    "native_0904980a": {
+      "label": "笔刷·区域·gallia·石油 · 0904980A",
+      "effectId": "0904980A"
+    },
+    "native_090b41d5": {
+      "label": "白色六边形轮廓＋白色十字星芒〔贴图推定〕 · 090B41D5",
+      "effectId": "090B41D5"
+    },
+    "native_096728f4": {
+      "label": "馬克二號空氣濾淨冠樓｜白色柔光点〔贴图推定〕 · 096728F4",
+      "effectId": "096728F4"
+    },
+    "native_09e77802": {
+      "label": "蓝色水滴图钉图标＋白色芯片图标〔贴图推定〕 · 09E77802",
+      "effectId": "09E77802"
+    },
+    "native_0a16636c": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · 0A16636C",
+      "effectId": "0A16636C"
+    },
+    "native_0a2c510b": {
+      "label": "土地洗滌機｜白色纯色片〔贴图推定〕 · 0A2C510B",
+      "effectId": "0A2C510B"
+    },
+    "native_0a2d8469": {
+      "label": "笔刷·区域·SC·hinsara·矿石 · 0A2D8469",
+      "effectId": "0A2D8469"
+    },
+    "native_0a3c55e4": {
+      "label": "白色柔光点〔贴图推定〕 · 0A3C55E4",
+      "effectId": "0A3C55E4"
+    },
+    "native_0a84529a": {
+      "label": "笔刷·区域·flocksriver·矿石 · 0A84529A",
+      "effectId": "0A84529A"
+    },
+    "native_0aefbc9a": {
+      "label": "开心表情图标〔贴图推定〕 · 0AEFBC9A",
+      "effectId": "0AEFBC9A"
+    },
+    "native_0af2abd6": {
+      "label": "模型动画（待辨认） · 0AF2ABD6",
+      "effectId": "0AF2ABD6"
+    },
+    "native_0bc7df8c": {
+      "label": "光束（待辨认） · 0BC7DF8C",
+      "effectId": "0BC7DF8C"
+    },
+    "native_0be0eba8": {
+      "label": "白色烟团序列〔贴图推定〕 · 0BE0EBA8",
+      "effectId": "0BE0EBA8"
+    },
+    "native_0c2931ee": {
+      "label": "外部组件（待辨认） · 0C2931EE",
+      "effectId": "0C2931EE"
+    },
+    "native_0cbf62ad": {
+      "label": "分布模型（待辨认） · 0CBF62AD",
+      "effectId": "0CBF62AD"
+    },
+    "native_0cc2dd1e": {
+      "label": "嵌套粒子＋模型实例（待辨认） · 0CC2DD1E",
+      "effectId": "0CC2DD1E"
+    },
+    "native_0ce40d7f": {
+      "label": "黄色无人机图标〔贴图推定〕 · 0CE40D7F",
+      "effectId": "0CE40D7F"
+    },
+    "native_0cf15978": {
+      "label": "声音（待辨认） · 0CF15978",
+      "effectId": "0CF15978"
+    },
+    "native_0d09fe7e": {
+      "label": "灰色烟尘云＋红白四叶闪光〔贴图推定〕 · 0D09FE7E",
+      "effectId": "0D09FE7E"
+    },
+    "native_0d62d064": {
+      "label": "獨目飛車冠樓｜白色六边形轮廓〔贴图推定〕 · 0D62D064",
+      "effectId": "0D62D064"
+    },
+    "native_0d70ee58": {
+      "label": "笔刷·区域·edgewaterbay·石油 · 0D70EE58",
+      "effectId": "0D70EE58"
+    },
+    "native_0dadbca0": {
+      "label": "笔刷·区域·sawyer·水域 · 0DADBCA0",
+      "effectId": "0DADBCA0"
+    },
+    "native_0daf750c": {
+      "label": "蓝色圆头标杆图标〔贴图推定〕 · 0DAF750C",
+      "effectId": "0DAF750C"
+    },
+    "native_0e6cb00e": {
+      "label": "嵌套粒子＋模型实例＋灯光（待辨认） · 0E6CB00E",
+      "effectId": "0E6CB00E"
+    },
+    "native_0eb497fc": {
+      "label": "宽扇形灯束〔贴图推定〕 · 0EB497FC",
+      "effectId": "0EB497FC"
+    },
+    "native_0ed0c48d": {
+      "label": "笔刷·区域·gallia·地形 · 0ED0C48D",
+      "effectId": "0ED0C48D"
+    },
+    "native_0ef92e7d": {
+      "label": "橙色蒙面人物图标〔贴图推定〕 · 0EF92E7D",
+      "effectId": "0EF92E7D"
+    },
+    "native_0f0618a9": {
+      "label": "开心表情图标〔贴图推定〕 · 0F0618A9",
+      "effectId": "0F0618A9"
+    },
+    "native_0f108440": {
+      "label": "市长官邸烧烤区｜橙色火焰序列〔贴图推定〕 · 0F108440",
+      "effectId": "0F108440"
+    },
+    "native_0fa1f425": {
+      "label": "红色矿石图标〔贴图推定〕 · 0FA1F425",
+      "effectId": "0FA1F425"
+    },
+    "native_0fe25efa": {
+      "label": "採礦部門｜蓝色球状纹理〔贴图推定〕 · 0FE25EFA",
+      "effectId": "0FE25EFA"
+    },
+    "native_0fecec6a": {
+      "label": "紅十字會救援中心｜暖色星芒光晕〔贴图推定〕 · 0FECEC6A",
+      "effectId": "0FECEC6A"
+    },
+    "native_10206de9": {
+      "label": "红色油桶图标〔贴图推定〕 · 10206DE9",
+      "effectId": "10206DE9"
+    },
+    "native_10435f51": {
+      "label": "蓝色闪电分叉〔贴图推定〕 · 10435F51",
+      "effectId": "10435F51"
+    },
+    "native_10b2e411": {
+      "label": "红色手枪图标〔贴图推定〕 · 10B2E411",
+      "effectId": "10B2E411"
+    },
+    "native_116bc4ff": {
+      "label": "白色工业人物图标〔贴图推定〕 · 116BC4FF",
+      "effectId": "116BC4FF"
+    },
+    "native_117e6dfc": {
+      "label": "悲伤表情图标〔贴图推定〕 · 117E6DFC",
+      "effectId": "117E6DFC"
+    },
+    "native_118192c8": {
+      "label": "暖色星芒光晕〔贴图推定〕 · 118192C8",
+      "effectId": "118192C8"
+    },
+    "native_11af0bdd": {
+      "label": "外部组件（待辨认） · 11AF0BDD",
+      "effectId": "11AF0BDD"
+    },
+    "native_11c78a04": {
+      "label": "煤炭数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 11C78A04",
+      "effectId": "11C78A04"
+    },
+    "native_11ce1760": {
+      "label": "黄色油桶图标〔贴图推定〕 · 11CE1760",
+      "effectId": "11CE1760"
+    },
+    "native_12476ce2": {
+      "label": "標準融合反應爐｜白色柔光点＋蓝色闪电分叉〔贴图推定〕 · 12476CE2",
+      "effectId": "12476CE2"
+    },
+    "native_1260389a": {
+      "label": "零散碎点＋白色烟团序列〔贴图推定〕 · 1260389A",
+      "effectId": "1260389A"
+    },
+    "native_12936c42": {
+      "label": "偏红调色·粒子发射（待辨认） · 12936C42",
+      "effectId": "12936C42"
+    },
+    "native_12e931f7": {
+      "label": "笔刷·区域·reflection·吸引力 · 12E931F7",
+      "effectId": "12E931F7"
+    },
+    "native_12f8304d": {
+      "label": "蓝色圆点图钉图标＋蓝色停车图标〔贴图推定〕 · 12F8304D",
+      "effectId": "12F8304D"
+    },
+    "native_130ce2e4": {
+      "label": "嵌套组合（待辨认） · 130CE2E4",
+      "effectId": "130CE2E4"
+    },
+    "native_131ebf04": {
+      "label": "模型实例（待辨认） · 131EBF04",
+      "effectId": "131EBF04"
+    },
+    "native_137808da": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 137808DA",
+      "effectId": "137808DA"
+    },
+    "native_14573c8d": {
+      "label": "紫色伤员图标〔贴图推定〕 · 14573C8D",
+      "effectId": "14573C8D"
+    },
+    "native_1477c64c": {
+      "label": "笔刷·区域·testquadrant1·地形 · 1477C64C",
+      "effectId": "1477C64C"
+    },
+    "native_14887404": {
+      "label": "分布模型（待辨认） · 14887404",
+      "effectId": "14887404"
+    },
+    "native_151080d9": {
+      "label": "白色扁三角光片〔贴图推定〕 · 151080D9",
+      "effectId": "151080D9"
+    },
+    "native_159e30b0": {
+      "label": "白色柔光点〔贴图推定〕 · 159E30B0",
+      "effectId": "159E30B0"
+    },
+    "native_15e69b86": {
+      "label": "白色烟团序列〔贴图推定〕 · 15E69B86",
+      "effectId": "15E69B86"
+    },
+    "native_15ec5e2d": {
+      "label": "笔刷·区域·desolation·煤炭 · 15EC5E2D",
+      "effectId": "15EC5E2D"
+    },
+    "native_15ee4ac4": {
+      "label": "外部组件（待辨认） · 15EE4AC4",
+      "effectId": "15EE4AC4"
+    },
+    "native_1663e30d": {
+      "label": "黄色加油图标〔贴图推定〕 · 1663E30D",
+      "effectId": "1663E30D"
+    },
+    "native_16708a40": {
+      "label": "白色细圆环〔贴图推定〕 · 16708A40",
+      "effectId": "16708A40"
+    },
+    "native_16d9c073": {
+      "label": "白色柔光点〔贴图推定〕 · 16D9C073",
+      "effectId": "16D9C073"
+    },
+    "native_17169ed2": {
+      "label": "蓝色警徽图标〔贴图推定〕 · 17169ED2",
+      "effectId": "17169ED2"
+    },
+    "native_171e1501": {
+      "label": "生态建筑伟大工程｜暖色星芒光晕〔贴图推定〕 · 171E1501",
+      "effectId": "171E1501"
+    },
+    "native_171e26f3": {
+      "label": "绿色手铐图标〔贴图推定〕 · 171E26F3",
+      "effectId": "171E26F3"
+    },
+    "native_172bc00a": {
+      "label": "灰色烟团序列〔贴图推定〕 · 172BC00A",
+      "effectId": "172BC00A"
+    },
+    "native_175c1dce": {
+      "label": "灰色消息气泡图标＋白色纯色片〔贴图推定〕 · 175C1DCE",
+      "effectId": "175C1DCE"
+    },
+    "native_17614f1f": {
+      "label": "笔刷·区域·testquadrant4·土壤 · 17614F1F",
+      "effectId": "17614F1F"
+    },
+    "native_177139e7": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · 177139E7",
+      "effectId": "177139E7"
+    },
+    "native_1795c153": {
+      "label": "笔刷·区域·littlegorge·水域 · 1795C153",
+      "effectId": "1795C153"
+    },
+    "native_1795f198": {
+      "label": "零散碎点＋白色烟团序列〔贴图推定〕 · 1795F198",
+      "effectId": "1795F198"
+    },
+    "native_17be0756": {
+      "label": "風能放大器｜蓝色闪电分叉＋白色柔光点〔贴图推定〕 · 17BE0756",
+      "effectId": "17BE0756"
+    },
+    "native_17ce9818": {
+      "label": "笔刷·区域·newdenmont·森林 · 17CE9818",
+      "effectId": "17CE9818"
+    },
+    "native_17dea44e": {
+      "label": "侵蚀·组合 · 17DEA44E",
+      "effectId": "17DEA44E"
+    },
+    "native_17e62cb4": {
+      "label": "冶炼厂｜白色烟团序列〔贴图推定〕 · 17E62CB4",
+      "effectId": "17E62CB4"
+    },
+    "native_1831c6eb": {
+      "label": "地形笔刷组｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 1831C6EB",
+      "effectId": "1831C6EB"
+    },
+    "native_1834de6b": {
+      "label": "灯光＋外部组件（待辨认） · 1834DE6B",
+      "effectId": "1834DE6B"
+    },
+    "native_18399dca": {
+      "label": "外部组件（待辨认） · 18399DCA",
+      "effectId": "18399DCA"
+    },
+    "native_184ee5d8": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 184EE5D8",
+      "effectId": "184EE5D8"
+    },
+    "native_184ee5d9": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 184EE5D9",
+      "effectId": "184EE5D9"
+    },
+    "native_184ee5da": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 184EE5DA",
+      "effectId": "184EE5DA"
+    },
+    "native_184ee5db": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 184EE5DB",
+      "effectId": "184EE5DB"
+    },
+    "native_184ee5dd": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 184EE5DD",
+      "effectId": "184EE5DD"
+    },
+    "native_184ee5de": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 184EE5DE",
+      "effectId": "184EE5DE"
+    },
+    "native_184ee5df": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 184EE5DF",
+      "effectId": "184EE5DF"
+    },
+    "native_18698579": {
+      "label": "外部组件（待辨认） · 18698579",
+      "effectId": "18698579"
+    },
+    "native_1869857c": {
+      "label": "外部组件（待辨认） · 1869857C",
+      "effectId": "1869857C"
+    },
+    "native_1869857e": {
+      "label": "外部组件（待辨认） · 1869857E",
+      "effectId": "1869857E"
+    },
+    "native_1869857f": {
+      "label": "外部组件（待辨认） · 1869857F",
+      "effectId": "1869857F"
+    },
+    "native_18a969e1": {
+      "label": "白色烟团序列〔贴图推定〕 · 18A969E1",
+      "effectId": "18A969E1"
+    },
+    "native_18aee6d3": {
+      "label": "獨目飛車冠樓｜嵌套粒子＋声音＋模型实例（待辨认）〔来源〕 · 18AEE6D3",
+      "effectId": "18AEE6D3"
+    },
+    "native_18c5cbbb": {
+      "label": "Z字圆形标记图标〔贴图推定〕 · 18C5CBBB",
+      "effectId": "18C5CBBB"
+    },
+    "native_18e0a2f0": {
+      "label": "宽扇形灯束〔贴图推定〕 · 18E0A2F0",
+      "effectId": "18E0A2F0"
+    },
+    "native_192ac749": {
+      "label": "黄色偷窃图标〔贴图推定〕 · 192AC749",
+      "effectId": "192AC749"
+    },
+    "native_1964ab27": {
+      "label": "OmegaCo工廠｜彩色旋涡＋白色实心圆片〔贴图推定〕 · 1964AB27",
+      "effectId": "1964AB27"
+    },
+    "native_19707a5d": {
+      "label": "嵌套粒子＋分布模型＋外部组件（待辨认） · 19707A5D",
+      "effectId": "19707A5D"
+    },
+    "native_197edd31": {
+      "label": "白色小垃圾桶图标〔贴图推定〕 · 197EDD31",
+      "effectId": "197EDD31"
+    },
+    "native_1993186d": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 1993186D",
+      "effectId": "1993186D"
+    },
+    "native_19f1a332": {
+      "label": "蓝色圆点图钉图标＋白色警徽图标〔贴图推定〕 · 19F1A332",
+      "effectId": "19F1A332"
+    },
+    "native_19f4b400": {
+      "label": "金色斜纹图案〔贴图推定〕 · 19F4B400",
+      "effectId": "19F4B400"
+    },
+    "native_19fa60ab": {
+      "label": "黄色矿石图标〔贴图推定〕 · 19FA60AB",
+      "effectId": "19FA60AB"
+    },
+    "native_1a0785e9": {
+      "label": "深色圆点序列〔贴图推定〕 · 1A0785E9",
+      "effectId": "1A0785E9"
+    },
+    "native_1a1e5e32": {
+      "label": "笔刷·区域·testquadrant1·森林 · 1A1E5E32",
+      "effectId": "1A1E5E32"
+    },
+    "native_1a3c29dd": {
+      "label": "蓝色圆点图钉图标＋白色扑克牌图标〔贴图推定〕 · 1A3C29DD",
+      "effectId": "1A3C29DD"
+    },
+    "native_1a87945b": {
+      "label": "笔刷·区域·riverland·吸引力 · 1A87945B",
+      "effectId": "1A87945B"
+    },
+    "native_1a93ebcc": {
+      "label": "嵌套粒子＋外部组件（待辨认） · 1A93EBCC",
+      "effectId": "1A93EBCC"
+    },
+    "native_1ae2c6e7": {
+      "label": "橙色火焰序列〔贴图推定〕 · 1AE2C6E7",
+      "effectId": "1AE2C6E7"
+    },
+    "native_1b0bb0d4": {
+      "label": "白色放射光点〔贴图推定〕 · 1B0BB0D4",
+      "effectId": "1B0BB0D4"
+    },
+    "native_1b44c768": {
+      "label": "蓝色圆点图钉图标＋白色消防帽图标〔贴图推定〕 · 1B44C768",
+      "effectId": "1B44C768"
+    },
+    "native_1b60a6b4": {
+      "label": "白色星形图标〔贴图推定〕 · 1B60A6B4",
+      "effectId": "1B60A6B4"
+    },
+    "native_1b95711d": {
+      "label": "笔刷·区域·edgewaterbay·煤炭 · 1B95711D",
+      "effectId": "1B95711D"
+    },
+    "native_1bb0accd": {
+      "label": "笔刷·区域·testquadrant4·森林 · 1BB0ACCD",
+      "effectId": "1BB0ACCD"
+    },
+    "native_1c0e44d0": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 1C0E44D0",
+      "effectId": "1C0E44D0"
+    },
+    "native_1c0e44d1": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 1C0E44D1",
+      "effectId": "1C0E44D1"
+    },
+    "native_1c0e44d3": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 1C0E44D3",
+      "effectId": "1C0E44D3"
+    },
+    "native_1c0e44d4": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 1C0E44D4",
+      "effectId": "1C0E44D4"
+    },
+    "native_1c0e44d5": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 1C0E44D5",
+      "effectId": "1C0E44D5"
+    },
+    "native_1c0e44d6": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 1C0E44D6",
+      "effectId": "1C0E44D6"
+    },
+    "native_1c0e44d7": {
+      "label": "融合發電廠｜白色柔光点〔贴图推定〕 · 1C0E44D7",
+      "effectId": "1C0E44D7"
+    },
+    "native_1c62797c": {
+      "label": "飛船停放棚｜白色柔光点〔贴图推定〕 · 1C62797C",
+      "effectId": "1C62797C"
+    },
+    "native_1c7d6948": {
+      "label": "宗教場所：現代廟宇｜白色柔光点〔贴图推定〕 · 1C7D6948",
+      "effectId": "1C7D6948"
+    },
+    "native_1cec11d3": {
+      "label": "锥形灯束〔贴图推定〕 · 1CEC11D3",
+      "effectId": "1CEC11D3"
+    },
+    "native_1d182832": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · 1D182832",
+      "effectId": "1D182832"
+    },
+    "native_1d182833": {
+      "label": "灰白烟云〔贴图推定〕 · 1D182833",
+      "effectId": "1D182833"
+    },
+    "native_1d182834": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · 1D182834",
+      "effectId": "1D182834"
+    },
+    "native_1d182835": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · 1D182835",
+      "effectId": "1D182835"
+    },
+    "native_1d182837": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · 1D182837",
+      "effectId": "1D182837"
+    },
+    "native_1d60cd8e": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 1D60CD8E",
+      "effectId": "1D60CD8E"
+    },
+    "native_1dae17bb": {
+      "label": "白色烟团序列〔贴图推定〕 · 1DAE17BB",
+      "effectId": "1DAE17BB"
+    },
+    "native_1dd5d277": {
+      "label": "蓝色圆点图钉图标＋白色雕像图标〔贴图推定〕 · 1DD5D277",
+      "effectId": "1DD5D277"
+    },
+    "native_1dd65cf7": {
+      "label": "笔刷·区域·twincities·吸引力 · 1DD65CF7",
+      "effectId": "1DD65CF7"
+    },
+    "native_1e0a55b3": {
+      "label": "橙色垃圾桶图标〔贴图推定〕 · 1E0A55B3",
+      "effectId": "1E0A55B3"
+    },
+    "native_1e83cd84": {
+      "label": "蓝色圆点图钉图标＋白色体育场图标〔贴图推定〕 · 1E83CD84",
+      "effectId": "1E83CD84"
+    },
+    "native_1e9e127b": {
+      "label": "橙色难受表情图标〔贴图推定〕 · 1E9E127B",
+      "effectId": "1E9E127B"
+    },
+    "native_1f202f77": {
+      "label": "笔刷·区域·littlegorge·煤炭 · 1F202F77",
+      "effectId": "1F202F77"
+    },
+    "native_1f7dc771": {
+      "label": "灰色烟团序列＋橙色火焰序列〔贴图推定〕 · 1F7DC771",
+      "effectId": "1F7DC771"
+    },
+    "native_1f8dcf19": {
+      "label": "现代住宅｜白色心形粒点序列〔贴图推定〕 · 1F8DCF19",
+      "effectId": "1F8DCF19"
+    },
+    "native_1f8f099e": {
+      "label": "白色工业人物图标〔贴图推定〕 · 1F8F099E",
+      "effectId": "1F8F099E"
+    },
+    "native_1fc188e4": {
+      "label": "分布模型（待辨认） · 1FC188E4",
+      "effectId": "1FC188E4"
+    },
+    "native_1feec70b": {
+      "label": "笔刷·区域·caspianlake·地形 · 1FEEC70B",
+      "effectId": "1FEEC70B"
+    },
+    "native_2004bcfe": {
+      "label": "笔刷·区域·gallia·矿石 · 2004BCFE",
+      "effectId": "2004BCFE"
+    },
+    "native_200edb61": {
+      "label": "白色烟团序列＋白色柔光点〔贴图推定〕 · 200EDB61",
+      "effectId": "200EDB61"
+    },
+    "native_2078343a": {
+      "label": "白色柔光点〔贴图推定〕 · 2078343A",
+      "effectId": "2078343A"
+    },
+    "native_208a0959": {
+      "label": "彩色电弧＋白色柔光点〔贴图推定〕 · 208A0959",
+      "effectId": "208A0959"
+    },
+    "native_20bb8bb9": {
+      "label": "太空中心伟大工程｜白色柔光点〔贴图推定〕 · 20BB8BB9",
+      "effectId": "20BB8BB9"
+    },
+    "native_219bdccc": {
+      "label": "红色铁轨图标〔贴图推定〕 · 219BDCCC",
+      "effectId": "219BDCCC"
+    },
+    "native_21ce1bd6": {
+      "label": "白色碎石序列＋白色柔光点〔贴图推定〕 · 21CE1BD6",
+      "effectId": "21CE1BD6"
+    },
+    "native_22263f8c": {
+      "label": "锥形灯束〔贴图推定〕 · 22263F8C",
+      "effectId": "22263F8C"
+    },
+    "native_222eff33": {
+      "label": "橙色垃圾桶图标〔贴图推定〕 · 222EFF33",
+      "effectId": "222EFF33"
+    },
+    "native_22718a58": {
+      "label": "声音＋光束（待辨认） · 22718A58",
+      "effectId": "22718A58"
+    },
+    "native_2283e2a2": {
+      "label": "白色纯色片＋红白斜纹〔贴图推定〕 · 2283E2A2",
+      "effectId": "2283E2A2"
+    },
+    "native_2288f83f": {
+      "label": "宗教場所：寺廟｜暖色星芒光晕＋橙色火焰序列〔贴图推定〕 · 2288F83F",
+      "effectId": "2288F83F"
+    },
+    "native_22a49089": {
+      "label": "白色喷流〔贴图推定〕 · 22A49089",
+      "effectId": "22A49089"
+    },
+    "native_22c6e4a1": {
+      "label": "时序组件＋声音（待辨认） · 22C6E4A1",
+      "effectId": "22C6E4A1"
+    },
+    "native_22f1bfe4": {
+      "label": "白色波动光丝〔贴图推定〕 · 22F1BFE4",
+      "effectId": "22F1BFE4"
+    },
+    "native_23847a36": {
+      "label": "笔刷·区域·flocksriver·石油 · 23847A36",
+      "effectId": "23847A36"
+    },
+    "native_238d56af": {
+      "label": "红色污水图标〔贴图推定〕 · 238D56AF",
+      "effectId": "238D56AF"
+    },
+    "native_24f871fb": {
+      "label": "蓝色水滴图钉图标＋白色电视图标〔贴图推定〕 · 24F871FB",
+      "effectId": "24F871FB"
+    },
+    "native_24fd6398": {
+      "label": "羅馬幸運賭場｜白色波动光丝〔贴图推定〕 · 24FD6398",
+      "effectId": "24FD6398"
+    },
+    "native_252daee1": {
+      "label": "笔刷·区域·SC·hinsara·石油 · 252DAEE1",
+      "effectId": "252DAEE1"
+    },
+    "native_252e02ac": {
+      "label": "声音＋模型实例（待辨认） · 252E02AC",
+      "effectId": "252E02AC"
+    },
+    "native_25489e09": {
+      "label": "地下水数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 25489E09",
+      "effectId": "25489E09"
+    },
+    "native_2555ab45": {
+      "label": "灰色烟团序列＋灰色碎石序列〔贴图推定〕 · 2555AB45",
+      "effectId": "2555AB45"
+    },
+    "native_25976a58": {
+      "label": "OmegaCo工廠｜白色粗圆环〔贴图推定〕 · 25976A58",
+      "effectId": "25976A58"
+    },
+    "native_264b32c0": {
+      "label": "燃煤发电厂｜灰色烟团序列〔贴图推定〕 · 264B32C0",
+      "effectId": "264B32C0"
+    },
+    "native_266de9b8": {
+      "label": "地形特征·丘陵·大型 · 266DE9B8",
+      "effectId": "266DE9B8"
+    },
+    "native_2777b93f": {
+      "label": "笔刷·区域·littlegorge·土壤 · 2777B93F",
+      "effectId": "2777B93F"
+    },
+    "native_278f76c4": {
+      "label": "藍鬍子海盜船｜模型实例（待辨认）〔来源〕 · 278F76C4",
+      "effectId": "278F76C4"
+    },
+    "native_27c834a8": {
+      "label": "笔刷·区域·lakeshoreties·地形 · 27C834A8",
+      "effectId": "27C834A8"
+    },
+    "native_27cd5539": {
+      "label": "笔刷·区域·capetrinity·煤炭 · 27CD5539",
+      "effectId": "27CD5539"
+    },
+    "native_27ebf103": {
+      "label": "笔刷·区域·caspianlake·森林 · 27EBF103",
+      "effectId": "27EBF103"
+    },
+    "native_282078bf": {
+      "label": "侵蚀·组合·陡坡 · 282078BF",
+      "effectId": "282078BF"
+    },
+    "native_29341dfa": {
+      "label": "偏蓝调色·粒子发射（待辨认） · 29341DFA",
+      "effectId": "29341DFA"
+    },
+    "native_293f410f": {
+      "label": "獨目飛車冠樓｜锥形灯束〔贴图推定〕 · 293F410F",
+      "effectId": "293F410F"
+    },
+    "native_29a89cea": {
+      "label": "蓝色水滴图钉图标＋白色加油图标〔贴图推定〕 · 29A89CEA",
+      "effectId": "29A89CEA"
+    },
+    "native_29b4dc60": {
+      "label": "煤矿｜白色烟团序列〔贴图推定〕 · 29B4DC60",
+      "effectId": "29B4DC60"
+    },
+    "native_29cd1ca9": {
+      "label": "都會熱汽球公園(§§§)｜中性调色·粒子发射（待辨认） · 29CD1CA9",
+      "effectId": "29CD1CA9"
+    },
+    "native_29cdf485": {
+      "label": "嵌套粒子＋外部组件（待辨认） · 29CDF485",
+      "effectId": "29CDF485"
+    },
+    "native_2a25eb89": {
+      "label": "灰色碎石序列〔贴图推定〕 · 2A25EB89",
+      "effectId": "2A25EB89"
+    },
+    "native_2a361358": {
+      "label": "白色柔光点〔贴图推定〕 · 2A361358",
+      "effectId": "2A361358"
+    },
+    "native_2a3baf9e": {
+      "label": "风力发电厂｜白色柔光点〔贴图推定〕 · 2A3BAF9E",
+      "effectId": "2A3BAF9E"
+    },
+    "native_2a8e8c03": {
+      "label": "灯光＋外部组件（待辨认） · 2A8E8C03",
+      "effectId": "2A8E8C03"
+    },
+    "native_2b3e428c": {
+      "label": "白色烟团图集〔贴图推定〕 · 2B3E428C",
+      "effectId": "2B3E428C"
+    },
+    "native_2b565cbb": {
+      "label": "笔刷·区域·edgewaterbay·森林 · 2B565CBB",
+      "effectId": "2B565CBB"
+    },
+    "native_2b71a34c": {
+      "label": "灰色烟尘序列〔贴图推定〕 · 2B71A34C",
+      "effectId": "2B71A34C"
+    },
+    "native_2bdd1126": {
+      "label": "模型实例（待辨认） · 2BDD1126",
+      "effectId": "2BDD1126"
+    },
+    "native_2bf134da": {
+      "label": "外部组件（待辨认） · 2BF134DA",
+      "effectId": "2BF134DA"
+    },
+    "native_2bf134dc": {
+      "label": "外部组件（待辨认） · 2BF134DC",
+      "effectId": "2BF134DC"
+    },
+    "native_2bf134dd": {
+      "label": "外部组件（待辨认） · 2BF134DD",
+      "effectId": "2BF134DD"
+    },
+    "native_2bf134df": {
+      "label": "外部组件（待辨认） · 2BF134DF",
+      "effectId": "2BF134DF"
+    },
+    "native_2c3dd165": {
+      "label": "笔刷·区域·confluence·森林 · 2C3DD165",
+      "effectId": "2C3DD165"
+    },
+    "native_2c49d7cd": {
+      "label": "白色烟团序列〔贴图推定〕 · 2C49D7CD",
+      "effectId": "2C49D7CD"
+    },
+    "native_2c7e7dfe": {
+      "label": "笔刷·区域·caspiar·土壤 · 2C7E7DFE",
+      "effectId": "2C7E7DFE"
+    },
+    "native_2ca3161d": {
+      "label": "笔刷·区域·desolation·辐射 · 2CA3161D",
+      "effectId": "2CA3161D"
+    },
+    "native_2ca5800b": {
+      "label": "锥形灯束〔贴图推定〕 · 2CA5800B",
+      "effectId": "2CA5800B"
+    },
+    "native_2cf76e6f": {
+      "label": "進階波浪產生器｜黑白旋涡＋白色烟雾圆环〔贴图推定〕 · 2CF76E6F",
+      "effectId": "2CF76E6F"
+    },
+    "native_2d139589": {
+      "label": "等離子物理附樓｜发光圆环＋白色柔光点〔贴图推定〕 · 2D139589",
+      "effectId": "2D139589"
+    },
+    "native_2d2a6cba": {
+      "label": "白色细圆环〔贴图推定〕 · 2D2A6CBA",
+      "effectId": "2D2A6CBA"
+    },
+    "native_2d57d249": {
+      "label": "笔刷·区域·dormant·吸引力 · 2D57D249",
+      "effectId": "2D57D249"
+    },
+    "native_2d735078": {
+      "label": "太空中心伟大工程｜白色烟团序列＋白色柔光点〔贴图推定〕 · 2D735078",
+      "effectId": "2D735078"
+    },
+    "native_2dc65ec0": {
+      "label": "偏红调色·粒子发射（待辨认） · 2DC65EC0",
+      "effectId": "2DC65EC0"
+    },
+    "native_2e434875": {
+      "label": "外部组件（待辨认） · 2E434875",
+      "effectId": "2E434875"
+    },
+    "native_2e668997": {
+      "label": "笔刷·抬高 · 2E668997",
+      "effectId": "2E668997"
+    },
+    "native_2ea381f1": {
+      "label": "笔刷·区域·caspiar·石油 · 2EA381F1",
+      "effectId": "2EA381F1"
+    },
+    "native_2ee79d47": {
+      "label": "黄色涂鸦图标〔贴图推定〕 · 2EE79D47",
+      "effectId": "2EE79D47"
+    },
+    "native_2f3d679a": {
+      "label": "白色烟团序列〔贴图推定〕 · 2F3D679A",
+      "effectId": "2F3D679A"
+    },
+    "native_2f57f14a": {
+      "label": "红色手枪图标〔贴图推定〕 · 2F57F14A",
+      "effectId": "2F57F14A"
+    },
+    "native_2fcda55e": {
+      "label": "红色蒙面人物图标〔贴图推定〕 · 2FCDA55E",
+      "effectId": "2FCDA55E"
+    },
+    "native_3007c09a": {
+      "label": "分布模型（待辨认） · 3007C09A",
+      "effectId": "3007C09A"
+    },
+    "native_30b19f68": {
+      "label": "外部组件（待辨认） · 30B19F68",
+      "effectId": "30B19F68"
+    },
+    "native_318c4e15": {
+      "label": "红色倾倒液体图标〔贴图推定〕 · 318C4E15",
+      "effectId": "318C4E15"
+    },
+    "native_31ab17d4": {
+      "label": "笔刷·区域·capetrinity·矿石 · 31AB17D4",
+      "effectId": "31AB17D4"
+    },
+    "native_324cb8fe": {
+      "label": "白色礼物图标〔贴图推定〕 · 324CB8FE",
+      "effectId": "324CB8FE"
+    },
+    "native_32b1ce0b": {
+      "label": "白色云团序列〔贴图推定〕 · 32B1CE0B",
+      "effectId": "32B1CE0B"
+    },
+    "native_32e050fd": {
+      "label": "石油钻探基地｜彩色旋涡＋白色实心圆片〔贴图推定〕 · 32E050FD",
+      "effectId": "32E050FD"
+    },
+    "native_3332f529": {
+      "label": "蓝色圆点图钉图标＋白色芯片图标〔贴图推定〕 · 3332F529",
+      "effectId": "3332F529"
+    },
+    "native_337421f3": {
+      "label": "灰色烟尘序列＋棕色碎屑序列〔贴图推定〕 · 337421F3",
+      "effectId": "337421F3"
+    },
+    "native_33851aa0": {
+      "label": "蓝色闪电分叉＋白色柔光点〔贴图推定〕 · 33851AA0",
+      "effectId": "33851AA0"
+    },
+    "native_33a38919": {
+      "label": "笔刷·区域·caspiar·矿石 · 33A38919",
+      "effectId": "33A38919"
+    },
+    "native_341b12e2": {
+      "label": "白色烟团序列〔贴图推定〕 · 341B12E2",
+      "effectId": "341B12E2"
+    },
+    "native_34890bab": {
+      "label": "灰色烟尘云〔贴图推定〕 · 34890BAB",
+      "effectId": "34890BAB"
+    },
+    "native_34a635d6": {
+      "label": "笔刷·区域·tutorialisland·煤炭 · 34A635D6",
+      "effectId": "34A635D6"
+    },
+    "native_34c4180b": {
+      "label": "橙色火焰序列〔贴图推定〕 · 34C4180B",
+      "effectId": "34C4180B"
+    },
+    "native_34c42682": {
+      "label": "黄色原木图标〔贴图推定〕 · 34C42682",
+      "effectId": "34C42682"
+    },
+    "native_351425be": {
+      "label": "鸟类图案〔贴图推定〕 · 351425BE",
+      "effectId": "351425BE"
+    },
+    "native_351db98c": {
+      "label": "白色碎石序列＋白色放射光晕〔贴图推定〕 · 351DB98C",
+      "effectId": "351DB98C"
+    },
+    "native_3549c114": {
+      "label": "笔刷·区域·coastlinebasin·地形 · 3549C114",
+      "effectId": "3549C114"
+    },
+    "native_359912e0": {
+      "label": "开心表情图标〔贴图推定〕 · 359912E0",
+      "effectId": "359912E0"
+    },
+    "native_35b9eb76": {
+      "label": "黄色人群图标〔贴图推定〕 · 35B9EB76",
+      "effectId": "35B9EB76"
+    },
+    "native_363e0c55": {
+      "label": "锥形灯束〔贴图推定〕 · 363E0C55",
+      "effectId": "363E0C55"
+    },
+    "native_363e9ae0": {
+      "label": "高级煤矿｜白色烟团序列〔贴图推定〕 · 363E9AE0",
+      "effectId": "363E9AE0"
+    },
+    "native_365b596a": {
+      "label": "笔刷·区域·testquadrant2·吸引力 · 365B596A",
+      "effectId": "365B596A"
+    },
+    "native_36ab1ffc": {
+      "label": "笔刷·区域·capetrinity·石油 · 36AB1FFC",
+      "effectId": "36AB1FFC"
+    },
+    "native_36b23f07": {
+      "label": "锥形灯束＋白色烟团序列〔贴图推定〕 · 36B23F07",
+      "effectId": "36B23F07"
+    },
+    "native_36bcd102": {
+      "label": "蓝色水滴图钉图标＋白色原木图标〔贴图推定〕 · 36BCD102",
+      "effectId": "36BCD102"
+    },
+    "native_36f33ce9": {
+      "label": "白色烟团序列〔贴图推定〕 · 36F33CE9",
+      "effectId": "36F33CE9"
+    },
+    "native_37190dc5": {
+      "label": "悲伤表情图标〔贴图推定〕 · 37190DC5",
+      "effectId": "37190DC5"
+    },
+    "native_3765b544": {
+      "label": "开心表情图标〔贴图推定〕 · 3765B544",
+      "effectId": "3765B544"
+    },
+    "native_379e80dc": {
+      "label": "研究中心｜白色柔光点〔贴图推定〕 · 379E80DC",
+      "effectId": "379E80DC"
+    },
+    "native_379edab3": {
+      "label": "笔刷·抬高·全局 · 379EDAB3",
+      "effectId": "379EDAB3"
+    },
+    "native_37b5d8ed": {
+      "label": "笔刷·区域·littlegorge·森林 · 37B5D8ED",
+      "effectId": "37B5D8ED"
+    },
+    "native_37b84fa9": {
+      "label": "诊所招牌图案〔贴图推定〕 · 37B84FA9",
+      "effectId": "37B84FA9"
+    },
+    "native_37c3f6c3": {
+      "label": "白色烟团序列〔贴图推定〕 · 37C3F6C3",
+      "effectId": "37C3F6C3"
+    },
+    "native_382da334": {
+      "label": "蓝色圆点图钉图标＋白色矿车图标〔贴图推定〕 · 382DA334",
+      "effectId": "382DA334"
+    },
+    "native_38b47798": {
+      "label": "嵌套组合（待辨认） · 38B47798",
+      "effectId": "38B47798"
+    },
+    "native_3901c8e8": {
+      "label": "笔刷·区域·SC·desolation·土壤 · 3901C8E8",
+      "effectId": "3901C8E8"
+    },
+    "native_3925e741": {
+      "label": "锥形灯束＋白色烟团序列〔贴图推定〕 · 3925E741",
+      "effectId": "3925E741"
+    },
+    "native_393c933d": {
+      "label": "时序组件＋声音（待辨认） · 393C933D",
+      "effectId": "393C933D"
+    },
+    "native_394b93be": {
+      "label": "灰色烟尘序列＋棕色碎屑序列〔贴图推定〕 · 394B93BE",
+      "effectId": "394B93BE"
+    },
+    "native_3992b28d": {
+      "label": "白色柔光点＋紫色飞行器图标〔贴图推定〕 · 3992B28D",
+      "effectId": "3992B28D"
+    },
+    "native_3992c96f": {
+      "label": "煤矿伟大工程｜白色柔光点〔贴图推定〕 · 3992C96F",
+      "effectId": "3992C96F"
+    },
+    "native_39d8c16d": {
+      "label": "原油储存场｜彩色旋涡＋白色实心圆片〔贴图推定〕 · 39D8C16D",
+      "effectId": "39D8C16D"
+    },
+    "native_3a049825": {
+      "label": "生态建筑伟大工程｜暖色星芒光晕〔贴图推定〕 · 3A049825",
+      "effectId": "3A049825"
+    },
+    "native_3a0e9ac8": {
+      "label": "白色纯色片〔贴图推定〕 · 3A0E9AC8",
+      "effectId": "3A0E9AC8"
+    },
+    "native_3a41a088": {
+      "label": "灰色烟尘云＋白色柔光点〔贴图推定〕 · 3A41A088",
+      "effectId": "3A41A088"
+    },
+    "native_3a41a08b": {
+      "label": "灰色烟尘云＋白色柔光点〔贴图推定〕 · 3A41A08B",
+      "effectId": "3A41A08B"
+    },
+    "native_3a7ab21c": {
+      "label": "V形水花＋白色烟团序列〔贴图推定〕 · 3A7AB21C",
+      "effectId": "3A7AB21C"
+    },
+    "native_3aa9d009": {
+      "label": "灯光＋外部组件（待辨认） · 3AA9D009",
+      "effectId": "3AA9D009"
+    },
+    "native_3ae7cafc": {
+      "label": "白色柔光点〔贴图推定〕 · 3AE7CAFC",
+      "effectId": "3AE7CAFC"
+    },
+    "native_3b2897dd": {
+      "label": "垃圾粉碎器｜声音＋模型实例（待辨认）〔来源〕 · 3B2897DD",
+      "effectId": "3B2897DD"
+    },
+    "native_3b464288": {
+      "label": "白色烟团序列〔贴图推定〕 · 3B464288",
+      "effectId": "3B464288"
+    },
+    "native_3b67a90f": {
+      "label": "红色倾倒液体图标〔贴图推定〕 · 3B67A90F",
+      "effectId": "3B67A90F"
+    },
+    "native_3b89e3c7": {
+      "label": "全像廣告冠樓｜锥形灯束＋Luxury酒店招牌图案〔贴图推定〕 · 3B89E3C7",
+      "effectId": "3B89E3C7"
+    },
+    "native_3b8d9e02": {
+      "label": "笔刷·区域·caspiar·地形 · 3B8D9E02",
+      "effectId": "3B8D9E02"
+    },
+    "native_3b98d71e": {
+      "label": "笔刷·区域·riverland·水域 · 3B98D71E",
+      "effectId": "3B98D71E"
+    },
+    "native_3bd4675d": {
+      "label": "不明飞行物｜嵌套粒子＋模型实例＋灯光（待辨认）〔来源〕 · 3BD4675D",
+      "effectId": "3BD4675D"
+    },
+    "native_3c1c88dd": {
+      "label": "黄色学士帽图标〔贴图推定〕 · 3C1C88DD",
+      "effectId": "3C1C88DD"
+    },
+    "native_3c9d2466": {
+      "label": "白色纯色片〔贴图推定〕 · 3C9D2466",
+      "effectId": "3C9D2466"
+    },
+    "native_3cc7cf18": {
+      "label": "笔刷·区域·tutorialisland·水域 · 3CC7CF18",
+      "effectId": "3CC7CF18"
+    },
+    "native_3cdcac54": {
+      "label": "白色柔光点〔贴图推定〕 · 3CDCAC54",
+      "effectId": "3CDCAC54"
+    },
+    "native_3cf6cb12": {
+      "label": "红色推土机图标〔贴图推定〕 · 3CF6CB12",
+      "effectId": "3CF6CB12"
+    },
+    "native_3cfee2ba": {
+      "label": "白色柔光点〔贴图推定〕 · 3CFEE2BA",
+      "effectId": "3CFEE2BA"
+    },
+    "native_3d3b362c": {
+      "label": "棕色碎屑序列〔贴图推定〕 · 3D3B362C",
+      "effectId": "3D3B362C"
+    },
+    "native_3dbca849": {
+      "label": "白色柔光晕〔贴图推定〕 · 3DBCA849",
+      "effectId": "3DBCA849"
+    },
+    "native_3e340cab": {
+      "label": "红色蒙面人物图标〔贴图推定〕 · 3E340CAB",
+      "effectId": "3E340CAB"
+    },
+    "native_3e827da1": {
+      "label": "白色烟团序列〔贴图推定〕 · 3E827DA1",
+      "effectId": "3E827DA1"
+    },
+    "native_3eb80f11": {
+      "label": "蓝色圆点图钉图标＋白色钢梁图标〔贴图推定〕 · 3EB80F11",
+      "effectId": "3EB80F11"
+    },
+    "native_3ebec59b": {
+      "label": "分布模型（待辨认） · 3EBEC59B",
+      "effectId": "3EBEC59B"
+    },
+    "native_3edd0332": {
+      "label": "笔刷·区域·echogorgecross·森林 · 3EDD0332",
+      "effectId": "3EDD0332"
+    },
+    "native_3efb6f75": {
+      "label": "笔刷·区域·高度调试 · 3EFB6F75",
+      "effectId": "3EFB6F75"
+    },
+    "native_3f18636b": {
+      "label": "蓝色水滴图钉图标＋白色加油图标〔贴图推定〕 · 3F18636B",
+      "effectId": "3F18636B"
+    },
+    "native_3f813725": {
+      "label": "白色蒸汽警示图标〔贴图推定〕 · 3F813725",
+      "effectId": "3F813725"
+    },
+    "native_3fdf4fbe": {
+      "label": "白色波动光丝〔贴图推定〕 · 3FDF4FBE",
+      "effectId": "3FDF4FBE"
+    },
+    "native_3fe54ba8": {
+      "label": "AR體育中心(§§)｜锥形灯束〔贴图推定〕 · 3FE54BA8",
+      "effectId": "3FE54BA8"
+    },
+    "native_3fe9eb7d": {
+      "label": "Maxis标志图案＋白色纯色片〔贴图推定〕 · 3FE9EB7D",
+      "effectId": "3FE9EB7D"
+    },
+    "native_40001ae0": {
+      "label": "小型风力涡轮机｜白色纯色片〔贴图推定〕 · 40001AE0",
+      "effectId": "40001AE0"
+    },
+    "native_403a645e": {
+      "label": "笔刷·区域·lakeshoreties·森林 · 403A645E",
+      "effectId": "403A645E"
+    },
+    "native_404d0ecb": {
+      "label": "蓝色水滴图钉图标＋白色芯片图标〔贴图推定〕 · 404D0ECB",
+      "effectId": "404D0ECB"
+    },
+    "native_4079fa1e": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · 4079FA1E",
+      "effectId": "4079FA1E"
+    },
+    "native_4097ad36": {
+      "label": "外部组件（待辨认） · 4097AD36",
+      "effectId": "4097AD36"
+    },
+    "native_40a4c716": {
+      "label": "声音＋模型实例（待辨认） · 40A4C716",
+      "effectId": "40A4C716"
+    },
+    "native_4107df0e": {
+      "label": "煤矿｜灰色烟团序列〔贴图推定〕 · 4107DF0E",
+      "effectId": "4107DF0E"
+    },
+    "native_416815a2": {
+      "label": "量子科學附樓｜白色烟团序列〔贴图推定〕 · 416815A2",
+      "effectId": "416815A2"
+    },
+    "native_41718b34": {
+      "label": "石油钻探基地｜白色小点序列〔贴图推定〕 · 41718B34",
+      "effectId": "41718B34"
+    },
+    "native_4192780b": {
+      "label": "白色酒杯图标〔贴图推定〕 · 4192780B",
+      "effectId": "4192780B"
+    },
+    "native_41bf084b": {
+      "label": "分布模型（待辨认） · 41BF084B",
+      "effectId": "41BF084B"
+    },
+    "native_425bddf8": {
+      "label": "Mojave赌场文字图案〔贴图推定〕 · 425BDDF8",
+      "effectId": "425BDDF8"
+    },
+    "native_42e09dba": {
+      "label": "嵌套粒子＋外部组件（待辨认） · 42E09DBA",
+      "effectId": "42E09DBA"
+    },
+    "native_4335b8a7": {
+      "label": "笔刷·区域·testquadrant2·地形 · 4335B8A7",
+      "effectId": "4335B8A7"
+    },
+    "native_4383d50e": {
+      "label": "宗教場所：清真寺｜红色钢梁图标〔贴图推定〕 · 4383D50E",
+      "effectId": "4383D50E"
+    },
+    "native_438a54d3": {
+      "label": "笔刷·区域·desolation·地形 · 438A54D3",
+      "effectId": "438A54D3"
+    },
+    "native_43aa68b0": {
+      "label": "镜头震动（待辨认） · 43AA68B0",
+      "effectId": "43AA68B0"
+    },
+    "native_43c3baa2": {
+      "label": "蓝色圆点图钉图标＋白色磁悬浮图标〔贴图推定〕 · 43C3BAA2",
+      "effectId": "43C3BAA2"
+    },
+    "native_44218ca5": {
+      "label": "白色烟团序列＋木片碎屑图集〔贴图推定〕 · 44218CA5",
+      "effectId": "44218CA5"
+    },
+    "native_445f1fc3": {
+      "label": "晶錐公園（§§§）｜白色柔光点＋红色水龙头图标〔贴图推定〕 · 445F1FC3",
+      "effectId": "445F1FC3"
+    },
+    "native_450ad719": {
+      "label": "蓝色圆点图钉图标＋白色垃圾桶图标〔贴图推定〕 · 450AD719",
+      "effectId": "450AD719"
+    },
+    "native_45261601": {
+      "label": "扇形灯束＋白色实心圆片〔贴图推定〕 · 45261601",
+      "effectId": "45261601"
+    },
+    "native_4545c34d": {
+      "label": "馬克六號空氣濾淨冠樓｜声音＋模型实例（待辨认）〔来源〕 · 4545C34D",
+      "effectId": "4545C34D"
+    },
+    "native_45556cbc": {
+      "label": "中性调色·粒子发射（待辨认） · 45556CBC",
+      "effectId": "45556CBC"
+    },
+    "native_45bff7b2": {
+      "label": "彩色旋涡＋白色实心圆片〔贴图推定〕 · 45BFF7B2",
+      "effectId": "45BFF7B2"
+    },
+    "native_45f60a49": {
+      "label": "白色烟团序列〔贴图推定〕 · 45F60A49",
+      "effectId": "45F60A49"
+    },
+    "native_45ffab58": {
+      "label": "飛天鞦韆｜嵌套粒子＋声音＋模型实例（待辨认）〔来源〕 · 45FFAB58",
+      "effectId": "45FFAB58"
+    },
+    "native_460902c9": {
+      "label": "白色烟团序列〔贴图推定〕 · 460902C9",
+      "effectId": "460902C9"
+    },
+    "native_461884ac": {
+      "label": "白色纯色片＋白色柔光点〔贴图推定〕 · 461884AC",
+      "effectId": "461884AC"
+    },
+    "native_464499b4": {
+      "label": "声音＋模型实例（待辨认） · 464499B4",
+      "effectId": "464499B4"
+    },
+    "native_46667bdf": {
+      "label": "笔刷·区域·twincities·石油 · 46667BDF",
+      "effectId": "46667BDF"
+    },
+    "native_46bf4f8a": {
+      "label": "蓝色圆点图钉图标＋白色列车图标〔贴图推定〕 · 46BF4F8A",
+      "effectId": "46BF4F8A"
+    },
+    "native_470893a8": {
+      "label": "白色烟团序列〔贴图推定〕 · 470893A8",
+      "effectId": "470893A8"
+    },
+    "native_47351eeb": {
+      "label": "白色纯色片〔贴图推定〕 · 47351EEB",
+      "effectId": "47351EEB"
+    },
+    "native_47756e13": {
+      "label": "無人機組裝線｜锥形灯束＋白色柔光点〔贴图推定〕 · 47756E13",
+      "effectId": "47756E13"
+    },
+    "native_47961b6d": {
+      "label": "白色烟团序列〔贴图推定〕 · 47961B6D",
+      "effectId": "47961B6D"
+    },
+    "native_47f679a8": {
+      "label": "时序组件＋声音（待辨认） · 47F679A8",
+      "effectId": "47F679A8"
+    },
+    "native_48225cff": {
+      "label": "白色碎石序列＋白色柔光点〔贴图推定〕 · 48225CFF",
+      "effectId": "48225CFF"
+    },
+    "native_48322cb0": {
+      "label": "国际机场伟大工程｜锥形灯束〔贴图推定〕 · 48322CB0",
+      "effectId": "48322CB0"
+    },
+    "native_48361437": {
+      "label": "红色火焰警报图标〔贴图推定〕 · 48361437",
+      "effectId": "48361437"
+    },
+    "native_4845d87e": {
+      "label": "灰色烟尘云〔贴图推定〕 · 4845D87E",
+      "effectId": "4845D87E"
+    },
+    "native_4848e17e": {
+      "label": "橙色火焰图集〔贴图推定〕 · 4848E17E",
+      "effectId": "4848E17E"
+    },
+    "native_48ae51e3": {
+      "label": "零散碎点＋白色烟团序列〔贴图推定〕 · 48AE51E3",
+      "effectId": "48AE51E3"
+    },
+    "native_48d81f75": {
+      "label": "锥形灯束〔贴图推定〕 · 48D81F75",
+      "effectId": "48D81F75"
+    },
+    "native_4937a0c8": {
+      "label": "蓝色圆点图钉图标＋白色加油图标〔贴图推定〕 · 4937A0C8",
+      "effectId": "4937A0C8"
+    },
+    "native_4948731b": {
+      "label": "分布模型（待辨认） · 4948731B",
+      "effectId": "4948731B"
+    },
+    "native_49812f5b": {
+      "label": "宗教場所：現代廟宇｜白色烟团序列〔贴图推定〕 · 49812F5B",
+      "effectId": "49812F5B"
+    },
+    "native_4a05a845": {
+      "label": "蓝色圆点图钉图标＋白色铁路交叉图标〔贴图推定〕 · 4A05A845",
+      "effectId": "4A05A845"
+    },
+    "native_4a226d98": {
+      "label": "白色波动光丝〔贴图推定〕 · 4A226D98",
+      "effectId": "4A226D98"
+    },
+    "native_4a2a94c5": {
+      "label": "白色烟团序列〔贴图推定〕 · 4A2A94C5",
+      "effectId": "4A2A94C5"
+    },
+    "native_4a537ad9": {
+      "label": "抽水泵浦站｜白色纯色片〔贴图推定〕 · 4A537AD9",
+      "effectId": "4A537AD9"
+    },
+    "native_4a62ab95": {
+      "label": "白色烟团序列〔贴图推定〕 · 4A62AB95",
+      "effectId": "4A62AB95"
+    },
+    "native_4a99fc09": {
+      "label": "笔刷·区域·tutorialisland·吸引力 · 4A99FC09",
+      "effectId": "4A99FC09"
+    },
+    "native_4ac8c538": {
+      "label": "笔刷·区域·testquadrant3·森林 · 4AC8C538",
+      "effectId": "4AC8C538"
+    },
+    "native_4b1e36c5": {
+      "label": "白色烟团序列〔贴图推定〕 · 4B1E36C5",
+      "effectId": "4B1E36C5"
+    },
+    "native_4b54aedd": {
+      "label": "分布模型（待辨认） · 4B54AEDD",
+      "effectId": "4B54AEDD"
+    },
+    "native_4b748e83": {
+      "label": "橙色奔跑人物图标〔贴图推定〕 · 4B748E83",
+      "effectId": "4B748E83"
+    },
+    "native_4b8899d5": {
+      "label": "蓝色圆点图钉图标＋白色Omega图标〔贴图推定〕 · 4B8899D5",
+      "effectId": "4B8899D5"
+    },
+    "native_4b8f667e": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · 4B8F667E",
+      "effectId": "4B8F667E"
+    },
+    "native_4b904006": {
+      "label": "灰色烟团序列＋灰色碎石序列〔贴图推定〕 · 4B904006",
+      "effectId": "4B904006"
+    },
+    "native_4b9c92fb": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · 4B9C92FB",
+      "effectId": "4B9C92FB"
+    },
+    "native_4bc316cf": {
+      "label": "全像廣告冠樓｜锥形灯束＋Fancy赌场招牌图案〔贴图推定〕 · 4BC316CF",
+      "effectId": "4BC316CF"
+    },
+    "native_4bcb95b8": {
+      "label": "白色学士帽图标〔贴图推定〕 · 4BCB95B8",
+      "effectId": "4BCB95B8"
+    },
+    "native_4bcb95b9": {
+      "label": "白色学士帽图标〔贴图推定〕 · 4BCB95B9",
+      "effectId": "4BCB95B9"
+    },
+    "native_4bedbb63": {
+      "label": "橙色金钱图标〔贴图推定〕 · 4BEDBB63",
+      "effectId": "4BEDBB63"
+    },
+    "native_4bfa8013": {
+      "label": "白色纯色片〔贴图推定〕 · 4BFA8013",
+      "effectId": "4BFA8013"
+    },
+    "native_4c21e431": {
+      "label": "笔刷·区域·tutorialisland·石油 · 4C21E431",
+      "effectId": "4C21E431"
+    },
+    "native_4c5d671f": {
+      "label": "笔刷·区域·confluence·煤炭 · 4C5D671F",
+      "effectId": "4C5D671F"
+    },
+    "native_4c6ea46b": {
+      "label": "白色柔光点〔贴图推定〕 · 4C6EA46B",
+      "effectId": "4C6EA46B"
+    },
+    "native_4cb0352b": {
+      "label": "千禧年廣場(§§§)｜锥形灯束〔贴图推定〕 · 4CB0352B",
+      "effectId": "4CB0352B"
+    },
+    "native_4cc8d91a": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 4CC8D91A",
+      "effectId": "4CC8D91A"
+    },
+    "native_4cd57f95": {
+      "label": "蓝色水滴图钉图标＋白色闪电图标〔贴图推定〕 · 4CD57F95",
+      "effectId": "4CD57F95"
+    },
+    "native_4cdf50f1": {
+      "label": "笔刷·区域·flocksriver·地形 · 4CDF50F1",
+      "effectId": "4CDF50F1"
+    },
+    "native_4ced418b": {
+      "label": "白色碎石序列＋白色柔光点〔贴图推定〕 · 4CED418B",
+      "effectId": "4CED418B"
+    },
+    "native_4d38dece": {
+      "label": "白色纯色片〔贴图推定〕 · 4D38DECE",
+      "effectId": "4D38DECE"
+    },
+    "native_4d98c606": {
+      "label": "灰白烟云〔贴图推定〕 · 4D98C606",
+      "effectId": "4D98C606"
+    },
+    "native_4da90b66": {
+      "label": "白色柔光点〔贴图推定〕 · 4DA90B66",
+      "effectId": "4DA90B66"
+    },
+    "native_4e3c207e": {
+      "label": "声音（待辨认） · 4E3C207E",
+      "effectId": "4E3C207E"
+    },
+    "native_4e4db08d": {
+      "label": "赌场扑克牌与骰子图标＋白色纯色片〔贴图推定〕 · 4E4DB08D",
+      "effectId": "4E4DB08D"
+    },
+    "native_4e4f63eb": {
+      "label": "蓝色电弧〔贴图推定〕 · 4E4F63EB",
+      "effectId": "4E4F63EB"
+    },
+    "native_4e5ccad2": {
+      "label": "蓝色水滴图钉图标＋白色钢梁图标〔贴图推定〕 · 4E5CCAD2",
+      "effectId": "4E5CCAD2"
+    },
+    "native_4ea4e0b2": {
+      "label": "垃圾粉碎器｜白色烟团序列〔贴图推定〕 · 4EA4E0B2",
+      "effectId": "4EA4E0B2"
+    },
+    "native_4ef3c26c": {
+      "label": "宗教場所：教堂｜彩色玻璃窗〔贴图推定〕 · 4EF3C26C",
+      "effectId": "4EF3C26C"
+    },
+    "native_4efdee71": {
+      "label": "灯光＋外部组件（待辨认） · 4EFDEE71",
+      "effectId": "4EFDEE71"
+    },
+    "native_4f176af6": {
+      "label": "白色细圆环〔贴图推定〕 · 4F176AF6",
+      "effectId": "4F176AF6"
+    },
+    "native_4f1f48fe": {
+      "label": "白色烟团序列〔贴图推定〕 · 4F1F48FE",
+      "effectId": "4F1F48FE"
+    },
+    "native_4f828107": {
+      "label": "灯光＋外部组件（待辨认） · 4F828107",
+      "effectId": "4F828107"
+    },
+    "native_4f8f04c3": {
+      "label": "声音（待辨认） · 4F8F04C3",
+      "effectId": "4F8F04C3"
+    },
+    "native_4fcf298d": {
+      "label": "分布模型（待辨认） · 4FCF298D",
+      "effectId": "4FCF298D"
+    },
+    "native_505e583a": {
+      "label": "石油钻探基地｜橙色火焰序列〔贴图推定〕 · 505E583A",
+      "effectId": "505E583A"
+    },
+    "native_509c4c07": {
+      "label": "笔刷·区域·gallia·土壤 · 509C4C07",
+      "effectId": "509C4C07"
+    },
+    "native_50bc2965": {
+      "label": "太阳能基地伟大工程｜白色烟团序列〔贴图推定〕 · 50BC2965",
+      "effectId": "50BC2965"
+    },
+    "native_50ffb56f": {
+      "label": "外部组件（待辨认） · 50FFB56F",
+      "effectId": "50FFB56F"
+    },
+    "native_51038c3c": {
+      "label": "白色细圆环〔贴图推定〕 · 51038C3C",
+      "effectId": "51038C3C"
+    },
+    "native_5112c9d5": {
+      "label": "白色纯色片＋白色柔光点〔贴图推定〕 · 5112C9D5",
+      "effectId": "5112C9D5"
+    },
+    "native_5121ec59": {
+      "label": "笔刷·区域·tutorialisland·矿石 · 5121EC59",
+      "effectId": "5121EC59"
+    },
+    "native_5131e452": {
+      "label": "白色烟团序列〔贴图推定〕 · 5131E452",
+      "effectId": "5131E452"
+    },
+    "native_514f2de1": {
+      "label": "白色烟团序列〔贴图推定〕 · 514F2DE1",
+      "effectId": "514F2DE1"
+    },
+    "native_515d48d4": {
+      "label": "白色烟团序列〔贴图推定〕 · 515D48D4",
+      "effectId": "515D48D4"
+    },
+    "native_51a12c95": {
+      "label": "红色车辆警报图案〔贴图推定〕 · 51A12C95",
+      "effectId": "51A12C95"
+    },
+    "native_51c4517d": {
+      "label": "生态建筑伟大工程｜白色烟团序列〔贴图推定〕 · 51C4517D",
+      "effectId": "51C4517D"
+    },
+    "native_51df51b5": {
+      "label": "偏蓝调色·粒子发射（待辨认） · 51DF51B5",
+      "effectId": "51DF51B5"
+    },
+    "native_520608e4": {
+      "label": "笔刷·区域·horizon·土壤 · 520608E4",
+      "effectId": "520608E4"
+    },
+    "native_524bdf1a": {
+      "label": "赌场扑克牌与骰子图标＋白色纯色片〔贴图推定〕 · 524BDF1A",
+      "effectId": "524BDF1A"
+    },
+    "native_52772e59": {
+      "label": "辦公室樓層（中科技）｜白色烟团序列〔贴图推定〕 · 52772E59",
+      "effectId": "52772E59"
+    },
+    "native_531b3bf4": {
+      "label": "蓝色圆头标杆图标〔贴图推定〕 · 531B3BF4",
+      "effectId": "531B3BF4"
+    },
+    "native_538e3b82": {
+      "label": "笔刷·区域·dormant·地形 · 538E3B82",
+      "effectId": "538E3B82"
+    },
+    "native_542a6f83": {
+      "label": "白色柔光点〔贴图推定〕 · 542A6F83",
+      "effectId": "542A6F83"
+    },
+    "native_5480ae86": {
+      "label": "笔刷·区域·coastlinebasin·水域 · 5480AE86",
+      "effectId": "5480AE86"
+    },
+    "native_54b912dc": {
+      "label": "灰色烟尘序列＋彩色小碎片图集〔贴图推定〕 · 54B912DC",
+      "effectId": "54B912DC"
+    },
+    "native_556797a8": {
+      "label": "分層公園冠樓｜分布模型（待辨认）〔来源〕 · 556797A8",
+      "effectId": "556797A8"
+    },
+    "native_55851b24": {
+      "label": "生态建筑伟大工程｜白色烟团序列〔贴图推定〕 · 55851B24",
+      "effectId": "55851B24"
+    },
+    "native_559c14e8": {
+      "label": "採礦部門｜白色烟团序列〔贴图推定〕 · 559C14E8",
+      "effectId": "559C14E8"
+    },
+    "native_55af5d16": {
+      "label": "辦公室樓層（中科技）｜白色烟团序列〔贴图推定〕 · 55AF5D16",
+      "effectId": "55AF5D16"
+    },
+    "native_55af7b97": {
+      "label": "白色烟团序列〔贴图推定〕 · 55AF7B97",
+      "effectId": "55AF7B97"
+    },
+    "native_55e40bcb": {
+      "label": "基礎觀光冠樓｜锥形灯束〔贴图推定〕 · 55E40BCB",
+      "effectId": "55E40BCB"
+    },
+    "native_55ea0e49": {
+      "label": "笔刷·区域·newdenmont·矿石 · 55EA0E49",
+      "effectId": "55EA0E49"
+    },
+    "native_56282fa3": {
+      "label": "暖色星芒光晕〔贴图推定〕 · 56282FA3",
+      "effectId": "56282FA3"
+    },
+    "native_5691157a": {
+      "label": "抽油机｜暖色星芒光晕〔贴图推定〕 · 5691157A",
+      "effectId": "5691157A"
+    },
+    "native_56b77c52": {
+      "label": "道路升级 · 56B77C52",
+      "effectId": "56B77C52"
+    },
+    "native_56b9c66d": {
+      "label": "蓝色圆点图钉图标＋白色公交图标〔贴图推定〕 · 56B9C66D",
+      "effectId": "56B9C66D"
+    },
+    "native_56d2db7d": {
+      "label": "小型机场｜白色柔光点〔贴图推定〕 · 56D2DB7D",
+      "effectId": "56D2DB7D"
+    },
+    "native_5707583d": {
+      "label": "蓝色圆点图钉图标＋白色油桶图标〔贴图推定〕 · 5707583D",
+      "effectId": "5707583D"
+    },
+    "native_570ab7b5": {
+      "label": "红色气瓶图标〔贴图推定〕 · 570AB7B5",
+      "effectId": "570AB7B5"
+    },
+    "native_570e12d3": {
+      "label": "消防局｜暖色星芒光晕〔贴图推定〕 · 570E12D3",
+      "effectId": "570E12D3"
+    },
+    "native_576ac69a": {
+      "label": "嵌套组合（待辨认） · 576AC69A",
+      "effectId": "576AC69A"
+    },
+    "native_57e6b27a": {
+      "label": "白色烟团序列〔贴图推定〕 · 57E6B27A",
+      "effectId": "57E6B27A"
+    },
+    "native_57f66655": {
+      "label": "矿石开采基地｜灰色烟团序列＋灰色碎石序列〔贴图推定〕 · 57F66655",
+      "effectId": "57F66655"
+    },
+    "native_5815de34": {
+      "label": "赌场水果与数字图标＋Mojave赌场招牌图案〔贴图推定〕 · 5815DE34",
+      "effectId": "5815DE34"
+    },
+    "native_588b125f": {
+      "label": "发光圆环〔贴图推定〕 · 588B125F",
+      "effectId": "588B125F"
+    },
+    "native_5892f630": {
+      "label": "黄色油桶图标〔贴图推定〕 · 5892F630",
+      "effectId": "5892F630"
+    },
+    "native_58be946f": {
+      "label": "閃亮遊樂園｜锥形灯束〔贴图推定〕 · 58BE946F",
+      "effectId": "58BE946F"
+    },
+    "native_58c37396": {
+      "label": "獨目飛車冠樓｜白色法律符号图标〔贴图推定〕 · 58C37396",
+      "effectId": "58C37396"
+    },
+    "native_58eda8eb": {
+      "label": "蓝色水滴图钉图标＋蓝色停车图标〔贴图推定〕 · 58EDA8EB",
+      "effectId": "58EDA8EB"
+    },
+    "native_59481463": {
+      "label": "森林数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 59481463",
+      "effectId": "59481463"
+    },
+    "native_59c74715": {
+      "label": "镜头震动（待辨认） · 59C74715",
+      "effectId": "59C74715"
+    },
+    "native_59dd34fb": {
+      "label": "外部组件（待辨认） · 59DD34FB",
+      "effectId": "59DD34FB"
+    },
+    "native_59dd34fc": {
+      "label": "外部组件（待辨认） · 59DD34FC",
+      "effectId": "59DD34FC"
+    },
+    "native_59dd34fd": {
+      "label": "外部组件（待辨认） · 59DD34FD",
+      "effectId": "59DD34FD"
+    },
+    "native_59dd34fe": {
+      "label": "外部组件（待辨认） · 59DD34FE",
+      "effectId": "59DD34FE"
+    },
+    "native_59f0367d": {
+      "label": "白色烟团序列＋红砖碎块序列〔贴图推定〕 · 59F0367D",
+      "effectId": "59F0367D"
+    },
+    "native_5a26c273": {
+      "label": "灰色烟尘序列＋棕色碎屑序列〔贴图推定〕 · 5A26C273",
+      "effectId": "5A26C273"
+    },
+    "native_5a728c7c": {
+      "label": "偏红调色·粒子发射（待辨认） · 5A728C7C",
+      "effectId": "5A728C7C"
+    },
+    "native_5acdb2d6": {
+      "label": "白色烟雾团〔贴图推定〕 · 5ACDB2D6",
+      "effectId": "5ACDB2D6"
+    },
+    "native_5ace9d0e": {
+      "label": "白色放射光点〔贴图推定〕 · 5ACE9D0E",
+      "effectId": "5ACE9D0E"
+    },
+    "native_5aee2634": {
+      "label": "太空中心伟大工程｜模型实例（待辨认）〔来源〕 · 5AEE2634",
+      "effectId": "5AEE2634"
+    },
+    "native_5b3b7dae": {
+      "label": "白色小点序列＋白色柔光晕〔贴图推定〕 · 5B3B7DAE",
+      "effectId": "5B3B7DAE"
+    },
+    "native_5b4db6ed": {
+      "label": "石油数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 5B4DB6ED",
+      "effectId": "5B4DB6ED"
+    },
+    "native_5b5572e7": {
+      "label": "红砖碎块序列＋零散碎点〔贴图推定〕 · 5B5572E7",
+      "effectId": "5B5572E7"
+    },
+    "native_5bb8e733": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · 5BB8E733",
+      "effectId": "5BB8E733"
+    },
+    "native_5bcc090e": {
+      "label": "白色烟团序列〔贴图推定〕 · 5BCC090E",
+      "effectId": "5BCC090E"
+    },
+    "native_5bcd8343": {
+      "label": "白色柔光点〔贴图推定〕 · 5BCD8343",
+      "effectId": "5BCD8343"
+    },
+    "native_5bd47e58": {
+      "label": "白色星形图标〔贴图推定〕 · 5BD47E58",
+      "effectId": "5BD47E58"
+    },
+    "native_5be81e3f": {
+      "label": "白色柔光点〔贴图推定〕 · 5BE81E3F",
+      "effectId": "5BE81E3F"
+    },
+    "native_5c4fce4c": {
+      "label": "模型实例（待辨认） · 5C4FCE4C",
+      "effectId": "5C4FCE4C"
+    },
+    "native_5ccdc7bd": {
+      "label": "笔刷·区域·desolation·水域 · 5CCDC7BD",
+      "effectId": "5CCDC7BD"
+    },
+    "native_5cf9e315": {
+      "label": "红色矿车图标〔贴图推定〕 · 5CF9E315",
+      "effectId": "5CF9E315"
+    },
+    "native_5d3923c6": {
+      "label": "白色烟团序列〔贴图推定〕 · 5D3923C6",
+      "effectId": "5D3923C6"
+    },
+    "native_5d5dcf93": {
+      "label": "白色柔光点〔贴图推定〕 · 5D5DCF93",
+      "effectId": "5D5DCF93"
+    },
+    "native_5d70bb7c": {
+      "label": "垃圾杂物碎片图集〔贴图推定〕 · 5D70BB7C",
+      "effectId": "5D70BB7C"
+    },
+    "native_5d80a980": {
+      "label": "白色细圆环〔贴图推定〕 · 5D80A980",
+      "effectId": "5D80A980"
+    },
+    "native_5d8af898": {
+      "label": "白色纯色片〔贴图推定〕 · 5D8AF898",
+      "effectId": "5D8AF898"
+    },
+    "native_5d9c6df3": {
+      "label": "市长官邸客房｜白色烟团序列〔贴图推定〕 · 5D9C6DF3",
+      "effectId": "5D9C6DF3"
+    },
+    "native_5e2ee413": {
+      "label": "抽水泵浦站｜白色烟团序列〔贴图推定〕 · 5E2EE413",
+      "effectId": "5E2EE413"
+    },
+    "native_5e42dbb2": {
+      "label": "白色星形图标〔贴图推定〕 · 5E42DBB2",
+      "effectId": "5E42DBB2"
+    },
+    "native_5e9596fa": {
+      "label": "时序组件＋模型实例（待辨认） · 5E9596FA",
+      "effectId": "5E9596FA"
+    },
+    "native_5f50717e": {
+      "label": "蓝色水滴图钉图标＋白色Omega图标〔贴图推定〕 · 5F50717E",
+      "effectId": "5F50717E"
+    },
+    "native_5f66a36b": {
+      "label": "笔刷·区域·twincities·矿石 · 5F66A36B",
+      "effectId": "5F66A36B"
+    },
+    "native_5f6f02cc": {
+      "label": "白色烟团序列〔贴图推定〕 · 5F6F02CC",
+      "effectId": "5F6F02CC"
+    },
+    "native_5fb490ed": {
+      "label": "橙色火焰序列〔贴图推定〕 · 5FB490ED",
+      "effectId": "5FB490ED"
+    },
+    "native_5fcebc08": {
+      "label": "嵌套粒子＋声音＋光束（待辨认） · 5FCEBC08",
+      "effectId": "5FCEBC08"
+    },
+    "native_601d4ab7": {
+      "label": "融合反應爐樓層｜白色柔光点〔贴图推定〕 · 601D4AB7",
+      "effectId": "601D4AB7"
+    },
+    "native_60443d06": {
+      "label": "煤炭数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 60443D06",
+      "effectId": "60443D06"
+    },
+    "native_606cc25e": {
+      "label": "外部组件（待辨认） · 606CC25E",
+      "effectId": "606CC25E"
+    },
+    "native_6094f736": {
+      "label": "蓝色水滴图钉图标＋白色列车图标〔贴图推定〕 · 6094F736",
+      "effectId": "6094F736"
+    },
+    "native_6115967f": {
+      "label": "黄色学士帽图标〔贴图推定〕 · 6115967F",
+      "effectId": "6115967F"
+    },
+    "native_6137f268": {
+      "label": "進階加大煤礦豎井｜白色烟团序列〔贴图推定〕 · 6137F268",
+      "effectId": "6137F268"
+    },
+    "native_616a875b": {
+      "label": "笔刷·绝对下限 · 616A875B",
+      "effectId": "616A875B"
+    },
+    "native_618d7f4c": {
+      "label": "白色放射光环＋红白四叶光片〔贴图推定〕 · 618D7F4C",
+      "effectId": "618D7F4C"
+    },
+    "native_61cc4955": {
+      "label": "橙色火焰序列〔贴图推定〕 · 61CC4955",
+      "effectId": "61CC4955"
+    },
+    "native_626a20f4": {
+      "label": "Alpha测试格图案〔贴图推定〕 · 626A20F4",
+      "effectId": "626A20F4"
+    },
+    "native_627aa293": {
+      "label": "炼油厂｜灯光（待辨认）〔来源〕 · 627AA293",
+      "effectId": "627AA293"
+    },
+    "native_628d16f2": {
+      "label": "嵌套粒子＋声音＋灯光（待辨认） · 628D16F2",
+      "effectId": "628D16F2"
+    },
+    "native_62a787d2": {
+      "label": "红色生化警报图标〔贴图推定〕 · 62A787D2",
+      "effectId": "62A787D2"
+    },
+    "native_63284990": {
+      "label": "白色柔光点＋灰色喷流序列〔贴图推定〕 · 63284990",
+      "effectId": "63284990"
+    },
+    "native_639e47fc": {
+      "label": "橙色门图标〔贴图推定〕 · 639E47FC",
+      "effectId": "639E47FC"
+    },
+    "native_63d3b730": {
+      "label": "核反應爐樓層｜白色烟团序列〔贴图推定〕 · 63D3B730",
+      "effectId": "63D3B730"
+    },
+    "native_63dff94d": {
+      "label": "白色波动光丝＋蓝色旋涡〔贴图推定〕 · 63DFF94D",
+      "effectId": "63DFF94D"
+    },
+    "native_641dced8": {
+      "label": "紫色伤员图标〔贴图推定〕 · 641DCED8",
+      "effectId": "641DCED8"
+    },
+    "native_64670590": {
+      "label": "蓝色水滴图钉图标＋白色回收图标〔贴图推定〕 · 64670590",
+      "effectId": "64670590"
+    },
+    "native_6482a686": {
+      "label": "笔刷·降低 · 6482A686",
+      "effectId": "6482A686"
+    },
+    "native_648b5874": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · 648B5874",
+      "effectId": "648B5874"
+    },
+    "native_64a0b176": {
+      "label": "白色柔光点＋灰色喷流序列〔贴图推定〕 · 64A0B176",
+      "effectId": "64A0B176"
+    },
+    "native_64e8fb24": {
+      "label": "蓝色水滴图钉图标＋白色有轨车图标〔贴图推定〕 · 64E8FB24",
+      "effectId": "64E8FB24"
+    },
+    "native_650df3a5": {
+      "label": "黄色矿车图标〔贴图推定〕 · 650DF3A5",
+      "effectId": "650DF3A5"
+    },
+    "native_656de73f": {
+      "label": "偏红调色·粒子发射（待辨认） · 656DE73F",
+      "effectId": "656DE73F"
+    },
+    "native_65ac91cd": {
+      "label": "蓝色水滴图钉图标＋白色矿石图标〔贴图推定〕 · 65AC91CD",
+      "effectId": "65AC91CD"
+    },
+    "native_65bd284c": {
+      "label": "白色波动光丝〔贴图推定〕 · 65BD284C",
+      "effectId": "65BD284C"
+    },
+    "native_65ca39db": {
+      "label": "白色烟团序列〔贴图推定〕 · 65CA39DB",
+      "effectId": "65CA39DB"
+    },
+    "native_660bc390": {
+      "label": "白色烟团序列＋白色锥形光束〔贴图推定〕 · 660BC390",
+      "effectId": "660BC390"
+    },
+    "native_661fa9d5": {
+      "label": "煤炭数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 661FA9D5",
+      "effectId": "661FA9D5"
+    },
+    "native_66663605": {
+      "label": "笔刷·区域·edgewaterbay·土壤 · 66663605",
+      "effectId": "66663605"
+    },
+    "native_66930c7c": {
+      "label": "垃圾焚烧炉｜灯光（待辨认）〔来源〕 · 66930C7C",
+      "effectId": "66930C7C"
+    },
+    "native_66f01ad0": {
+      "label": "笔刷·区域·cliffsidevista·吸引力 · 66F01AD0",
+      "effectId": "66F01AD0"
+    },
+    "native_670b300a": {
+      "label": "蓝色圆点图钉图标＋白色M字圆标图标〔贴图推定〕 · 670B300A",
+      "effectId": "670B300A"
+    },
+    "native_671f8683": {
+      "label": "外部组件（待辨认） · 671F8683",
+      "effectId": "671F8683"
+    },
+    "native_67ab7dd2": {
+      "label": "笔刷·区域·testquadrant3·地形 · 67AB7DD2",
+      "effectId": "67AB7DD2"
+    },
+    "native_682288a3": {
+      "label": "蓝色水滴图钉图标＋白色Omega图标〔贴图推定〕 · 682288A3",
+      "effectId": "682288A3"
+    },
+    "native_68515d7a": {
+      "label": "电子工厂｜白色烟团序列〔贴图推定〕 · 68515D7A",
+      "effectId": "68515D7A"
+    },
+    "native_686984c9": {
+      "label": "笔刷·区域·sawyer·石油 · 686984C9",
+      "effectId": "686984C9"
+    },
+    "native_68848c85": {
+      "label": "暖色星芒光晕〔贴图推定〕 · 68848C85",
+      "effectId": "68848C85"
+    },
+    "native_68d93902": {
+      "label": "嵌套组合（待辨认） · 68D93902",
+      "effectId": "68D93902"
+    },
+    "native_69069fe0": {
+      "label": "蓝色水滴图钉图标＋白色矿石图标〔贴图推定〕 · 69069FE0",
+      "effectId": "69069FE0"
+    },
+    "native_69524987": {
+      "label": "发光圆环〔贴图推定〕 · 69524987",
+      "effectId": "69524987"
+    },
+    "native_696a93b5": {
+      "label": "笔刷·绝对上限 · 696A93B5",
+      "effectId": "696A93B5"
+    },
+    "native_69884cbc": {
+      "label": "橙色奔跑人物图标〔贴图推定〕 · 69884CBC",
+      "effectId": "69884CBC"
+    },
+    "native_69d835b6": {
+      "label": "红色火焰警报图标〔贴图推定〕 · 69D835B6",
+      "effectId": "69D835B6"
+    },
+    "native_6a023407": {
+      "label": "白色十字星芒＋白色柔边圆环〔贴图推定〕 · 6A023407",
+      "effectId": "6A023407"
+    },
+    "native_6a23f37b": {
+      "label": "發射生態建築｜白色烟团序列＋白色柔光点〔贴图推定〕 · 6A23F37B",
+      "effectId": "6A23F37B"
+    },
+    "native_6a8cf97e": {
+      "label": "笔刷·区域·horizon·森林 · 6A8CF97E",
+      "effectId": "6A8CF97E"
+    },
+    "native_6aa2b3fc": {
+      "label": "白色柔光点＋白色纯色片〔贴图推定〕 · 6AA2B3FC",
+      "effectId": "6AA2B3FC"
+    },
+    "native_6ad8bbc5": {
+      "label": "白色十字星芒＋白色弯月光片〔贴图推定〕 · 6AD8BBC5",
+      "effectId": "6AD8BBC5"
+    },
+    "native_6b0dde7a": {
+      "label": "蓝色水滴图钉图标＋白色眼睛图标〔贴图推定〕 · 6B0DDE7A",
+      "effectId": "6B0DDE7A"
+    },
+    "native_6b1f3eab": {
+      "label": "笔刷·区域·cliffsidevista·高·吸引力 · 6B1F3EAB",
+      "effectId": "6B1F3EAB"
+    },
+    "native_6c144983": {
+      "label": "笔刷·区域·edgewaterbay·地形 · 6C144983",
+      "effectId": "6C144983"
+    },
+    "native_6c2b9f05": {
+      "label": "发光圆环＋白色柔光点〔贴图推定〕 · 6C2B9F05",
+      "effectId": "6C2B9F05"
+    },
+    "native_6c410184": {
+      "label": "白色柔光点＋橙色火焰序列〔贴图推定〕 · 6C410184",
+      "effectId": "6C410184"
+    },
+    "native_6cb6caa3": {
+      "label": "白色烟团序列〔贴图推定〕 · 6CB6CAA3",
+      "effectId": "6CB6CAA3"
+    },
+    "native_6cc6e8ab": {
+      "label": "笔刷·区域·desolation·森林 · 6CC6E8AB",
+      "effectId": "6CC6E8AB"
+    },
+    "native_6d75a412": {
+      "label": "时序组件（待辨认） · 6D75A412",
+      "effectId": "6D75A412"
+    },
+    "native_6d9050fe": {
+      "label": "笔刷·区域·testquadrant1·水域 · 6D9050FE",
+      "effectId": "6D9050FE"
+    },
+    "native_6da6a55d": {
+      "label": "分布模型（待辨认） · 6DA6A55D",
+      "effectId": "6DA6A55D"
+    },
+    "native_6dc79555": {
+      "label": "黄色Omega图标〔贴图推定〕 · 6DC79555",
+      "effectId": "6DC79555"
+    },
+    "native_6de87b85": {
+      "label": "彩色电弧＋白色柔光点〔贴图推定〕 · 6DE87B85",
+      "effectId": "6DE87B85"
+    },
+    "native_6e30f1ee": {
+      "label": "笔刷·偏置 · 6E30F1EE",
+      "effectId": "6E30F1EE"
+    },
+    "native_6e48167a": {
+      "label": "蓝色水滴图钉图标＋白色电视图标〔贴图推定〕 · 6E48167A",
+      "effectId": "6E48167A"
+    },
+    "native_6e4b5f6f": {
+      "label": "垃圾场｜白色烟团序列〔贴图推定〕 · 6E4B5F6F",
+      "effectId": "6E4B5F6F"
+    },
+    "native_6f1ddd75": {
+      "label": "白色烟团序列＋白色柔光点〔贴图推定〕 · 6F1DDD75",
+      "effectId": "6F1DDD75"
+    },
+    "native_6f3168d8": {
+      "label": "黄色偷窃图标〔贴图推定〕 · 6F3168D8",
+      "effectId": "6F3168D8"
+    },
+    "native_6f3805e0": {
+      "label": "笔刷·区域·gallia·吸引力 · 6F3805E0",
+      "effectId": "6F3805E0"
+    },
+    "native_6f72772c": {
+      "label": "蓝色圆点图钉图标＋白色矿石图标〔贴图推定〕 · 6F72772C",
+      "effectId": "6F72772C"
+    },
+    "native_6fedaa78": {
+      "label": "诊所招牌图案〔贴图推定〕 · 6FEDAA78",
+      "effectId": "6FEDAA78"
+    },
+    "native_702266bb": {
+      "label": "橙色火焰序列〔贴图推定〕 · 702266BB",
+      "effectId": "702266BB"
+    },
+    "native_704a9f1a": {
+      "label": "橙色火焰序列〔贴图推定〕 · 704A9F1A",
+      "effectId": "704A9F1A"
+    },
+    "native_70516763": {
+      "label": "笔刷·范围平整 · 70516763",
+      "effectId": "70516763"
+    },
+    "native_7061946f": {
+      "label": "红色花瓣图集〔贴图推定〕 · 7061946F",
+      "effectId": "7061946F"
+    },
+    "native_707636f0": {
+      "label": "分布模型（待辨认） · 707636F0",
+      "effectId": "707636F0"
+    },
+    "native_708d6545": {
+      "label": "外部组件（待辨认） · 708D6545",
+      "effectId": "708D6545"
+    },
+    "native_70a80b15": {
+      "label": "笔刷·区域·caspianlake·水域 · 70A80B15",
+      "effectId": "70A80B15"
+    },
+    "native_70d002c4": {
+      "label": "笔刷·区域·lakeshoreties·土壤 · 70D002C4",
+      "effectId": "70D002C4"
+    },
+    "native_70d74f66": {
+      "label": "黄色行李人物图标〔贴图推定〕 · 70D74F66",
+      "effectId": "70D74F66"
+    },
+    "native_70ea38c1": {
+      "label": "笔刷·区域·newdenmont·石油 · 70EA38C1",
+      "effectId": "70EA38C1"
+    },
+    "native_70f8a738": {
+      "label": "笔刷·区域·oldtutorial·地形 · 70F8A738",
+      "effectId": "70F8A738"
+    },
+    "native_70fcd0bf": {
+      "label": "大腳雲霄飛車｜模型实例（待辨认）〔来源〕 · 70FCD0BF",
+      "effectId": "70FCD0BF"
+    },
+    "native_7166585a": {
+      "label": "研究中心｜发光圆环＋蓝色几何徽标图案〔贴图推定〕 · 7166585A",
+      "effectId": "7166585A"
+    },
+    "native_719cdae7": {
+      "label": "高级煤矿｜白色烟团序列〔贴图推定〕 · 719CDAE7",
+      "effectId": "719CDAE7"
+    },
+    "native_71a150a0": {
+      "label": "白色细圆环〔贴图推定〕 · 71A150A0",
+      "effectId": "71A150A0"
+    },
+    "native_71bb801f": {
+      "label": "笔刷·区域·flocksriver·水域 · 71BB801F",
+      "effectId": "71BB801F"
+    },
+    "native_72876f93": {
+      "label": "白色闪电图标〔贴图推定〕 · 72876F93",
+      "effectId": "72876F93"
+    },
+    "native_72981776": {
+      "label": "白色十字星芒＋白色柔边圆环〔贴图推定〕 · 72981776",
+      "effectId": "72981776"
+    },
+    "native_72acb08d": {
+      "label": "笔刷·区域·caspianlake·土壤 · 72ACB08D",
+      "effectId": "72ACB08D"
+    },
+    "native_72e19ba0": {
+      "label": "蓝色圆头标杆图标〔贴图推定〕 · 72E19BA0",
+      "effectId": "72E19BA0"
+    },
+    "native_72e8dea0": {
+      "label": "模型实例＋外部组件（待辨认） · 72E8DEA0",
+      "effectId": "72E8DEA0"
+    },
+    "native_7385679b": {
+      "label": "白模测试 · 7385679B",
+      "effectId": "7385679B"
+    },
+    "native_7388d8a2": {
+      "label": "笔刷·区域·capetrinity·吸引力 · 7388D8A2",
+      "effectId": "7388D8A2"
+    },
+    "native_738b9f59": {
+      "label": "外部组件（待辨认） · 738B9F59",
+      "effectId": "738B9F59"
+    },
+    "native_73a6bb99": {
+      "label": "黑白同心环图案＋白色扇形光束〔贴图推定〕 · 73A6BB99",
+      "effectId": "73A6BB99"
+    },
+    "native_73f7a1d1": {
+      "label": "石油钻探基地｜白色烟团序列〔贴图推定〕 · 73F7A1D1",
+      "effectId": "73F7A1D1"
+    },
+    "native_7434724a": {
+      "label": "外部组件（待辨认） · 7434724A",
+      "effectId": "7434724A"
+    },
+    "native_7496b3d5": {
+      "label": "分布模型（待辨认） · 7496B3D5",
+      "effectId": "7496B3D5"
+    },
+    "native_749c1228": {
+      "label": "红色芯片图标〔贴图推定〕 · 749C1228",
+      "effectId": "749C1228"
+    },
+    "native_74a0cbcd": {
+      "label": "白色纯色片〔贴图推定〕 · 74A0CBCD",
+      "effectId": "74A0CBCD"
+    },
+    "native_74bc3120": {
+      "label": "侵蚀·热力 · 74BC3120",
+      "effectId": "74BC3120"
+    },
+    "native_74e04e9e": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 74E04E9E",
+      "effectId": "74E04E9E"
+    },
+    "native_74e0ae90": {
+      "label": "碰碰車｜模型实例（待辨认）〔来源〕 · 74E0AE90",
+      "effectId": "74E0AE90"
+    },
+    "native_75414e29": {
+      "label": "模擬城市推出日公園(§§§)｜白色柔光点〔贴图推定〕 · 75414E29",
+      "effectId": "75414E29"
+    },
+    "native_755d3ffb": {
+      "label": "开心表情图标〔贴图推定〕 · 755D3FFB",
+      "effectId": "755D3FFB"
+    },
+    "native_755e44fd": {
+      "label": "笔刷·区域·cliffsidevista·地形 · 755E44FD",
+      "effectId": "755E44FD"
+    },
+    "native_7608f51e": {
+      "label": "白色爆散烟雾图集＋白色喷流〔贴图推定〕 · 7608F51E",
+      "effectId": "7608F51E"
+    },
+    "native_76128db8": {
+      "label": "白色烟团序列〔贴图推定〕 · 76128DB8",
+      "effectId": "76128DB8"
+    },
+    "native_7667d8f5": {
+      "label": "地形笔刷组｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 7667D8F5",
+      "effectId": "7667D8F5"
+    },
+    "native_76996567": {
+      "label": "機器坦克｜锥形灯束〔贴图推定〕 · 76996567",
+      "effectId": "76996567"
+    },
+    "native_76e6e474": {
+      "label": "笔刷·区域·oldtutorial·土壤 · 76E6E474",
+      "effectId": "76E6E474"
+    },
+    "native_772efaf2": {
+      "label": "发光圆环＋白色柔光点〔贴图推定〕 · 772EFAF2",
+      "effectId": "772EFAF2"
+    },
+    "native_773e75bd": {
+      "label": "灯光＋外部组件（待辨认） · 773E75BD",
+      "effectId": "773E75BD"
+    },
+    "native_7760fd32": {
+      "label": "笔刷·区域·newdenmont·地形 · 7760FD32",
+      "effectId": "7760FD32"
+    },
+    "native_776f5a33": {
+      "label": "白色柔光点＋白色烟团序列〔贴图推定〕 · 776F5A33",
+      "effectId": "776F5A33"
+    },
+    "native_77916a9f": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 77916A9F",
+      "effectId": "77916A9F"
+    },
+    "native_780f7a19": {
+      "label": "吸引力数据笔刷二｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 780F7A19",
+      "effectId": "780F7A19"
+    },
+    "native_78356877": {
+      "label": "蓝色圆点图钉图标＋白色闪电图标〔贴图推定〕 · 78356877",
+      "effectId": "78356877"
+    },
+    "native_783ccdd2": {
+      "label": "笔刷·区域·riverland·森林 · 783CCDD2",
+      "effectId": "783CCDD2"
+    },
+    "native_78454f2f": {
+      "label": "蓝色圆点图钉图标＋白色树木图标〔贴图推定〕 · 78454F2F",
+      "effectId": "78454F2F"
+    },
+    "native_78593de7": {
+      "label": "橙色垃圾桶图标〔贴图推定〕 · 78593DE7",
+      "effectId": "78593DE7"
+    },
+    "native_78b2aff2": {
+      "label": "悲伤表情图标〔贴图推定〕 · 78B2AFF2",
+      "effectId": "78B2AFF2"
+    },
+    "native_7941857c": {
+      "label": "外部组件（待辨认） · 7941857C",
+      "effectId": "7941857C"
+    },
+    "native_7984cd9a": {
+      "label": "红砖碎块序列〔贴图推定〕 · 7984CD9A",
+      "effectId": "7984CD9A"
+    },
+    "native_7a192e92": {
+      "label": "黄色钢梁图标〔贴图推定〕 · 7A192E92",
+      "effectId": "7A192E92"
+    },
+    "native_7a4cf9e2": {
+      "label": "蓝色圆点图钉图标＋白色政府建筑图标〔贴图推定〕 · 7A4CF9E2",
+      "effectId": "7A4CF9E2"
+    },
+    "native_7a8f9390": {
+      "label": "蓝色水滴图钉图标＋白色医疗图标〔贴图推定〕 · 7A8F9390",
+      "effectId": "7A8F9390"
+    },
+    "native_7aa4220e": {
+      "label": "白色碎石序列＋白色柔光点〔贴图推定〕 · 7AA4220E",
+      "effectId": "7AA4220E"
+    },
+    "native_7b36f78e": {
+      "label": "黄色涂鸦图标〔贴图推定〕 · 7B36F78E",
+      "effectId": "7B36F78E"
+    },
+    "native_7b553bf0": {
+      "label": "外部组件（待辨认） · 7B553BF0",
+      "effectId": "7B553BF0"
+    },
+    "native_7b553bf1": {
+      "label": "外部组件（待辨认） · 7B553BF1",
+      "effectId": "7B553BF1"
+    },
+    "native_7b553bf2": {
+      "label": "外部组件（待辨认） · 7B553BF2",
+      "effectId": "7B553BF2"
+    },
+    "native_7b553bf7": {
+      "label": "外部组件（待辨认） · 7B553BF7",
+      "effectId": "7B553BF7"
+    },
+    "native_7b6d25bf": {
+      "label": "蓝色圆点图钉图标＋白色相机图标〔贴图推定〕 · 7B6D25BF",
+      "effectId": "7B6D25BF"
+    },
+    "native_7b6e0f39": {
+      "label": "白色横纹＋Maxis标志图案〔贴图推定〕 · 7B6E0F39",
+      "effectId": "7B6E0F39"
+    },
+    "native_7ba04d44": {
+      "label": "黄色房屋关闭图标〔贴图推定〕 · 7BA04D44",
+      "effectId": "7BA04D44"
+    },
+    "native_7bd0ad93": {
+      "label": "蓝色水滴图钉图标＋白色家庭图标〔贴图推定〕 · 7BD0AD93",
+      "effectId": "7BD0AD93"
+    },
+    "native_7beb1c3a": {
+      "label": "笔刷·区域·horizon·水域 · 7BEB1C3A",
+      "effectId": "7BEB1C3A"
+    },
+    "native_7c15ce70": {
+      "label": "蓝色水滴图钉图标＋白色M字圆标图标〔贴图推定〕 · 7C15CE70",
+      "effectId": "7C15CE70"
+    },
+    "native_7c7a2352": {
+      "label": "模擬城市推出日公園(§§§)｜橙色火焰序列＋灰色烟团序列〔贴图推定〕 · 7C7A2352",
+      "effectId": "7C7A2352"
+    },
+    "native_7c846951": {
+      "label": "黄色Omega图标〔贴图推定〕 · 7C846951",
+      "effectId": "7C846951"
+    },
+    "native_7c94abfa": {
+      "label": "白色锥形光束〔贴图推定〕 · 7C94ABFA",
+      "effectId": "7C94ABFA"
+    },
+    "native_7ca4199e": {
+      "label": "宗教場所：教堂｜彩色玻璃窗〔贴图推定〕 · 7CA4199E",
+      "effectId": "7CA4199E"
+    },
+    "native_7ca61c34": {
+      "label": "笔刷·区域·reflection·煤炭 · 7CA61C34",
+      "effectId": "7CA61C34"
+    },
+    "native_7d11d38c": {
+      "label": "笔刷·区域·SC·desolation·地形 · 7D11D38C",
+      "effectId": "7D11D38C"
+    },
+    "native_7d2b8b5a": {
+      "label": "全像廣告冠樓｜锥形灯束＋Future酒店招牌图案〔贴图推定〕 · 7D2B8B5A",
+      "effectId": "7D2B8B5A"
+    },
+    "native_7d38485d": {
+      "label": "太空中心伟大工程｜白色烟团序列〔贴图推定〕 · 7D38485D",
+      "effectId": "7D38485D"
+    },
+    "native_7d5a84ac": {
+      "label": "嵌套粒子＋外部组件（待辨认） · 7D5A84AC",
+      "effectId": "7D5A84AC"
+    },
+    "native_7d69a5d1": {
+      "label": "笔刷·区域·sawyer·矿石 · 7D69A5D1",
+      "effectId": "7D69A5D1"
+    },
+    "native_7d6b9231": {
+      "label": "时序组件（待辨认） · 7D6B9231",
+      "effectId": "7D6B9231"
+    },
+    "native_7d6b9232": {
+      "label": "时序组件（待辨认） · 7D6B9232",
+      "effectId": "7D6B9232"
+    },
+    "native_7d6b9233": {
+      "label": "时序组件（待辨认） · 7D6B9233",
+      "effectId": "7D6B9233"
+    },
+    "native_7d6b9234": {
+      "label": "时序组件（待辨认） · 7D6B9234",
+      "effectId": "7D6B9234"
+    },
+    "native_7d7ea475": {
+      "label": "笔刷·区域·caspianlake·煤炭 · 7D7EA475",
+      "effectId": "7D7EA475"
+    },
+    "native_7d808ab1": {
+      "label": "嵌套粒子＋声音＋飘带（待辨认） · 7D808AB1",
+      "effectId": "7D808AB1"
+    },
+    "native_7d8323f7": {
+      "label": "採礦部門｜彩色调色·粒子发射（待辨认） · 7D8323F7",
+      "effectId": "7D8323F7"
+    },
+    "native_7e0dedea": {
+      "label": "白色纯色片〔贴图推定〕 · 7E0DEDEA",
+      "effectId": "7E0DEDEA"
+    },
+    "native_7e21916f": {
+      "label": "碎点环〔贴图推定〕 · 7E21916F",
+      "effectId": "7E21916F"
+    },
+    "native_7e46c8b1": {
+      "label": "笔刷·区域·testquadrant2·水域 · 7E46C8B1",
+      "effectId": "7E46C8B1"
+    },
+    "native_7e8a5a07": {
+      "label": "白色柔光点＋灰色烟团序列〔贴图推定〕 · 7E8A5A07",
+      "effectId": "7E8A5A07"
+    },
+    "native_7ed25aaf": {
+      "label": "黄色气瓶图标〔贴图推定〕 · 7ED25AAF",
+      "effectId": "7ED25AAF"
+    },
+    "native_7f11e3eb": {
+      "label": "白色纯色片〔贴图推定〕 · 7F11E3EB",
+      "effectId": "7F11E3EB"
+    },
+    "native_7f317334": {
+      "label": "蓝色水滴图钉图标＋白色飞艇图标〔贴图推定〕 · 7F317334",
+      "effectId": "7F317334"
+    },
+    "native_7fe975ae": {
+      "label": "煤矿｜白色柔光点〔贴图推定〕 · 7FE975AE",
+      "effectId": "7FE975AE"
+    },
+    "native_8009f99e": {
+      "label": "白色纯色片〔贴图推定〕 · 8009F99E",
+      "effectId": "8009F99E"
+    },
+    "native_8012a856": {
+      "label": "笔刷·区域·reflection·森林 · 8012A856",
+      "effectId": "8012A856"
+    },
+    "native_8012cceb": {
+      "label": "蓝色水滴图钉图标＋白色公交图标〔贴图推定〕 · 8012CCEB",
+      "effectId": "8012CCEB"
+    },
+    "native_804d6be7": {
+      "label": "暖色星芒光晕〔贴图推定〕 · 804D6BE7",
+      "effectId": "804D6BE7"
+    },
+    "native_8052e5d6": {
+      "label": "燃煤发电厂｜灰色烟团序列＋灰白烟团序列〔贴图推定〕 · 8052E5D6",
+      "effectId": "8052E5D6"
+    },
+    "native_8190ed96": {
+      "label": "蓝色圆点图钉图标＋白色几何徽标图案〔贴图推定〕 · 8190ED96",
+      "effectId": "8190ED96"
+    },
+    "native_81d1c228": {
+      "label": "標準融合反應爐｜白色烟团序列＋竖向粒点序列〔贴图推定〕 · 81D1C228",
+      "effectId": "81D1C228"
+    },
+    "native_81f87e3d": {
+      "label": "红色矿车图标〔贴图推定〕 · 81F87E3D",
+      "effectId": "81F87E3D"
+    },
+    "native_821381d8": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · 821381D8",
+      "effectId": "821381D8"
+    },
+    "native_822d9930": {
+      "label": "模型实例（待辨认） · 822D9930",
+      "effectId": "822D9930"
+    },
+    "native_8250d1bd": {
+      "label": "现代工业厂房｜灰色烟团序列〔贴图推定〕 · 8250D1BD",
+      "effectId": "8250D1BD"
+    },
+    "native_829c6fb9": {
+      "label": "黄色学士帽图标〔贴图推定〕 · 829C6FB9",
+      "effectId": "829C6FB9"
+    },
+    "native_82ffb0c7": {
+      "label": "白色钞票图标〔贴图推定〕 · 82FFB0C7",
+      "effectId": "82FFB0C7"
+    },
+    "native_83307418": {
+      "label": "飛天鞦韆｜模型实例（待辨认）〔来源〕 · 83307418",
+      "effectId": "83307418"
+    },
+    "native_836d998f": {
+      "label": "灰白烟云＋白色小点序列〔贴图推定〕 · 836D998F",
+      "effectId": "836D998F"
+    },
+    "native_8373f763": {
+      "label": "蓝色圆点图钉图标＋白色铁路交叉图标〔贴图推定〕 · 8373F763",
+      "effectId": "8373F763"
+    },
+    "native_8395ddb3": {
+      "label": "笔刷·区域·SC·desolation·石油 · 8395DDB3",
+      "effectId": "8395DDB3"
+    },
+    "native_83bb7ec8": {
+      "label": "中性调色·粒子发射（待辨认） · 83BB7EC8",
+      "effectId": "83BB7EC8"
+    },
+    "native_83d28d10": {
+      "label": "笔刷·区域·SC·desolation·煤炭 · 83D28D10",
+      "effectId": "83D28D10"
+    },
+    "native_844cdd11": {
+      "label": "红色火焰警报图标〔贴图推定〕 · 844CDD11",
+      "effectId": "844CDD11"
+    },
+    "native_8458f34b": {
+      "label": "暖色星芒光晕〔贴图推定〕 · 8458F34B",
+      "effectId": "8458F34B"
+    },
+    "native_847e0b97": {
+      "label": "法治無人機機棚｜暖色星芒光晕〔贴图推定〕 · 847E0B97",
+      "effectId": "847E0B97"
+    },
+    "native_848ac6e6": {
+      "label": "开心表情图标〔贴图推定〕 · 848AC6E6",
+      "effectId": "848AC6E6"
+    },
+    "native_84a57761": {
+      "label": "嵌套粒子＋外部组件（待辨认） · 84A57761",
+      "effectId": "84A57761"
+    },
+    "native_8506cefe": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · 8506CEFE",
+      "effectId": "8506CEFE"
+    },
+    "native_85096fda": {
+      "label": "第一代太陽能冠樓｜白色烟团序列〔贴图推定〕 · 85096FDA",
+      "effectId": "85096FDA"
+    },
+    "native_85bc911f": {
+      "label": "高科技机械厂｜白色柔光点〔贴图推定〕 · 85BC911F",
+      "effectId": "85BC911F"
+    },
+    "native_85ce85b8": {
+      "label": "笔刷·区域·SC·hinsara·森林 · 85CE85B8",
+      "effectId": "85CE85B8"
+    },
+    "native_862ff829": {
+      "label": "白色实心圆片〔贴图推定〕 · 862FF829",
+      "effectId": "862FF829"
+    },
+    "native_86b18a96": {
+      "label": "笔刷·区域·caspiar·煤炭 · 86B18A96",
+      "effectId": "86B18A96"
+    },
+    "native_86f754d6": {
+      "label": "白色几何符号图集〔贴图推定〕 · 86F754D6",
+      "effectId": "86F754D6"
+    },
+    "native_871b1742": {
+      "label": "白色细圆环＋白色纯色片〔贴图推定〕 · 871B1742",
+      "effectId": "871B1742"
+    },
+    "native_87369bad": {
+      "label": "白色柔光点〔贴图推定〕 · 87369BAD",
+      "effectId": "87369BAD"
+    },
+    "native_873be2b0": {
+      "label": "研究中心｜锥形灯束〔贴图推定〕 · 873BE2B0",
+      "effectId": "873BE2B0"
+    },
+    "native_87682ee0": {
+      "label": "巨花園地精｜声音＋模型实例（待辨认）〔来源〕 · 87682EE0",
+      "effectId": "87682EE0"
+    },
+    "native_876e851a": {
+      "label": "锥形灯束〔贴图推定〕 · 876E851A",
+      "effectId": "876E851A"
+    },
+    "native_8784743b": {
+      "label": "嵌套粒子＋模型实例＋外部组件（待辨认） · 8784743B",
+      "effectId": "8784743B"
+    },
+    "native_87939b1e": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 87939B1E",
+      "effectId": "87939B1E"
+    },
+    "native_87c69885": {
+      "label": "红色骷髅图标〔贴图推定〕 · 87C69885",
+      "effectId": "87C69885"
+    },
+    "native_87d85292": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 87D85292",
+      "effectId": "87D85292"
+    },
+    "native_87dc71d6": {
+      "label": "黄绿粒点序列〔贴图推定〕 · 87DC71D6",
+      "effectId": "87DC71D6"
+    },
+    "native_88373a0c": {
+      "label": "黄色无人机图标〔贴图推定〕 · 88373A0C",
+      "effectId": "88373A0C"
+    },
+    "native_884badb4": {
+      "label": "白色纯色片〔贴图推定〕 · 884BADB4",
+      "effectId": "884BADB4"
+    },
+    "native_88511662": {
+      "label": "风力发电厂｜白色柔光点〔贴图推定〕 · 88511662",
+      "effectId": "88511662"
+    },
+    "native_8878832a": {
+      "label": "笔刷·区域·oldtutorial·水域 · 8878832A",
+      "effectId": "8878832A"
+    },
+    "native_889ec72b": {
+      "label": "OmegaCo工廠｜褐色地表纹理＋白色圆角方片〔贴图推定〕 · 889EC72B",
+      "effectId": "889EC72B"
+    },
+    "native_892acee9": {
+      "label": "模型实例＋外部组件（待辨认） · 892ACEE9",
+      "effectId": "892ACEE9"
+    },
+    "native_895ca8f8": {
+      "label": "低收入独立住宅｜白色烟团序列〔贴图推定〕 · 895CA8F8",
+      "effectId": "895CA8F8"
+    },
+    "native_8987fecd": {
+      "label": "时序组件＋声音（待辨认） · 8987FECD",
+      "effectId": "8987FECD"
+    },
+    "native_89bd19a4": {
+      "label": "中性调色·粒子发射（待辨认） · 89BD19A4",
+      "effectId": "89BD19A4"
+    },
+    "native_89cce3d2": {
+      "label": "外部组件（待辨认） · 89CCE3D2",
+      "effectId": "89CCE3D2"
+    },
+    "native_89cd6150": {
+      "label": "灰色烟团序列＋灰色碎石序列〔贴图推定〕 · 89CD6150",
+      "effectId": "89CD6150"
+    },
+    "native_8a2ead82": {
+      "label": "蓝色圆点图钉图标＋白色回收图标〔贴图推定〕 · 8A2EAD82",
+      "effectId": "8A2EAD82"
+    },
+    "native_8a9a12aa": {
+      "label": "声音（待辨认） · 8A9A12AA",
+      "effectId": "8A9A12AA"
+    },
+    "native_8ac37a51": {
+      "label": "白色烟团序列＋白色柔光点〔贴图推定〕 · 8AC37A51",
+      "effectId": "8AC37A51"
+    },
+    "native_8ac37a52": {
+      "label": "白色烟团序列＋白色柔光点〔贴图推定〕 · 8AC37A52",
+      "effectId": "8AC37A52"
+    },
+    "native_8affd356": {
+      "label": "笔刷·区域·twincities·森林 · 8AFFD356",
+      "effectId": "8AFFD356"
+    },
+    "native_8b14e6be": {
+      "label": "炼油厂｜锥形灯束〔贴图推定〕 · 8B14E6BE",
+      "effectId": "8B14E6BE"
+    },
+    "native_8b16baae": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · 8B16BAAE",
+      "effectId": "8B16BAAE"
+    },
+    "native_8b7e5415": {
+      "label": "扇形灯束＋白色柔边圆环〔贴图推定〕 · 8B7E5415",
+      "effectId": "8B7E5415"
+    },
+    "native_8baf4911": {
+      "label": "白色纯色片〔贴图推定〕 · 8BAF4911",
+      "effectId": "8BAF4911"
+    },
+    "native_8c55f8d6": {
+      "label": "白色烟团序列＋黑灰烟团序列〔贴图推定〕 · 8C55F8D6",
+      "effectId": "8C55F8D6"
+    },
+    "native_8ca9da91": {
+      "label": "土地洗滌機｜白色烟团序列〔贴图推定〕 · 8CA9DA91",
+      "effectId": "8CA9DA91"
+    },
+    "native_8cca5a31": {
+      "label": "嵌套粒子＋模型实例＋飘带（待辨认） · 8CCA5A31",
+      "effectId": "8CCA5A31"
+    },
+    "native_8cee5a6d": {
+      "label": "矿石竖井｜灰色烟团序列＋灰色碎石序列〔贴图推定〕 · 8CEE5A6D",
+      "effectId": "8CEE5A6D"
+    },
+    "native_8d3863bb": {
+      "label": "白色云团序列〔贴图推定〕 · 8D3863BB",
+      "effectId": "8D3863BB"
+    },
+    "native_8d6b2530": {
+      "label": "声音＋分布模型（待辨认） · 8D6B2530",
+      "effectId": "8D6B2530"
+    },
+    "native_8d801dd6": {
+      "label": "蓝色水滴图钉图标＋白色轮船图标〔贴图推定〕 · 8D801DD6",
+      "effectId": "8D801DD6"
+    },
+    "native_8d849db2": {
+      "label": "分布模型（待辨认） · 8D849DB2",
+      "effectId": "8D849DB2"
+    },
+    "native_8dc6a920": {
+      "label": "都會熱汽球公園(§§§)｜橙色火焰序列〔贴图推定〕 · 8DC6A920",
+      "effectId": "8DC6A920"
+    },
+    "native_8e87ada8": {
+      "label": "声音＋模型实例（待辨认） · 8E87ADA8",
+      "effectId": "8E87ADA8"
+    },
+    "native_8ef27bd6": {
+      "label": "红色骷髅图标〔贴图推定〕 · 8EF27BD6",
+      "effectId": "8EF27BD6"
+    },
+    "native_8f2941e9": {
+      "label": "零散碎点＋发光圆环〔贴图推定〕 · 8F2941E9",
+      "effectId": "8F2941E9"
+    },
+    "native_8f3cdb42": {
+      "label": "模型实例（待辨认） · 8F3CDB42",
+      "effectId": "8F3CDB42"
+    },
+    "native_8feb31d7": {
+      "label": "模型实例＋外部组件（待辨认） · 8FEB31D7",
+      "effectId": "8FEB31D7"
+    },
+    "native_9009575f": {
+      "label": "红色直尺图标〔贴图推定〕 · 9009575F",
+      "effectId": "9009575F"
+    },
+    "native_906d4771": {
+      "label": "笔刷·区域·dormant·石油 · 906D4771",
+      "effectId": "906D4771"
+    },
+    "native_9099df10": {
+      "label": "科技园厂房｜灯光（待辨认）〔来源〕 · 9099DF10",
+      "effectId": "9099DF10"
+    },
+    "native_90da54ec": {
+      "label": "白色碎石序列＋白色柔光点〔贴图推定〕 · 90DA54EC",
+      "effectId": "90DA54EC"
+    },
+    "native_90e673bd": {
+      "label": "風能放大器｜白色烟团序列〔贴图推定〕 · 90E673BD",
+      "effectId": "90E673BD"
+    },
+    "native_9161ec1d": {
+      "label": "模型实例（待辨认） · 9161EC1D",
+      "effectId": "9161EC1D"
+    },
+    "native_917035ee": {
+      "label": "笔刷·区域·sawyer·煤炭 · 917035EE",
+      "effectId": "917035EE"
+    },
+    "native_92034f2e": {
+      "label": "蓝色水滴图钉图标＋白色气瓶图标〔贴图推定〕 · 92034F2E",
+      "effectId": "92034F2E"
+    },
+    "native_920d00d2": {
+      "label": "笔刷·区域·twincities·水域 · 920D00D2",
+      "effectId": "920D00D2"
+    },
+    "native_92197073": {
+      "label": "白色放射光点〔贴图推定〕 · 92197073",
+      "effectId": "92197073"
+    },
+    "native_9235bf09": {
+      "label": "賭場跑馬燈｜橙色火焰序列＋暖色星芒光晕〔贴图推定〕 · 9235BF09",
+      "effectId": "9235BF09"
+    },
+    "native_923648a6": {
+      "label": "笔刷·区域·SC·hinsara·煤炭 · 923648A6",
+      "effectId": "923648A6"
+    },
+    "native_9285fcfc": {
+      "label": "外部组件（待辨认） · 9285FCFC",
+      "effectId": "9285FCFC"
+    },
+    "native_92ff46d1": {
+      "label": "市长官邸喷泉｜白色波动光丝〔贴图推定〕 · 92FF46D1",
+      "effectId": "92FF46D1"
+    },
+    "native_93b87325": {
+      "label": "馬克二號空氣濾淨冠樓｜声音＋模型实例（待辨认）〔来源〕 · 93B87325",
+      "effectId": "93B87325"
+    },
+    "native_93c108a2": {
+      "label": "Mid-Range赌场招牌图案〔贴图推定〕 · 93C108A2",
+      "effectId": "93C108A2"
+    },
+    "native_93f572a8": {
+      "label": "笔刷·区域·echogorgecross·土壤 · 93F572A8",
+      "effectId": "93F572A8"
+    },
+    "native_940d0f76": {
+      "label": "黄绿色冒烟图标〔贴图推定〕 · 940D0F76",
+      "effectId": "940D0F76"
+    },
+    "native_94927749": {
+      "label": "笔刷·区域·flocksriver·森林 · 94927749",
+      "effectId": "94927749"
+    },
+    "native_94cd265a": {
+      "label": "红色火焰图标〔贴图推定〕 · 94CD265A",
+      "effectId": "94CD265A"
+    },
+    "native_94d367a3": {
+      "label": "蓝色水滴图钉图标＋白色矿车图标〔贴图推定〕 · 94D367A3",
+      "effectId": "94D367A3"
+    },
+    "native_94d71055": {
+      "label": "模型实例（待辨认） · 94D71055",
+      "effectId": "94D71055"
+    },
+    "native_9506e720": {
+      "label": "垃圾杂物碎片图集〔贴图推定〕 · 9506E720",
+      "effectId": "9506E720"
+    },
+    "native_951d3b92": {
+      "label": "灰白烟云〔贴图推定〕 · 951D3B92",
+      "effectId": "951D3B92"
+    },
+    "native_952f9a82": {
+      "label": "发光圆环〔贴图推定〕 · 952F9A82",
+      "effectId": "952F9A82"
+    },
+    "native_9533e468": {
+      "label": "蓝色水滴图钉图标＋白色警徽图标〔贴图推定〕 · 9533E468",
+      "effectId": "9533E468"
+    },
+    "native_956d4e99": {
+      "label": "笔刷·区域·dormant·矿石 · 956D4E99",
+      "effectId": "956D4E99"
+    },
+    "native_95d6d5ea": {
+      "label": "蓝色水滴图钉图标＋白色矿车图标〔贴图推定〕 · 95D6D5EA",
+      "effectId": "95D6D5EA"
+    },
+    "native_95e857fa": {
+      "label": "黄色直尺图标〔贴图推定〕 · 95E857FA",
+      "effectId": "95E857FA"
+    },
+    "native_9601aa54": {
+      "label": "灰色烟团序列＋灰色碎石序列〔贴图推定〕 · 9601AA54",
+      "effectId": "9601AA54"
+    },
+    "native_96139f58": {
+      "label": "OmegaCo總部｜声音＋模型实例（待辨认）〔来源〕 · 96139F58",
+      "effectId": "96139F58"
+    },
+    "native_96139f5a": {
+      "label": "OmegaCo總部：OmegaCo, Inc.｜声音＋模型实例（待辨认）〔来源〕 · 96139F5A",
+      "effectId": "96139F5A"
+    },
+    "native_96139f5b": {
+      "label": "OmegaCo總部：OmegaCo, LLC｜声音＋模型实例（待辨认）〔来源〕 · 96139F5B",
+      "effectId": "96139F5B"
+    },
+    "native_96139f5d": {
+      "label": "OmegaCo總部：OmegaCo Global｜声音＋模型实例（待辨认）〔来源〕 · 96139F5D",
+      "effectId": "96139F5D"
+    },
+    "native_963d1974": {
+      "label": "悲伤表情图标〔贴图推定〕 · 963D1974",
+      "effectId": "963D1974"
+    },
+    "native_96412db2": {
+      "label": "灰色烟团序列＋灰色碎石序列〔贴图推定〕 · 96412DB2",
+      "effectId": "96412DB2"
+    },
+    "native_96620445": {
+      "label": "白色水龙头图标〔贴图推定〕 · 96620445",
+      "effectId": "96620445"
+    },
+    "native_966d660e": {
+      "label": "白色纯色片＋Mid-Range赌场招牌图案〔贴图推定〕 · 966D660E",
+      "effectId": "966D660E"
+    },
+    "native_972e9f1f": {
+      "label": "笔刷·区域·capetrinity·地形 · 972E9F1F",
+      "effectId": "972E9F1F"
+    },
+    "native_973badeb": {
+      "label": "笔刷·区域·confluence·水域 · 973BADEB",
+      "effectId": "973BADEB"
+    },
+    "native_9741c94e": {
+      "label": "笔刷·区域·oldtutorial·森林 · 9741C94E",
+      "effectId": "9741C94E"
+    },
+    "native_979315e9": {
+      "label": "时序组件（待辨认） · 979315E9",
+      "effectId": "979315E9"
+    },
+    "native_97bd7b62": {
+      "label": "模擬城市推出日公園(§§§)｜橙色火焰序列〔贴图推定〕 · 97BD7B62",
+      "effectId": "97BD7B62"
+    },
+    "native_97d8e40c": {
+      "label": "普通工厂｜竖向粒点序列〔贴图推定〕 · 97D8E40C",
+      "effectId": "97D8E40C"
+    },
+    "native_982f4a0a": {
+      "label": "大学理学院｜白色柔光点〔贴图推定〕 · 982F4A0A",
+      "effectId": "982F4A0A"
+    },
+    "native_9855e7f1": {
+      "label": "旋轉太空船雲霄飛車｜模型实例（待辨认）〔来源〕 · 9855E7F1",
+      "effectId": "9855E7F1"
+    },
+    "native_98e315d4": {
+      "label": "红色矿车图标〔贴图推定〕 · 98E315D4",
+      "effectId": "98E315D4"
+    },
+    "native_98f43b0f": {
+      "label": "笔刷·区域·gallia·煤炭 · 98F43B0F",
+      "effectId": "98F43B0F"
+    },
+    "native_99094d39": {
+      "label": "白色爆散烟雾图集〔贴图推定〕 · 99094D39",
+      "effectId": "99094D39"
+    },
+    "native_9930aaf5": {
+      "label": "白色柔光点〔贴图推定〕 · 9930AAF5",
+      "effectId": "9930AAF5"
+    },
+    "native_99366e6e": {
+      "label": "嵌套粒子＋外部组件（待辨认） · 99366E6E",
+      "effectId": "99366E6E"
+    },
+    "native_99556328": {
+      "label": "蓝色圆点图钉图标＋白色飞机图标〔贴图推定〕 · 99556328",
+      "effectId": "99556328"
+    },
+    "native_997ca77e": {
+      "label": "白色烟团序列＋黑灰烟团序列〔贴图推定〕 · 997CA77E",
+      "effectId": "997CA77E"
+    },
+    "native_99da8cab": {
+      "label": "白色烟团序列〔贴图推定〕 · 99DA8CAB",
+      "effectId": "99DA8CAB"
+    },
+    "native_9a1162e3": {
+      "label": "时序组件（待辨认） · 9A1162E3",
+      "effectId": "9A1162E3"
+    },
+    "native_9a2a0014": {
+      "label": "矿石数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 9A2A0014",
+      "effectId": "9A2A0014"
+    },
+    "native_9a615e2a": {
+      "label": "白色柔光晕〔贴图推定〕 · 9A615E2A",
+      "effectId": "9A615E2A"
+    },
+    "native_9a674514": {
+      "label": "抽取艙｜灰色烟团序列＋灰色碎石序列〔贴图推定〕 · 9A674514",
+      "effectId": "9A674514"
+    },
+    "native_9a764fa2": {
+      "label": "碎点环〔贴图推定〕 · 9A764FA2",
+      "effectId": "9A764FA2"
+    },
+    "native_9aa00f33": {
+      "label": "生态建筑伟大工程｜模型实例（待辨认）〔来源〕 · 9AA00F33",
+      "effectId": "9AA00F33"
+    },
+    "native_9ad9fa38": {
+      "label": "橙色蒙面人物图标〔贴图推定〕 · 9AD9FA38",
+      "effectId": "9AD9FA38"
+    },
+    "native_9af7c9de": {
+      "label": "外部组件（待辨认） · 9AF7C9DE",
+      "effectId": "9AF7C9DE"
+    },
+    "native_9b0ca3fd": {
+      "label": "蓝色圆点图钉图标＋白色原木图标〔贴图推定〕 · 9B0CA3FD",
+      "effectId": "9B0CA3FD"
+    },
+    "native_9b0d8a4f": {
+      "label": "开心表情图标〔贴图推定〕 · 9B0D8A4F",
+      "effectId": "9B0D8A4F"
+    },
+    "native_9bc5a7ca": {
+      "label": "蓝色圆头标杆图标〔贴图推定〕 · 9BC5A7CA",
+      "effectId": "9BC5A7CA"
+    },
+    "native_9bf427ee": {
+      "label": "笔刷·区域·testquadrant3·土壤 · 9BF427EE",
+      "effectId": "9BF427EE"
+    },
+    "native_9c1793a5": {
+      "label": "白色礼物图标〔贴图推定〕 · 9C1793A5",
+      "effectId": "9C1793A5"
+    },
+    "native_9c76ab20": {
+      "label": "笔刷·区域·reflection·地形 · 9C76AB20",
+      "effectId": "9C76AB20"
+    },
+    "native_9c96055f": {
+      "label": "笔刷·区域·SC·desolation·矿石 · 9C96055F",
+      "effectId": "9C96055F"
+    },
+    "native_9ca25c50": {
+      "label": "蓝色水滴图钉图标＋白色列车侧面图标〔贴图推定〕 · 9CA25C50",
+      "effectId": "9CA25C50"
+    },
+    "native_9cc29a71": {
+      "label": "石油数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 9CC29A71",
+      "effectId": "9CC29A71"
+    },
+    "native_9cdc84c5": {
+      "label": "灰色烟团序列〔贴图推定〕 · 9CDC84C5",
+      "effectId": "9CDC84C5"
+    },
+    "native_9d1079b5": {
+      "label": "锥形灯束〔贴图推定〕 · 9D1079B5",
+      "effectId": "9D1079B5"
+    },
+    "native_9d20667e": {
+      "label": "笔刷·区域·dormant·土壤 · 9D20667E",
+      "effectId": "9D20667E"
+    },
+    "native_9d44e61b": {
+      "label": "笔刷·区域·gallia·水域 · 9D44E61B",
+      "effectId": "9D44E61B"
+    },
+    "native_9da157f6": {
+      "label": "地形特征·丘陵·中型 · 9DA157F6",
+      "effectId": "9DA157F6"
+    },
+    "native_9dc6e29c": {
+      "label": "灯光（待辨认） · 9DC6E29C",
+      "effectId": "9DC6E29C"
+    },
+    "native_9dd02457": {
+      "label": "白色烟团序列＋锥形灯束〔贴图推定〕 · 9DD02457",
+      "effectId": "9DD02457"
+    },
+    "native_9deb2560": {
+      "label": "白色笑脸图标＋黑色棕榈树剪影〔贴图推定〕 · 9DEB2560",
+      "effectId": "9DEB2560"
+    },
+    "native_9e168798": {
+      "label": "黄色油桶图标〔贴图推定〕 · 9E168798",
+      "effectId": "9E168798"
+    },
+    "native_9e41a48e": {
+      "label": "白色烟团序列〔贴图推定〕 · 9E41A48E",
+      "effectId": "9E41A48E"
+    },
+    "native_9e7ffa76": {
+      "label": "锥形灯束〔贴图推定〕 · 9E7FFA76",
+      "effectId": "9E7FFA76"
+    },
+    "native_9e88ec5f": {
+      "label": "SimCity标志图案＋白色横纹〔贴图推定〕 · 9E88EC5F",
+      "effectId": "9E88EC5F"
+    },
+    "native_9f2a083c": {
+      "label": "石油数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · 9F2A083C",
+      "effectId": "9F2A083C"
+    },
+    "native_9f6477a2": {
+      "label": "蓝色圆点图钉图标＋白色医疗图标〔贴图推定〕 · 9F6477A2",
+      "effectId": "9F6477A2"
+    },
+    "native_9f6df8bf": {
+      "label": "蓝色圆点图钉图标＋白色电脑图标〔贴图推定〕 · 9F6DF8BF",
+      "effectId": "9F6DF8BF"
+    },
+    "native_9fbf0d84": {
+      "label": "白色星形图标〔贴图推定〕 · 9FBF0D84",
+      "effectId": "9FBF0D84"
+    },
+    "native_9fecfbda": {
+      "label": "锥形灯束〔贴图推定〕 · 9FECFBDA",
+      "effectId": "9FECFBDA"
+    },
+    "native_9ff1cbfe": {
+      "label": "橙色金钱图标〔贴图推定〕 · 9FF1CBFE",
+      "effectId": "9FF1CBFE"
+    },
+    "native_a008f19d": {
+      "label": "金色细点序列＋灰色烟团序列〔贴图推定〕 · A008F19D",
+      "effectId": "A008F19D"
+    },
+    "native_a055254b": {
+      "label": "嵌套组合（待辨认） · A055254B",
+      "effectId": "A055254B"
+    },
+    "native_a0603268": {
+      "label": "时序组件＋外部组件（待辨认） · A0603268",
+      "effectId": "A0603268"
+    },
+    "native_a064e9d4": {
+      "label": "白色柔光点＋白色烟团序列〔贴图推定〕 · A064E9D4",
+      "effectId": "A064E9D4"
+    },
+    "native_a07138f2": {
+      "label": "白色细圆环＋发光圆环〔贴图推定〕 · A07138F2",
+      "effectId": "A07138F2"
+    },
+    "native_a0727ea8": {
+      "label": "悲伤表情图标〔贴图推定〕 · A0727EA8",
+      "effectId": "A0727EA8"
+    },
+    "native_a0c3af7e": {
+      "label": "分布模型（待辨认） · A0C3AF7E",
+      "effectId": "A0C3AF7E"
+    },
+    "native_a0fb7eea": {
+      "label": "锥形灯束〔贴图推定〕 · A0FB7EEA",
+      "effectId": "A0FB7EEA"
+    },
+    "native_a10671b0": {
+      "label": "黑灰烟团序列〔贴图推定〕 · A10671B0",
+      "effectId": "A10671B0"
+    },
+    "native_a1274ad3": {
+      "label": "外部组件（待辨认） · A1274AD3",
+      "effectId": "A1274AD3"
+    },
+    "native_a1cfb773": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · A1CFB773",
+      "effectId": "A1CFB773"
+    },
+    "native_a1d5dc23": {
+      "label": "笔刷·区域·horizon·矿石 · A1D5DC23",
+      "effectId": "A1D5DC23"
+    },
+    "native_a1ed563c": {
+      "label": "扇形灯束＋白色柔边圆环〔贴图推定〕 · A1ED563C",
+      "effectId": "A1ED563C"
+    },
+    "native_a22add57": {
+      "label": "时序组件（待辨认） · A22ADD57",
+      "effectId": "A22ADD57"
+    },
+    "native_a241c2f2": {
+      "label": "红色铁轨图标〔贴图推定〕 · A241C2F2",
+      "effectId": "A241C2F2"
+    },
+    "native_a250d253": {
+      "label": "白色柔光点＋棕色碎屑序列〔贴图推定〕 · A250D253",
+      "effectId": "A250D253"
+    },
+    "native_a254c635": {
+      "label": "白色十字星芒＋扇形灯束〔贴图推定〕 · A254C635",
+      "effectId": "A254C635"
+    },
+    "native_a2633e79": {
+      "label": "市长官邸停机坪｜白色柔光点〔贴图推定〕 · A2633E79",
+      "effectId": "A2633E79"
+    },
+    "native_a277e1b8": {
+      "label": "足球图案＋EA标志图案〔贴图推定〕 · A277E1B8",
+      "effectId": "A277E1B8"
+    },
+    "native_a2886767": {
+      "label": "天空盒 · A2886767",
+      "effectId": "A2886767"
+    },
+    "native_a28cd7ee": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · A28CD7EE",
+      "effectId": "A28CD7EE"
+    },
+    "native_a2a26ade": {
+      "label": "金色细点序列〔贴图推定〕 · A2A26ADE",
+      "effectId": "A2A26ADE"
+    },
+    "native_a2bebbf6": {
+      "label": "太陽能放大器｜蓝色闪电分叉＋白色柔光点〔贴图推定〕 · A2BEBBF6",
+      "effectId": "A2BEBBF6"
+    },
+    "native_a362842e": {
+      "label": "声音＋分布模型＋外部组件（待辨认） · A362842E",
+      "effectId": "A362842E"
+    },
+    "native_a3a3bc4d": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · A3A3BC4D",
+      "effectId": "A3A3BC4D"
+    },
+    "native_a4339f51": {
+      "label": "火花爆散图集＋火花飞溅图集〔贴图推定〕 · A4339F51",
+      "effectId": "A4339F51"
+    },
+    "native_a44cb0b3": {
+      "label": "笔刷·区域·testquadrant4·水域 · A44CB0B3",
+      "effectId": "A44CB0B3"
+    },
+    "native_a45f0e11": {
+      "label": "地形特征·山谷·中型 · A45F0E11",
+      "effectId": "A45F0E11"
+    },
+    "native_a4627750": {
+      "label": "锥形灯束〔贴图推定〕 · A4627750",
+      "effectId": "A4627750"
+    },
+    "native_a4adb7e4": {
+      "label": "模型实例（待辨认） · A4ADB7E4",
+      "effectId": "A4ADB7E4"
+    },
+    "native_a4b56ff7": {
+      "label": "笔刷·区域·confluence·土壤 · A4B56FF7",
+      "effectId": "A4B56FF7"
+    },
+    "native_a4c827fa": {
+      "label": "抽水模块｜中性调色·粒子发射（待辨认） · A4C827FA",
+      "effectId": "A4C827FA"
+    },
+    "native_a52127c3": {
+      "label": "棕色蒸汽警示图标〔贴图推定〕 · A52127C3",
+      "effectId": "A52127C3"
+    },
+    "native_a5293dac": {
+      "label": "太阳能基地伟大工程｜模型实例（待辨认）〔来源〕 · A5293DAC",
+      "effectId": "A5293DAC"
+    },
+    "native_a532da42": {
+      "label": "笔刷·区域·tutorialisland·地形 · A532DA42",
+      "effectId": "A532DA42"
+    },
+    "native_a5777381": {
+      "label": "煤矿竖井｜灰色烟团序列＋灰色碎石序列〔贴图推定〕 · A5777381",
+      "effectId": "A5777381"
+    },
+    "native_a58ed7a3": {
+      "label": "辦公室樓層（中科技）｜白色弧形细线＋白色柔光点〔贴图推定〕 · A58ED7A3",
+      "effectId": "A58ED7A3"
+    },
+    "native_a5d5588b": {
+      "label": "白色云团图集〔贴图推定〕 · A5D5588B",
+      "effectId": "A5D5588B"
+    },
+    "native_a5d5e007": {
+      "label": "暖色星芒光晕〔贴图推定〕 · A5D5E007",
+      "effectId": "A5D5E007"
+    },
+    "native_a5fb7956": {
+      "label": "橙色火焰序列〔贴图推定〕 · A5FB7956",
+      "effectId": "A5FB7956"
+    },
+    "native_a652e842": {
+      "label": "蓝色圆点图钉图标＋白色列车侧面图标〔贴图推定〕 · A652E842",
+      "effectId": "A652E842"
+    },
+    "native_a6756f05": {
+      "label": "笔刷·区域·cliffsidevista·森林 · A6756F05",
+      "effectId": "A6756F05"
+    },
+    "native_a6a9382e": {
+      "label": "白色星形图标〔贴图推定〕 · A6A9382E",
+      "effectId": "A6A9382E"
+    },
+    "native_a70a7aec": {
+      "label": "蓝色圆点图钉图标＋白色电视图标〔贴图推定〕 · A70A7AEC",
+      "effectId": "A70A7AEC"
+    },
+    "native_a7712ffc": {
+      "label": "蓝色圆点图钉图标＋白色倾倒液体图标〔贴图推定〕 · A7712FFC",
+      "effectId": "A7712FFC"
+    },
+    "native_a7b27dbe": {
+      "label": "抽水站｜白色烟团序列〔贴图推定〕 · A7B27DBE",
+      "effectId": "A7B27DBE"
+    },
+    "native_a7dfbe13": {
+      "label": "白色波动光丝〔贴图推定〕 · A7DFBE13",
+      "effectId": "A7DFBE13"
+    },
+    "native_a86b7de6": {
+      "label": "黄色行走人物图标〔贴图推定〕 · A86B7DE6",
+      "effectId": "A86B7DE6"
+    },
+    "native_a8cf5c3a": {
+      "label": "红色条幅〔贴图推定〕 · A8CF5C3A",
+      "effectId": "A8CF5C3A"
+    },
+    "native_a91ed541": {
+      "label": "零散碎点〔贴图推定〕 · A91ED541",
+      "effectId": "A91ED541"
+    },
+    "native_a9dafced": {
+      "label": "太空中心伟大工程｜白色烟团序列〔贴图推定〕 · A9DAFCED",
+      "effectId": "A9DAFCED"
+    },
+    "native_a9f6bc84": {
+      "label": "灰白烟尘＋灰色烟雾团〔贴图推定〕 · A9F6BC84",
+      "effectId": "A9F6BC84"
+    },
+    "native_aa345b43": {
+      "label": "橙色火焰序列〔贴图推定〕 · AA345B43",
+      "effectId": "AA345B43"
+    },
+    "native_aa55f54b": {
+      "label": "白色烟团序列〔贴图推定〕 · AA55F54B",
+      "effectId": "AA55F54B"
+    },
+    "native_aa7731ce": {
+      "label": "石油数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · AA7731CE",
+      "effectId": "AA7731CE"
+    },
+    "native_aa8f0bbe": {
+      "label": "白色扇形光束〔贴图推定〕 · AA8F0BBE",
+      "effectId": "AA8F0BBE"
+    },
+    "native_aaf39b37": {
+      "label": "千禧年廣場(§§§)｜白色柔光点〔贴图推定〕 · AAF39B37",
+      "effectId": "AAF39B37"
+    },
+    "native_ab8c4e79": {
+      "label": "白色纯色片〔贴图推定〕 · AB8C4E79",
+      "effectId": "AB8C4E79"
+    },
+    "native_abb04d5d": {
+      "label": "白色小点序列〔贴图推定〕 · ABB04D5D",
+      "effectId": "ABB04D5D"
+    },
+    "native_ac035406": {
+      "label": "笔刷·区域·newdenmont·煤炭 · AC035406",
+      "effectId": "AC035406"
+    },
+    "native_ac424186": {
+      "label": "笔刷·区域·sawyer·土壤 · AC424186",
+      "effectId": "AC424186"
+    },
+    "native_aca7a407": {
+      "label": "科幻赌场｜Galaxino赌场招牌图案＋白色横纹〔贴图推定〕 · ACA7A407",
+      "effectId": "ACA7A407"
+    },
+    "native_acf6ce11": {
+      "label": "红色火焰图标〔贴图推定〕 · ACF6CE11",
+      "effectId": "ACF6CE11"
+    },
+    "native_ad15238e": {
+      "label": "分布模型（待辨认） · AD15238E",
+      "effectId": "AD15238E"
+    },
+    "native_ad999847": {
+      "label": "红色条幅〔贴图推定〕 · AD999847",
+      "effectId": "AD999847"
+    },
+    "native_adc83b80": {
+      "label": "白色钞票图标〔贴图推定〕 · ADC83B80",
+      "effectId": "ADC83B80"
+    },
+    "native_ae124d1d": {
+      "label": "白色柔光点＋橙色火焰序列〔贴图推定〕 · AE124D1D",
+      "effectId": "AE124D1D"
+    },
+    "native_ae559892": {
+      "label": "笔刷·区域·littlegorge·石油 · AE559892",
+      "effectId": "AE559892"
+    },
+    "native_aebd5a35": {
+      "label": "笔刷·区域·gallia·森林 · AEBD5A35",
+      "effectId": "AEBD5A35"
+    },
+    "native_aecea90f": {
+      "label": "宗教場所：教堂｜彩色圆窗图案〔贴图推定〕 · AECEA90F",
+      "effectId": "AECEA90F"
+    },
+    "native_af3c62d0": {
+      "label": "白色烟团序列〔贴图推定〕 · AF3C62D0",
+      "effectId": "AF3C62D0"
+    },
+    "native_af48c3b8": {
+      "label": "笔刷·区域·testquadrant4·吸引力 · AF48C3B8",
+      "effectId": "AF48C3B8"
+    },
+    "native_af69a423": {
+      "label": "煤矿｜白色细圆环〔贴图推定〕 · AF69A423",
+      "effectId": "AF69A423"
+    },
+    "native_b02100bc": {
+      "label": "淨化器水槽｜红色油桶图标〔贴图推定〕 · B02100BC",
+      "effectId": "B02100BC"
+    },
+    "native_b05033e7": {
+      "label": "奈米工程附樓｜发光圆环＋白色柔光点〔贴图推定〕 · B05033E7",
+      "effectId": "B05033E7"
+    },
+    "native_b0845e39": {
+      "label": "嵌套粒子＋灯光＋飘带（待辨认） · B0845E39",
+      "effectId": "B0845E39"
+    },
+    "native_b0c66646": {
+      "label": "分布模型（待辨认） · B0C66646",
+      "effectId": "B0C66646"
+    },
+    "native_b10731fd": {
+      "label": "悲伤表情图标〔贴图推定〕 · B10731FD",
+      "effectId": "B10731FD"
+    },
+    "native_b1594cbb": {
+      "label": "高级煤矿竖井｜灰色烟团序列＋灰色碎石序列〔贴图推定〕 · B1594CBB",
+      "effectId": "B1594CBB"
+    },
+    "native_b15d01ed": {
+      "label": "笔刷·区域·edgewaterbay·水域 · B15D01ED",
+      "effectId": "B15D01ED"
+    },
+    "native_b1685878": {
+      "label": "白色圆点序列〔贴图推定〕 · B1685878",
+      "effectId": "B1685878"
+    },
+    "native_b250059b": {
+      "label": "笔刷·区域·flocksriver·土壤 · B250059B",
+      "effectId": "B250059B"
+    },
+    "native_b252d2f5": {
+      "label": "白色烟团序列〔贴图推定〕 · B252D2F5",
+      "effectId": "B252D2F5"
+    },
+    "native_b258750a": {
+      "label": "白色放射光点〔贴图推定〕 · B258750A",
+      "effectId": "B258750A"
+    },
+    "native_b25b44c9": {
+      "label": "垃圾粉碎器｜嵌套粒子＋声音＋灯光（待辨认）〔来源〕 · B25B44C9",
+      "effectId": "B25B44C9"
+    },
+    "native_b3040b3f": {
+      "label": "笔刷·区域·horizon·吸引力 · B3040B3F",
+      "effectId": "B3040B3F"
+    },
+    "native_b31783c7": {
+      "label": "蓝色水滴图钉图标＋白色气瓶图标〔贴图推定〕 · B31783C7",
+      "effectId": "B31783C7"
+    },
+    "native_b31b2149": {
+      "label": "矿石数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · B31B2149",
+      "effectId": "B31B2149"
+    },
+    "native_b330565b": {
+      "label": "煤炭数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · B330565B",
+      "effectId": "B330565B"
+    },
+    "native_b330f4b3": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · B330F4B3",
+      "effectId": "B330F4B3"
+    },
+    "native_b33c54fc": {
+      "label": "笔刷·柔和·穹顶·抬高 · B33C54FC",
+      "effectId": "B33C54FC"
+    },
+    "native_b34393a3": {
+      "label": "灯光（待辨认） · B34393A3",
+      "effectId": "B34393A3"
+    },
+    "native_b35a1edf": {
+      "label": "EA标志图案＋白色横纹〔贴图推定〕 · B35A1EDF",
+      "effectId": "B35A1EDF"
+    },
+    "native_b3630a86": {
+      "label": "嵌套粒子＋模型实例（待辨认） · B3630A86",
+      "effectId": "B3630A86"
+    },
+    "native_b36f34f8": {
+      "label": "外部组件（待辨认） · B36F34F8",
+      "effectId": "B36F34F8"
+    },
+    "native_b3a2dd62": {
+      "label": "橙色蒙面人物图标〔贴图推定〕 · B3A2DD62",
+      "effectId": "B3A2DD62"
+    },
+    "native_b3a2e561": {
+      "label": "橙色警示牌图标〔贴图推定〕 · B3A2E561",
+      "effectId": "B3A2E561"
+    },
+    "native_b3e5f229": {
+      "label": "奇妙之輪遊樂園大門｜锥形灯束〔贴图推定〕 · B3E5F229",
+      "effectId": "B3E5F229"
+    },
+    "native_b465ea10": {
+      "label": "时序组件＋声音（待辨认） · B465EA10",
+      "effectId": "B465EA10"
+    },
+    "native_b47cb883": {
+      "label": "发光圆环〔贴图推定〕 · B47CB883",
+      "effectId": "B47CB883"
+    },
+    "native_b4e223f0": {
+      "label": "黄色直尺图标〔贴图推定〕 · B4E223F0",
+      "effectId": "B4E223F0"
+    },
+    "native_b4eef41f": {
+      "label": "笔刷·区域·lakeshoreties·吸引力 · B4EEF41F",
+      "effectId": "B4EEF41F"
+    },
+    "native_b51f08eb": {
+      "label": "垃圾粉碎器｜白色烟团序列〔贴图推定〕 · B51F08EB",
+      "effectId": "B51F08EB"
+    },
+    "native_b52e8752": {
+      "label": "蓝色电弧与暗影＋白色柔光点〔贴图推定〕 · B52E8752",
+      "effectId": "B52E8752"
+    },
+    "native_b53a3a63": {
+      "label": "彩色旋涡＋白色实心圆片〔贴图推定〕 · B53A3A63",
+      "effectId": "B53A3A63"
+    },
+    "native_b555a466": {
+      "label": "笔刷·区域·littlegorge·矿石 · B555A466",
+      "effectId": "B555A466"
+    },
+    "native_b55ce7dd": {
+      "label": "笔刷·区域·confluence·地形 · B55CE7DD",
+      "effectId": "B55CE7DD"
+    },
+    "native_b5674dc8": {
+      "label": "笔刷·区域·caspiar·森林 · B5674DC8",
+      "effectId": "B5674DC8"
+    },
+    "native_b5ce5f46": {
+      "label": "土地洗滌機｜白色纯色片〔贴图推定〕 · B5CE5F46",
+      "effectId": "B5CE5F46"
+    },
+    "native_b64d1c73": {
+      "label": "模擬城市推出日公園(§§§)｜偏蓝调色·粒子发射（待辨认） · B64D1C73",
+      "effectId": "B64D1C73"
+    },
+    "native_b696744a": {
+      "label": "白色手枪图标〔贴图推定〕 · B696744A",
+      "effectId": "B696744A"
+    },
+    "native_b6f4cd5f": {
+      "label": "白色波动光丝〔贴图推定〕 · B6F4CD5F",
+      "effectId": "B6F4CD5F"
+    },
+    "native_b72c8b83": {
+      "label": "嵌套组合（待辨认） · B72C8B83",
+      "effectId": "B72C8B83"
+    },
+    "native_b776efa1": {
+      "label": "奈米工程附樓｜发光圆环〔贴图推定〕 · B776EFA1",
+      "effectId": "B776EFA1"
+    },
+    "native_b7d34553": {
+      "label": "嵌套粒子＋声音＋模型实例（待辨认） · B7D34553",
+      "effectId": "B7D34553"
+    },
+    "native_b7ea3880": {
+      "label": "蓝色电弧〔贴图推定〕 · B7EA3880",
+      "effectId": "B7EA3880"
+    },
+    "native_b84971b7": {
+      "label": "蓝色水滴图钉图标＋白色V字标记图标〔贴图推定〕 · B84971B7",
+      "effectId": "B84971B7"
+    },
+    "native_b869c2dd": {
+      "label": "灰色烟尘云〔贴图推定〕 · B869C2DD",
+      "effectId": "B869C2DD"
+    },
+    "native_b86d39a4": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · B86D39A4",
+      "effectId": "B86D39A4"
+    },
+    "native_b87ffdc7": {
+      "label": "灯光（待辨认） · B87FFDC7",
+      "effectId": "B87FFDC7"
+    },
+    "native_b896a454": {
+      "label": "灰色烟团序列＋灰色碎石序列〔贴图推定〕 · B896A454",
+      "effectId": "B896A454"
+    },
+    "native_b89f03d2": {
+      "label": "垃圾粉碎器｜嵌套粒子＋灯光（待辨认）〔来源〕 · B89F03D2",
+      "effectId": "B89F03D2"
+    },
+    "native_b8d60017": {
+      "label": "笔刷·区域·horizon·石油 · B8D60017",
+      "effectId": "B8D60017"
+    },
+    "native_b8d7cade": {
+      "label": "黄色Omega图标〔贴图推定〕 · B8D7CADE",
+      "effectId": "B8D7CADE"
+    },
+    "native_b9143a71": {
+      "label": "黄色风向图标〔贴图推定〕 · B9143A71",
+      "effectId": "B9143A71"
+    },
+    "native_b927616c": {
+      "label": "小型风力涡轮机｜白色纯色片〔贴图推定〕 · B927616C",
+      "effectId": "B927616C"
+    },
+    "native_b92d6fb5": {
+      "label": "白色纯色片〔贴图推定〕 · B92D6FB5",
+      "effectId": "B92D6FB5"
+    },
+    "native_b9517b08": {
+      "label": "笔刷·区域·tutorialisland·森林 · B9517B08",
+      "effectId": "B9517B08"
+    },
+    "native_b961638f": {
+      "label": "分布模型（待辨认） · B961638F",
+      "effectId": "B961638F"
+    },
+    "native_b968c891": {
+      "label": "笔刷·区域·半强度 · B968C891",
+      "effectId": "B968C891"
+    },
+    "native_b97ad80a": {
+      "label": "水塔｜中性调色·粒子发射（待辨认） · B97AD80A",
+      "effectId": "B97AD80A"
+    },
+    "native_ba0bdc94": {
+      "label": "白色小点序列〔贴图推定〕 · BA0BDC94",
+      "effectId": "BA0BDC94"
+    },
+    "native_ba83baa1": {
+      "label": "閃亮遊樂園｜白色波动光丝〔贴图推定〕 · BA83BAA1",
+      "effectId": "BA83BAA1"
+    },
+    "native_ba8f53cf": {
+      "label": "水过滤模块｜彩色调色·粒子发射（待辨认） · BA8F53CF",
+      "effectId": "BA8F53CF"
+    },
+    "native_ba94559a": {
+      "label": "笔刷·区域·lakeshoreties·水域 · BA94559A",
+      "effectId": "BA94559A"
+    },
+    "native_bb3bfb12": {
+      "label": "笔刷·抬高·条件 · BB3BFB12",
+      "effectId": "BB3BFB12"
+    },
+    "native_bbce9d17": {
+      "label": "暖色星芒光晕＋蓝色电弧〔贴图推定〕 · BBCE9D17",
+      "effectId": "BBCE9D17"
+    },
+    "native_bc2c0be9": {
+      "label": "内部测试 · BC2C0BE9",
+      "effectId": "BC2C0BE9"
+    },
+    "native_bc6924bb": {
+      "label": "笔刷·区域·testquadrant1·吸引力 · BC6924BB",
+      "effectId": "BC6924BB"
+    },
+    "native_bccf1b96": {
+      "label": "蓝色圆点图钉图标＋白色灯塔图标〔贴图推定〕 · BCCF1B96",
+      "effectId": "BCCF1B96"
+    },
+    "native_bd013b0b": {
+      "label": "笔刷·区域·cliffsidevista·水域 · BD013B0B",
+      "effectId": "BD013B0B"
+    },
+    "native_bd376b51": {
+      "label": "OmegaCo工廠｜白色烟团序列〔贴图推定〕 · BD376B51",
+      "effectId": "BD376B51"
+    },
+    "native_bd4c3f39": {
+      "label": "笔刷·区域·testquadrant2·土壤 · BD4C3F39",
+      "effectId": "BD4C3F39"
+    },
+    "native_bd7b5e8a": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · BD7B5E8A",
+      "effectId": "BD7B5E8A"
+    },
+    "native_bd8fd5df": {
+      "label": "零散碎点〔贴图推定〕 · BD8FD5DF",
+      "effectId": "BD8FD5DF"
+    },
+    "native_bd945675": {
+      "label": "笔刷·区域·desolation·土壤 · BD945675",
+      "effectId": "BD945675"
+    },
+    "native_bdbccdc8": {
+      "label": "地下水数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · BDBCCDC8",
+      "effectId": "BDBCCDC8"
+    },
+    "native_be60d7fd": {
+      "label": "笔刷·区域·desolation·地面污染 · BE60D7FD",
+      "effectId": "BE60D7FD"
+    },
+    "native_be8dee01": {
+      "label": "模型实例（待辨认） · BE8DEE01",
+      "effectId": "BE8DEE01"
+    },
+    "native_bedfa5e3": {
+      "label": "宗教場所：教堂｜彩色圆窗图案〔贴图推定〕 · BEDFA5E3",
+      "effectId": "BEDFA5E3"
+    },
+    "native_bf22b7cb": {
+      "label": "蓝色水滴图钉图标＋白色原木图标〔贴图推定〕 · BF22B7CB",
+      "effectId": "BF22B7CB"
+    },
+    "native_bfc90076": {
+      "label": "模型实例（待辨认） · BFC90076",
+      "effectId": "BFC90076"
+    },
+    "native_bfebc550": {
+      "label": "暖色星芒光晕＋金色细点序列〔贴图推定〕 · BFEBC550",
+      "effectId": "BFEBC550"
+    },
+    "native_c0b15910": {
+      "label": "地形特征·丘陵·小型 · C0B15910",
+      "effectId": "C0B15910"
+    },
+    "native_c107f7d2": {
+      "label": "笔刷·区域·reflection·水域 · C107F7D2",
+      "effectId": "C107F7D2"
+    },
+    "native_c12381ac": {
+      "label": "商場樓層(§§§)｜白色弧形细线＋白色柔光点〔贴图推定〕 · C12381AC",
+      "effectId": "C12381AC"
+    },
+    "native_c13bfd38": {
+      "label": "白色雨丝＋白色竖向喷流〔贴图推定〕 · C13BFD38",
+      "effectId": "C13BFD38"
+    },
+    "native_c16290c1": {
+      "label": "小火車車站｜嵌套粒子＋模型实例（待辨认）〔来源〕 · C16290C1",
+      "effectId": "C16290C1"
+    },
+    "native_c175acea": {
+      "label": "笔刷·区域·sawyer·地形 · C175ACEA",
+      "effectId": "C175ACEA"
+    },
+    "native_c18addcb": {
+      "label": "外部组件（待辨认） · C18ADDCB",
+      "effectId": "C18ADDCB"
+    },
+    "native_c1977772": {
+      "label": "笔刷·区域·SC·desolation·森林 · C1977772",
+      "effectId": "C1977772"
+    },
+    "native_c1a3b7eb": {
+      "label": "基礎觀光冠樓｜分布模型（待辨认）〔来源〕 · C1A3B7EB",
+      "effectId": "C1A3B7EB"
+    },
+    "native_c1f785a8": {
+      "label": "白色碎石序列＋白色放射光晕〔贴图推定〕 · C1F785A8",
+      "effectId": "C1F785A8"
+    },
+    "native_c20f6ea1": {
+      "label": "绿色手铐图标〔贴图推定〕 · C20F6EA1",
+      "effectId": "C20F6EA1"
+    },
+    "native_c27d02e1": {
+      "label": "全像廣告冠樓｜锥形灯束＋白色柔光点〔贴图推定〕 · C27D02E1",
+      "effectId": "C27D02E1"
+    },
+    "native_c2d67534": {
+      "label": "内部测试二｜外部组件（待辨认）〔来源〕 · C2D67534",
+      "effectId": "C2D67534"
+    },
+    "native_c302616d": {
+      "label": "蓝色圆点图钉图标＋白色家庭图标〔贴图推定〕 · C302616D",
+      "effectId": "C302616D"
+    },
+    "native_c30406d9": {
+      "label": "垃圾焚烧炉｜灰色烟团序列〔贴图推定〕 · C30406D9",
+      "effectId": "C30406D9"
+    },
+    "native_c34cb9d7": {
+      "label": "灰色烟团序列＋灰色碎石序列〔贴图推定〕 · C34CB9D7",
+      "effectId": "C34CB9D7"
+    },
+    "native_c359fc71": {
+      "label": "暖色星芒光晕〔贴图推定〕 · C359FC71",
+      "effectId": "C359FC71"
+    },
+    "native_c37f1e36": {
+      "label": "炼油厂｜彩色旋涡＋白色实心圆片〔贴图推定〕 · C37F1E36",
+      "effectId": "C37F1E36"
+    },
+    "native_c3c5c884": {
+      "label": "白色烟团序列〔贴图推定〕 · C3C5C884",
+      "effectId": "C3C5C884"
+    },
+    "native_c3faa263": {
+      "label": "白色云团序列〔贴图推定〕 · C3FAA263",
+      "effectId": "C3FAA263"
+    },
+    "native_c4aa3496": {
+      "label": "抽取艙｜暖色星芒光晕〔贴图推定〕 · C4AA3496",
+      "effectId": "C4AA3496"
+    },
+    "native_c53d0469": {
+      "label": "现代住宅｜白色心形粒点序列〔贴图推定〕 · C53D0469",
+      "effectId": "C53D0469"
+    },
+    "native_c5457854": {
+      "label": "灰色烟尘云〔贴图推定〕 · C5457854",
+      "effectId": "C5457854"
+    },
+    "native_c55106c4": {
+      "label": "橙色金钱图标〔贴图推定〕 · C55106C4",
+      "effectId": "C55106C4"
+    },
+    "native_c56439f4": {
+      "label": "藍鬍子海盜船｜嵌套粒子＋声音＋模型实例（待辨认）〔来源〕 · C56439F4",
+      "effectId": "C56439F4"
+    },
+    "native_c56e02b3": {
+      "label": "白色柔光点＋橙色火焰序列〔贴图推定〕 · C56E02B3",
+      "effectId": "C56E02B3"
+    },
+    "native_c56ff19b": {
+      "label": "蓝色水滴图钉图标＋白色钢梁图标〔贴图推定〕 · C56FF19B",
+      "effectId": "C56FF19B"
+    },
+    "native_c581cfc2": {
+      "label": "红色蒙面人物图标〔贴图推定〕 · C581CFC2",
+      "effectId": "C581CFC2"
+    },
+    "native_c5ce8ace": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · C5CE8ACE",
+      "effectId": "C5CE8ACE"
+    },
+    "native_c5e08648": {
+      "label": "悲伤表情图标〔贴图推定〕 · C5E08648",
+      "effectId": "C5E08648"
+    },
+    "native_c5f87100": {
+      "label": "白色医疗图标〔贴图推定〕 · C5F87100",
+      "effectId": "C5F87100"
+    },
+    "native_c638edae": {
+      "label": "灰色烟团序列＋白色放射光环〔贴图推定〕 · C638EDAE",
+      "effectId": "C638EDAE"
+    },
+    "native_c6aab41c": {
+      "label": "灰色烟团序列〔贴图推定〕 · C6AAB41C",
+      "effectId": "C6AAB41C"
+    },
+    "native_c6d910fc": {
+      "label": "笔刷·区域·reflection·土壤 · C6D910FC",
+      "effectId": "C6D910FC"
+    },
+    "native_c6e517dc": {
+      "label": "红色矿车图标〔贴图推定〕 · C6E517DC",
+      "effectId": "C6E517DC"
+    },
+    "native_c6fabf1a": {
+      "label": "中性调色·粒子发射（待辨认） · C6FABF1A",
+      "effectId": "C6FABF1A"
+    },
+    "native_c7782918": {
+      "label": "森林数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · C7782918",
+      "effectId": "C7782918"
+    },
+    "native_c7acce12": {
+      "label": "矿石竖井｜暖色星芒光晕〔贴图推定〕 · C7ACCE12",
+      "effectId": "C7ACCE12"
+    },
+    "native_c7dd5ccc": {
+      "label": "彩色旋涡＋白色实心圆片〔贴图推定〕 · C7DD5CCC",
+      "effectId": "C7DD5CCC"
+    },
+    "native_c7f97644": {
+      "label": "蓝色水滴图钉图标＋白色电脑图标〔贴图推定〕 · C7F97644",
+      "effectId": "C7F97644"
+    },
+    "native_c84605ed": {
+      "label": "採礦部門｜白色烟团序列〔贴图推定〕 · C84605ED",
+      "effectId": "C84605ED"
+    },
+    "native_c894ebad": {
+      "label": "声音＋模型实例（待辨认） · C894EBAD",
+      "effectId": "C894EBAD"
+    },
+    "native_c89c7cf8": {
+      "label": "笔刷·区域·caspianlake·矿石 · C89C7CF8",
+      "effectId": "C89C7CF8"
+    },
+    "native_c8ac0cf0": {
+      "label": "笔刷·区域·sawyer·森林 · C8AC0CF0",
+      "effectId": "C8AC0CF0"
+    },
+    "native_c8b70260": {
+      "label": "声音（待辨认） · C8B70260",
+      "effectId": "C8B70260"
+    },
+    "native_c8c575df": {
+      "label": "分布模型（待辨认） · C8C575DF",
+      "effectId": "C8C575DF"
+    },
+    "native_c8d386d8": {
+      "label": "笔刷·区域·littlegorge·吸引力 · C8D386D8",
+      "effectId": "C8D386D8"
+    },
+    "native_c8de85ec": {
+      "label": "黄色行李人物图标〔贴图推定〕 · C8DE85EC",
+      "effectId": "C8DE85EC"
+    },
+    "native_c8f4e33a": {
+      "label": "笔刷·区域·coastlinebasin·森林 · C8F4E33A",
+      "effectId": "C8F4E33A"
+    },
+    "native_c916501b": {
+      "label": "進階融合反應爐｜白色烟团序列＋蓝色闪电分叉〔贴图推定〕 · C916501B",
+      "effectId": "C916501B"
+    },
+    "native_c92b2825": {
+      "label": "笔刷·区域·testquadrant4·地形 · C92B2825",
+      "effectId": "C92B2825"
+    },
+    "native_c9494498": {
+      "label": "白色小点序列＋红色光晕〔贴图推定〕 · C9494498",
+      "effectId": "C9494498"
+    },
+    "native_c94f18ac": {
+      "label": "绿色树叶图集〔贴图推定〕 · C94F18AC",
+      "effectId": "C94F18AC"
+    },
+    "native_c9701842": {
+      "label": "白色实心圆片〔贴图推定〕 · C9701842",
+      "effectId": "C9701842"
+    },
+    "native_c9800e67": {
+      "label": "外部组件（待辨认） · C9800E67",
+      "effectId": "C9800E67"
+    },
+    "native_c9c2af12": {
+      "label": "笔刷·区域·SC·desolation·地面污染 · C9C2AF12",
+      "effectId": "C9C2AF12"
+    },
+    "native_c9ce29b9": {
+      "label": "蓝色水面波纹〔贴图推定〕 · C9CE29B9",
+      "effectId": "C9CE29B9"
+    },
+    "native_c9f360de": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · C9F360DE",
+      "effectId": "C9F360DE"
+    },
+    "native_ca248a29": {
+      "label": "嵌套粒子＋光束（待辨认） · CA248A29",
+      "effectId": "CA248A29"
+    },
+    "native_ca3f85ca": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · CA3F85CA",
+      "effectId": "CA3F85CA"
+    },
+    "native_ca503890": {
+      "label": "外部组件（待辨认） · CA503890",
+      "effectId": "CA503890"
+    },
+    "native_ca503891": {
+      "label": "外部组件（待辨认） · CA503891",
+      "effectId": "CA503891"
+    },
+    "native_ca503893": {
+      "label": "外部组件（待辨认） · CA503893",
+      "effectId": "CA503893"
+    },
+    "native_ca503896": {
+      "label": "外部组件（待辨认） · CA503896",
+      "effectId": "CA503896"
+    },
+    "native_ca6420ea": {
+      "label": "发光圆环〔贴图推定〕 · CA6420EA",
+      "effectId": "CA6420EA"
+    },
+    "native_ca739a8e": {
+      "label": "暖色星芒光晕＋金色细点序列〔贴图推定〕 · CA739A8E",
+      "effectId": "CA739A8E"
+    },
+    "native_ca7a2065": {
+      "label": "蓝色圆点图钉图标＋白色矿车图标〔贴图推定〕 · CA7A2065",
+      "effectId": "CA7A2065"
+    },
+    "native_ca8a2221": {
+      "label": "白色波动光丝〔贴图推定〕 · CA8A2221",
+      "effectId": "CA8A2221"
+    },
+    "native_cb007d07": {
+      "label": "金色细点序列〔贴图推定〕 · CB007D07",
+      "effectId": "CB007D07"
+    },
+    "native_cb423450": {
+      "label": "V形水花＋白色烟团序列〔贴图推定〕 · CB423450",
+      "effectId": "CB423450"
+    },
+    "native_cb54885b": {
+      "label": "悲伤表情图标〔贴图推定〕 · CB54885B",
+      "effectId": "CB54885B"
+    },
+    "native_cb7ac5ee": {
+      "label": "加大礦石豎井｜灰色烟团序列〔贴图推定〕 · CB7AC5EE",
+      "effectId": "CB7AC5EE"
+    },
+    "native_cbea6164": {
+      "label": "时序组件＋声音（待辨认） · CBEA6164",
+      "effectId": "CBEA6164"
+    },
+    "native_ccf8d8c2": {
+      "label": "地形笔刷组｜外部组件（待辨认）〔来源〕 · CCF8D8C2",
+      "effectId": "CCF8D8C2"
+    },
+    "native_cd0d3256": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · CD0D3256",
+      "effectId": "CD0D3256"
+    },
+    "native_cd2f8401": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · CD2F8401",
+      "effectId": "CD2F8401"
+    },
+    "native_cd400ac9": {
+      "label": "蓝色电弧＋暖色星芒光晕〔贴图推定〕 · CD400AC9",
+      "effectId": "CD400AC9"
+    },
+    "native_cd5cd02c": {
+      "label": "藍鬍子海盜船｜中性调色·粒子发射（待辨认） · CD5CD02C",
+      "effectId": "CD5CD02C"
+    },
+    "native_cd9c8410": {
+      "label": "笔刷·区域·caspianlake·石油 · CD9C8410",
+      "effectId": "CD9C8410"
+    },
+    "native_cdbc0baa": {
+      "label": "模型实例（待辨认） · CDBC0BAA",
+      "effectId": "CDBC0BAA"
+    },
+    "native_cdc34bda": {
+      "label": "国际机场伟大工程｜嵌套粒子＋模型实例（待辨认）〔来源〕 · CDC34BDA",
+      "effectId": "CDC34BDA"
+    },
+    "native_cdf37a8e": {
+      "label": "时序组件＋声音（待辨认） · CDF37A8E",
+      "effectId": "CDF37A8E"
+    },
+    "native_ce1b4bc1": {
+      "label": "石油数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · CE1B4BC1",
+      "effectId": "CE1B4BC1"
+    },
+    "native_ce721104": {
+      "label": "红色原木图标〔贴图推定〕 · CE721104",
+      "effectId": "CE721104"
+    },
+    "native_ce8b38d6": {
+      "label": "光束（待辨认） · CE8B38D6",
+      "effectId": "CE8B38D6"
+    },
+    "native_ce98ed5f": {
+      "label": "地形笔刷组｜嵌套粒子＋外部组件（待辨认）〔来源〕 · CE98ED5F",
+      "effectId": "CE98ED5F"
+    },
+    "native_cf139b57": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · CF139B57",
+      "effectId": "CF139B57"
+    },
+    "native_cf67bcd5": {
+      "label": "蓝色圆点图钉图标＋白色水龙头图标〔贴图推定〕 · CF67BCD5",
+      "effectId": "CF67BCD5"
+    },
+    "native_cf7ad687": {
+      "label": "红色手枪图标〔贴图推定〕 · CF7AD687",
+      "effectId": "CF7AD687"
+    },
+    "native_cf969559": {
+      "label": "蓝色水滴图钉图标＋白色纯色片〔贴图推定〕 · CF969559",
+      "effectId": "CF969559"
+    },
+    "native_cfb4edfe": {
+      "label": "红色闪电图标〔贴图推定〕 · CFB4EDFE",
+      "effectId": "CFB4EDFE"
+    },
+    "native_cfd15c20": {
+      "label": "笔刷·区域·twincities·地形 · CFD15C20",
+      "effectId": "CFD15C20"
+    },
+    "native_d02a3e9d": {
+      "label": "国际机场伟大工程｜白色烟团序列〔贴图推定〕 · D02A3E9D",
+      "effectId": "D02A3E9D"
+    },
+    "native_d0c8711b": {
+      "label": "分布模型（待辨认） · D0C8711B",
+      "effectId": "D0C8711B"
+    },
+    "native_d103a1ff": {
+      "label": "模型实例（待辨认） · D103A1FF",
+      "effectId": "D103A1FF"
+    },
+    "native_d14e61a0": {
+      "label": "灰色碎石序列〔贴图推定〕 · D14E61A0",
+      "effectId": "D14E61A0"
+    },
+    "native_d175f26f": {
+      "label": "声音（待辨认） · D175F26F",
+      "effectId": "D175F26F"
+    },
+    "native_d1810df2": {
+      "label": "锥形灯束＋白色烟团序列〔贴图推定〕 · D1810DF2",
+      "effectId": "D1810DF2"
+    },
+    "native_d1836897": {
+      "label": "笔刷·区域·cliffsidevista·土壤 · D1836897",
+      "effectId": "D1836897"
+    },
+    "native_d1b98752": {
+      "label": "笔刷·区域·SC·hinsara·地形 · D1B98752",
+      "effectId": "D1B98752"
+    },
+    "native_d1e5ea01": {
+      "label": "白色烟团序列〔贴图推定〕 · D1E5EA01",
+      "effectId": "D1E5EA01"
+    },
+    "native_d242cee8": {
+      "label": "竖向粒点序列〔贴图推定〕 · D242CEE8",
+      "effectId": "D242CEE8"
+    },
+    "native_d2506fb9": {
+      "label": "大腳雲霄飛車｜嵌套粒子＋声音＋模型实例（待辨认）〔来源〕 · D2506FB9",
+      "effectId": "D2506FB9"
+    },
+    "native_d25729dd": {
+      "label": "科技园厂房｜灯光（待辨认）〔来源〕 · D25729DD",
+      "effectId": "D25729DD"
+    },
+    "native_d294af72": {
+      "label": "驚奇地探險遊樂園大門。｜白色波动光丝〔贴图推定〕 · D294AF72",
+      "effectId": "D294AF72"
+    },
+    "native_d2ba8fa9": {
+      "label": "蓝色水滴图钉图标＋白色电脑图标〔贴图推定〕 · D2BA8FA9",
+      "effectId": "D2BA8FA9"
+    },
+    "native_d3754d3e": {
+      "label": "笔刷·区域·SC·desolation·水域 · D3754D3E",
+      "effectId": "D3754D3E"
+    },
+    "native_d3ec167e": {
+      "label": "蓝色水滴图钉图标＋白色消防帽图标〔贴图推定〕 · D3EC167E",
+      "effectId": "D3EC167E"
+    },
+    "native_d44eae20": {
+      "label": "笔刷·区域·cliffsidevista·中型·吸引力 · D44EAE20",
+      "effectId": "D44EAE20"
+    },
+    "native_d4527c78": {
+      "label": "悲伤表情图标〔贴图推定〕 · D4527C78",
+      "effectId": "D4527C78"
+    },
+    "native_d50c9b86": {
+      "label": "蓝色水滴图钉图标＋白色飞机图标〔贴图推定〕 · D50C9B86",
+      "effectId": "D50C9B86"
+    },
+    "native_d52a05b1": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · D52A05B1",
+      "effectId": "D52A05B1"
+    },
+    "native_d5b92bc8": {
+      "label": "笔刷·区域·desolation·石油 · D5B92BC8",
+      "effectId": "D5B92BC8"
+    },
+    "native_d5ecf7d7": {
+      "label": "白色实心圆片〔贴图推定〕 · D5ECF7D7",
+      "effectId": "D5ECF7D7"
+    },
+    "native_d666a01f": {
+      "label": "黄色学士帽图标〔贴图推定〕 · D666A01F",
+      "effectId": "D666A01F"
+    },
+    "native_d67c10cf": {
+      "label": "笔刷·区域·testquadrant2·森林 · D67C10CF",
+      "effectId": "D67C10CF"
+    },
+    "native_d67c9704": {
+      "label": "红白四叶闪光＋灰色烟尘云〔贴图推定〕 · D67C9704",
+      "effectId": "D67C9704"
+    },
+    "native_d6f6853a": {
+      "label": "白色柔光点＋彩色电弧〔贴图推定〕 · D6F6853A",
+      "effectId": "D6F6853A"
+    },
+    "native_d7b9b058": {
+      "label": "笔刷·区域·dormant·水域 · D7B9B058",
+      "effectId": "D7B9B058"
+    },
+    "native_d8125baf": {
+      "label": "白色波动光丝〔贴图推定〕 · D8125BAF",
+      "effectId": "D8125BAF"
+    },
+    "native_d855f8db": {
+      "label": "红色加油图标〔贴图推定〕 · D855F8DB",
+      "effectId": "D855F8DB"
+    },
+    "native_d8bc0381": {
+      "label": "地形特征·山谷·小型 · D8BC0381",
+      "effectId": "D8BC0381"
+    },
+    "native_d8cc4f75": {
+      "label": "恐龍朵莉｜彩色调色·粒子发射（待辨认） · D8CC4F75",
+      "effectId": "D8CC4F75"
+    },
+    "native_d8eeccaa": {
+      "label": "蓝色圆点图钉图标＋白色飞艇图标〔贴图推定〕 · D8EECCAA",
+      "effectId": "D8EECCAA"
+    },
+    "native_d8f1b195": {
+      "label": "白色烟团序列〔贴图推定〕 · D8F1B195",
+      "effectId": "D8F1B195"
+    },
+    "native_d9012a82": {
+      "label": "蓝色水滴图钉图标＋白色矿车图标〔贴图推定〕 · D9012A82",
+      "effectId": "D9012A82"
+    },
+    "native_d96c6760": {
+      "label": "煤矿伟大工程｜宽扇形灯束〔贴图推定〕 · D96C6760",
+      "effectId": "D96C6760"
+    },
+    "native_d96cfb76": {
+      "label": "偏蓝调色·粒子发射（待辨认） · D96CFB76",
+      "effectId": "D96CFB76"
+    },
+    "native_d992068a": {
+      "label": "悲伤表情图标〔贴图推定〕 · D992068A",
+      "effectId": "D992068A"
+    },
+    "native_d9941ad0": {
+      "label": "蓝色圆点图钉图标＋白色眼睛图标〔贴图推定〕 · D9941AD0",
+      "effectId": "D9941AD0"
+    },
+    "native_d99c1e55": {
+      "label": "白色烟团序列〔贴图推定〕 · D99C1E55",
+      "effectId": "D99C1E55"
+    },
+    "native_d9eed46e": {
+      "label": "笔刷·区域·SC·hinsara·土壤 · D9EED46E",
+      "effectId": "D9EED46E"
+    },
+    "native_da277942": {
+      "label": "羅馬幸運賭場｜橙色火焰序列＋暖色星芒光晕〔贴图推定〕 · DA277942",
+      "effectId": "DA277942"
+    },
+    "native_da2c9475": {
+      "label": "橙色门图标〔贴图推定〕 · DA2C9475",
+      "effectId": "DA2C9475"
+    },
+    "native_da8977f2": {
+      "label": "嵌套粒子＋模型实例（待辨认） · DA8977F2",
+      "effectId": "DA8977F2"
+    },
+    "native_db1e84ca": {
+      "label": "消防無人機機棚｜暖色星芒光晕〔贴图推定〕 · DB1E84CA",
+      "effectId": "DB1E84CA"
+    },
+    "native_db380198": {
+      "label": "OmegaCo工廠｜白色烟团序列〔贴图推定〕 · DB380198",
+      "effectId": "DB380198"
+    },
+    "native_db4ce12b": {
+      "label": "悲伤表情图标〔贴图推定〕 · DB4CE12B",
+      "effectId": "DB4CE12B"
+    },
+    "native_db5c5090": {
+      "label": "笔刷·区域·coastlinebasin·土壤 · DB5C5090",
+      "effectId": "DB5C5090"
+    },
+    "native_db82868a": {
+      "label": "蓝色圆点图钉图标＋白色有轨车图标〔贴图推定〕 · DB82868A",
+      "effectId": "DB82868A"
+    },
+    "native_dbefce8a": {
+      "label": "黄色偷窃图标〔贴图推定〕 · DBEFCE8A",
+      "effectId": "DBEFCE8A"
+    },
+    "native_dbf2b815": {
+      "label": "橙色奔跑人物图标〔贴图推定〕 · DBF2B815",
+      "effectId": "DBF2B815"
+    },
+    "native_dc258e09": {
+      "label": "零散碎点＋白色烟团序列〔贴图推定〕 · DC258E09",
+      "effectId": "DC258E09"
+    },
+    "native_dc552be3": {
+      "label": "藍鬍子海盜船｜暖色星芒光晕＋橙色火焰序列〔贴图推定〕 · DC552BE3",
+      "effectId": "DC552BE3"
+    },
+    "native_dc746a74": {
+      "label": "暖色星芒光晕＋金色细点序列〔贴图推定〕 · DC746A74",
+      "effectId": "DC746A74"
+    },
+    "native_dc83a15e": {
+      "label": "暖色星芒光晕〔贴图推定〕 · DC83A15E",
+      "effectId": "DC83A15E"
+    },
+    "native_dc9b8f3b": {
+      "label": "紅十字會救援中心｜白色烟团序列〔贴图推定〕 · DC9B8F3B",
+      "effectId": "DC9B8F3B"
+    },
+    "native_dcd237fe": {
+      "label": "笔刷·区域·echogorgecross·水域 · DCD237FE",
+      "effectId": "DCD237FE"
+    },
+    "native_dcd7343e": {
+      "label": "蓝色电弧与暗影〔贴图推定〕 · DCD7343E",
+      "effectId": "DCD7343E"
+    },
+    "native_dcf070c0": {
+      "label": "暖色星芒光晕＋白色烟团序列〔贴图推定〕 · DCF070C0",
+      "effectId": "DCF070C0"
+    },
+    "native_dcf0805b": {
+      "label": "偏蓝调色·粒子发射（待辨认） · DCF0805B",
+      "effectId": "DCF0805B"
+    },
+    "native_dcfafd31": {
+      "label": "笔刷·区域·capetrinity·土壤 · DCFAFD31",
+      "effectId": "DCFAFD31"
+    },
+    "native_dd168f34": {
+      "label": "笔刷·区域·twincities·煤炭 · DD168F34",
+      "effectId": "DD168F34"
+    },
+    "native_dd28885e": {
+      "label": "白色烟团序列〔贴图推定〕 · DD28885E",
+      "effectId": "DD28885E"
+    },
+    "native_dd49f366": {
+      "label": "白色细圆环＋白色纯色片〔贴图推定〕 · DD49F366",
+      "effectId": "DD49F366"
+    },
+    "native_dd6a42c1": {
+      "label": "中性调色·粒子发射（待辨认） · DD6A42C1",
+      "effectId": "DD6A42C1"
+    },
+    "native_dd97955c": {
+      "label": "白色烟团序列〔贴图推定〕 · DD97955C",
+      "effectId": "DD97955C"
+    },
+    "native_dea64838": {
+      "label": "暖色星芒光晕＋金色细点序列〔贴图推定〕 · DEA64838",
+      "effectId": "DEA64838"
+    },
+    "native_deecd5e4": {
+      "label": "白色纯色片〔贴图推定〕 · DEECD5E4",
+      "effectId": "DEECD5E4"
+    },
+    "native_df348558": {
+      "label": "白色烟团序列〔贴图推定〕 · DF348558",
+      "effectId": "DF348558"
+    },
+    "native_df3ea479": {
+      "label": "中性调色·粒子发射（待辨认） · DF3EA479",
+      "effectId": "DF3EA479"
+    },
+    "native_df5fe800": {
+      "label": "驚奇地探險遊樂園大門。｜锥形灯束〔贴图推定〕 · DF5FE800",
+      "effectId": "DF5FE800"
+    },
+    "native_df6d43c6": {
+      "label": "太空中心伟大工程｜暖色星芒光晕〔贴图推定〕 · DF6D43C6",
+      "effectId": "DF6D43C6"
+    },
+    "native_dfe5e0bc": {
+      "label": "黑灰烟团序列＋白色小点序列〔贴图推定〕 · DFE5E0BC",
+      "effectId": "DFE5E0BC"
+    },
+    "native_e02924b5": {
+      "label": "飘带（待辨认） · E02924B5",
+      "effectId": "E02924B5"
+    },
+    "native_e06ff8eb": {
+      "label": "蓝色水滴图钉图标＋白色垃圾桶图标〔贴图推定〕 · E06FF8EB",
+      "effectId": "E06FF8EB"
+    },
+    "native_e09ede1f": {
+      "label": "灰色烟团序列＋橙色火焰序列〔贴图推定〕 · E09EDE1F",
+      "effectId": "E09EDE1F"
+    },
+    "native_e0b93c90": {
+      "label": "笔刷·区域·desolation·矿石 · E0B93C90",
+      "effectId": "E0B93C90"
+    },
+    "native_e0c404f8": {
+      "label": "黄色涂鸦图标〔贴图推定〕 · E0C404F8",
+      "effectId": "E0C404F8"
+    },
+    "native_e0ee08d6": {
+      "label": "蓝色水滴图钉图标＋白色油桶图标〔贴图推定〕 · E0EE08D6",
+      "effectId": "E0EE08D6"
+    },
+    "native_e0f922ee": {
+      "label": "锥形灯束＋Galaxino赌场招牌图案〔贴图推定〕 · E0F922EE",
+      "effectId": "E0F922EE"
+    },
+    "native_e127c9bb": {
+      "label": "笔刷·区域·echogorgecross·吸引力 · E127C9BB",
+      "effectId": "E127C9BB"
+    },
+    "native_e131378d": {
+      "label": "开心表情图标〔贴图推定〕 · E131378D",
+      "effectId": "E131378D"
+    },
+    "native_e19532fc": {
+      "label": "笔刷·平整 · E19532FC",
+      "effectId": "E19532FC"
+    },
+    "native_e1973b06": {
+      "label": "太阳能基地伟大工程｜白色柔光点〔贴图推定〕 · E1973B06",
+      "effectId": "E1973B06"
+    },
+    "native_e19caa48": {
+      "label": "笔刷·区域·dormant·森林 · E19CAA48",
+      "effectId": "E19CAA48"
+    },
+    "native_e2390c28": {
+      "label": "蓝色警徽图标〔贴图推定〕 · E2390C28",
+      "effectId": "E2390C28"
+    },
+    "native_e2432082": {
+      "label": "蓝色圆头标杆图标〔贴图推定〕 · E2432082",
+      "effectId": "E2432082"
+    },
+    "native_e244f4c9": {
+      "label": "笔刷·区域·capetrinity·水域 · E244F4C9",
+      "effectId": "E244F4C9"
+    },
+    "native_e2dc841a": {
+      "label": "白色细圆环〔贴图推定〕 · E2DC841A",
+      "effectId": "E2DC841A"
+    },
+    "native_e345d710": {
+      "label": "白色烟团序列〔贴图推定〕 · E345D710",
+      "effectId": "E345D710"
+    },
+    "native_e3d31a79": {
+      "label": "OmegaCo工廠｜灯光（待辨认）〔来源〕 · E3D31A79",
+      "effectId": "E3D31A79"
+    },
+    "native_e3dff3c7": {
+      "label": "笔刷·区域·capetrinity·森林 · E3DFF3C7",
+      "effectId": "E3DFF3C7"
+    },
+    "native_e411ec09": {
+      "label": "发光圆环＋零散碎点〔贴图推定〕 · E411EC09",
+      "effectId": "E411EC09"
+    },
+    "native_e41b5e87": {
+      "label": "暖色星芒光晕＋白色烟团序列〔贴图推定〕 · E41B5E87",
+      "effectId": "E41B5E87"
+    },
+    "native_e4415295": {
+      "label": "悲伤表情图标〔贴图推定〕 · E4415295",
+      "effectId": "E4415295"
+    },
+    "native_e4d1996a": {
+      "label": "太空中心伟大工程｜模型实例＋分布模型（待辨认）〔来源〕 · E4D1996A",
+      "effectId": "E4D1996A"
+    },
+    "native_e51a8979": {
+      "label": "煤炭数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · E51A8979",
+      "effectId": "E51A8979"
+    },
+    "native_e51e06f3": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · E51E06F3",
+      "effectId": "E51E06F3"
+    },
+    "native_e5b4c007": {
+      "label": "森林数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · E5B4C007",
+      "effectId": "E5B4C007"
+    },
+    "native_e6284934": {
+      "label": "白色柔光点＋红白四叶闪光〔贴图推定〕 · E6284934",
+      "effectId": "E6284934"
+    },
+    "native_e6bcecd8": {
+      "label": "灰色烟团序列＋橙色火焰序列〔贴图推定〕 · E6BCECD8",
+      "effectId": "E6BCECD8"
+    },
+    "native_e7405446": {
+      "label": "红色马戏帐篷图标〔贴图推定〕 · E7405446",
+      "effectId": "E7405446"
+    },
+    "native_e755bea3": {
+      "label": "白色烟雾团＋白色星形图标〔贴图推定〕 · E755BEA3",
+      "effectId": "E755BEA3"
+    },
+    "native_e7ba3af4": {
+      "label": "金色细点序列〔贴图推定〕 · E7BA3AF4",
+      "effectId": "E7BA3AF4"
+    },
+    "native_e7c2def4": {
+      "label": "国际机场伟大工程｜锥形灯束〔贴图推定〕 · E7C2DEF4",
+      "effectId": "E7C2DEF4"
+    },
+    "native_e80a46f5": {
+      "label": "Alpha测试格图案〔贴图推定〕 · E80A46F5",
+      "effectId": "E80A46F5"
+    },
+    "native_e825b74c": {
+      "label": "红色蒙面人物图标〔贴图推定〕 · E825B74C",
+      "effectId": "E825B74C"
+    },
+    "native_e8319dd1": {
+      "label": "白色灭火器图标〔贴图推定〕 · E8319DD1",
+      "effectId": "E8319DD1"
+    },
+    "native_e8331c30": {
+      "label": "发光圆环〔贴图推定〕 · E8331C30",
+      "effectId": "E8331C30"
+    },
+    "native_e86ef9c4": {
+      "label": "白色火焰图标〔贴图推定〕 · E86EF9C4",
+      "effectId": "E86EF9C4"
+    },
+    "native_e86f2028": {
+      "label": "白色烟团序列＋垃圾杂物碎片图集〔贴图推定〕 · E86F2028",
+      "effectId": "E86F2028"
+    },
+    "native_e86fd5af": {
+      "label": "蓝色扇叶图钉图标〔贴图推定〕 · E86FD5AF",
+      "effectId": "E86FD5AF"
+    },
+    "native_e87c6af8": {
+      "label": "蓝色圆点图钉图标＋白色纯色片〔贴图推定〕 · E87C6AF8",
+      "effectId": "E87C6AF8"
+    },
+    "native_e8e12c2e": {
+      "label": "白色柔光点〔贴图推定〕 · E8E12C2E",
+      "effectId": "E8E12C2E"
+    },
+    "native_e927d278": {
+      "label": "進階加大煤礦豎井｜灰色烟团序列〔贴图推定〕 · E927D278",
+      "effectId": "E927D278"
+    },
+    "native_e959e534": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · E959E534",
+      "effectId": "E959E534"
+    },
+    "native_e96a8751": {
+      "label": "燃油发电厂｜暖色星芒光晕＋白色柔光点〔贴图推定〕 · E96A8751",
+      "effectId": "E96A8751"
+    },
+    "native_e996606d": {
+      "label": "白色法律符号图标〔贴图推定〕 · E996606D",
+      "effectId": "E996606D"
+    },
+    "native_e9a15be5": {
+      "label": "外部组件（待辨认） · E9A15BE5",
+      "effectId": "E9A15BE5"
+    },
+    "native_e9ad2468": {
+      "label": "笔刷·区域·testquadrant3·水域 · E9AD2468",
+      "effectId": "E9AD2468"
+    },
+    "native_ea00d4dd": {
+      "label": "V形水花〔贴图推定〕 · EA00D4DD",
+      "effectId": "EA00D4DD"
+    },
+    "native_ea172a91": {
+      "label": "白色纯色片〔贴图推定〕 · EA172A91",
+      "effectId": "EA172A91"
+    },
+    "native_ea3fa630": {
+      "label": "笔刷·区域·confluence·吸引力 · EA3FA630",
+      "effectId": "EA3FA630"
+    },
+    "native_ea41cc48": {
+      "label": "笔刷·区域·horizon·地形 · EA41CC48",
+      "effectId": "EA41CC48"
+    },
+    "native_eaa6e546": {
+      "label": "灰色烟尘序列＋棕色碎屑序列〔贴图推定〕 · EAA6E546",
+      "effectId": "EAA6E546"
+    },
+    "native_eacf0e5e": {
+      "label": "煤炭数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · EACF0E5E",
+      "effectId": "EACF0E5E"
+    },
+    "native_eae95d84": {
+      "label": "金色细点序列〔贴图推定〕 · EAE95D84",
+      "effectId": "EAE95D84"
+    },
+    "native_eb1c8e27": {
+      "label": "灰色烟团序列〔贴图推定〕 · EB1C8E27",
+      "effectId": "EB1C8E27"
+    },
+    "native_eb3b3448": {
+      "label": "燃油发电厂｜彩色旋涡＋白色实心圆片〔贴图推定〕 · EB3B3448",
+      "effectId": "EB3B3448"
+    },
+    "native_eb9aa606": {
+      "label": "高级煤矿竖井｜暖色星芒光晕〔贴图推定〕 · EB9AA606",
+      "effectId": "EB9AA606"
+    },
+    "native_ec0f872f": {
+      "label": "白色柔光点＋红色细十字光〔贴图推定〕 · EC0F872F",
+      "effectId": "EC0F872F"
+    },
+    "native_ec143599": {
+      "label": "蓝色圆点图钉图标＋白色V字标记图标〔贴图推定〕 · EC143599",
+      "effectId": "EC143599"
+    },
+    "native_ec294a2b": {
+      "label": "国际机场伟大工程｜暖色星芒光晕〔贴图推定〕 · EC294A2B",
+      "effectId": "EC294A2B"
+    },
+    "native_ec4c5012": {
+      "label": "白色回收标记图标〔贴图推定〕 · EC4C5012",
+      "effectId": "EC4C5012"
+    },
+    "native_ec95854c": {
+      "label": "笔刷·区域·echogorgecross·地形 · EC95854C",
+      "effectId": "EC95854C"
+    },
+    "native_ec9ec790": {
+      "label": "菁英觀光冠樓｜锥形灯束＋青色同心环图案〔贴图推定〕 · EC9EC790",
+      "effectId": "EC9EC790"
+    },
+    "native_ec9eebe7": {
+      "label": "蓝色水滴图钉图标＋白色油桶图标〔贴图推定〕 · EC9EEBE7",
+      "effectId": "EC9EEBE7"
+    },
+    "native_ecd096ab": {
+      "label": "白色烟团序列〔贴图推定〕 · ECD096AB",
+      "effectId": "ECD096AB"
+    },
+    "native_ed6cb418": {
+      "label": "嵌套粒子＋外部组件（待辨认） · ED6CB418",
+      "effectId": "ED6CB418"
+    },
+    "native_ee1a31a3": {
+      "label": "白色纯色片〔贴图推定〕 · EE1A31A3",
+      "effectId": "EE1A31A3"
+    },
+    "native_ee6b0b89": {
+      "label": "白色柔光点＋棕色碎屑序列〔贴图推定〕 · EE6B0B89",
+      "effectId": "EE6B0B89"
+    },
+    "native_ee763c98": {
+      "label": "石油总部模块｜白色波动光丝〔贴图推定〕 · EE763C98",
+      "effectId": "EE763C98"
+    },
+    "native_ee7d5b50": {
+      "label": "抽取艙｜暖色星芒光晕〔贴图推定〕 · EE7D5B50",
+      "effectId": "EE7D5B50"
+    },
+    "native_eeab8981": {
+      "label": "太空中心伟大工程｜嵌套粒子＋模型实例（待辨认）〔来源〕 · EEAB8981",
+      "effectId": "EEAB8981"
+    },
+    "native_ef1cca75": {
+      "label": "旋轉木馬｜模型实例（待辨认）〔来源〕 · EF1CCA75",
+      "effectId": "EF1CCA75"
+    },
+    "native_ef1e145c": {
+      "label": "暖色星芒光晕〔贴图推定〕 · EF1E145C",
+      "effectId": "EF1E145C"
+    },
+    "native_ef7c121e": {
+      "label": "醫療無人機機棚｜暖色星芒光晕〔贴图推定〕 · EF7C121E",
+      "effectId": "EF7C121E"
+    },
+    "native_ef9e688b": {
+      "label": "橙色门图标〔贴图推定〕 · EF9E688B",
+      "effectId": "EF9E688B"
+    },
+    "native_efc07931": {
+      "label": "煤矿｜灰色烟团序列〔贴图推定〕 · EFC07931",
+      "effectId": "EFC07931"
+    },
+    "native_efc07932": {
+      "label": "煤矿｜灰色烟团序列＋灰色碎石序列〔贴图推定〕 · EFC07932",
+      "effectId": "EFC07932"
+    },
+    "native_efc07933": {
+      "label": "高级煤矿｜灰色烟团序列＋灰色碎石序列〔贴图推定〕 · EFC07933",
+      "effectId": "EFC07933"
+    },
+    "native_efc4dadf": {
+      "label": "笔刷·区域·reflection·石油 · EFC4DADF",
+      "effectId": "EFC4DADF"
+    },
+    "native_efd33b2f": {
+      "label": "白色烟团序列〔贴图推定〕 · EFD33B2F",
+      "effectId": "EFD33B2F"
+    },
+    "native_efdbbc58": {
+      "label": "橙色火焰序列＋灰色烟团序列〔贴图推定〕 · EFDBBC58",
+      "effectId": "EFDBBC58"
+    },
+    "native_efeafe64": {
+      "label": "锥形灯束〔贴图推定〕 · EFEAFE64",
+      "effectId": "EFEAFE64"
+    },
+    "native_efee9cfb": {
+      "label": "白色烟团序列〔贴图推定〕 · EFEE9CFB",
+      "effectId": "EFEE9CFB"
+    },
+    "native_f125d1ee": {
+      "label": "獨目飛車冠樓｜白色烟团序列〔贴图推定〕 · F125D1EE",
+      "effectId": "F125D1EE"
+    },
+    "native_f13c7ccb": {
+      "label": "橙色火焰环＋灰色烟尘序列〔贴图推定〕 · F13C7CCB",
+      "effectId": "F13C7CCB"
+    },
+    "native_f1951719": {
+      "label": "白色烟团序列＋褐色树叶图集〔贴图推定〕 · F1951719",
+      "effectId": "F1951719"
+    },
+    "native_f1a4d014": {
+      "label": "国际机场伟大工程｜暖色星芒光晕〔贴图推定〕 · F1A4D014",
+      "effectId": "F1A4D014"
+    },
+    "native_f1b295a8": {
+      "label": "笔刷·区域·testquadrant1·土壤 · F1B295A8",
+      "effectId": "F1B295A8"
+    },
+    "native_f2558f3d": {
+      "label": "蓝色圆点图钉图标＋白色循环方块图标〔贴图推定〕 · F2558F3D",
+      "effectId": "F2558F3D"
+    },
+    "native_f278e68a": {
+      "label": "绿色手铐图标〔贴图推定〕 · F278E68A",
+      "effectId": "F278E68A"
+    },
+    "native_f2b75fdb": {
+      "label": "旋轉木馬｜嵌套粒子＋外部组件（待辨认）〔来源〕 · F2B75FDB",
+      "effectId": "F2B75FDB"
+    },
+    "native_f2d124c3": {
+      "label": "黄色学士帽图标〔贴图推定〕 · F2D124C3",
+      "effectId": "F2D124C3"
+    },
+    "native_f2e9d61b": {
+      "label": "波浪發電廠｜白色柔光点〔贴图推定〕 · F2E9D61B",
+      "effectId": "F2E9D61B"
+    },
+    "native_f39fc732": {
+      "label": "科潘大厦地标｜白色柔光点〔贴图推定〕 · F39FC732",
+      "effectId": "F39FC732"
+    },
+    "native_f3ca344f": {
+      "label": "白色细圆环〔贴图推定〕 · F3CA344F",
+      "effectId": "F3CA344F"
+    },
+    "native_f3de7867": {
+      "label": "白色柔光点〔贴图推定〕 · F3DE7867",
+      "effectId": "F3DE7867"
+    },
+    "native_f3f96a7c": {
+      "label": "白色纯色片〔贴图推定〕 · F3F96A7C",
+      "effectId": "F3F96A7C"
+    },
+    "native_f44c2fd2": {
+      "label": "蓝色圆点图钉图标＋白色马戏帐篷图标〔贴图推定〕 · F44C2FD2",
+      "effectId": "F44C2FD2"
+    },
+    "native_f4d7e1be": {
+      "label": "笔刷·区域·土壤云纹 · F4D7E1BE",
+      "effectId": "F4D7E1BE"
+    },
+    "native_f4fe03f8": {
+      "label": "黄色集装箱图标〔贴图推定〕 · F4FE03F8",
+      "effectId": "F4FE03F8"
+    },
+    "native_f503cf99": {
+      "label": "笔刷·区域·testquadrant3·吸引力 · F503CF99",
+      "effectId": "F503CF99"
+    },
+    "native_f51af7d8": {
+      "label": "矿石数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · F51AF7D8",
+      "effectId": "F51AF7D8"
+    },
+    "native_f5293112": {
+      "label": "黄色芯片图标〔贴图推定〕 · F5293112",
+      "effectId": "F5293112"
+    },
+    "native_f542cd70": {
+      "label": "嵌套粒子＋光束（待辨认） · F542CD70",
+      "effectId": "F542CD70"
+    },
+    "native_f5ddd7cc": {
+      "label": "太空中心伟大工程｜暖色星芒光晕〔贴图推定〕 · F5DDD7CC",
+      "effectId": "F5DDD7CC"
+    },
+    "native_f63648ce": {
+      "label": "笔刷·区域·newdenmont·土壤 · F63648CE",
+      "effectId": "F63648CE"
+    },
+    "native_f6575005": {
+      "label": "高级煤矿｜模型实例（待辨认）〔来源〕 · F6575005",
+      "effectId": "F6575005"
+    },
+    "native_f68e36fd": {
+      "label": "白色柔光点〔贴图推定〕 · F68E36FD",
+      "effectId": "F68E36FD"
+    },
+    "native_f69ac587": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · F69AC587",
+      "effectId": "F69AC587"
+    },
+    "native_f71c8f6e": {
+      "label": "彩色旋涡＋白色实心圆片〔贴图推定〕 · F71C8F6E",
+      "effectId": "F71C8F6E"
+    },
+    "native_f7537316": {
+      "label": "笔刷·区域·dormant·煤炭 · F7537316",
+      "effectId": "F7537316"
+    },
+    "native_f763201a": {
+      "label": "蓝色圆点图钉图标＋白色矿石图标〔贴图推定〕 · F763201A",
+      "effectId": "F763201A"
+    },
+    "native_f764f744": {
+      "label": "石油钻探基地｜灯光（待辨认）〔来源〕 · F764F744",
+      "effectId": "F764F744"
+    },
+    "native_f79964de": {
+      "label": "白色细圆环〔贴图推定〕 · F79964DE",
+      "effectId": "F79964DE"
+    },
+    "native_f79dc534": {
+      "label": "赌场扑克牌与骰子图标＋红白斜纹〔贴图推定〕 · F79DC534",
+      "effectId": "F79DC534"
+    },
+    "native_f79dc535": {
+      "label": "赌场扑克牌与骰子图标〔贴图推定〕 · F79DC535",
+      "effectId": "F79DC535"
+    },
+    "native_f7ae346c": {
+      "label": "笔刷·区域·riverland·地形 · F7AE346C",
+      "effectId": "F7AE346C"
+    },
+    "native_f7d08be1": {
+      "label": "馬克六號空氣濾淨冠樓｜白色烟团序列＋灰色烟尘序列〔贴图推定〕 · F7D08BE1",
+      "effectId": "F7D08BE1"
+    },
+    "native_f7d2fb4c": {
+      "label": "笔刷·区域·horizon·煤炭 · F7D2FB4C",
+      "effectId": "F7D2FB4C"
+    },
+    "native_f80d57de": {
+      "label": "V形水花〔贴图推定〕 · F80D57DE",
+      "effectId": "F80D57DE"
+    },
+    "native_f84a80db": {
+      "label": "蓝色水滴图钉图标＋白色循环方块图标〔贴图推定〕 · F84A80DB",
+      "effectId": "F84A80DB"
+    },
+    "native_f85b849a": {
+      "label": "嵌套粒子＋声音＋灯光（待辨认） · F85B849A",
+      "effectId": "F85B849A"
+    },
+    "native_f85cd3a3": {
+      "label": "蓝色警徽图标〔贴图推定〕 · F85CD3A3",
+      "effectId": "F85CD3A3"
+    },
+    "native_f870cd40": {
+      "label": "笔刷·区域·edgewaterbay·矿石 · F870CD40",
+      "effectId": "F870CD40"
+    },
+    "native_f8d0ae10": {
+      "label": "橙色奔跑人物图标〔贴图推定〕 · F8D0AE10",
+      "effectId": "F8D0AE10"
+    },
+    "native_f9014911": {
+      "label": "白色烟团序列＋红砖碎块序列〔贴图推定〕 · F9014911",
+      "effectId": "F9014911"
+    },
+    "native_f94cf922": {
+      "label": "白色烟团序列＋暖色星芒光晕〔贴图推定〕 · F94CF922",
+      "effectId": "F94CF922"
+    },
+    "native_fa1afff0": {
+      "label": "石油数据笔刷｜嵌套粒子＋外部组件（待辨认）〔来源〕 · FA1AFFF0",
+      "effectId": "FA1AFFF0"
+    },
+    "native_fa254a4e": {
+      "label": "笔刷·区域·confluence·矿石 · FA254A4E",
+      "effectId": "FA254A4E"
+    },
+    "native_fa4954c7": {
+      "label": "时序组件＋外部组件（待辨认） · FA4954C7",
+      "effectId": "FA4954C7"
+    },
+    "native_fa565155": {
+      "label": "分布模型（待辨认） · FA565155",
+      "effectId": "FA565155"
+    },
+    "native_fa9a33a7": {
+      "label": "旋轉太空船雲霄飛車｜嵌套粒子＋声音＋模型实例（待辨认）〔来源〕 · FA9A33A7",
+      "effectId": "FA9A33A7"
+    },
+    "native_fabba8d1": {
+      "label": "笔刷·区域·sawyer·吸引力 · FABBA8D1",
+      "effectId": "FABBA8D1"
+    },
+    "native_fad8ad34": {
+      "label": "东京塔地标｜白色柔光点〔贴图推定〕 · FAD8AD34",
+      "effectId": "FAD8AD34"
+    },
+    "native_fae8c2c3": {
+      "label": "红色烧瓶火焰图标〔贴图推定〕 · FAE8C2C3",
+      "effectId": "FAE8C2C3"
+    },
+    "native_faf7382d": {
+      "label": "灰色烟团序列〔贴图推定〕 · FAF7382D",
+      "effectId": "FAF7382D"
+    },
+    "native_fb2ef90a": {
+      "label": "笔刷·区域·SC·desolation·辐射 · FB2EF90A",
+      "effectId": "FB2EF90A"
+    },
+    "native_fb4ab1e8": {
+      "label": "笔刷·区域·SC·hinsara·水域 · FB4AB1E8",
+      "effectId": "FB4AB1E8"
+    },
+    "native_fb6b4978": {
+      "label": "白色纯色片〔贴图推定〕 · FB6B4978",
+      "effectId": "FB6B4978"
+    },
+    "native_fb6fe761": {
+      "label": "研究中心｜白色弯月光片〔贴图推定〕 · FB6FE761",
+      "effectId": "FB6FE761"
+    },
+    "native_fb8e02c8": {
+      "label": "笔刷·区域·newdenmont·水域 · FB8E02C8",
+      "effectId": "FB8E02C8"
+    },
+    "native_fb99c6d4": {
+      "label": "蓝色水滴图钉图标〔贴图推定〕 · FB99C6D4",
+      "effectId": "FB99C6D4"
+    },
+    "native_fba49ac0": {
+      "label": "碰碰車｜嵌套粒子＋声音＋模型实例（待辨认）〔来源〕 · FBA49AC0",
+      "effectId": "FBA49AC0"
+    },
+    "native_fc053a7f": {
+      "label": "白色烟团序列〔贴图推定〕 · FC053A7F",
+      "effectId": "FC053A7F"
+    },
+    "native_fc19b72d": {
+      "label": "白色几何符号图集〔贴图推定〕 · FC19B72D",
+      "effectId": "FC19B72D"
+    },
+    "native_fc632aa1": {
+      "label": "蓝色水滴图钉图标＋白色铁路交叉图标〔贴图推定〕 · FC632AA1",
+      "effectId": "FC632AA1"
+    },
+    "native_fccee37b": {
+      "label": "发光圆环＋零散碎点〔贴图推定〕 · FCCEE37B",
+      "effectId": "FCCEE37B"
+    },
+    "native_fd1dc67b": {
+      "label": "白色烟团序列〔贴图推定〕 · FD1DC67B",
+      "effectId": "FD1DC67B"
+    },
+    "native_fd225d83": {
+      "label": "笔刷·区域·flocksriver·煤炭 · FD225D83",
+      "effectId": "FD225D83"
+    },
+    "native_fd2f5305": {
+      "label": "暖色星芒光晕＋白色烟团序列〔贴图推定〕 · FD2F5305",
+      "effectId": "FD2F5305"
+    },
+    "native_fd3e5cd7": {
+      "label": "建筑拆除 · FD3E5CD7",
+      "effectId": "FD3E5CD7"
+    },
+    "native_fdcb16af": {
+      "label": "红色铁轨图标〔贴图推定〕 · FDCB16AF",
+      "effectId": "FDCB16AF"
+    },
+    "native_fdd515ca": {
+      "label": "模型实例（待辨认） · FDD515CA",
+      "effectId": "FDD515CA"
+    },
+    "native_fde00358": {
+      "label": "声音（待辨认） · FDE00358",
+      "effectId": "FDE00358"
+    },
+    "native_fe0b95b7": {
+      "label": "灯光（待辨认） · FE0B95B7",
+      "effectId": "FE0B95B7"
+    },
+    "native_fe19f785": {
+      "label": "白色碎石序列＋灰色烟团序列〔贴图推定〕 · FE19F785",
+      "effectId": "FE19F785"
+    },
+    "native_fe2d3c5b": {
+      "label": "红色火焰图标〔贴图推定〕 · FE2D3C5B",
+      "effectId": "FE2D3C5B"
+    },
+    "native_fe3b77b3": {
+      "label": "生態公園冠樓｜白色烟团序列〔贴图推定〕 · FE3B77B3",
+      "effectId": "FE3B77B3"
+    },
+    "native_fea6cbd9": {
+      "label": "开心表情图标〔贴图推定〕 · FEA6CBD9",
+      "effectId": "FEA6CBD9"
+    },
+    "native_feaacf83": {
+      "label": "笔刷·区域·coastlinebasin·吸引力 · FEAACF83",
+      "effectId": "FEAACF83"
+    },
+    "native_fee29915": {
+      "label": "白色烟团序列〔贴图推定〕 · FEE29915",
+      "effectId": "FEE29915"
+    },
+    "native_feeddae3": {
+      "label": "分布模型（待辨认） · FEEDDAE3",
+      "effectId": "FEEDDAE3"
+    },
+    "native_fef0633c": {
+      "label": "地形笔刷组｜嵌套粒子＋外部组件（待辨认）〔来源〕 · FEF0633C",
+      "effectId": "FEF0633C"
+    },
+    "native_ff1538f9": {
+      "label": "模型实例（待辨认） · FF1538F9",
+      "effectId": "FF1538F9"
+    },
+    "native_ff504032": {
+      "label": "地形笔刷组｜嵌套粒子＋外部组件（待辨认）〔来源〕 · FF504032",
+      "effectId": "FF504032"
+    },
+    "native_ffcb7a89": {
+      "label": "白色法律符号图标〔贴图推定〕 · FFCB7A89",
+      "effectId": "FFCB7A89"
+    },
+    "native_ffeb364f": {
+      "label": "白色圆点序列〔贴图推定〕 · FFEB364F",
+      "effectId": "FFEB364F"
+    },
+    "native_fff67e8c": {
+      "label": "白色放射光点〔贴图推定〕 · FFF67E8C",
+      "effectId": "FFF67E8C"
+    },
+    "smoke": {
+      "label": "炼油厂烟雾",
+      "effectId": "1811B820"
+    }
+  }
+}

@@ -247,6 +247,8 @@ impl Bundle {
             object.mesh.is_some()
                 && !object.props.contains_key("ny_lot")
                 && !object.props.contains_key("ny_lot_regions")
+                && !object.props.contains_key("ny_prop_preset")
+                && !object.props.contains_key("ny_effect_preview")
         })
     }
 

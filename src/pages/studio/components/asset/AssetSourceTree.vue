@@ -6,6 +6,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import { isTauri, tauriApi } from "@/api";
 import { command } from "@/api/tauri";
 import type { CodeTreeNode } from "@/api/tauri";
+import type { NativeBlendImport } from "./blendSceneTypes";
 import { useToast } from "@/composables/useToast";
 
 /**
@@ -26,7 +27,7 @@ const emit = defineEmits<{
   select: [relativePath: string];
   "open-asset": [relativePath: string];
   "open-package": [relativePath: string];
-  "blend-imported": [lotm: string];
+  "blend-imported": [result: NativeBlendImport];
   imported: [];
 }>();
 
@@ -164,23 +165,19 @@ async function importFile() {
   if (typeof path !== "string") return;
   importing.value = true;
   try {
-    const value = await command<{
-      asset: string;
-      source?: "blend-native";
-      cache?: "hit";
-    }>("code_flow", {
+    const value = await command<NativeBlendImport>("code_flow", {
       request: { project: props.project, action: "import-asset", payload: { path } },
     });
-    await loadTree();
     if (value.cache === "hit")
       toast.info(t("studio.assetWorkbench.blendCacheHit"));
     const lower = value.asset.toLowerCase();
     if (value.source === "blend-native") {
-      emit("blend-imported", value.asset);
+      emit("blend-imported", value);
     } else if (MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
       emit("open-asset", value.asset);
     }
     emit("imported");
+    await loadTree();
   } catch (cause) {
     error.value = "";
     importErrorToast(cause);

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { initializeBlendScene } from "./blendSceneInitialization";
+import type { NativeBlendImport } from "./blendSceneTypes";
+import { saveAuthoredLot } from "./authoredLotStore";
 import { useEventListener } from "@vueuse/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
@@ -414,7 +417,9 @@ async function onBindMaterialSlots(binding: MaterialSlotBinding) {
     toast.error(String(cause));
   }
 }
-async function onBlendImported(lotm: string) {
+const importedSceneRevision = ref(0);
+async function onBlendImported(result: NativeBlendImport) {
+  const lotm = result.asset;
   try {
     await asset.openDraftAsset(lotm, {
       nativeBlender: true,
@@ -424,8 +429,40 @@ async function onBlendImported(lotm: string) {
       toast.error(t("studio.assetWorkbench.blendNativeFailed"));
       return;
     }
-    // Save the current model binding before the next build reads the document.
-    await asset.saveDocument();
+    const failures = await initializeBlendScene([
+      {
+        id: "register-units",
+        run: async () => {
+          if (result.sceneError) throw new Error(result.sceneError);
+          const scene = result.scene?.document;
+          if (!scene) throw new Error("missing scene document");
+          asset.registerBlendUnits(scene);
+          if (scene.errors.length) throw new Error("some scene elements failed");
+        },
+      },
+      {
+        id: "authored-lot",
+        run: async () => {
+          const lot = result.scene?.document.lot;
+          if (!lot) return;
+          await saveAuthoredLot(props.project, lot);
+          await asset.applyAuthoredLot(lot);
+          asset.setImportedLotOffset(lot.offset);
+          importedSceneRevision.value++;
+        },
+      },
+      {
+        id: "save-scene",
+        run: async () => {
+          if (!await asset.saveDocument()) throw new Error("scene document unavailable");
+        },
+      },
+      { id: "refresh-assets", run: async () => { await treeRef.value?.refresh(); } },
+    ]);
+    if (failures.length) {
+      toast.error(t("studio.assetWorkbench.blendSceneInitializationFailed"));
+      return;
+    }
     toast.success(t("studio.assetWorkbench.blendNativeImported"));
   } catch (cause) {
     toast.error(String(cause));
@@ -1210,6 +1247,7 @@ function templateOf(resourceId: number) {
                     @set-street-facing="asset.setStreetFacingDegrees($event)"
                   />
                   <AssetLotLibrary
+                    :key="importedSceneRevision"
                     v-else-if="rightTab === 'lotlib'"
                     :project="props.project"
                     :edit-enabled="editEnabled"

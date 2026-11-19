@@ -60,6 +60,8 @@ import {
   type AuthoredLot,
 } from "@/lib/lot-ground/authored";
 import { loadAuthoredLot } from "./authoredLotStore";
+import type { BlendSceneDocument } from "./blendSceneTypes";
+import { writeSceneLightControls, restoreSceneLightControls } from "./blendSceneProjection";
 import { createPlacedDecal, restoreDecalSources, useWorkbenchDecals, writeDecalSources, type DecalSelection } from "./workbenchDecals";
 import { draftPropResourceIds, emptyDraftPropModels, loadDraftPropModels, loadPlacedPropModel } from "./workbenchPropModels";
 import {
@@ -275,6 +277,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
   const draftPayload = shallowRef<LotModelPayload | null>(null);
   const draftModelState = ref<ModelState>("pending");
   const draftLotSize = ref<[number, number] | null>(null);
+  const importedLotOffset = ref<[number, number] | null>(null);
   /** 临街吸附边（写入 workbench.streetFacingDegrees；默认 +Y）。 */
   const streetFacingDegrees = ref<StreetFacingDegrees>(DEFAULT_STREET_FACING);
   const draftLoading = ref(false);
@@ -672,7 +675,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
         lotBorderHeights: draftStyle.borderHeights,
         lotBorderPatternIndices: draftStyle.borderPatternIndices,
         lotBaseTile: draftStyle.baseTile,
-        lotOverlayBoxOffset: null,
+        lotOverlayBoxOffset: importedLotOffset.value,
         lotModelBBoxCenter: null,
         lotMaskPng: draftStyle.maskPng,
         lotMaskRawRgba: draftStyle.maskRawRgba,
@@ -740,6 +743,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
         borderHeights: draftStyle.borderHeights?.slice(),
       });
     }
+    writeSceneLightControls(document, current.flatUnits);
     writeDecalSources(document, current.flatUnits);
     const editor = document.editor as Record<string, unknown>;
     editor.workbench = {
@@ -1546,6 +1550,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
   }
 
   function resetDraftStyle() {
+    importedLotOffset.value = null;
     appliedLot.value = null;
     appliedAuthoredLot.value = false;
     draftStyle.colors = DRAFT_LOT_DEFAULTS.lotColors.map(
@@ -1574,10 +1579,13 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
 
   // ---- 会话恢复：把文档单元投影进 edit 层（与 PropertyEditor 同口径）----
   async function restoreUnits(document: Record<string, unknown>) {
+    const lotOffset = (document.lot as { overlayBoxOffset?: [number, number] } | undefined)?.overlayBoxOffset;
+    importedLotOffset.value = lotOffset ?? null;
     const current = ui.value;
     if (!current) return;
     const epoch = loadEpoch;
     const restored = unitsFromSchema(document);
+    restoreSceneLightControls(document, restored);
     restoreDecalSources(document, restored);
     await decalPreviews.restore(restored);
     if (epoch !== loadEpoch || current.edit !== ui.value?.edit) return;
@@ -2079,6 +2087,16 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     streetFacingDegrees,
     openNative,
     openDraftAsset,
+    registerBlendUnits: (scene: BlendSceneDocument) => {
+      const edit = ui.value?.edit;
+      if (!edit || sourceKind.value !== "lotm") throw new Error("scene unavailable");
+      for (const unit of scene.units) {
+        const placed = { ...unit, index: nextIndexOf(unit.kind) };
+        edit.addUnit(placed);
+        markUnitFamily(placed);
+      }
+    },
+    setImportedLotOffset: (offset: [number, number]) => { importedLotOffset.value = offset; },
     placeUnit,
     placeDecal,
     deleteUnit,
