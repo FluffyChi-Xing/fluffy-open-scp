@@ -60,6 +60,25 @@ pub struct PackageManager {
 }
 
 impl PackageManager {
+    /// Read-only preview scope: reuse open handles and add local dependencies
+    /// without registering sidebar packages or consuming the global pool.
+    pub(crate) fn preview_scope(&self, dependencies: Vec<Package>) -> Result<Self, PackageError> {
+        let scope = Self::new();
+        {
+            let mut scoped = scope.packages.lock().map_err(|_| PackageError::StatePoisoned)?;
+            for (id, package) in self.all_packages_with_ids()? {
+                scoped.insert(id, package);
+            }
+            let mut next = scoped.keys().copied().max().unwrap_or(0) + 1;
+            for package in dependencies {
+                scoped.insert(next, Arc::new(package));
+                next += 1;
+            }
+            scope.next_package_id.store(next, Ordering::Relaxed);
+        }
+        Ok(scope)
+    }
+
     pub fn new() -> Self {
         Self {
             next_package_id: AtomicU64::new(1),
@@ -2457,7 +2476,7 @@ fn build_lot_editor_session(
     // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
     // 附带 materialData 三元组存在性与 material/shader-def 引用
     // 诊断（P4-D1 证据链）。
-    let (decal_textures, decal_diag) = resolve_decal_textures(&properties, package, manager);
+    let (decal_textures, decal_diag) = crate::decal_dependencies::resolve(&properties, package, manager, store);
     // 破洞贴花假内景光参数（S1）：两个 scalar 即引擎 decalInteriorMap
     // 的光强/半径因子（实证 lot：0.5/2.0 → lightScale=9、invRadius=8）。
     // 须在 properties 被 from_property_file 消耗前读取。
@@ -4884,7 +4903,7 @@ fn collect_decal_atlases(packages: &[&Package]) -> Vec<sc_properties::DecalDicti
 }
 
 /// 解析 lot decal 单元的贴花纹理。查链路：ID（仅 instance）→ Decal Atlas
-fn resolve_decal_textures(
+pub(crate) fn resolve_decal_textures(
     properties: &sc_properties::PropertyFile,
     package: &Package,
     manager: &PackageManager,

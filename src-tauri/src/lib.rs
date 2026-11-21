@@ -49,6 +49,7 @@ mod prop_models;
 mod prop_models_section_dump;
 mod raster_catalog;
 mod decal_library;
+mod decal_dependencies;
 mod raster_edit;
 mod render_telemetry;
 mod runtime_observer;
