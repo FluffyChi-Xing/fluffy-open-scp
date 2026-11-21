@@ -34,22 +34,22 @@ it("opens only the selected package and hands its atlas to the shared preview", 
     await flushPromises();
     const groups = wrapper.findAll("details");
     expect(groups.map((group) => group.get("summary").text())).toEqual([
-      "SimCity_Game.package 254", "SimCity_Graphics.package 112",
+      "分组 0xFB661651 254",
     ]);
     expect(wrapper.findComponent({ name: "DecalDictionaryGallery" }).exists()).toBe(false);
-    (groups[1].element as HTMLDetailsElement).open = true;
-    await groups[1].trigger("toggle");
+    (groups[0].element as HTMLDetailsElement).open = true;
+    await groups[0].trigger("toggle");
     const preview = wrapper.getComponent({ name: "DecalDictionaryGallery" });
     expect(preview.props()).toMatchObject({
-      packageId: 2, tgi, compact: true, placeable: true, showPlacementType: true,
+      packageId: 1, tgi, compact: true, placeable: true, showPlacementType: true,
     });
     const id = { typeId: 0, group: 0, instance: 0x17b244b8 };
     preview.vm.$emit("place", { id });
     expect(wrapper.emitted("place")).toEqual([[{
-      id, source: { packagePath: "D:\\Game\\SimCity_Graphics.package", atlas: tgi },
+      id, source: { packagePath: "D:\\Game\\SimCity_Game.package", atlas: tgi },
     }]]);
-    (groups[1].element as HTMLDetailsElement).open = false;
-    await groups[1].trigger("toggle");
+    (groups[0].element as HTMLDetailsElement).open = false;
+    await groups[0].trigger("toggle");
     expect(wrapper.findComponent({ name: "DecalDictionaryGallery" }).exists()).toBe(false);
   } finally {
     wrapper.unmount();

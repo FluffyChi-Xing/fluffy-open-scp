@@ -32,7 +32,10 @@ struct DecalAtlas {
 
 fn catalog(manager: &PackageManager) -> Result<Vec<DecalPackage>, CommandError> {
     let mut packages = Vec::new();
+    let mut seen_paths = HashSet::new();
     for (package_id, package) in manager.all_packages_with_ids()? {
+        let path = package.path().canonicalize().unwrap_or_else(|_| package.path().to_path_buf());
+        if !seen_paths.insert(path) { continue; }
         let mut atlases = Vec::new();
         for entry in package.entries().iter().filter(|entry| {
             entry.id.type_id == PROPERTY_RESOURCE_TYPE && is_decal_dictionary_group(entry.id.group)
