@@ -17,7 +17,7 @@ import { command } from "@/api/tauri";
 import type { Tgi } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import SchemaPropertyViewport from "@/pages/packages/components/property-editor/SchemaPropertyViewport.vue";
+import SchemaPropertyViewport from "./WorkbenchSchemaViewport.vue";
 import PropertyEditorOutliner from "@/pages/packages/components/property-editor/PropertyEditorOutliner.vue";
 import UnitInspector from "@/pages/packages/components/unit-inspector/UnitInspector.vue";
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
