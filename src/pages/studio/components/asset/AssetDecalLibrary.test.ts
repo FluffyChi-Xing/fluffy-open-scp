@@ -24,7 +24,7 @@ it("opens only the selected package and hands its atlas to the shared preview", 
       stubs: {
         DecalDictionaryGallery: {
           name: "DecalDictionaryGallery",
-          props: { packageId: Number, tgi: Object, compact: Boolean, placeable: Boolean },
+          props: { packageId: Number, tgi: Object, compact: Boolean, placeable: Boolean, showPlacementType: Boolean },
           template: "<div />",
         },
       },
@@ -41,7 +41,7 @@ it("opens only the selected package and hands its atlas to the shared preview", 
     await groups[1].trigger("toggle");
     const preview = wrapper.getComponent({ name: "DecalDictionaryGallery" });
     expect(preview.props()).toMatchObject({
-      packageId: 2, tgi, compact: true, placeable: true,
+      packageId: 2, tgi, compact: true, placeable: true, showPlacementType: true,
     });
     const id = { typeId: 0, group: 0, instance: 0x17b244b8 };
     preview.vm.$emit("place", { id });

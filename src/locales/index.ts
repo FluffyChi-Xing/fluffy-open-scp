@@ -2026,6 +2026,15 @@ const messages = {
       librarySearch: "搜索标签 / 效果 TGI / 批注…",
     },
     decal: {
+      group: "分组 {hex}",
+      placement: {
+        projected: "投影",
+        floating: "可悬空",
+        unknown: "待确认",
+        projectedHint: "投影体积须与建筑或地面相交才显示，范围由放置实例的深度与缩放决定，不会自动吸附远处表面。未附着的编辑预览不代表游戏内位置。",
+        floatingHint: "招牌主体可按放置位置悬空显示，投光部分仍须命中表面；显示平面位于贴花体积中心。",
+        unknownHint: "尚未核实此材质的游戏放置方式；编辑预览不代表游戏内可悬空。",
+      },
       switchTable: "属性表",
       switchGallery: "贴花相册",
       material: "材质",
@@ -4781,6 +4790,15 @@ const messages = {
       librarySearch: "Search tags / effect TGI / notes…",
     },
     decal: {
+      group: "Group {hex}",
+      placement: {
+        projected: "Projected",
+        floating: "Can float",
+        unknown: "Unverified",
+        projectedHint: "The projection volume must overlap a building or ground surface. Its range depends on the placed decal's depth and scale; it does not snap to distant surfaces. An unattached editor preview does not confirm in-game placement.",
+        floatingHint: "The sign can float at its placed position; its projected light still needs a surface. The visible plane sits at the decal volume's center.",
+        unknownHint: "In-game placement for this material has not been verified. An editor preview does not confirm that it can float in game.",
+      },
       switchTable: "Property table",
       switchGallery: "Decal gallery",
       material: "Material",

@@ -92,6 +92,7 @@ function atlasLabel(tgi: Tgi): string {
             :scroll-root="scrollRoot"
             :placeable="editEnabled"
             compact
+            show-placement-type
             @place="entry => entry.id && emit('place', {
               id: entry.id,
               source: { packagePath: group.path, atlas: atlas.tgi },
