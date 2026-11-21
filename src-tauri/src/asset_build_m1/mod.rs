@@ -46,6 +46,7 @@ pub(crate) mod vanilla_variant;
 pub use vanilla_variant::project_schema as vanilla_variant_project_schema;
 pub mod patch;
 pub mod path_catalog;
+pub mod panel;
 mod vehicle_paths;
 pub mod plan;
 mod processor;

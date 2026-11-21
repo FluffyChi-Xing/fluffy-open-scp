@@ -60,6 +60,7 @@ const selectedSteps = computed(() =>
 );
 
 function stageLabel(stage: string) {
+  if (stage === "panel-bind") return t("panelEditor.buildStage");
   if (stage === "road::compile") return t("roadAsset.compileStage");
   if (stage.startsWith("map_resources::")) return t(`mapResources.${stage.split("::")[1]}`);
   return stage;

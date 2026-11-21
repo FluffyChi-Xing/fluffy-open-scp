@@ -543,6 +543,7 @@ pub fn build(
                 duration,
             ));
             Ok(M1BuildResult {
+                panel_runtime: None,
                 path,
                 schema_hash: crate::mod_flow::digest(raw.as_bytes()),
                 build_hash: sha256.clone(),

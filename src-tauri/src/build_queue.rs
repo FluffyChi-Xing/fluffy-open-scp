@@ -464,7 +464,7 @@ fn persisted_job_path(project_root: &str, job_id: &str) -> Option<PathBuf> {
 
 /// M1BuildResult → Actions 页摘要(去重字段,避免整包序列化)。
 fn result_summary(result: &crate::asset_build_m1::M1BuildResult) -> Json {
-    serde_json::json!({
+    let mut summary = serde_json::json!({
         "path": result.path,
         "sha256": result.sha256,
         "buildHash": result.build_hash,
@@ -476,7 +476,9 @@ fn result_summary(result: &crate::asset_build_m1::M1BuildResult) -> Json {
         "startedAtMs": result.started_at_ms,
         "finishedAtMs": result.finished_at_ms,
         "durationMs": result.duration_ms,
-    })
+    });
+    if let Some(path) = &result.panel_runtime { summary["panelRuntime"] = serde_json::json!(path); }
+    summary
 }
 
 #[cfg(test)]

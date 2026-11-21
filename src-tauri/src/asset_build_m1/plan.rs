@@ -7,6 +7,8 @@ use std::collections::HashSet;
 
 #[derive(Serialize, Debug)]
 pub struct PropertyBuildPlan {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) panel: Option<super::panel::PanelPlan>,
     pub processor_version: &'static str,
     pub scope: &'static str,
     pub intermediate: IntermediateModel,
@@ -248,6 +250,7 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         },
         scope: "property+scene-model",
         intermediate: im,
+        panel: None,
         patches: specs,
         typed_patches: patches,
         protected,

@@ -27,6 +27,7 @@ use std::time::Instant;
 
 /// 责任链共享上下文:一次性构建,阶段按序消费/填充。
 pub(crate) struct BuildContext {
+    pub panel_runtime: Option<Vec<u8>>,
     /// 可选进度通道(P2 构建队列):run_chain 在每个阶段边界把事件克隆
     /// 发出,Actions 页实时行消费;None 时零开销。
     pub progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
@@ -82,6 +83,7 @@ impl BuildContext {
         let material_change_declared = plan.intermediate.semantics.material_change;
         let lot_change_declared = plan.intermediate.semantics.lot_change;
         Self {
+            panel_runtime: None,
             root,
             plan,
             resources: BuildResources::empty(),
@@ -206,6 +208,19 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
                     super::events::failed(stage, &error, started_at.elapsed().as_millis() as u64),
                 );
                 return Err(format!("[{stage}] {error}"));
+            }
+        }
+        // Opt-in stage: the existing chain, events and bytes remain unchanged
+        // for projects without a panel dependency.
+        if stage == "behavior-bind" && ctx.plan.panel.is_some() {
+            let at = Instant::now();
+            emit(ctx, started("panel-bind", serde_json::Value::Null));
+            match super::panel::apply(ctx) {
+                Ok(detail) => emit(ctx, finished("panel-bind", detail, at.elapsed().as_millis() as u64)),
+                Err(error) => {
+                    emit(ctx, super::events::failed("panel-bind", &error, at.elapsed().as_millis() as u64));
+                    return Err(format!("[panel-bind] {error}"));
+                }
             }
         }
     }
@@ -2116,6 +2131,9 @@ fn vehicle_path_targets(ctx: &BuildContext) -> Result<(ResourceId, ResourceId), 
 fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     ctx.delta_mode = ctx.plan.intermediate.output.mode != crate::asset_build_m0::OutputMode::Full;
     let mut staging = Staging::create(&ctx.root, &ctx.build_hash)?;
+    if let Some(runtime) = &ctx.panel_runtime {
+        super::panel::publish_runtime(&mut staging, runtime)?;
+    }
     staging.write("plan/plan.json", &ctx.plan_bytes)?;
     staging.write(
         "plan/im.json",
@@ -2312,6 +2330,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     ctx.lowered_units = final_contract.lowered_units;
     ctx.written_count = final_resources.len();
     let result = M1BuildResult {
+        panel_runtime: ctx.panel_runtime.as_ref().map(|_| staging.destination.join(super::panel::RUNTIME_OUTPUT)),
         path: staging
             .destination
             .join(&super::package::package_relative_name(&ctx.plan)),

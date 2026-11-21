@@ -26,6 +26,8 @@ pub(crate) type LodModelIds = [ResourceId; 4];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct M1BuildResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub panel_runtime: Option<PathBuf>,
     pub path: PathBuf,
     pub schema_hash: String,
     pub build_hash: String,
@@ -277,20 +279,28 @@ fn build_from_schema_inner(
     progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
 ) -> Result<M1BuildResult, String> {
     if let Some(request) = super::vanilla_variant::preflight(root, raw_schema)? {
+        if root.join("package.json").is_file() {
+            let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(root.join("package.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            if super::panel::manifest::dependency(&manifest)?.is_some() { return Err("PANEL_VARIANT_BUILD_UNSUPPORTED".into()); }
+        }
         return super::vanilla_variant::build(root, raw_schema, request, progress);
     }
-    let plan = plan_from_schema(raw_schema)?;
+    let mut plan = plan_from_schema(raw_schema)?;
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("project root must be a directory".into());
     }
+    super::panel::attach(&root, &mut plan)?;
     super::filesystem::prune_previous_builds_for_root(&root)?;
     // G3a 全链复用（用户指令 2026-11-05）："已确认的无变更流程，跑通
     // 构建器自检就能保证结果正确"。输入指纹命中 + 产物包 sha256 自检
     // 通过 → 直接回放上次结果；任何不一致都走全量链重建缓存。
-    let fingerprint =
+    let mut fingerprint =
         super::build_cache::input_fingerprint(&root, &plan, &plan.intermediate.scene.document);
-    if let Some(entry) = super::build_cache::lookup_run(&root, &fingerprint) {
+    if let Some(panel) = &plan.panel {
+        fingerprint = digest(format!("{fingerprint}:{}", panel.fingerprint).as_bytes());
+    }
+    if let Some(entry) = plan.panel.is_none().then(|| super::build_cache::lookup_run(&root, &fingerprint)).flatten() {
         let reuse_detail = serde_json::json!({
             "buildHash": entry.build_hash,
             "sha256": entry.sha256,
@@ -304,6 +314,7 @@ fn build_from_schema_inner(
             ));
         }
         return Ok(M1BuildResult {
+            panel_runtime: None,
             path: root
                 .join(".build")
                 .join(&entry.build_hash)

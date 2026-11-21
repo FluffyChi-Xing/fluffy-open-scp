@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ProjectConfigTabs from "./ProjectConfigTabs.vue";
 import ProjectConfigOverview from "./ProjectConfigOverview.vue";
-import { computed, ref, watch } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import MonacoEditor from "@/components/ui/MonacoEditor.vue";
@@ -28,6 +28,7 @@ import {
 import type { WorkbenchMenuBinding } from "./menuBinding";
 import VanillaVariantMenuForm from "./VanillaVariantMenuForm.vue";
 import VanillaPowerProductionForm from "./VanillaPowerProductionForm.vue";
+const PanelProjectEditor = defineAsyncComponent(() => import("./panel-editor/PanelProjectEditor.vue"));
 
 /**
  * package.json 可视化配置（HBuilderX manifest.json 式分类表单）。
@@ -58,19 +59,24 @@ const { t } = useI18n();
 const toast = useToast();
 const behaviorConflicts = useBehaviorConflicts();
 
-type TabId = "overview" | "basic" | "menu" | "building" | "behavior" | "dependencies" | "advanced";
+type TabId = "overview" | "basic" | "menu" | "panel" | "building" | "behavior" | "dependencies" | "advanced";
 const TABS: { id: TabId; icon: string; labelKey: string }[] = [
   { id: "overview", icon: "ListChecks", labelKey: "studio.assetWorkbench.projectConfig.tabOverview" },
   { id: "basic", icon: "FileText", labelKey: "studio.assetWorkbench.projectConfig.tabBasic" },
   { id: "menu", icon: "Menu", labelKey: "studio.assetWorkbench.projectConfig.tabMenu" },
+  { id: "panel", icon: "PanelsTopLeft", labelKey: "panelEditor.title" },
   { id: "building", icon: "Users", labelKey: "studio.assetWorkbench.projectConfig.tabBuilding" },
   { id: "behavior", icon: "Gauge", labelKey: "studio.assetWorkbench.projectConfig.tabBehavior" },
   { id: "dependencies", icon: "Network", labelKey: "studio.assetWorkbench.projectConfig.tabDependencies" },
   { id: "advanced", icon: "Braces", labelKey: "studio.assetWorkbench.projectConfig.tabAdvanced" },
 ];
 const activeTab = ref<TabId>("overview");
+const panelEditor = ref<InstanceType<typeof PanelProjectEditor>>();
+const panelVisited = ref(false);
+const panelDirty = ref(false);
+watch(activeTab, value => { if (value === "panel") panelVisited.value = true; });
 const isVanillaVariant = computed(() => manifest.value?.mod_type === "vanilla_variant");
-const tabs = computed(() => isVanillaVariant.value ? TABS.filter((tab) => tab.id !== "behavior") : TABS);
+const tabs = computed(() => isVanillaVariant.value ? TABS.filter((tab) => tab.id !== "behavior" && tab.id !== "panel") : TABS);
 
 // ---- package.json 读写 ----
 const manifest = ref<Record<string, unknown> | null>(null);
@@ -138,7 +144,7 @@ const manifestDirty = computed(
   () => !!manifest.value && JSON.stringify(manifest.value) !== baseline.value,
 );
 const dirty = computed(
-  () => manifestDirty.value || props.savedDirty || advancedDirty.value,
+    () => manifestDirty.value || props.savedDirty || advancedDirty.value || panelDirty.value,
 );
 
 function stringField(key: string): string {
@@ -410,6 +416,7 @@ async function save(): Promise<void> {
       revision.value = written.revision;
       baseline.value = JSON.stringify(manifest.value);
     }
+    if (panelDirty.value && panelEditor.value && !(await panelEditor.value.save())) return;
     if (props.savedDirty) {
       await props.saveDocument();
     }
@@ -431,6 +438,8 @@ const tabHint = computed(() => {
   if (isVanillaVariant.value && activeTab.value === "building") return t("flow.variant.propertiesHint");
   if (isVanillaVariant.value && activeTab.value === "menu") return t("flow.variant.parkHint");
   switch (activeTab.value) {
+    case "panel":
+      return t("panelEditor.hint");
     case "overview":
       return t("studio.assetWorkbench.overviewHint");
     case "menu":
@@ -490,6 +499,7 @@ const tabHint = computed(() => {
 
       <div class="ppf-content">
         <p class="ppf-hint">{{ tabHint }}</p>
+        <PanelProjectEditor v-if="panelVisited" v-show="activeTab === 'panel'" ref="panelEditor" :project="project" :logic="logic" :title="menu.label || stringField('name')" :active="activeTab === 'panel'" @dirty="panelDirty = $event" />
 
         <!-- 基础配置 -->
         <ProjectConfigOverview v-if="activeTab === 'overview'" :project="project" :manifest="manifest" :menu="menu" :logic="logic" :variant="isVanillaVariant" :advanced-text="advancedDirty ? advancedText : undefined" />
@@ -762,7 +772,7 @@ const tabHint = computed(() => {
         </div>
 
         <!-- 高级 JSON -->
-        <div v-else class="ppf-advanced">
+        <div v-else-if="activeTab === 'advanced'" class="ppf-advanced">
           <div class="ppf-advanced-head">
             <span>{{ t("studio.assetWorkbench.projectConfig.rawJson") }}</span>
             <button type="button" :disabled="saving" @click="resetAdvanced">
