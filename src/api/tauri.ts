@@ -1,3 +1,4 @@
+import type { SceneInfo, TransportDetails } from "./property-semantics";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -343,6 +344,7 @@ export type SemanticCard =
       models: SemanticKeyRef[];
       lightCount: number | null;
       lightNames: string[];
+      details: TransportDetails;
     }
   | {
       kind: "road";
@@ -369,6 +371,7 @@ export type SemanticCard =
       kind: "resource-entry";
       parent: SemanticKeyRef | null;
       slots: ResourceSlotInfo[];
+      scene: SceneInfo;
       floatA: number | null;
       floatB: number | null;
       enabled: boolean | null;

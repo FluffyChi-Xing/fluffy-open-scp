@@ -9,6 +9,8 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod actor_model_preview;
+mod actor_visuals;
 mod annotations;
 pub(crate) mod asset_build_m0;
 pub mod asset_build_m1;
@@ -269,6 +271,8 @@ pub fn run() {
             read_sim_parts,
             release_prop_model_packages,
             resolve_prop_models,
+            actor_model_preview::resolve_actor_models,
+            actor_visuals::read_actor_visuals,
             read_raster_preview,
             read_image_preview,
             write_export_file,

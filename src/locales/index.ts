@@ -1,3 +1,4 @@
+import { sceneZh, sceneEn } from "./property-semantics";
 import { createI18n } from "vue-i18n";
 import { appConfig } from "@/config/app";
 import { roadAssetZh, roadAssetEn } from "./road-asset";
@@ -2099,7 +2100,7 @@ const messages = {
         decalAtlas3: "贴花字典",
         agentVehicleModel: "载具模型",
         resourceDef: "模拟资源",
-        resourceEntry: "站点资源",
+        resourceEntry: "场景演员",
         simAction: "动作/任务",
         mapLayer: "数据图层",
         alert: "警报",
@@ -2129,6 +2130,7 @@ const messages = {
       editSheetPlaceholderDesc:
         "该资源类型不适用三维属性编辑器（仅限带模型的资产单元/载具）；表单式编辑能力将在后续版本提供。",
       toolbarViewChildren: "查看子项",
+      scene: sceneZh,
       card: {
         icon: "图标",
         noText: "未配置游戏目录，无法解析文本",
@@ -4866,7 +4868,7 @@ const messages = {
         decalAtlas3: "Decal Atlas 3",
         agentVehicleModel: "Vehicle Model",
         resourceDef: "Resource Definition",
-        resourceEntry: "Resource Entry",
+        resourceEntry: "Scene Actors",
         simAction: "Sim Action",
         mapLayer: "Map Layer",
         alert: "Alert",
@@ -4896,6 +4898,7 @@ const messages = {
       editSheetPlaceholderDesc:
         "The 3D property editor doesn't apply to this resource type (limited to mesh-bearing units/vehicles); form-based editing will arrive in a later version.",
       toolbarViewChildren: "View Children",
+      scene: sceneEn,
       card: {
         icon: "Icon",
         noText: "Game directory not configured; text cannot be resolved",

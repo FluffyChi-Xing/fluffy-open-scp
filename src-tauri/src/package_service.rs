@@ -1568,6 +1568,7 @@ pub enum SemanticCardData {
         models: Vec<SemanticKeyRef>,
         light_count: Option<usize>,
         light_names: Vec<String>,
+        details: sc_properties::vignette::TransportDetails,
     },
     /// 道路/网络：标题 + 路宽 + 是否压平地形 + 外观/幽灵外观（Path 引用）。
     #[serde(rename_all = "camelCase")]
@@ -1599,6 +1600,7 @@ pub enum SemanticCardData {
     ResourceEntry {
         parent: Option<SemanticKeyRef>,
         slots: Vec<ResourceSlot>,
+        scene: sc_properties::vignette::Scene,
         float_a: Option<f32>,
         float_b: Option<f32>,
         enabled: Option<bool>,
@@ -1894,6 +1896,7 @@ fn extract_semantic_card(
                 sc_properties::Kind::Empty => 0,
             }),
             light_names: string8_list(file, AGENT_LIGHT_NAMES),
+            details: sc_properties::vignette::transport_details(file),
         },
         sc_properties::PropertySemantic::Network => SemanticCardData::Road {
             path_title: resolved_texts(file, ROAD_PATH_TITLE, locale),
@@ -1941,6 +1944,7 @@ fn extract_semantic_card(
                 })
                 .collect();
             SemanticCardData::ResourceEntry {
+                scene: sc_properties::vignette::parse(file),
                 parent: first_key_ref(file, KEY_PARENT),
                 slots,
                 float_a: scalar_of(file, RESENTRY_FLOAT_A, pick_float),

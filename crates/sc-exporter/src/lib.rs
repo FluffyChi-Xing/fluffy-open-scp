@@ -14,6 +14,7 @@
 //! - `export-video`  → VP6 → mp4（经外部 ffmpeg，Tauri 层调度）
 
 pub mod batch;
+pub mod actor_assets;
 mod error;
 pub mod gltf;
 pub mod magic;

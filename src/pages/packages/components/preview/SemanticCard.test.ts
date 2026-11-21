@@ -68,6 +68,7 @@ describe("SemanticCard 语义预览卡", () => {
       models: [{ typeId: 0x2f4e681b, groupId: 0, instanceId: 0x79a56b0d }],
       lightCount: 2,
       lightNames: ["headlightCar", "brakelightCar"],
+      details: { effects: [], sinks: [], graphics: [] },
     });
     expect(wrapper.text()).toContain("Empty Coal Truck");
     expect(wrapper.text()).toContain("headlightCar");
@@ -122,28 +123,28 @@ describe("SemanticCard 语义预览卡", () => {
     expect(wrapper.text()).toContain("kResourceIDOreRaw");
   });
 
-  it("装载条目卡：槽位表格化并区分未设置参数", () => {
-    const wrapper = mountCard({
-      kind: "resource-entry",
-      parent: null,
-      slots: [
-        {
-          resource: { typeId: 0, groupId: 0, instanceId: 0xcac2a973 },
-          values: [null, 42, null, 7],
-        },
-      ],
-      floatA: 0,
-      floatB: 1,
-      enabled: true,
+  it("无模型运输条目显示效果与触发槽位说明", () => {
+    const wrapper = mountCard({ kind: 'vehicle', parent: null, name: [], models: [], lightCount: null, lightNames: [], details: { effects: [{ typeId: 0, groupId: 0, instanceId: 0xcd400ac9 }], sinks: [{ typeId: 0, groupId: 0, instanceId: 0x0186ee3a }], graphics: [] } });
+    expect(wrapper.text()).toContain('运输效果配置');
+    expect(wrapper.text()).toContain('0xCD400AC9');
+    expect(wrapper.text()).toContain('0x0186EE3A');
+    expect(wrapper.text()).not.toContain('暂无可用载具模型');
+  });
+
+  it("演员表保留负数并在切换语言时更新文案", async () => {
+    const wrapper = mountCard({ kind: 'resource-entry', parent: null, slots: [], floatA: null, floatB: null, enabled: null,
+      scene: { recognized: true, selfDestruct: false, issues: [], actors: [{ id: 0x8017fce5, models: [], templates: [], speed: 5, scale: 1.35, animation: null, spawn: null, destroy: null, resourceBind: null, appearances: [{ body: null, skin: -1, skinMax: -1, outfit: -1, outfitMax: -1 }] }] }
     });
-    const table = wrapper.find(".slot-table");
-    expect(table.exists()).toBe(true);
-    expect(table.text()).toContain("0x00000000:0x00000000:0xCAC2A973");
-    expect(table.text()).toContain("42");
-    expect(table.text()).toContain("7");
-    expect(table.text()).toContain("未设置");
-    expect(wrapper.text()).toContain("标量 A");
-    expect(wrapper.text()).toContain("标量 B");
+    expect(wrapper.text()).toContain('肤色下限');
+    expect(wrapper.text()).toContain('-1');
+    expect(wrapper.text()).toContain('0x8017FCE5');
+    const previous = i18n.global.locale.value;
+    try {
+      i18n.global.locale.value = 'en-US';
+      await flushPromises();
+      expect(wrapper.text()).toContain('Skin minimum');
+      expect(wrapper.text()).not.toContain('肤色下限');
+    } finally { i18n.global.locale.value = previous; }
   });
 
   it("图层卡：色带按 RGBA 序列渲染为 CSS 渐变", () => {
