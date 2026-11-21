@@ -445,6 +445,18 @@ fn finish(
                 .unwrap_or(0)
         };
         models.sort_by(|a, b| size_of(b).cmp(&size_of(a)));
+        // The preferred model may move to the front from another package.
+        // Bind the returned handle AFTER sorting, using its actual group.
+        if let Some(first) = models.first_mut() {
+            if let Some((pid, entry)) = packages.iter().find_map(|(pid, pkg)| {
+                pkg.entries().iter().find(|e| e.id.instance == first.instance
+                    && e.id.type_id == first.type_id && (first.group == 0 || e.id.group == first.group))
+                    .map(|entry| (*pid, entry))
+            }) {
+                package_id = Some(pid);
+                first.group = entry.id.group;
+            }
+        }
         Some(ResolvedPropModel {
             resource_id,
             models,
@@ -638,8 +650,31 @@ pub struct PropBinCatalogEntry {
     pub model: TgiDto,
     /// 模型所在已打开包 id。
     pub model_package_id: u64,
+    pub model_package_path: Option<String>,
     /// 解析路径（同 [`ResolvedPropModel::source`]）。
     pub source: String,
+}
+
+/// Small, explicit component library. Never scan/resolve the miscellaneous universe.
+pub fn supported_prop_catalog(manager: &PackageManager) -> Result<Vec<PropBinCatalogEntry>, PackageError> {
+    let mut specs = Vec::new();
+    for (ids, _, _) in TREE_SPECIES { for id in ids { specs.push((*id, PropBinCategory::Trees)); } }
+    specs.extend(NORMAL_VEHICLES.iter().map(|(id, _)| (*id, PropBinCategory::Vehicles)));
+    specs.extend(crate::supported_prop_ids::WASTE_IDS.iter().map(|id| (*id, PropBinCategory::Waste)));
+    specs.extend([0xCAF1511E, 0x40731424, 0x4E15EC0E].map(|id| (id, PropBinCategory::Signs)));
+    let ids: Vec<_> = specs.iter().map(|(id, _)| *id).collect();
+    let resolved = resolve_all(manager, &ids)?;
+    let mut entries = Vec::new();
+    for (id, category) in specs {
+        let Some(item) = resolved.iter().find(|item| item.resource_id == id) else { continue };
+        let (Some(model), Some(pid)) = (item.models.first(), item.package_id) else { continue };
+        let path = manager.get(pid).ok().map(|p| p.path().to_string_lossy().into_owned());
+        entries.push(PropBinCatalogEntry {
+            resource_id: id, name: format!("0x{id:08X}"), category, model: model.clone(),
+            model_package_id: pid, model_package_path: path, source: item.source.clone(),
+        });
+    }
+    Ok(entries)
 }
 
 /// 噪声注册表名（UI 键/图标/教程气泡/告警等非 prop 记录）。空名**不算**
@@ -800,6 +835,7 @@ pub fn prop_bin_catalog(
                 category: PropBinCategory::Trees,
                 model: model.clone(),
                 model_package_id,
+                model_package_path: None,
                 source: resolved.source,
             });
         }
@@ -825,6 +861,7 @@ pub fn prop_bin_catalog(
             category: PropBinCategory::Vehicles,
             model: model.clone(),
             model_package_id,
+            model_package_path: None,
             source: resolved.source,
         });
     }
@@ -895,6 +932,7 @@ pub fn prop_bin_catalog(
                 category,
                 model: model.clone(),
                 model_package_id,
+                model_package_path: None,
                 source: resolved.source,
             });
         }
@@ -1284,6 +1322,64 @@ mod tests {
         assert!(count(PropBinCategory::Waste) > 0, "垃圾桶类不能为空");
         // 树链（descriptor/impostor 源模型）至少一条
         assert!(count(PropBinCategory::Trees) > 0, "树木类不能为空");
+    }
+
+    #[test]
+    #[ignore = "requires OPENSCP_DECAL_GAME_DATA"]
+    fn supported_library_and_preferred_model_owners_are_stable() {
+        let dir = PathBuf::from(std::env::var("OPENSCP_DECAL_GAME_DATA").unwrap());
+        let manager = PackageManager::new();
+        for name in ["SimCity_Game.package", "SimCity_Graphics.package", "SimCity_App.package", "SimCityDataEP1.package"] {
+            manager.insert(Package::open(dir.join(name)).unwrap()).unwrap();
+        }
+        let before = manager.all_packages_with_ids().unwrap().len();
+        for _ in 0..12 {
+            manager.insert(Package::open(dir.join("SimCity_Game.package")).unwrap()).unwrap();
+        }
+        assert_eq!(manager.all_packages_with_ids().unwrap().len(), before);
+        let full = prop_bin_catalog(&manager, Some(Path::new("src-tauri/resources/database_main.s3db"))).unwrap();
+        let full: Vec<_> = full.into_iter().filter(|e| e.category != PropBinCategory::Misc).collect();
+        std::fs::write("tmp/full-supported-prop-library.json", serde_json::to_vec_pretty(&full).unwrap()).unwrap();
+        println!("existing supported IDs: {}", full.iter().map(|e| format!("{:08X}:{:?}",e.resource_id,e.category)).collect::<Vec<_>>().join(","));
+        let entries = supported_prop_catalog(&manager).unwrap();
+        let expected: std::collections::BTreeSet<_> = full.iter().map(|e| e.resource_id).collect();
+        let actual: std::collections::BTreeSet<_> = entries.iter().map(|e| e.resource_id).collect();
+        assert_eq!(actual, expected, "only miscellaneous entries may disappear");
+        assert_eq!(entries.iter().filter(|e| e.category == PropBinCategory::Trees).count(), 8);
+        assert_eq!(entries.iter().filter(|e| e.category == PropBinCategory::Vehicles).count(), 3);
+        assert_eq!(entries.iter().filter(|e| e.category == PropBinCategory::Signs).count(), 3);
+        assert!(entries.iter().any(|e| e.category == PropBinCategory::Waste));
+        assert!(entries.iter().all(|e| e.category != PropBinCategory::Misc));
+        for e in &entries {
+            let owner = manager.get(e.model_package_id).unwrap();
+            let resource = owner.entries().iter().find(|r| r.id.instance == e.model.instance
+                && r.id.type_id == e.model.type_id && r.id.group == e.model.group).unwrap();
+            let bytes = owner.read(resource).unwrap();
+            let file = Rw4File::parse(&bytes).unwrap();
+            assert!(file.sections_of_type(rw4::SectionType::MESH).next().is_some());
+            assert!(e.model_package_path.as_ref().is_some_and(|p| !p.is_empty()));
+        }
+        println!("supported entries={} waste={}", entries.len(), entries.iter().filter(|e| e.category == PropBinCategory::Waste).count());
+        std::fs::write("tmp/supported-prop-library.json", serde_json::to_vec_pretty(&entries).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn preferred_model_uses_its_owner_after_size_sort() {
+        let dir = crate::test_scratch::scratch_base().join(format!("prop-owner-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let manager = PackageManager::new();
+        let mut packages = Vec::new();
+        for (instance, size) in [(1u32, 16usize), (2, 64)] {
+            let id = dbpf::ResourceId { type_id: RW4_MODEL_TYPE, group: 7, instance };
+            let bytes = dbpf::write_uncompressed_overlay(&[dbpf::OverlayEntry::new(id, vec![0; size])]).unwrap();
+            let path = dir.join(format!("{instance}.package"));
+            std::fs::write(&path, bytes).unwrap();
+            packages.push(manager.insert(Package::open(path).unwrap()).unwrap());
+        }
+        let resolved = finish(&packages, 42, vec![(1, RW4_MODEL_TYPE, 0), (2, RW4_MODEL_TYPE, 0)], "explicit").unwrap();
+        assert_eq!(resolved.models[0].instance, 2);
+        assert_eq!(resolved.models[0].group, 7);
+        assert_eq!(resolved.package_id, Some(packages[1].0));
     }
     /// 直挂模型兜底：PROP_ID 是 RW4 模型实例（脚本资源表查不到）时，按
     /// 0x2F4E681B:0:<id> 跨已打开包直查并验证载荷确为模型（含 MESH 段）。

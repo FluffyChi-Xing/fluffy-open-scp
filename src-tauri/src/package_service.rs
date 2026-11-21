@@ -91,10 +91,18 @@ impl PackageManager {
     }
 
     pub(crate) fn insert(&self, package: Package) -> Result<(u64, Arc<Package>), PackageError> {
+        let identity = fs::canonicalize(package.path()).unwrap_or_else(|_| package.path().to_path_buf());
         let mut packages = self
             .packages
             .lock()
             .map_err(|_| PackageError::StatePoisoned)?;
+        // Opening one file repeatedly must reuse its identity, including calls
+        // racing from model restoration and library loading.
+        if let Some((id, existing)) = packages.iter().find(|(_, existing)| {
+            fs::canonicalize(existing.path()).unwrap_or_else(|_| existing.path().to_path_buf()) == identity
+        }) {
+            return Ok((*id, Arc::clone(existing)));
+        }
         if packages.len() >= MAX_OPEN_PACKAGES {
             return Err(PackageError::PackageLimitExceeded(MAX_OPEN_PACKAGES));
         }
@@ -4381,12 +4389,8 @@ pub async fn resolve_prop_models(
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
     let resolutions = tauri::async_runtime::spawn_blocking(move || {
-        // Prop resolution may be requested repeatedly while several property
-        // editors are opened.  EcoGame packages are session helpers; release
-        // the previous helper batch before reserving the two game source
-        // packages below, otherwise the 64-package pool can reject those
-        // inserts and later props silently fall back to marker cones.
-        let _ = crate::prop_models::release_registered(&manager);
+        // Keep existing helper handles alive while other views consume their
+        // returned model IDs. insert() now reuses an already-open source path.
         // 直挂模型 prop 的模型实体可能位于游戏源包（Graphics/Game），
         // ensure they are open so the direct-model fallback can find them
         //（脚本表链路原本只依赖 EcoGame 注册，不受影响）。
@@ -5976,9 +5980,8 @@ pub async fn list_prop_bin_catalog(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::prop_models::PropBinCatalogEntry>, CommandError> {
     let manager = Arc::clone(&state.packages);
-    let bundled_registry = bundled_registry_path(&state.app);
     tauri::async_runtime::spawn_blocking(move || {
-        crate::prop_models::prop_bin_catalog(&manager, bundled_registry.as_deref())
+        crate::prop_models::supported_prop_catalog(&manager)
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?

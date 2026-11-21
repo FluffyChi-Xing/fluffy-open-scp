@@ -787,6 +787,7 @@ export interface PropBinCatalogEntry {
   /** 首选 RW4 模型（最高细节）。 */
   model: Tgi;
   modelPackageId: number;
+  modelPackagePath?: string;
   source: string;
 }
 /** 路径条目摘要（list_path_entries；工作台 entry 选择器数据源）。 */
