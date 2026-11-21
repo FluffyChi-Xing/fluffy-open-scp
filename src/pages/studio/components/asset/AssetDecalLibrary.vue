@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { command, type Tgi } from "@/api/tauri";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import DecalDictionaryGallery from "@/pages/packages/components/preview/DecalDictionaryGallery.vue";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import type { DecalSelection } from "./workbenchDecals";
 
 defineProps<{ editEnabled?: boolean }>();
@@ -13,7 +13,7 @@ const emit = defineEmits<{ place: [selection: DecalSelection] }>();
 import { decalLibraryGroups, type DecalPackage } from "./decalLibraryGroups";
 
 const { t } = useI18n();
-const packages = useGamePackagesStore();
+const packages = useEditorPackageContext();
 const scrollRoot = shallowRef<HTMLElement | null>(null);
 const catalog = shallowRef<DecalPackage[]>([]);
 const groups = computed(() => decalLibraryGroups(catalog.value));

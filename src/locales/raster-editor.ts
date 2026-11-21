@@ -349,7 +349,7 @@ export const rasterZh = {
     "已加载包中未找到可解码的 Lot 地表图集。请打开 SimCity_Graphics.package；自定义图集还需打开对应依赖包。",
   nativePackages:
     "浏览器模式无法访问游戏内存资源。请在桌面应用中打开 Package。",
-  noPackages: "尚未打开 Package。请先在源文件解析中载入资源包。",
+  noPackages: "尚未加载资源包，请在本页选择游戏数据目录。",
 };
 export const rasterEn = {
   sign: {
@@ -724,5 +724,5 @@ export const rasterEn = {
   nativePackages:
     "Browser mode cannot access game resources in memory. Open a Package in the desktop app.",
   noPackages:
-    "No open Packages. Load a resource package in Source files first.",
+    "No resource packages loaded. Choose your game data folder on this page.",
 };

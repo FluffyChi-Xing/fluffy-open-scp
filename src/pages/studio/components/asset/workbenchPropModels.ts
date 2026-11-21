@@ -69,7 +69,7 @@ export async function loadDraftPropModels(source: PropSource, ids: number[]) {
 }
 
 export async function loadPlacedPropModel(
-  source: Pick<OpenScpDataSource, "openPackage" | "readLotModelMeshes"> & Partial<Pick<OpenScpDataSource, "resolvePropModels">>,
+  source: Pick<OpenScpDataSource, "readLotModelMeshes"> & { openPackage(path:string): Promise<{package:{packageId:number}}> } & Partial<Pick<OpenScpDataSource, "resolvePropModels">>,
   unit: PropUnit,
 ) {
   if (!unit.modelTgi) return null;

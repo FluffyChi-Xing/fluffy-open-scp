@@ -53,7 +53,7 @@ import {
   type ModelState,
   type UnitGrouping,
 } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import {
   authoredAlbedoDataUrl,
   authoredLotStyle,
@@ -523,7 +523,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
   // effect 预览的包锚点:draft(lotm/GLB)模式无 nativePackageId——回退到
   // 任一已打开游戏包(read_effect_preview 的 locate_effect_packages 会从
   // 锚点出发定位真正的效果定义包,Game/App 均可作锚点)。
-  const gamePackages = useGamePackagesStore();
+  const gamePackages = useEditorPackageContext();
   /** 地面贴图相对上次快照是否有变化(套用 preset 置脏,保存快照后清)。 */
   const groundSnapshotDirty = ref(false);
   const effectPreviewPackageId = computed(() => {
@@ -885,14 +885,8 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     const absolute = /^[A-Za-z]:[\\/]|^[\\/]/.test(packagePath)
       ? packagePath
       : joinProjectPath(packagePath);
-    if (nativeGroundEditable) {
-      const directory = absolute.replace(/[\\/][^\\/]+$/, "");
-      await Promise.allSettled(
-        ["SimCity_Game.package", "SimCity_Graphics.package", "SimCityDataEP1.package", "SimCity_App.package"]
-          .map((name) => tauriApi.packages.open(`${directory}/${name}`)),
-      );
-    }
-    const opened = await tauriApi.packages.open(absolute);
+    await gamePackages.ready;
+    const opened = await gamePackages.openFile(absolute);
     if (epoch !== loadEpoch) return;
     const packageId = opened.package.packageId;
     nativePackageId.value = packageId;
@@ -1485,7 +1479,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
       // PackageManager 每次启动重新编号——持久化的 packageId 在冷启动后必
       // miss。带路径时按路径重开重试；无路径（旧文档）原样抛给调用方。
       if (!preset.packagePath) throw cause;
-      packageId = (await tauriApi.packages.open(preset.packagePath)).package
+      packageId = (await gamePackages.openFile(preset.packagePath)).package
         .packageId;
       session = await tauriApi.packages.readLotEditorSession(
         packageId,
@@ -1695,14 +1689,14 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     for (const unit of units) {
       if (unit.kind === "prop" && unit.modelTgi) placed.set(directModelKey(unit), unit);
     }
-    const packages = new Map<string, ReturnType<typeof placementSource.openPackage>>();
+    const packages = new Map<string, ReturnType<typeof gamePackages.openFile>>();
     const source = {
       readLotModelMeshes: placementSource.readLotModelMeshes,
       resolvePropModels: placementSource.resolvePropModels,
       openPackage(path: string) {
         let opened = packages.get(path);
         if (!opened) {
-          opened = placementSource.openPackage(path);
+          opened = gamePackages.openFile(path);
           packages.set(path, opened);
         }
         return opened;

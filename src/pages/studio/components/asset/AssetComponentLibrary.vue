@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
@@ -45,6 +46,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const dependencies = useEditorPackageContext();
 const loading = ref(false);
 const search = ref("");
 const collapsed = ref(new Set<string>());
@@ -60,18 +62,27 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 const activeTab = ref<TabId>("props");
 
+let catalogEpoch = 0;
 async function loadCatalog() {
-  if (binCatalog.value.length || loading.value) return;
+  if (dependencies.loading || binCatalog.value.length || loading.value) return;
+  const epoch = ++catalogEpoch;
   loading.value = true;
   try {
-    binCatalog.value = await tauriApi.packages.listPropBinCatalog();
+    const result = await tauriApi.packages.listPropBinCatalog();
+    if (epoch === catalogEpoch) binCatalog.value = result;
   } catch {
-    binCatalog.value = [];
+    if (epoch === catalogEpoch) binCatalog.value = [];
   } finally {
-    loading.value = false;
+    if (epoch === catalogEpoch) loading.value = false;
   }
 }
 onMounted(loadCatalog);
+watch(() => dependencies.opened.map(p => p.package.packageId).join(","), () => {
+  catalogEpoch++;
+  loading.value = false;
+  binCatalog.value = [];
+  void loadCatalog();
+});
 watch(
   () => props.editEnabled,
   (enabled) => {

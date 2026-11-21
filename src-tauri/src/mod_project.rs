@@ -125,12 +125,6 @@ pub struct SetupStatusResponse {
     onboarding_completed: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModRootRequest {
-    pub path: String,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StudioConfigStatus {
@@ -228,26 +222,6 @@ pub async fn setup_status(state: State<'_, AppState>) -> Result<SetupStatusRespo
             workspace: path_status(workspace),
             game: path_status(game),
             mod_root: path_status(config.mod_root),
-            onboarding_completed: config.onboarding_completed,
-        })
-    })
-    .await
-    .map_err(|error| CommandError::internal(error.to_string()))?
-}
-
-#[tauri::command]
-pub async fn studio_set_mod_root(
-    state: State<'_, AppState>,
-    request: ModRootRequest,
-) -> Result<StudioConfigStatus, CommandError> {
-    let store = Arc::clone(&state.store);
-    tauri::async_runtime::spawn_blocking(move || {
-        let canonical = validate_directory(&request.path)?;
-        let config = store
-            .set_studio_config(Some(&canonical.to_string_lossy()), false)
-            .map_err(ModProjectError::from)?;
-        Ok(StudioConfigStatus {
-            mod_root: config.mod_root,
             onboarding_completed: config.onboarding_completed,
         })
     })

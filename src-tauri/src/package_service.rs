@@ -52,6 +52,7 @@ pub struct PackageManager {
     next_package_id: AtomicU64,
     next_job_id: AtomicU64,
     packages: Mutex<HashMap<u64, Arc<Package>>>,
+    editor_packages: Mutex<HashMap<u64, Arc<Package>>>,
     registries: Mutex<HashMap<RegistryKey, Arc<sc_registry::Registry>>>,
     jobs: Mutex<HashMap<u64, ExportStatus>>,
     /// 游戏 Locale/<lang>/Data.package 的字符串表缓存（语义预览卡 text 解析），
@@ -84,6 +85,7 @@ impl PackageManager {
             next_package_id: AtomicU64::new(1),
             next_job_id: AtomicU64::new(1),
             packages: Mutex::new(HashMap::new()),
+            editor_packages: Mutex::new(HashMap::new()),
             registries: Mutex::new(HashMap::new()),
             jobs: Mutex::new(HashMap::new()),
             locale_cache: Mutex::new(HashMap::new()),
@@ -127,12 +129,55 @@ impl PackageManager {
     }
 
     pub(crate) fn get(&self, id: u64) -> Result<Arc<Package>, PackageError> {
-        self.packages
+        if let Some(package) = self
+            .packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?
+            .get(&id)
+            .cloned()
+        {
+            return Ok(package);
+        }
+        self.editor_packages
             .lock()
             .map_err(|_| PackageError::StatePoisoned)?
             .get(&id)
             .cloned()
             .ok_or(PackageError::PackageNotFound(id))
+    }
+
+    /// Page-owned identity. Explorer deduplication never adopts these IDs.
+    pub(crate) fn acquire_editor_package(
+        &self,
+        path: &Path,
+    ) -> Result<(u64, Arc<Package>), PackageError> {
+        let canonical = fs::canonicalize(path)?;
+        let existing = self
+            .all_packages()?
+            .into_iter()
+            .find(|p| p.path() == canonical);
+        let package = match existing {
+            Some(p) => p,
+            None => Arc::new(Package::open(&canonical)?),
+        };
+        let mut entries = self
+            .editor_packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?;
+        if entries.len() >= MAX_OPEN_PACKAGES {
+            return Err(PackageError::PackageLimitExceeded(MAX_OPEN_PACKAGES));
+        }
+        let id = self.next_package_id.fetch_add(1, Ordering::Relaxed);
+        entries.insert(id, Arc::clone(&package));
+        Ok((id, package))
+    }
+
+    pub(crate) fn release_editor_package(&self, id: u64) -> Result<(), PackageError> {
+        self.editor_packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?
+            .remove(&id);
+        Ok(())
     }
 
     /// Internal preview dependencies share the existing canonical package handle.
@@ -165,34 +210,37 @@ impl PackageManager {
     /// 所有已打开包的快照（跨包资源查找用，如 LotMask）。
     fn all_packages(&self) -> Result<Vec<Arc<Package>>, PackageError> {
         Ok(self
-            .packages
-            .lock()
-            .map_err(|_| PackageError::StatePoisoned)?
-            .values()
-            .cloned()
+            .all_packages_with_ids()?
+            .into_iter()
+            .map(|(_, package)| package)
             .collect())
     }
 
-    /// 路径去重（EcoGame 自注册跳过已打开者）。
     pub(crate) fn is_path_open(&self, path: &Path) -> bool {
-        let Ok(canon) = std::fs::canonicalize(path) else {
+        let Ok(canonical) = fs::canonicalize(path) else {
             return false;
         };
-        self.packages
-            .lock()
-            .map(|packages| packages.values().any(|pkg| pkg.path() == &canon))
+        self.all_packages()
+            .map(|entries| entries.iter().any(|p| p.path() == canonical))
             .unwrap_or(false)
     }
 
-    /// 所有已打开包的 (id, package) 快照（需要回报资源所在包 id 时使用）。
     pub(crate) fn all_packages_with_ids(&self) -> Result<Vec<(u64, Arc<Package>)>, PackageError> {
-        Ok(self
+        let mut result: Vec<_> = self
             .packages
             .lock()
             .map_err(|_| PackageError::StatePoisoned)?
             .iter()
             .map(|(id, package)| (*id, Arc::clone(package)))
-            .collect())
+            .collect();
+        result.extend(
+            self.editor_packages
+                .lock()
+                .map_err(|_| PackageError::StatePoisoned)?
+                .iter()
+                .map(|(id, package)| (*id, Arc::clone(package))),
+        );
+        Ok(result)
     }
 
     fn next_job_id(&self) -> Result<u64, PackageError> {

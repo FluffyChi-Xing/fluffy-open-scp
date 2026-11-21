@@ -5,7 +5,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { tauriApi } from "@/api";
 import type { PropertyDocumentSummary, Tgi } from "@/api/tauri";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import AssetLotDiagram from "./AssetLotDiagram.vue";
 import AssetAuthoredLotSection from "./AssetAuthoredLotSection.vue";
 import type { AuthoredLot } from "@/lib/lot-ground/authored";
@@ -38,7 +38,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const packages = useGamePackagesStore();
+const packages = useEditorPackageContext();
 const busy = ref(false);
 const error = ref("");
 const search = ref("");
@@ -53,8 +53,9 @@ interface LotEntry {
 const groups = shallowRef<{ name: string; entries: LotEntry[] }[]>([]);
 const PER_GROUP_CAP = 48;
 
+let scanEpoch = 0;
 async function scan() {
-  if (busy.value) return;
+  const epoch = ++scanEpoch;
   busy.value = true;
   error.value = "";
   try {
@@ -81,6 +82,7 @@ async function scan() {
         }
       }),
     );
+    if (epoch !== scanEpoch) return;
     groups.value = results
       .flat()
       .reduce<{ name: string; entries: LotEntry[] }[]>((acc, entry) => {
@@ -91,9 +93,9 @@ async function scan() {
       }, [])
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch (cause) {
-    error.value = String(cause);
+    if (epoch === scanEpoch) error.value = String(cause);
   } finally {
-    busy.value = false;
+    if (epoch === scanEpoch) busy.value = false;
   }
 }
 onMounted(scan);

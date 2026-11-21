@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { isTauri } from "@/api";
 import { loadLotPreviewSession } from "@/components/raster/lotPreviewSession";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import type { LotEditorSession, Tgi } from "@/api/tauri";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 
@@ -46,7 +46,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
-const packages = useGamePackagesStore();
+const packages = useEditorPackageContext();
 const root = ref<HTMLElement | null>(null);
 const canvasHost = ref<HTMLElement | null>(null);
 const visible = ref(typeof IntersectionObserver === "undefined");

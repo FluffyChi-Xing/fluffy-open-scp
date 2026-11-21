@@ -4,7 +4,8 @@ import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackages } from "@/composables/useEditorPackages";
+import EditorPackagesBar from "@/components/EditorPackagesBar.vue";
 import FButton from "@/components/ui/FButton.vue";
 import FSelect from "@/components/ui/FSelect.vue";
 import CameraCurveEditor from "../components/camera/CameraCurveEditor.vue";
@@ -28,7 +29,7 @@ import {
 } from "../components/camera/cityCamera";
 
 const { t } = useI18n();
-const packages = useGamePackagesStore();
+const packages = useEditorPackages("assets");
 function openedGamePackage(name: string) {
   return packages.opened.find(
     ({ package: item }) =>
@@ -415,6 +416,7 @@ const number = (value: number) =>
 
 <template>
   <section class="camera-page">
+    <EditorPackagesBar :scope="packages" />
     <header class="page-heading">
       <div>
         <h1>{{ t("studio.camera.title") }}</h1>

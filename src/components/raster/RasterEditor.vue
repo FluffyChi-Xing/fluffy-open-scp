@@ -6,7 +6,9 @@ import { isTauri, tauriApi } from "@/api";
 import FSelect, { type SelectOption } from "@/components/ui/FSelect.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { provide } from "vue";
+import EditorPackagesBar from "@/components/EditorPackagesBar.vue";
+import { EDITOR_PACKAGES, useEditorPackages } from "@/composables/useEditorPackages";
 import { RasterDocument } from "@/lib/raster-editor/document";
 import { base64ToRgba } from "@/lib/raster-editor/encoders";
 import {
@@ -94,7 +96,8 @@ if (!props.initialSchema && props.initialProfile)
 if (!props.initialSchema && props.mode === "standalone" && profile.value === "decal-sign")
   decal.value = { ...decal.value, colors: [...signPalette] };
 const editorStarted = ref(!!props.initialSchema || !!props.initialProfile);
-const packages = useGamePackagesStore();
+const packages = useEditorPackages("assets");
+provide(EDITOR_PACKAGES, packages);
 const canvas = ref<InstanceType<typeof RasterCanvas> | null>(null);
 const tool = ref<RasterTool>("brush"),
   size = ref(4),
@@ -528,6 +531,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
     :class="{ embedded: mode === 'flow' }"
     :aria-label="t('rasterEditor.text011')"
   >
+    <EditorPackagesBar :scope="packages" />
     <header class="editor-heading">
       <div class="profile-control">
         <span class="control-label">{{ t("rasterEditor.text083") }}</span>
@@ -774,7 +778,7 @@ v-if="isSign" :layer="layer" :settings="signSettings" :colors="decal.colors"
           <LotEdgeControls
             v-if="doc && groundSlots[groundActive]"
             v-model="lot"
-            :slot="groundActive"
+            v-bind="{ slot: groundActive }"
             :disabled="locked"
             @change="changed"
           />

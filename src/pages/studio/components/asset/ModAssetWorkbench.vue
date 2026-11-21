@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, provide, ref, watch } from "vue";
+import EditorPackagesBar from "@/components/EditorPackagesBar.vue";
+import { EDITOR_PACKAGES, useEditorPackages } from "@/composables/useEditorPackages";
 import { useI18n } from "vue-i18n";
 import { initializeBlendScene } from "./blendSceneInitialization";
 import type { NativeBlendImport } from "./blendSceneTypes";
@@ -63,6 +65,8 @@ const props = defineProps<{
 
 const { t } = useI18n();
 const toast = useToast();
+const dependencies = useEditorPackages("assets");
+provide(EDITOR_PACKAGES, dependencies);
 const asset = useWorkbenchAsset(props.project, Boolean(props.variantSchemaPath));
 const ui = asset.ui;
 const variantPickerOpen = ref(false);
@@ -763,6 +767,7 @@ async function onRemoveAsset() {
 }
 
 onMounted(async () => {
+  await dependencies.ready;
   if (await asset.restoreFromProject()) return;
   const source = props.variantSource;
   if (!source) return;
@@ -793,6 +798,7 @@ function templateOf(resourceId: number) {
 
 <template>
   <section class="maw" :aria-label="t('studio.assetWorkbench.title')">
+    <EditorPackagesBar :scope="dependencies" />
     <header class="maw-toolbar">
       <div class="maw-title">
         <span class="maw-badge" :data-kind="asset.sourceKind.value">

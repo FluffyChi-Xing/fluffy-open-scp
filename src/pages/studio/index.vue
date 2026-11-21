@@ -164,7 +164,7 @@ function statusLabel(status: string): string {
 
       <BuildActionsCard />
 
-      <div v-if="store.devRoot" class="project-pane ui-glass-card">
+      <div v-if="store.devRoot || store.projects.length" class="project-pane ui-glass-card">
         <div class="pane-head">
           <div
             class="group-tabs"

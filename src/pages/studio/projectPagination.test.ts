@@ -77,3 +77,13 @@ it("paginates the filtered projects and updates pagination text in place", async
     i18n.global.locale.value = previousLocale;
   }
 });
+it("keeps successfully loaded projects visible even if managed-directory status is unavailable",async()=>{
+  localStorage.removeItem("openscp:mod-dev-root");
+  const pinia=createPinia(),store=useModProjectsStore(pinia);
+  vi.spyOn(store,"loadAll").mockResolvedValue();
+  store.devRoot="";
+  store.projects=[{id:1,name:"Existing asset",relPath:"existing",status:"active",createdAt:0,updatedAt:0,folderExists:true}];
+  const page=mount(StudioPage,{global:{plugins:[pinia,i18n],stubs:{RouterLink:true,ProjectDashboard:true,BuildActionsCard:true,ProjectFormSheet:true,GroupManagerSheet:true}}});
+  try{expect(page.get(".name-cell strong").text()).toBe("Existing asset");}
+  finally{page.unmount();}
+});

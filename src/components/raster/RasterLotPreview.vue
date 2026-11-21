@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { isTauri } from "@/api";
 import { loadLotPreviewSession } from "./lotPreviewSession";
 import type { LotEditorSession } from "@/api/tauri";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import type { RasterSource, RasterSchema } from "@/lib/raster-editor/schema";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 const props = defineProps<{
@@ -23,7 +23,7 @@ const props = defineProps<{
 }>();
 const renderMode = props.renderMode ?? "default";
 const { t } = useI18n();
-const packages = useGamePackagesStore();
+const packages = useEditorPackageContext();
 const session = shallowRef<Partial<LotEditorSession> | null>(null);
 const bound = shallowRef<LotEditorSession | null>(null);
 const error = shallowRef("");

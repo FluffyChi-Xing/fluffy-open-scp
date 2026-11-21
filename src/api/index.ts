@@ -139,10 +139,6 @@ export const tauriApi = {
   },
   studio: {
     setupStatus: () => command<SetupStatusResponse>("setup_status"),
-    setModRoot: (path: string) =>
-      command<StudioConfigStatus>("studio_set_mod_root", {
-        request: { path },
-      }),
     legacyStatus: () => command<LegacySyncStatus>("studio_legacy_status"),
     syncLegacy: () => command<LegacySyncOutcome>("studio_sync_legacy"),
     completeOnboarding: () =>

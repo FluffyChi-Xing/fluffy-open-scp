@@ -24,7 +24,8 @@ function messageOf(cause: unknown): string {
  * 历史手动配置的目录经 legacySync 一次性迁入。
  */
 export const useModProjectsStore = defineStore("modProjects", () => {
-  const devRoot = ref(localStorage.getItem(DEV_ROOT_KEY) ?? "");
+  // Browser storage may still contain an old debug root; only the backend is authoritative.
+  const devRoot = ref("");
   const setupStatus = shallowRef<SetupStatusResponse | null>(null);
   const legacyStatus = shallowRef<LegacySyncStatus | null>(null);
   const syncing = ref(false);
@@ -105,6 +106,7 @@ export const useModProjectsStore = defineStore("modProjects", () => {
         tauriApi.studio.projects.list(),
         tauriApi.studio.groups.list(),
         tauriApi.studio.stats(),
+        loadSetupStatus(),
       ]);
       projects.value = projectList;
       groups.value = groupList;
@@ -114,8 +116,7 @@ export const useModProjectsStore = defineStore("modProjects", () => {
     } finally {
       loading.value = false;
     }
-    // 同步按钮状态随每次进入页面刷新（引导时的首次查询可能失败）
-    void loadLegacyStatus();
+    // Setup status is refreshed above even when this origin has no local cache.
   }
 
   async function createProject(

@@ -2,7 +2,8 @@
 import { computed, defineAsyncComponent, shallowRef, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ArrowRight, Eraser, FolderOpen, Map, MousePointer2, Paintbrush, Save, Undo2 } from "lucide-vue-next";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackages } from "@/composables/useEditorPackages";
+import EditorPackagesBar from "@/components/EditorPackagesBar.vue";
 import FButton from "@/components/ui/FButton.vue";
 import FSelect from "@/components/ui/FSelect.vue";
 import FSlider from "@/components/ui/FSlider.vue";
@@ -17,7 +18,7 @@ const props = defineProps<{ project: string; overview: boolean }>();
 const emit = defineEmits<{ back: []; saved: [] }>();
 const { t, locale, n } = useI18n();
 const fieldId = useId();
-const packages = useGamePackagesStore();
+const packages = useEditorPackages("terrain");
 const { packagePath, saveDirectory, group, regions, data, schema, selected, busy, error, dirty, choosing,
   activeCity, renderResources, abundance, list, chooseFile, chooseSave, openRegion, stamp, placeWind, undo, save } = useMapResources(props.project);
 const radius = shallowRef(48);
@@ -120,6 +121,7 @@ defineExpose({ save: commit });
 
 <template>
   <div class="workbench">
+    <EditorPackagesBar :scope="packages" />
     <MapResourceOverview
 v-if="overview" :data="data" :group="schema?.source.group ?? ''" :abundance="abundance"
       @back="emit('back')" @select="editCity" />

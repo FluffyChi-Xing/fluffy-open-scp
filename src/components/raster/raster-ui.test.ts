@@ -32,8 +32,9 @@ vi.mock("@/api", () => ({
   isTauri: () => api.native,
   tauriApi: { packages: api, raster: api },
 }));
-vi.mock("@/stores/gamePackages", () => ({
-  useGamePackagesStore: () => ({
+vi.mock("@/composables/useEditorPackages", async original => ({
+  ...await original<typeof import("@/composables/useEditorPackages")>(),
+  useEditorPackageContext: () => ({
     opened: [{ package: { packageId: 42, path: "D:/game/Actual.package" } }],
   }),
 }));

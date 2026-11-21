@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { createPinia } from "pinia";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import type { EditorPackageScope } from "@/composables/useEditorPackages";
 import { open } from "@tauri-apps/plugin-dialog";
 import { command } from "@/api/tauri";
 import { i18n } from "@/locales";
@@ -15,6 +15,20 @@ import FSelect from "@/components/ui/FSelect.vue";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("@/api/tauri", () => ({ command: vi.fn() }));
+const dependencies = vi.hoisted(() => ({ current: null as EditorPackageScope | null }));
+vi.mock("@/composables/useEditorPackages", async original => {
+  const vue = await import("vue");
+  return {
+    ...await original<typeof import("@/composables/useEditorPackages")>(),
+    useEditorPackages: () => {
+      const scope = vue.reactive({opened:[], directory:"", loading:false, missing:[], failed:false,
+        ready:Promise.resolve(),load:vi.fn(),openFile:vi.fn()}) as EditorPackageScope;
+      dependencies.current = scope;
+      return scope;
+    },
+  };
+});
+
 
 const previousLocale = i18n.global.locale.value;
 afterEach(() => {
@@ -76,7 +90,7 @@ it("previews edits above ground and exports the same field after switching langu
     },
   });
   try {
-    await wrapper.get("button").trigger("click");
+    await wrapper.findAll("button").find(button => button.text() === i18n.global.t("studio.camera.open"))!.trigger("click");
     await flushPromises();
     expect(wrapper.text()).toContain("城市镜头预览");
     const preview = () =>
@@ -121,7 +135,7 @@ it("previews edits above ground and exports the same field after switching langu
     expect(preview().fov).toBe(27.5);
     expect(preview().eye[1]).toBeGreaterThan(0);
     await wrapper.get("textarea").setValue("200 120");
-    expect(wrapper.findAll("button")[1]?.attributes("disabled")).toBeDefined();
+    expect(wrapper.findAll("button").find(button => button.text() === i18n.global.t("studio.camera.export"))?.attributes("disabled")).toBeDefined();
     await wrapper.get("textarea").setValue("120 200");
 
     i18n.global.locale.value = "en-US";
@@ -129,10 +143,10 @@ it("previews edits above ground and exports the same field after switching langu
     expect(wrapper.text()).toContain("City camera preview");
     expect(wrapper.text()).toContain("Focus distance (m)");
     expect(wrapper.get("textarea").element.value).toBe("120 200");
-    await wrapper.findAll("button")[1]!.trigger("click");
+    await wrapper.findAll("button").find(button => button.text() === i18n.global.t("studio.camera.export"))!.trigger("click");
     await flushPromises();
     expect(command).toHaveBeenCalledTimes(1);
-    await wrapper.findAll("button")[1]!.trigger("click");
+    await wrapper.findAll("button").find(button => button.text() === i18n.global.t("studio.camera.export"))!.trigger("click");
     await flushPromises();
     expect(open).toHaveBeenLastCalledWith({
       directory: true,
@@ -160,9 +174,8 @@ it("previews edits above ground and exports the same field after switching langu
   }
 });
 
-it("loads an App package opened in the source browser through its cached handle", async () => {
+it("loads an automatically acquired App package through the editor-owned handle", async () => {
   const pinia = createPinia();
-  const packages = useGamePackagesStore(pinia);
   const wrapper = mount(Camera, {
     global: {
       plugins: [i18n, pinia],
@@ -185,26 +198,7 @@ it("loads an App package opened in the source browser through its cached handle"
         },
       ],
     });
-    packages.opened = [
-      {
-        package: {
-          packageId: 23,
-          path: "D:/SimCityData/SimCity_App.package",
-          size: 0,
-          kind: "dbpf",
-          majorVersion: 2,
-          minorVersion: 0,
-          entryCount: 1,
-        },
-        resources: {
-          items: [],
-          total: 0,
-          offset: 0,
-          limit: 100,
-          typeCounts: [],
-        },
-      },
-    ];
+    dependencies.current!.opened = [{package:{packageId:23,path:"D:/SimCityData/SimCity_App.package"}}];
     await flushPromises();
     expect(open).not.toHaveBeenCalled();
     expect(command).toHaveBeenCalledExactlyOnceWith("read_city_camera", {

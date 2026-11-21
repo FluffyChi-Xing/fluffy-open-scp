@@ -9,6 +9,7 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod editor_packages;
 mod actor_model_preview;
 mod actor_visuals;
 mod annotations;
@@ -81,7 +82,7 @@ use media_tools::{MediaTools, application_dir, resolve_tools};
 use mod_project::{
     mod_group_create, mod_group_delete, mod_group_list, mod_group_rename, mod_project_create,
     mod_project_delete, mod_project_list, mod_project_stats, mod_project_update, setup_status,
-    studio_complete_onboarding, studio_legacy_status, studio_set_mod_root, studio_sync_legacy,
+    studio_complete_onboarding, studio_legacy_status, studio_sync_legacy,
 };
 use mod_project_repo::mod_project_repo_summary;
 use overrides::override_scan;
@@ -226,6 +227,9 @@ pub fn run() {
             activity_list_events,
             activity_list_packages,
             activity_clear,
+            editor_packages::acquire_editor_packages,
+            editor_packages::acquire_editor_file,
+            editor_packages::release_editor_packages,
             render_telemetry_record,
             render_telemetry_summary,
             render_telemetry_clear,
@@ -333,7 +337,6 @@ pub fn run() {
             workspace_rename,
             workspace_move,
             setup_status,
-            studio_set_mod_root,
             studio_complete_onboarding,
             studio_legacy_status,
             studio_sync_legacy,
