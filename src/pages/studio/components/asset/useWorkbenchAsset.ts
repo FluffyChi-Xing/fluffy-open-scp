@@ -64,6 +64,7 @@ import type { BlendSceneDocument } from "./blendSceneTypes";
 import { performancePreset, performancePlacements, writePerformanceBindings, restorePerformanceBindings } from "./performanceBindings";
 import { writeSceneLightControls, restoreSceneLightControls } from "./blendSceneProjection";
 import { createPlacedDecal, restoreDecalSources, useWorkbenchDecals, writeDecalSources, type DecalSelection } from "./workbenchDecals";
+import { workbenchContentKey } from "./workbenchContent";
 import { draftPropResourceIds, emptyDraftPropModels, loadDraftPropModels, loadPlacedPropModel } from "./workbenchPropModels";
 import {
   emptyMenuBinding,
@@ -553,6 +554,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     return `${projectRootPath}${separator}${relative}`;
   }
 
+  const sceneEpoch = ref(0);
   let loadEpoch = 0;
   const decalPreviews = useWorkbenchDecals();
   /** 六槽组装代数：连续绑定/解绑时旧组装不得覆盖新 payload。 */
@@ -573,7 +575,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
   const draftProps = shallowRef(emptyDraftPropModels());
   watch(
     () => draftSceneOpen.value
-      ? draftPropResourceIds(draftEffectiveUnits.value).join(",")
+      ? `${sceneEpoch.value}:${draftPropResourceIds(draftEffectiveUnits.value).join(",")}`
       : "",
     async (key, _previous, onCleanup) => {
       if (!key) {
@@ -583,8 +585,13 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
       let stale = false;
       const epoch = loadEpoch;
       onCleanup(() => { stale = true; });
+      const ids = key.slice(key.indexOf(":") + 1).split(",").filter(Boolean).map(Number);
+      if (!ids.length) {
+        draftProps.value = emptyDraftPropModels();
+        return;
+      }
       try {
-        const models = await loadDraftPropModels(placementSource, key.split(",").map(Number));
+        const models = await loadDraftPropModels(placementSource, ids);
         if (!stale && epoch === loadEpoch) draftProps.value = models;
       } catch (error) {
         if (!stale && epoch === loadEpoch && import.meta.env.DEV) {
@@ -819,7 +826,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
   // 修改；只有与上次保存基线内容不一致才置脏
   const savedBaseline = ref("");
   watch(schemaDocument, (document) => {
-    const json = document ? JSON.stringify(document) : "";
+    const json = workbenchContentKey(document);
     if (
       restoring.value ||
       draftLoading.value ||
@@ -828,7 +835,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
       savedBaseline.value = json;
       return;
     }
-    if (json !== savedBaseline.value) savedDirty.value = true;
+    savedDirty.value = json !== savedBaseline.value;
   });
 
   function resetEditState() {
@@ -858,6 +865,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
   // ---- native 打开：包路径 + TGI ----
   async function openNative(packagePath: string, tgi: Tgi) {
     const epoch = ++loadEpoch;
+    sceneEpoch.value = epoch;
     draftSceneOpen.value = false;
     nativeSession.value = null;
     nativeTgi.value = null;
@@ -901,7 +909,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
       void nextTick().then(() => {
         if (epoch === loadEpoch) {
           savedDirty.value = false;
-          savedBaseline.value = schemaJson.value;
+          savedBaseline.value = workbenchContentKey(schemaDocument.value);
         }
       });
   }
@@ -912,6 +920,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     options?: { nativeBlender?: boolean; nativeLotm?: string },
   ) {
     const epoch = ++loadEpoch;
+    sceneEpoch.value = epoch;
     const keepScene = draftSceneOpen.value && sourceKind.value === "none";
     nativeSession.value = null;
     nativeTgi.value = null;
@@ -1003,7 +1012,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
         void nextTick().then(() => {
           if (epoch === loadEpoch && !keepScene) {
             savedDirty.value = false;
-            savedBaseline.value = schemaJson.value;
+            savedBaseline.value = workbenchContentKey(schemaDocument.value);
           }
         });
       }
@@ -1689,6 +1698,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     const packages = new Map<string, ReturnType<typeof placementSource.openPackage>>();
     const source = {
       readLotModelMeshes: placementSource.readLotModelMeshes,
+      resolvePropModels: placementSource.resolvePropModels,
       openPackage(path: string) {
         let opened = packages.get(path);
         if (!opened) {
@@ -1729,7 +1739,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
       documentRevision.value,
     );
     documentRevision.value = written.revision;
-    savedBaseline.value = JSON.stringify(document);
+    savedBaseline.value = workbenchContentKey(document);
     savedDirty.value = false;
     // package.json dependencies 同步（设计文档 §2.2/§6：画人行道即登记
     // pathEntries）。文档是权威输入，账本同步失败不回滚文档，但必须可见。
@@ -1974,7 +1984,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     } finally {
       restoring.value = false;
       void nextTick().then(() => {
-        savedBaseline.value = schemaJson.value;
+        savedBaseline.value = workbenchContentKey(schemaDocument.value);
         savedDirty.value = false;
       });
     }
@@ -1983,6 +1993,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
   /** 关闭当前资产（回到空态）。 */
   function closeAsset() {
     loadEpoch += 1;
+    sceneEpoch.value = loadEpoch;
     draftSceneOpen.value = false;
     nativeSession.value = null;
     nativeTgi.value = null;
@@ -2073,7 +2084,7 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
     nativeLotmPath.value = "";
     sourceAssetPath.value = "";
     sourceKind.value = "none";
-    savedBaseline.value = schemaJson.value;
+    savedBaseline.value = workbenchContentKey(schemaDocument.value);
     const deletions = [...paths]
       .filter((path) => /\.(?:glb|lotm)$/i.test(path))
       .map((path) => tauriApi.workspace.codeDeleteFile(project, path));
@@ -2158,3 +2169,5 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
 }
 
 export type WorkbenchAsset = ReturnType<typeof useWorkbenchAsset>;
+
+

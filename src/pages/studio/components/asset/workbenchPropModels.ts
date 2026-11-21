@@ -69,7 +69,7 @@ export async function loadDraftPropModels(source: PropSource, ids: number[]) {
 }
 
 export async function loadPlacedPropModel(
-  source: Pick<OpenScpDataSource, "openPackage" | "readLotModelMeshes">,
+  source: Pick<OpenScpDataSource, "openPackage" | "readLotModelMeshes"> & Partial<Pick<OpenScpDataSource, "resolvePropModels">>,
   unit: PropUnit,
 ) {
   if (!unit.modelTgi) return null;
@@ -77,7 +77,19 @@ export async function loadPlacedPropModel(
     ? (await source.openPackage(unit.modelPackagePath)).package.packageId
     : unit.modelPackageId;
   if (packageId == null) return null;
-  const payload = parseLotModelContainer(await source.readLotModelMeshes(packageId, unit.modelTgi));
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await source.readLotModelMeshes(packageId, unit.modelTgi);
+  } catch (error) {
+    // Legacy scene documents contain process-local package IDs but no path.
+    // Resolve their semantic resource again instead of retaining a dead ID.
+    if (unit.modelPackagePath || unit.resourceId == null || !source.resolvePropModels) throw error;
+    const { resolutions } = await source.resolvePropModels([unit.resourceId]);
+    const owner = resolutions.find((entry) => entry.resourceId === unit.resourceId && entry.packageId != null);
+    if (!owner?.models.length || owner.packageId == null) throw error;
+    buffer = await source.readLotModelMeshes(owner.packageId, owner.models[0]);
+  }
+  const payload = parseLotModelContainer(buffer);
   // The reopened handle is for reading only. The render plan still uses the
   // identity in the authored unit, which may contain a handle from an older session.
   return payload.glbs.length ? { key: directAssetKey(unit), payload } : null;
