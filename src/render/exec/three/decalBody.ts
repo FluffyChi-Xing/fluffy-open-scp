@@ -14,6 +14,7 @@ import type { EngineFamily } from "@/lib/decalEngineMaterials";
 import { decalFramePlan, decalRoutePlan } from "../../plan/decal";
 import { decalFrameObject } from "./decal";
 import { rowMajor12ToTrs } from "../../resolve/transform";
+import { configureHoleDecal } from "./holeDecal";
 
 export const HOLE_LIGHT_MAX = 8;
 const DECAL_MATERIAL_VARIANTS: Record<number, "sign" | "graffiti"> = {
@@ -201,6 +202,15 @@ export async function buildDecalBody(
     // A dropped authoring preview must remain above the drop surface, rather
     // than at the far end of a donor's (possibly downward-facing) volume.
     quad.position.z = authoredFallback ? (frame.axisZ.z < 0 ? -0.02 : 0.02) : (dataDepth ?? 0) / 2;
+    if (authoredFallback && family === "hole" && input.engineMaterials) {
+      // The preview quad is in decal-local space, unlike receiver geometry.
+      // Give it its own box instead of the legacy VS's constant z=-1, which
+      // the legacy fragment shader discards in its entirety.
+      configureHoleDecal(THREE, floatMaterial as ThreeNamespace.ShaderMaterial, {
+        ...frame,
+        matrix: new THREE.Matrix4(),
+      }, dataDepth ?? halfScale * 2.5);
+    }
     group.add(quad);
     state.fallback += 1;
   };
@@ -305,6 +315,9 @@ export async function buildDecalBody(
         decalData: input.decalLight,
       });
   const container = new THREE.Group();
+  if (family === "hole" && input.engineMaterials) {
+    configureHoleDecal(THREE, engineMaterial as ThreeNamespace.ShaderMaterial, frame, depthZ);
+  }
   container.matrix.copy(frame.matrix).invert();
   container.matrixAutoUpdate = false;
   for (const geometry of geometries) {
