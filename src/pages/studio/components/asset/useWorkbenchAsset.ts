@@ -53,7 +53,7 @@ import {
   type ModelState,
   type UnitGrouping,
 } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
-import { useEditorPackageContext } from "@/composables/useEditorPackages";
+import { useEditorPackageContext, type EditorPackageScope } from "@/composables/useEditorPackages";
 import {
   authoredAlbedoDataUrl,
   authoredLotStyle,
@@ -262,7 +262,11 @@ function groupUnits(units: LotUnitDto[]): UnitGrouping {
   return result;
 }
 
-export function useWorkbenchAsset(project: string, nativeGroundEditable = false) {
+export function useWorkbenchAsset(
+  project: string,
+  nativeGroundEditable = false,
+  packageScope?: EditorPackageScope,
+) {
   // ---- 会话状态（native / draft 二选一激活）----
   const sourceKind = ref<WorkbenchSourceKind>("none");
   const draftSceneOpen = ref(false);
@@ -523,7 +527,8 @@ export function useWorkbenchAsset(project: string, nativeGroundEditable = false)
   // effect 预览的包锚点:draft(lotm/GLB)模式无 nativePackageId——回退到
   // 任一已打开游戏包(read_effect_preview 的 locate_effect_packages 会从
   // 锚点出发定位真正的效果定义包,Game/App 均可作锚点)。
-  const gamePackages = useEditorPackageContext();
+  // The component that provides a scope cannot inject its own provider.
+  const gamePackages = packageScope ?? useEditorPackageContext();
   /** 地面贴图相对上次快照是否有变化(套用 preset 置脏,保存快照后清)。 */
   const groundSnapshotDirty = ref(false);
   const effectPreviewPackageId = computed(() => {

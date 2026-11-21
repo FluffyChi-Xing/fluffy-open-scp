@@ -67,7 +67,7 @@ const { t } = useI18n();
 const toast = useToast();
 const dependencies = useEditorPackages("assets");
 provide(EDITOR_PACKAGES, dependencies);
-const asset = useWorkbenchAsset(props.project, Boolean(props.variantSchemaPath));
+const asset = useWorkbenchAsset(props.project, Boolean(props.variantSchemaPath), dependencies);
 const ui = asset.ui;
 const variantPickerOpen = ref(false);
 const variantProject = computed(() => Boolean(props.variantSchemaPath));
@@ -779,8 +779,11 @@ onMounted(async () => {
       await asset.saveDocument();
       void treeRef.value?.refresh();
     }
-  } catch {
-    toast.error(t("flow.variant.registerFailed"));
+  } catch (cause) {
+    console.warn("[workbench] variant scene initialization failed:", cause);
+    const reason = cause && typeof cause === "object" && "message" in cause
+      ? String(cause.message) : String(cause);
+    toast.error(t("flow.variant.registerFailedDetail", { reason }));
   }
 });
 
