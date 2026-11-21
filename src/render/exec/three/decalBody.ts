@@ -16,6 +16,8 @@ import { decalFrameObject } from "./decal";
 import { rowMajor12ToTrs } from "../../resolve/transform";
 import { configureHoleDecal } from "./holeDecal";
 
+import type { createDecalReceiverIndex } from "./decalReceiverIndex";
+
 export const HOLE_LIGHT_MAX = 8;
 const DECAL_MATERIAL_VARIANTS: Record<number, "sign" | "graffiti"> = {
   0x73684efc: "sign",
@@ -36,6 +38,7 @@ export interface DecalBodyState {
 }
 
 export interface DecalBodyInput {
+  receiverIndex?: ReturnType<typeof createDecalReceiverIndex>;
   readonly THREE: typeof ThreeNamespace;
   readonly unit: DecalUnit;
   readonly texture: DecalUnitTexture;
@@ -222,33 +225,12 @@ export async function buildDecalBody(
     orientation: new THREE.Euler().setFromRotationMatrix(frame.matrix),
     size: new THREE.Vector3(frame.sizeX, frame.sizeY, depthZ),
   };
-  const boxRadius = Math.hypot(projector.size.x, projector.size.y, projector.size.z) / 2;
   const geometries: ThreeNamespace.BufferGeometry[] = [];
   for (const proxy of proxies) {
-    const position = proxy.geometry.getAttribute("position");
-    if (!position || !Number.isFinite(position.count) || position.count === 0) continue;
-    let validPosition = true;
-    for (let i = 0; i < position.count && validPosition; i += 1) {
-      validPosition =
-        Number.isFinite(position.getX(i)) &&
-        Number.isFinite(position.getY(i)) &&
-        Number.isFinite(position.getZ(i));
-    }
-    if (!validPosition) continue;
-    if (!proxy.geometry.boundingSphere) proxy.geometry.computeBoundingSphere();
-    const sphere = proxy.geometry.boundingSphere;
-    if (
-      sphere &&
-      sphere.center.distanceTo(projector.position) > sphere.radius + boxRadius
-    ) {
-      continue;
-    }
-    const clipped = new DecalGeometry(
-      proxy,
-      projector.position,
-      projector.orientation,
-      projector.size,
-    );
+    const clipped = input.receiverIndex
+      ? input.receiverIndex.project(proxy, projector.position, projector.orientation, projector.size)
+      : new DecalGeometry(proxy, projector.position, projector.orientation, projector.size);
+    if (!clipped) continue;
     const clippedPosition = clipped.getAttribute("position");
     if (clippedPosition) {
       let finite = true;
@@ -263,7 +245,7 @@ export async function buildDecalBody(
         continue;
       }
     }
-    if ((clipped.attributes.position?.count ?? 0) === 0) continue;
+    if ((clipped.attributes.position?.count ?? 0) === 0) { clipped.dispose(); continue; }
     const filtered =
       family === "hole" || route.surface === "plane"
         ? clipped

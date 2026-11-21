@@ -9,6 +9,7 @@ import {
   primeAllTextures,
   primeTexturesInBackground as primeTexturesBatched,
   type TexturePrimingHost,
+  primeTexturesBeforeDraw,
 } from "./viewerTexturePriming";
 
 export interface ViewerTapHit {
@@ -207,6 +208,10 @@ export class ThreeViewer {
   }
 
   /** 同步全量预热（保留给截图/测试等明确需要一次性上传的路径）。 */
+  prepareTextures(isStale: () => boolean): Promise<void> {
+    return primeTexturesBeforeDraw(this.textureHost(), isStale);
+  }
+
   primeTextures(): void {
     primeAllTextures(this.textureHost());
   }
@@ -234,15 +239,11 @@ export class ThreeViewer {
     objects: ThreeNamespace.Object3D = this.scene,
   ): Promise<void> {
     if (this.disposed || isStale()) return;
-    const compilation = new Promise<void>((resolve) => {
-      const run = () => {
-        if (!this.disposed && !isStale()) try { this.renderer.compile(objects, this.camera, this.scene); } catch { /* lazy draw fallback */ }
-        resolve();
-      };
-      const idle = (window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
-      if (idle) idle(run, { timeout: 1000 });
-      else setTimeout(run, 32);
-    });
+    // Start while assembly still gates drawing. compileAsync uses the driver's
+    // completion polling instead of blocking first draw on program link status.
+    const compilation = this.renderer.compileAsync(objects, this.camera, this.scene)
+      .then(() => undefined)
+      .catch(() => { /* first draw remains the fallback for unsupported drivers */ });
     let settled = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;

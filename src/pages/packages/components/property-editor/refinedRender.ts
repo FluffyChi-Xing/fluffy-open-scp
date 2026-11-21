@@ -1,3 +1,4 @@
+import { registerTextureUniforms } from "@/lib/materialTextureInputs";
 import { pngBlobUrl } from "@/lib/three-gltf";
 import type * as ThreeNamespace from "three";
 import type { LotModelPayload } from "@/api/tauri";
@@ -660,6 +661,7 @@ export function attachTintShader(
 ) {
   // 注意：three 默认编译为 GLSL ES 1.00——texelFetch/ivec2 不可用，
   // 参数表用 texture2D + 预计算 V 寻址（Nearest 采样取整行）。
+  registerTextureUniforms(material, uniforms);
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader

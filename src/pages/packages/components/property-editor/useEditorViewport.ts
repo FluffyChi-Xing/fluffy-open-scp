@@ -281,22 +281,22 @@ export function useEditorViewport(options: {
           framingGroups: [...FRAMING_GROUPS],
         });
       }
+      if (rebuildOptions.prepareGpu === true) {
+        // Upload all standard, tint and decal-uniform textures in bounded tasks
+        // before draw; an idle job after draw cannot prevent its upload stall.
+        const isStale = () => token !== rebuildToken;
+        await Promise.all([
+          instance.prepareTextures(isStale),
+          // Ground/decal materials exist only after assembly; compiling just
+          // model/props leaves their programs to block the first visible draw.
+          instance.prepareShaders(isStale),
+        ]);
+        if (token !== rebuildToken) return;
+      }
       sceneReady.value = true;
       revision.value += 1;
-      // GPU 侧准备：**先放行首帧**，未上屏的纹理再按 idle 切片补传。
-      // 此前"全量 primeTextures + 整场 compile 完成后才出画"会把首帧
-      // 推迟数百 ms（模式切换卡死），而放到首帧后同步跑同样是主线程冻帧。
-      if (token === rebuildToken) {
-        // 首帧先放行；GPU 预热放到首帧之后的 idle 切片。
-        instance.setSceneAssembling(false);
-        instance.invalidate();
-        if (rebuildOptions.prepareGpu === true) {
-          // 逐纹理上传、每片 ~6ms：整场 prime 在 refined 首帧后同步跑完会
-          // 把刚刚可见的视口再冻住数百毫秒（用户观测的「切换精细卡死」）。
-          // 首帧本身需要的纹理由 draw 惰性上传，这里只补未上屏的部分。
-          instance.primeTexturesInBackground(() => token !== rebuildToken);
-        }
-      }
+      instance.setSceneAssembling(false);
+      instance.invalidate();
     } finally {
       // 仅当前代清旗/唤醒：过期代误清会抹掉新一代的在飞标记
       if (token === rebuildToken) {

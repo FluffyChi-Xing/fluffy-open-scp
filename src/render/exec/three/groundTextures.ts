@@ -17,6 +17,8 @@ type GroundTextures = {
 const groundTextureCache = new Map<string, ThreeNamespace.Texture>();
 const groundComposeCache = new Map<string, GroundTextures>();
 const GROUND_CACHE_CAP = 2;
+const pendingCompositions = new Map<string, Promise<GroundTextures | null>>();
+let cacheGeneration = 0;
 
 function disposeGround(textures: GroundTextures | undefined): void {
   textures?.albedo.dispose();
@@ -37,6 +39,8 @@ function putGroundCache(key: string, texture: GroundTextures): void {
 
 /** 会话销毁/更换时清缓存（dispose 全部贴图）。 */
 export function releaseGroundTextureCache(): void {
+  cacheGeneration += 1;
+  pendingCompositions.clear();
   for (const texture of groundComposeCache.values()) disposeGround(texture);
   groundComposeCache.clear();
   for (const texture of groundTextureCache.values()) texture.dispose();
@@ -106,6 +110,7 @@ export async function applyGroundTextures(options: {
   lotSize?: [number, number] | null;
   tilePeriod?: [number, number] | null;
   refined: boolean;
+  prewarmOnly?: boolean;
   lotColors: [number, number, number, number][];
   surface?: ImageData | null;
   baseTileIndex: number;
@@ -150,9 +155,10 @@ export async function applyGroundTextures(options: {
   const fill = findFill(ground);
   if (!fill) return;
   const applyFlat = async () => {
-    const fallback = refined && albedoPng
-      ? await loadGroundTexture(THREE, albedoPng)
-      : texture;
+    const fallback =
+      refined && albedoPng
+        ? await loadGroundTexture(THREE, albedoPng)
+        : texture;
     if (isStale()) return;
     fallback.colorSpace = THREE.SRGBColorSpace;
     fallback.flipY = false;
@@ -184,28 +190,49 @@ export async function applyGroundTextures(options: {
       let result = groundComposeCache.get(key);
       const cacheHit = Boolean(result);
       if (!result) {
-        const composed = await composeRefinedGround({
-          THREE,
-          maskImage: texture.image as TexImageSource,
-          lotColors,
-          lotSize: lotSize ?? null,
-          tilePeriod: tilePeriod ?? null,
-          surface: surface ?? null,
-          baseTileIndex,
-          normalAtlas: normalAtlas ?? null,
-          rawMask: rawMask ?? null,
-          lotBorderColors: lotBorderColors ?? null,
-          lotBorderPatternIndices: lotBorderPatternIndices ?? null,
-          lotBorderWidths: lotBorderWidths ?? null,
-          lotColorHeights: options.lotColorHeights,
-          lotBorderHeights: options.lotBorderHeights,
-        });
-        if (composed) {
-          putGroundCache(key, composed);
-          result = composed;
+        const generation = cacheGeneration;
+        let pending = pendingCompositions.get(key);
+        if (!pending) {
+          pending = composeRefinedGround({
+            THREE,
+            maskImage: texture.image as TexImageSource,
+            lotColors,
+            lotSize: lotSize ?? null,
+            tilePeriod: tilePeriod ?? null,
+            surface: surface ?? null,
+            baseTileIndex,
+            normalAtlas: normalAtlas ?? null,
+            rawMask: rawMask ?? null,
+            lotBorderColors: lotBorderColors ?? null,
+            lotBorderPatternIndices: lotBorderPatternIndices ?? null,
+            lotBorderWidths: lotBorderWidths ?? null,
+            lotColorHeights: options.lotColorHeights,
+            lotBorderHeights: options.lotBorderHeights,
+          })
+            .then((composed) => {
+              if (generation !== cacheGeneration) {
+                disposeGround(composed ?? undefined);
+                return null;
+              }
+              if (composed) putGroundCache(key, composed);
+              return composed;
+            })
+            .finally(() => {
+              if (pendingCompositions.get(key) === pending)
+                pendingCompositions.delete(key);
+            });
+          pendingCompositions.set(key, pending);
         }
+        result = (await pending) ?? undefined;
       }
-      if (isStale()) return;
+      if (options.prewarmOnly) {
+        span.end({ cacheHit, prewarm: true });
+        return;
+      }
+      if (isStale()) {
+        span.end({ stale: true });
+        return;
+      }
       if (!result) {
         await applyFlat();
         span.end({ failed: true });
@@ -224,6 +251,10 @@ export async function applyGroundTextures(options: {
       fill.material = lit;
       span.end({ cacheHit });
     } catch {
+      if (options.prewarmOnly) {
+        span.end({ failed: true, prewarm: true });
+        return;
+      }
       await applyFlat();
       span.end({ failed: true });
     }

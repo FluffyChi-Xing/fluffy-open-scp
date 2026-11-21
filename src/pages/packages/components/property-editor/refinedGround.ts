@@ -1,5 +1,5 @@
 import {
-  composeGroundPixels,
+  composeGroundPreviewFast,
   copyAtlasRegion,
   groundOutputSize,
   nearestChannel,
@@ -141,7 +141,7 @@ function composeViaWorker(
 
 /** 主线程回退：同一纯核心同步执行（测试环境/Worker 不可用时）。 */
 function composeOnMainThread(input: GroundComposeInput): GroundComposeResponse {
-  const output = composeGroundPixels(input);
+  const output = composeGroundPreviewFast(input);
   return { id: -1, ...output };
 }
 
@@ -242,6 +242,7 @@ export async function composeRefinedGround(options: {
     tilesX,
     tilesY,
     outSize,
+    enhanceTintDetail: Boolean(rawMask && normalAtlas),
   };
   // 可转移 buffer：mask 像素恒为本次新提取；baseTile 在 surface 图集切格
   // 分支是新拷贝（copyAtlasRegion），本地 tile() 回退分支是共享缓存（不可
@@ -264,9 +265,7 @@ export async function composeRefinedGround(options: {
     };
     response = composeOnMainThread(retryInput);
   }
-  if (rawMask && normalAtlas) {
-    enhanceTintDetail(response.albedo, response.normal, response.width, response.height, rawMask);
-  }
+
   const makeTexture = (bytes: Uint8ClampedArray<ArrayBuffer>, color: boolean) => {
     const texture = new THREE.DataTexture(new Uint8Array(bytes.buffer), response.width, response.height);
     texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -281,29 +280,7 @@ export async function composeRefinedGround(options: {
   return { albedo: makeTexture(response.albedo, true), normal: makeTexture(response.normal, false) };
 }
 
-/** View-only relief on dyed ground; the calibrated compose core keeps flat albedo. */
-export function enhanceTintDetail(
-  albedo: Uint8ClampedArray,
-  normals: Uint8ClampedArray,
-  width: number,
-  height: number,
-  mask: ImageData,
-): void {
-  for (let y = 0; y < height; y += 1) {
-    const maskY = Math.min(mask.height - 1, Math.floor((y + 0.5) * mask.height / height));
-    for (let x = 0; x < width; x += 1) {
-      const maskX = Math.min(mask.width - 1, Math.floor((x + 0.5) * mask.width / width));
-      const maskAt = (maskY * mask.width + maskX) * 4;
-      if (mask.data[maskAt] < 128 && mask.data[maskAt + 1] < 128 &&
-          mask.data[maskAt + 2] < 128 && mask.data[maskAt + 3] < 128) continue;
-      const at = (y * width + x) * 4;
-      const nx = normals[at] / 127.5 - 1;
-      const ny = normals[at + 1] / 127.5 - 1;
-      const shade = Math.min(1.4, Math.max(0.6, 1 - 0.55 * (nx + ny)));
-      for (let c = 0; c < 3; c += 1) albedo[at + c] = Math.round(albedo[at + c] * shade);
-    }
-  }
-}
+export { enhanceTintDetail } from "@/render/resolve/groundTintDetail";
 
 /**
  * 自动锚定：在量化 mask 图上找"主足迹色区"（最大非满铺色区，退化时

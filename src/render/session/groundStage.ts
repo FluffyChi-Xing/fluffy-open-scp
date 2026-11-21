@@ -7,9 +7,7 @@
 import type * as ThreeNamespace from "three";
 import { renderTelemetry } from "@/lib/renderTelemetry";
 import { prepareGroundComposer } from "@/pages/packages/components/property-editor/refinedGround";
-import {
-  groundFillMesh,
-} from "@/pages/packages/components/property-editor/editorGround";
+import { groundFillMesh } from "@/pages/packages/components/property-editor/editorGround";
 import { applyGroundTextures } from "../exec/three/groundTextures";
 import { createLotGround } from "../exec/three/ground";
 import { lotGroundPlan } from "../plan/ground";
@@ -39,7 +37,10 @@ export interface GroundStageInput {
   readonly groupLot: ThreeNamespace.Object3D;
   readonly primeTexture: (texture: ThreeNamespace.Texture) => void;
   readonly loadSurfacePixels: () => Promise<GroundMaskInput["surface"]>;
-  readonly loadMaskImageDims: () => Promise<{ width: number; height: number } | null>;
+  readonly loadMaskImageDims: () => Promise<{
+    width: number;
+    height: number;
+  } | null>;
   readonly loadImageDataFromUrl: (
     url: string | null,
   ) => Promise<GroundMaskInput["normalAtlas"]>;
@@ -81,7 +82,11 @@ export async function stageGround(
     input.lotModelBboxCenter ?? [0, 0];
   if (Math.abs(centerLocal[0]) > 1e-4 || Math.abs(centerLocal[1]) > 1e-4) {
     ground.matrix.multiply(
-      new input.THREE.Matrix4().makeTranslation(centerLocal[0], centerLocal[1], 0),
+      new input.THREE.Matrix4().makeTranslation(
+        centerLocal[0],
+        centerLocal[1],
+        0,
+      ),
     );
   }
   ground.matrixAutoUpdate = false;
@@ -102,7 +107,7 @@ export async function stageGround(
     const rawMask = maskDims
       ? input.loadRawMaskPixels(maskDims.width, maskDims.height)
       : null;
-    await applyGroundTextures({
+    const textureInput = {
       rawMask,
       surface,
       normalAtlas,
@@ -125,7 +130,19 @@ export async function stageGround(
       surfaceKey: input.lotSurfacePng,
       normalAtlasKey: input.lotNormalAtlasPng,
       isStale: input.isStale,
-    });
+    };
+    await applyGroundTextures(textureInput);
+    if (input.renderMode === "default" && input.lotMaskPng) {
+      // CPU cache only; never change the displayed white material.
+      setTimeout(() => {
+        if (input.isStale()) return;
+        void applyGroundTextures({
+          ...textureInput,
+          refined: true,
+          prewarmOnly: true,
+        });
+      }, 0);
+    }
   }
   span.end({ masked: Boolean(input.lotMaskPng || input.lotAlbedoPng) });
 
