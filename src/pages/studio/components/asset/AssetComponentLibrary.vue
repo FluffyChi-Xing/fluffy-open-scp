@@ -361,7 +361,7 @@ function onSpawnerPlace(selection: { performancePreset?: string }) {
           <div v-show="!collapsed.has(group.name)" class="library-grid">
             <div
               v-for="entry in group.entries"
-              :key="`${entry.packageId}:${entry.group}:${entry.instance}`"
+              :key="`${entry.binResourceId}:${entry.packageId}:${entry.group}:${entry.instance}`"
               class="library-entry"
               :title="entry.name"
               @pointerdown.stop.prevent="beginPropDrag($event, entry)"

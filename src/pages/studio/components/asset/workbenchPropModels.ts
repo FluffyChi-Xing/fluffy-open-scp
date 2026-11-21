@@ -76,9 +76,9 @@ export async function loadPlacedPropModel(
   const packageId = unit.modelPackagePath
     ? (await source.openPackage(unit.modelPackagePath)).package.packageId
     : unit.modelPackageId;
-  if (packageId == null) return null;
   let buffer: ArrayBuffer;
   try {
+    if (packageId == null) throw new Error("Saved prop has no live package handle");
     buffer = await source.readLotModelMeshes(packageId, unit.modelTgi);
   } catch (error) {
     // Legacy scene documents contain process-local package IDs but no path.
