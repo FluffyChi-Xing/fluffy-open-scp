@@ -5,11 +5,13 @@ export function enhanceTintDetail(
   width: number,
   height: number,
   mask: { width: number; height: number; data: Uint8ClampedArray },
+  fullHeight = height,
+  startRow = 0,
 ): void {
   for (let y = 0; y < height; y += 1) {
     const maskY = Math.min(
       mask.height - 1,
-      Math.floor(((y + 0.5) * mask.height) / height),
+      Math.floor(((y + startRow + 0.5) * mask.height) / fullHeight),
     );
     for (let x = 0; x < width; x += 1) {
       const maskX = Math.min(

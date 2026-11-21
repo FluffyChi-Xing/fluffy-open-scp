@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreeViewer } from "./three-viewer";
+import { createInteractionFrameBudget } from "./interactionFrameBudget";
+import { createFramePixelRatio } from "./framePixelRatio";
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 function dragHarness() {
   const prototype = ThreeViewer.prototype;
@@ -29,6 +32,36 @@ function dragHarness() {
 }
 
 describe("ThreeViewer camera input", () => {
+  it("restores full pixel ratio and shadow updates after reduced-quality motion", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("devicePixelRatio", 2);
+    let ratio = 1.5;
+    const renderer = {
+      getPixelRatio: () => ratio,
+      setPixelRatio: (value: number) => { ratio = value; },
+      shadowMap: { enabled: true, autoUpdate: true, needsUpdate: false },
+    };
+    const viewer = Object.assign(Object.create(ThreeViewer.prototype), {
+      options: { maxPixelRatio: 1.5, interactionPixelRatio: 1 },
+      renderer, keyLight: { castShadow: true }, interactionActive: false,
+      activePointerId: null, qualityRestoreTimer: null, interactionShadowState: false,
+      interactionBudget: createInteractionFrameBudget(), framePixelRatio: createFramePixelRatio(), invalidate: vi.fn(),
+    });
+    Reflect.get(ThreeViewer.prototype, "beginCameraInteraction").call(viewer);
+    expect(ratio).toBe(1.5); // keep the last complete image until the next draw
+    viewer.framePixelRatio.draw(renderer, () => {});
+    expect(ratio).toBe(1);
+    expect(renderer.shadowMap.autoUpdate).toBe(false);
+    renderer.setPixelRatio(0.6);
+    Reflect.get(ThreeViewer.prototype, "scheduleQualityRestore").call(viewer);
+    vi.advanceTimersByTime(180);
+    expect(ratio).toBe(0.6);
+    viewer.framePixelRatio.draw(renderer, () => {});
+    expect(ratio).toBe(1.5);
+    expect(renderer.shadowMap.autoUpdate).toBe(true);
+    expect(renderer.shadowMap.needsUpdate).toBe(true);
+    expect(viewer.interactionActive).toBe(false);
+  });
   it("combines a burst into one transform and retains the final movement", () => {
     const { queue, flush, orbit, beginCameraInteraction } = dragHarness();
     queue(1);

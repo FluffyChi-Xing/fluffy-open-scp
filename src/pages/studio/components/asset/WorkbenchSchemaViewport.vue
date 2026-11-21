@@ -2,7 +2,7 @@
 // Parallel workbench adapter copied from frozen SchemaPropertyViewport.vue.
 // Preserve its lot/visibility bindings; restore authoring metadata before
 // grouping so dropped decals retain their unattached preview path.
-import { shallowRef, useAttrs } from "vue";
+import { computed, shallowRef, useAttrs } from "vue";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 import { unitsFromSchema } from "@/pages/packages/components/property-editor/peSchemaDoc";
 import type { UnitGrouping } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
@@ -15,8 +15,7 @@ type ViewProps = InstanceType<typeof PropertyEditorViewport>["$props"];
 const viewport = shallowRef<InstanceType<typeof PropertyEditorViewport> | null>(
   null,
 );
-function binding() {
-  const defaults: ViewProps = {
+const defaults: ViewProps = {
     modelPayload: null,
     modelLods: [],
     activeLod: 0,
@@ -56,14 +55,11 @@ function binding() {
     groupVisibility: {},
     modelState: "ready",
   };
-  const normalizedAttrs = Object.fromEntries(
-    Object.entries(attrs).map(([key, value]) => [
-      key.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()),
-      value,
-    ]),
-  );
-  const base = { ...defaults, ...normalizedAttrs };
-  if (!props.schema) return base;
+// Keep scene inputs stable when only selection/tool/event bindings change.
+// Recreating colors/grouping in render causes the viewport's ground watcher
+// to rebuild the entire scene on every unrelated parent update.
+const schemaBinding = computed(() => {
+  if (!props.schema) return {};
   const units = unitsFromSchema(props.schema);
   restoreDecalSources(props.schema, units);
   const grouping: UnitGrouping = {
@@ -102,7 +98,6 @@ function binding() {
     unitVisibility?: Record<string, boolean>;
   };
   return {
-    ...base,
     grouping,
     lotSize: lot.size,
     lotTilePeriod: lot.tilePeriod,
@@ -126,6 +121,18 @@ function binding() {
         .map(([id]) => id),
     ),
   } as ViewProps;
+});
+
+function binding() {
+  // useAttrs is updated by Vue, but is deliberately not a reactive computed
+  // dependency. Read it in render so changed props and listeners still flow.
+  const normalizedAttrs = Object.fromEntries(
+    Object.entries(attrs).map(([key, value]) => [
+      key.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()),
+      value,
+    ]),
+  );
+  return { ...defaults, ...normalizedAttrs, ...schemaBinding.value };
 }
 defineExpose({
   groundPointAt: (x: number, y: number) =>

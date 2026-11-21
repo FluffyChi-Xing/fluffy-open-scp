@@ -6,8 +6,16 @@ export type DeferredDispose = (object: ThreeNamespace.Object3D) => void;
 export class DeferredDisposalQueue {
   private readonly queue: ThreeNamespace.Object3D[] = [];
   private scheduled = false;
+  private paused = false;
 
   constructor(private readonly dispose: DeferredDispose) {}
+
+  /** Keep old shader program references alive until replacement materials
+   * have acquired them. Disposing during an assembly yield evicts hot programs. */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    if (!paused && this.queue.length) this.schedule();
+  }
 
   enqueue(object: ThreeNamespace.Object3D): void {
     this.queue.push(object);
@@ -20,9 +28,13 @@ export class DeferredDisposalQueue {
   }
 
   private schedule(): void {
-    if (this.scheduled) return;
+    if (this.scheduled || this.paused) return;
     this.scheduled = true;
     const run = () => {
+      if (this.paused) {
+        this.scheduled = false;
+        return;
+      }
       const started = performance.now();
       while (this.queue.length && performance.now() - started < 4) {
         const object = this.queue.shift();

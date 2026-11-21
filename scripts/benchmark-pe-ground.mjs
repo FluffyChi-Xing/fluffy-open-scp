@@ -115,4 +115,18 @@ if (core.composeGroundPreviewFast) {
       !Buffer.from(result.normal).equals(Buffer.from(baseline.normal))) {
     throw new Error("Accelerated composition differs from the reference pixels");
   }
+  const stripeStart = performance.now();
+  const parts = Array.from({ length: 4 }, (_, i) =>
+    core.composeGroundPreviewFast(input, [
+      Math.floor(i * input.outSize.height / 4),
+      Math.floor((i + 1) * input.outSize.height / 4),
+    ]),
+  );
+  const joinedAlbedo = Buffer.concat(parts.map(p => Buffer.from(p.albedo)));
+  const joinedNormal = Buffer.concat(parts.map(p => Buffer.from(p.normal)));
+  const albedoIdentical = joinedAlbedo.equals(Buffer.from(baseline.albedo));
+  const normalIdentical = joinedNormal.equals(Buffer.from(baseline.normal));
+  console.log(JSON.stringify({ stripedSequentialMs: performance.now() - stripeStart, albedoIdentical, normalIdentical }));
+  if (!albedoIdentical || !normalIdentical)
+    throw new Error("Striped composition differs from the reference pixels");
 }

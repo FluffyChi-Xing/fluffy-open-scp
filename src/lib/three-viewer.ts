@@ -1,8 +1,11 @@
 import type * as ThreeNamespace from "three";
-import { isSharedGeometry } from "@/lib/three-gltf";
+import { disposeObject } from "./viewerObjectDisposal";
+export { disposeObject } from "./viewerObjectDisposal";
 import { createDepthOfFieldController } from "./viewerDepthOfField";
 import { DeferredDisposalQueue } from "./deferred-disposal";
 import { framePerf } from "./framePerf";
+import { createInteractionFrameBudget } from "./interactionFrameBudget";
+import { createFramePixelRatio } from "./framePixelRatio";
 import { buildOutlineHull } from "./viewerOutline";
 import { installLineLightPass } from "@/render/exec/three/lineLightPass";
 import {
@@ -45,29 +48,12 @@ export interface CameraPreset {
 }
 
 type Three = typeof ThreeNamespace;
-
 // 三灯 + 环境光的基准强度；setEnvironmentBrightness 按倍率缩放这些基准值。
 const KEY_LIGHT_INTENSITY = 2.2;
 const FILL_LIGHT_INTENSITY = 0.5;
 const RIM_LIGHT_INTENSITY = 0.65;
 const AMBIENT_LIGHT_INTENSITY = 0.38;
-
-export function disposeObject(object: ThreeNamespace.Object3D) {
-  object.traverse((child) => {
-    const mesh = child as ThreeNamespace.Mesh & { isLine?: boolean };
-    if (mesh.isMesh || mesh.isLine) {
-      // 共享缓存几何（payload 级模型缓存，见 three-gltf.getLotModelObjects）
-      // 归缓存所有，清场不销毁——缓存更换时统一释放。
-      if (!isSharedGeometry(mesh.geometry)) mesh.geometry?.dispose();
-      const material = mesh.material;
-      if (Array.isArray(material)) material.forEach((item) => item.dispose());
-      else material?.dispose();
-    }
-  });
-}
-
-/**
- * MeshPreview 抽取出的 three.js 引擎层：轨道相机（左键旋转/中键或
+/** MeshPreview 抽取出的 three.js 引擎层：轨道相机（左键旋转/中键或
  * Shift+左键平移/滚轮缩放）、三灯白模布光、Z-up 世界根组、图层组、
  * Raycaster 轻点拾取。编辑器 Gizmo（M-PE2）在此之上叠加。
  */
@@ -153,6 +139,8 @@ export class ThreeViewer {
   private lastHoverAt = 0;
   /** 是否已进入相机交互质量档（拖拽超过阈值才进，避免单击闪烁）。 */
   private interactionActive = false;
+  private readonly interactionBudget = createInteractionFrameBudget();
+  private readonly framePixelRatio = createFramePixelRatio();
   /** 容器 CSS 尺寸缓存（ResizeObserver 维护）。worldToScreen 每帧被标签/
    *  尺度标注调用多次，绝不能在投影里再读 getBoundingClientRect——那会
    *  在写完 style.left 后强制同步布局（相机拖动的主要 CPU 抖动源）。 */
@@ -170,6 +158,7 @@ export class ThreeViewer {
 
   setSceneAssembling(value: boolean) {
     this.assemblingScene = value;
+    this.deferredDisposals.setPaused(value);
     if (!value) {
       // 每轮装配收尾更新一次光源计数：快照里能看到"光源数 ↔ 帧成本"。
       let lights = 0;
@@ -321,7 +310,6 @@ export class ThreeViewer {
     else this.selectedOutline = entry;
     this.needsRender = true;
   }
-
 
   /** 登记悬停拾取目标（unit 图层组根）；空数组关闭 hover 拾取。 */
   setHoverTargets(targets: ThreeNamespace.Object3D[]) {
@@ -902,7 +890,8 @@ export class ThreeViewer {
     if (limit !== undefined) {
       const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
       const moving = Math.min(full, limit);
-      if (this.renderer.getPixelRatio() !== moving) this.renderer.setPixelRatio(moving);
+      this.interactionBudget.begin(moving);
+      this.framePixelRatio.request(moving);
     }
     if (this.renderer.shadowMap.enabled && this.keyLight.castShadow) {
       this.interactionShadowState = true;
@@ -916,7 +905,7 @@ export class ThreeViewer {
       this.qualityRestoreTimer = null;
       if (this.activePointerId !== null) return;
       const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
-      if (this.renderer.getPixelRatio() !== full) this.renderer.setPixelRatio(full);
+      this.framePixelRatio.request(full);
       if (this.interactionShadowState) {
         this.renderer.shadowMap.autoUpdate = true;
         this.renderer.shadowMap.needsUpdate = true;
@@ -939,8 +928,10 @@ export class ThreeViewer {
     const interval = this.lastRenderAt > 0 ? now - this.lastRenderAt : 0;
     this.lastRenderAt = now;
     const started = performance.now();
-    this.dof.render(() => this.renderer.render(this.scene, this.camera));
-    framePerf.recordFrame(performance.now() - started, interval, {
+    this.framePixelRatio.draw(this.renderer, () =>
+      this.dof.render(() => this.renderer.render(this.scene, this.camera)));
+    const cpuMs = performance.now() - started;
+    framePerf.recordFrame(cpuMs, interval, {
       calls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
       programs: this.renderer.info.programs?.length ?? 0,
@@ -948,13 +939,21 @@ export class ThreeViewer {
       geometries: this.renderer.info.memory.geometries,
       dpr: this.renderer.getPixelRatio(),
     });
+    if (this.interactionActive && this.options.interactionPixelRatio !== undefined) {
+      const ratio = this.interactionBudget.sample(cpuMs, interval);
+      if (ratio !== this.renderer.getPixelRatio()) {
+        this.framePixelRatio.request(ratio);
+        this.invalidate();
+      }
+    }
     this.onFrameCb?.();
   };
 
   /** 视口截图；需在渲染后同一同步段读取。 */
   captureScreenshot(excludeGroups: string[] = []): string | null {
-    const previousRatio = this.renderer.getPixelRatio();
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
+    const previousRatio = this.framePixelRatio.desired(this.renderer.getPixelRatio());
+    const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
+    if (this.renderer.getPixelRatio() !== full) this.renderer.setPixelRatio(full);
     const hidden: ThreeNamespace.Group[] = [];
     for (const name of excludeGroups) {
       const group = this.groups.get(name);
@@ -970,7 +969,7 @@ export class ThreeViewer {
       return null;
     } finally {
       for (const group of hidden) group.visible = true;
-      this.renderer.setPixelRatio(previousRatio);
+      this.framePixelRatio.request(previousRatio);
       this.invalidate();
     }
   }
@@ -990,6 +989,7 @@ export class ThreeViewer {
     this.container.removeEventListener("contextmenu", this.onContextMenu);
     const roots = [...this.scene.children];
     this.scene.clear();
+    this.deferredDisposals.setPaused(false);
     for (const root of roots) this.deferredDisposals.enqueue(root);
     this.dof.dispose();
     this.renderer.dispose();

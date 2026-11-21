@@ -13,9 +13,29 @@ const Viewport = defineComponent({
   name: "PropertyEditorViewport",
   props: {
     grouping: { type: Object, required: true }, decalTextures: Array,
-    lotSize: Array, hiddenUnits: Set, groupVisibility: Object,
+    lotSize: Array, lotColors: Array, hiddenUnits: Set, groupVisibility: Object,
   },
   template: "<div />",
+});
+
+it("preserves scene inputs across selection, tool and time changes", async () => {
+  const wrapper = mount(WorkbenchSchemaViewport, {
+    props: { schema: document() },
+    global: { stubs: { PropertyEditorViewport: Viewport } },
+  });
+  try {
+    const viewport = wrapper.getComponent(Viewport);
+    const before = { ...viewport.props() };
+    await wrapper.setProps({ selectedId: "decal:8", tool: "translate", timeOfDay: 18 } as never);
+    for (const key of ["grouping", "lotColors", "lotSize", "hiddenUnits", "groupVisibility"] as const)
+      expect(viewport.props(key)).toBe(before[key]);
+    expect(viewport.attributes("selectedid")).toBe("decal:8");
+    const next = document();
+    next.lot.colors = [{ rgba: [1, 2, 3, 255] }];
+    await wrapper.setProps({ schema: next });
+    expect(viewport.props("lotColors")).toEqual([[1, 2, 3, 255]]);
+    expect(viewport.props("grouping")).not.toBe(before.grouping);
+  } finally { wrapper.unmount(); }
 });
 
 function document() {

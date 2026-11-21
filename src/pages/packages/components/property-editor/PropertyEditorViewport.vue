@@ -5,6 +5,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { disposeObject } from "@/lib/three-viewer";
 import { getLotModelObjects } from "@/lib/three-gltf";
+import { createRawMaskDecoder } from "@/render/resolve/rawMaskPixels";
 import { renderTelemetry } from "@/lib/renderTelemetry";
 import type { RenderTelemetryTrigger } from "@/lib/renderTelemetry";
 import type * as ThreeNamespace from "three";
@@ -1273,17 +1274,9 @@ async function loadMaskImageDims(): Promise<{
  *  ImageData**——若经 canvas 解码，预乘 alpha 会按 LC4 权重等比压缩/清零
  *  LC1-3 权重，精细合成随即满地判为草皮（2026-09-13 消防局对拍根因）。
  *  结果按源字符串缓存：编辑操作的全量重建不再重复 atob 逐字节拷贝。 */
+const decodeRawMask = createRawMaskDecoder();
 function loadRawMaskPixels(width: number, height: number): ImageData | null {
-  const base64 = props.lotMaskRawRgba;
-  if (!base64) return null;
-  const binary = atob(base64);
-  const expected = width * height * 4;
-  if (binary.length < expected) return null;
-  const pixels = new Uint8ClampedArray(expected);
-  for (let index = 0; index < expected; index += 1) {
-    pixels[index] = binary.charCodeAt(index);
-  }
-  return new ImageData(pixels, width, height);
+  return decodeRawMask(props.lotMaskRawRgba, width, height);
 }
 
 /** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入，按源 URL 缓存）。 */

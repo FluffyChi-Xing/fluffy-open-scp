@@ -196,7 +196,7 @@ export function groundOutputSize(
  * 权重双线性插值（阈值在插值后逐像素施加 = GPU 口径）+ 平色×图案明暗/
  * 底图直出。
  */
-function composeGroundPixelsImpl(input: GroundComposeInput<ArrayBufferLike>, flatCells?: Uint8Array, fast = false): GroundComposeOutput {
+function composeGroundPixelsImpl(input: GroundComposeInput<ArrayBufferLike>, flatCells?: Uint8Array, fast = false, rows?: readonly [number, number]): GroundComposeOutput {
   const { mask, rawMask } = input;
   const width = mask.width;
   const height = mask.height;
@@ -211,7 +211,8 @@ function composeGroundPixelsImpl(input: GroundComposeInput<ArrayBufferLike>, fla
   const outW = size.width;
   const outH = size.height;
   const samplePattern = fast ? createGroundPatternSampler(outW, outH, input.tilesX, input.tilesY) : null;
-  const composed = new Uint8ClampedArray(outW * outH * 4);
+  const startRow = rows?.[0] ?? 0, endRow = rows?.[1] ?? outH;
+  const composed = new Uint8ClampedArray(outW * (endRow - startRow) * 4);
   const normals = new Uint8ClampedArray(composed.length);
 
   const borderIndices =
@@ -239,6 +240,9 @@ function composeGroundPixelsImpl(input: GroundComposeInput<ArrayBufferLike>, fla
    *  为抑制「高优通道外扩」改的，但外扩本就是引擎同款行为（GPU 双线性 +
    *  阈值 + 优先级链），最近邻的代价是斜边/曲线出现 4× mask texel 的
    *  阶梯锯齿（2026-09-18 用户反馈），故回归引擎口径。 */
+  // All callers consume weights immediately, before the next sample. Reuse the
+  // tuple on the fast path instead of allocating millions of temporary arrays.
+  const weightScratch: [number, number, number, number] = [0, 0, 0, 0];
   function sampleWeights(u: number, v: number): [number, number, number, number] {
     const raw = rawMask;
     if (!raw) return [0, 0, 0, 0];
@@ -252,7 +256,7 @@ function composeGroundPixelsImpl(input: GroundComposeInput<ArrayBufferLike>, fla
     const ty = fy - y0;
     const rowA = y0 * raw.width;
     const rowB = y1 * raw.width;
-    const out: [number, number, number, number] = [0, 0, 0, 0];
+    const out: [number, number, number, number] = fast ? weightScratch : [0, 0, 0, 0];
     for (let c = 0; c < 4; c += 1) {
       const a = raw.data[(rowA + x0) * 4 + c];
       const b = raw.data[(rowA + x1) * 4 + c];
@@ -288,9 +292,9 @@ function composeGroundPixelsImpl(input: GroundComposeInput<ArrayBufferLike>, fla
     }
     return height;
   }
-  for (let y = 0; y < outH; y += 1) {
+  for (let y = startRow; y < endRow; y += 1) {
     for (let x = 0; x < outW; x += 1) {
-      const at = (y * outW + x) * 4;
+      const at = ((y - startRow) * outW + x) * 4;
       const u = (x + 0.5) / outW;
       const v = (y + 0.5) / outH;
       // 引擎优先级瀑布：w→z→y→x = A > B > G > R；8 级
@@ -299,7 +303,7 @@ function composeGroundPixelsImpl(input: GroundComposeInput<ArrayBufferLike>, fla
       let channelIsBorder = false;
       if (rawMask) {
         const weights = sampleWeights(u, v);
-        for (const c of [3, 2, 1, 0]) {
+        for (let c = 3; c >= 0; c--) {
           if (weights[c] > 0.5 - borderWidths[c]) {
             channel = c;
             channelIsBorder = weights[c] <= 0.5 + borderWidths[c];
@@ -381,13 +385,14 @@ function composeGroundPixelsImpl(input: GroundComposeInput<ArrayBufferLike>, fla
       composed[at + 3] = 255;
     }
   }
-  return { albedo: composed, normal: normals, width: outW, height: outH };
+  return { albedo: composed, normal: normals, width: outW, height: endRow - startRow };
 }
 
 /** worker 消息协议（结构化克隆）。 */
 export interface GroundComposeRequest {
   id: number;
   input: GroundComposeInput;
+  rows?: readonly [number, number];
 }
 export interface GroundComposeResponse {
   id: number;
@@ -406,9 +411,9 @@ interface ComposeWorkerScope {
 /** Worker 入口（仅 worker 上下文执行）。 */
 export function runGroundComposeWorker(scope: ComposeWorkerScope): void {
   scope.onmessage = (event: MessageEvent<GroundComposeRequest>) => {
-    const { id, input } = event.data;
+    const { id, input, rows } = event.data;
     try {
-      const output = composeGroundPreviewFast(input);
+      const output = composeGroundPreviewFast(input, rows);
       scope.postMessage({ id, ...output }, [output.albedo.buffer, output.normal.buffer]);
     } catch (error) {
       scope.postMessage({
@@ -434,15 +439,15 @@ export function composeGroundPixels(input: GroundComposeInput<ArrayBufferLike>):
 }
 
 /** Same pixels and resolution; skip provably zero height derivatives only. */
-export function composeGroundPreviewFast(input: GroundComposeInput): GroundComposeOutput {
+export function composeGroundPreviewFast(input: GroundComposeInput, rows?: readonly [number, number]): GroundComposeOutput {
   const hasHeight = [...(input.lotColorHeights ?? []), ...(input.lotBorderHeights ?? [])].some(h => h !== 0);
   const size = input.outSize ?? groundOutputSize(input.mask.width, input.mask.height, input.tilesX, input.tilesY, 0);
   const widths = input.lotBorderWidths?.length === 4 ? input.lotBorderWidths : [0,0,0,0];
   const cells = input.rawMask && hasHeight
     ? constantHeightCells(input.rawMask, widths, 7 * Math.max(1/size.width, 1/size.height) * 1.5) : undefined;
-  const output = composeGroundPixelsImpl(input, cells, true);
+  const output = composeGroundPixelsImpl(input, cells, true, rows);
   if (input.enhanceTintDetail && input.rawMask && input.normalAtlas) {
-    enhanceTintDetail(output.albedo, output.normal, output.width, output.height, input.rawMask);
+    enhanceTintDetail(output.albedo, output.normal, output.width, output.height, input.rawMask, size.height, rows?.[0] ?? 0);
   }
   return output;
 }

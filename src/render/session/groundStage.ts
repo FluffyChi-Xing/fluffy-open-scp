@@ -55,7 +55,8 @@ export async function stageGround(
   input: GroundStageInput,
 ): Promise<ThreeNamespace.Object3D | null> {
   if (!input.lotSize) return null;
-  if (input.renderMode === "refined") prepareGroundComposer();
+  // Start workers during white model parsing, before the first refined click.
+  prepareGroundComposer();
   const span = renderTelemetry.begin("lot_render", {
     refined: input.renderMode === "refined",
   });
@@ -93,24 +94,32 @@ export async function stageGround(
   input.groupLot.add(ground);
 
   if (input.lotMaskPng || input.lotAlbedoPng) {
-    const [surface, maskDims, normalAtlas] = await Promise.all([
-      input.loadSurfacePixels(),
-      input.loadMaskImageDims(),
-      input.loadImageDataFromUrl(input.lotNormalAtlasPng),
-    ]);
-    if (!surface) {
+    const loadRefinedInputs = async () => {
+      const [surface, maskDims, normalAtlas] = await Promise.all([
+        input.loadSurfacePixels(),
+        input.loadMaskImageDims(),
+        input.loadImageDataFromUrl(input.lotNormalAtlasPng),
+      ]);
+      return {
+        surface, normalAtlas,
+        rawMask: !input.isStale() && maskDims
+          ? input.loadRawMaskPixels(maskDims.width, maskDims.height) : null,
+      };
+    };
+    // White ground only samples its flat PNG. Atlas readback and raw-mask
+    // decoding belong to refined rendering, not the white rebuild's critical path.
+    const refinedInputs = input.renderMode === "refined"
+      ? await loadRefinedInputs()
+      : { surface: null, normalAtlas: null, rawMask: null };
+    if (input.isStale()) return ground;
+    if (input.renderMode === "refined" && !refinedInputs.surface) {
       // 精细渲染的底图格依赖真实图集；静默占位会把沥青画成亮灰。
       console.warn(
         "[lot-ground] 'Lot Textures' surface unavailable — refined ground will use placeholder tiles. Open SimCity_Graphics.package (and the lot's own package) for the real atlas.",
       );
     }
-    const rawMask = maskDims
-      ? input.loadRawMaskPixels(maskDims.width, maskDims.height)
-      : null;
     const textureInput = {
-      rawMask,
-      surface,
-      normalAtlas,
+      ...refinedInputs,
       THREE: input.THREE,
       ground,
       maskPng: input.lotMaskPng,
@@ -136,11 +145,13 @@ export async function stageGround(
       // CPU cache only; never change the displayed white material.
       setTimeout(() => {
         if (input.isStale()) return;
-        void applyGroundTextures({
-          ...textureInput,
-          refined: true,
-          prewarmOnly: true,
-        });
+        void loadRefinedInputs().then((pixels) => {
+          if (input.isStale()) return;
+          return applyGroundTextures({
+            ...textureInput, ...pixels,
+            refined: true, prewarmOnly: true,
+          });
+        }).catch(() => { /* optional prewarming must never interrupt white rendering */ });
       }, 0);
     }
   }
