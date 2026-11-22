@@ -36,3 +36,15 @@ export function checkDesktopStoreAccess(root, io = fs) {
 export function hasLowIntegrityLabel(output) {
   return /Mandatory Label[\\/]Low Mandatory Level|S-1-16-4096|强制标签[\\/]低强制级别|强制性标签[\\/]低强制性级别/i.test(output);
 }
+
+/** Check directories too: a clean rebuild inherits their mandatory label. */
+export function checkDesktopBuildIntegrity(paths, exists, inspect) {
+  for (const path of paths) {
+    if (!exists(path)) continue;
+    const result = inspect(path);
+    if (result.status !== 0) throw new Error(`Cannot inspect build integrity: ${path}`);
+    if (hasLowIntegrityLabel(result.stdout)) {
+      throw new Error(`Low Integrity: ${path}\nRun scripts/repair-desktop-integrity.ps1 from an elevated Windows PowerShell, then rebuild from a normal terminal.`);
+    }
+  }
+}

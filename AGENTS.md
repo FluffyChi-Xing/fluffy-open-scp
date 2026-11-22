@@ -11,7 +11,13 @@ Record a reproducible failed approach with `ctx deadend`; do not save routine ch
 Use `ctx import` to preview existing agent memories, and `ctx import --apply` to store candidates.
 <!-- fluffy-context:end -->
 
+## SQLite startup stability (user directive, 2026-11-22)
+Database location, startup migration and permissions are a frozen boundary;
+see `scripts/SQLITE-FROZEN.md` before changing them. Rendering and asset work
+must not modify this boundary.
+
 ## Internationalization
+
 All user-facing interface text must use i18n, including labels, hints, errors,
 empty states, dialog titles, and accessibility labels. Maintain both zh-CN and
 en-US messages and verify that switching languages updates the active UI.

@@ -1,6 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkDesktopStoreAccess } from "./desktop-store-preflight.mjs";
+import { checkDesktopStoreAccess, checkDesktopBuildIntegrity } from "./desktop-store-preflight.mjs";
+
+test("rejects inherited low target label even before an executable exists", () => {
+  assert.throws(() => checkDesktopBuildIntegrity(["target", "target/debug/app.exe"],
+    path => path === "target",
+    () => ({status: 0, stdout: "Mandatory Label\\Low Mandatory Level:(I)(OI)(CI)(NW)"})), /Low Integrity: target/);
+});
+test("does not silently accept failed integrity inspection", () => {
+  assert.throws(() => checkDesktopBuildIntegrity(["target"], () => true,
+    () => ({status: 1, stdout: ""})), /Cannot inspect/);
+});
+test("accepts medium output directory and missing executable", () => {
+  checkDesktopBuildIntegrity(["target", "missing.exe"], path => path === "target",
+    () => ({status: 0, stdout: "Mandatory Label\\Medium Mandatory Level:(OI)(CI)(NW)"}));
+});
 test("checks write handles without truncating database files and cleans only its probe", () => {
   const opened=[], removed=[], closed=[];
   checkDesktopStoreAccess("D:/openscp",{
