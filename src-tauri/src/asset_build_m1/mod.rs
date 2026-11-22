@@ -40,6 +40,7 @@ pub mod menu;
 pub mod menu_contract;
 pub mod native_lot;
 pub mod native_model;
+mod source_uv;
 pub mod native_profile;
 mod package;
 pub(crate) mod vanilla_variant;

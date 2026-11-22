@@ -690,7 +690,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
     // Interiors already place night emission in columns 1/5/9/13 via the Office
     // room sheet (`resources::office_room_sheet`).
     let diagnostics = format!(
-        "{{\"schema\":\"openscp.ny-native/1\",\"source\":\"OpenSCP native Rust\",\"nativeControlProfile\":\"native-room-states-transparent-top-v3\",\"windows\":{windows},\"litWindows\":{lit_windows},\"darkWindows\":{},\"decorPanels\":{decor_panels},\"sourceFaces\":{source_faces},\"nativeMaterials\":{},\"warnings\":[],\"decals\":{decals},\"triangles\":{triangles_total}}}",
+        "{{\"schema\":\"openscp.ny-native/1\",\"source\":\"OpenSCP native Rust\",\"uvConvention\":\"native-v-down\",\"nativeControlProfile\":\"native-room-states-transparent-top-v3\",\"windows\":{windows},\"litWindows\":{lit_windows},\"darkWindows\":{},\"decorPanels\":{decor_panels},\"sourceFaces\":{source_faces},\"nativeMaterials\":{},\"warnings\":[],\"decals\":{decals},\"triangles\":{triangles_total}}}",
         windows - lit_windows,
         materials.len(),
     );
@@ -1209,6 +1209,17 @@ fn normalize(a: [f64; 3]) -> Option<[f64; 3]> {
 mod export_tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn rust_blend_export_declares_native_uv_convention() {
+        let bundle = Bundle::parse(br#"{"version":1,"unit":1.0}"#).unwrap();
+        let catalog = Catalog::parse(br#"{"packs":{},"windows":[],"decor":[],"surfaces":[],"modules":[]}"#).unwrap();
+        let index = catalog.index();
+        let store = PackStore::new(std::env::temp_dir());
+        let report = export(&ExportInput { bundle: &bundle, catalog: &catalog, index: &index, store: &store }).unwrap();
+        let marker = br#""uvConvention":"native-v-down""#;
+        assert!(report.lotm.windows(marker.len()).any(|bytes| bytes == marker));
+    }
 
     #[test]
     fn window_presets_derive_rects_from_pixel_rectangles() {

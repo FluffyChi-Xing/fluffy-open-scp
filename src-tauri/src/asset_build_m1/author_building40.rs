@@ -173,6 +173,7 @@ pub fn compile_model_with_transform(
     collision_source: &[u8],
 ) -> Result<AuthorModel, String> {
     let scene = transform.map(SceneTransform::new).transpose()?;
+    let source_uv = super::source_uv::SourceUv::from_diagnostics(&doc.diagnostics)?;
     if doc.version != 9 {
         return Err(format!(
             "author Building40 route requires LOTM9, received LOTM{}",
@@ -315,8 +316,8 @@ pub fn compile_model_with_transform(
                 bytes[12..16].copy_from_slice(&packed_normal);
                 bytes[16..20].copy_from_slice(&packed_tangent);
                 bytes[20..24].copy_from_slice(&[0, 0, group as u8, seed]);
-                write_f32x2(&mut bytes[24..32], [uv[0], 1.0 - uv[1]]);
-                write_f32x2(&mut bytes[32..40], [uv_top[0], 1.0 - uv_top[1]]);
+                write_f32x2(&mut bytes[24..32], source_uv.adapt(uv));
+                write_f32x2(&mut bytes[32..40], source_uv.adapt(uv_top));
                 for axis in 0..3 {
                     min[axis] = min[axis].min(p[axis]);
                     max[axis] = max[axis].max(p[axis]);
