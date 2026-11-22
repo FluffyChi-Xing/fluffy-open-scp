@@ -50,6 +50,9 @@ const TREE_PART_MODELS: [u32; 4] = [0x4DF4_3690, 0xC2FB_D178, 0x1113_B131, 0x89D
 /// 资源记录的典型 group 低 16 位（EcoGame resources / 安装包 resources）。
 const RESOURCE_GROUP_LOW: [u16; 2] = [0xC100, 0xC600];
 
+#[path = "prop_model_inheritance.rs"]
+mod inheritance;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedPropModel {
@@ -531,7 +534,9 @@ pub fn resolve_all(
     Ok(resource_ids
         .iter()
         .filter_map(|id| {
-            resolve_one(&packages, *id).or_else(|| resolve_direct_model(&packages, *id))
+            resolve_one(&packages, *id)
+                .or_else(|| inheritance::resolve_inherited(&packages, *id))
+                .or_else(|| resolve_direct_model(&packages, *id))
         })
         .collect())
 }

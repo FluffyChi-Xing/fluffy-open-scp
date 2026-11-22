@@ -3826,6 +3826,14 @@ fn channel_gray_png(
 /// 时为 tint 查表键；无参数表时即 simple diffuse 漫反射色）/ slot2 = normal
 /// （标准切线空间 RGB，B=沿法线轴；A=spec→AO 代理）/ slot3 = shader map
 /// （B=spec → 反转成 roughness）/ slot4 = 256×8 tint palette。
+#[cfg(test)]
+#[path = "prop_preview_audit.rs"]
+mod prop_preview_audit;
+
+#[path = "prop_preview_uv.rs"]
+mod prop_preview_uv;
+use prop_preview_uv::prop_preview_uv_kind;
+
 fn resolve_material_resources(
     file: &rw4::Rw4File,
     data: &[u8],
@@ -4548,7 +4556,10 @@ pub(crate) fn build_lot_model_payload_for_test(
             .bake
             .as_ref()
             .and_then(|bake| bake_vertex_colors(&mesh, bake));
-        let uv_kind = mesh_uv_kind(&mesh);
+        let uv_kind = prop_preview_uv_kind(
+            &mesh,
+            material_resources[material_index as usize].params_f32.is_some(),
+        );
         // 逐 mesh 选列/投影诊断（「对称窗只渲染一半/墙面花纹半缺失」取证，
         // 2026-09-26）：g 列 = 逐顶点 D3DCOLOR.G（tint 着色器参数表列号），
         // distinct>1 的 mesh 存在跨列三角形 → regionXform 逐顶点插值可能
