@@ -11,6 +11,8 @@ import type {
 } from "@/api/tauri";
 import { useBuildActivityStore } from "@/stores/buildActivity";
 import { buildQueueErrorKey } from "@/lib/buildQueueError";
+import { buildStageLabel } from "@/lib/buildStageLabel";
+import PanelRuntimeNotice from './PanelRuntimeNotice.vue';
 
 /**
  * OpenSCP Actions：构建历史 + GitHub Actions 风格步骤耗时/详情日志。
@@ -60,10 +62,7 @@ const selectedSteps = computed(() =>
 );
 
 function stageLabel(stage: string) {
-  if (stage === "panel-bind") return t("panelEditor.buildStage");
-  if (stage === "road::compile") return t("roadAsset.compileStage");
-  if (stage.startsWith("map_resources::")) return t(`mapResources.${stage.split("::")[1]}`);
-  return stage;
+  return buildStageLabel(stage, t);
 }
 
 function stepsFromEvents(events: StageEventDto[]): StepView[] {
@@ -458,6 +457,7 @@ async function enqueueSchema() {
                 <br />{{ t("mapResources.output") }} <code class="break-all">{{ job.result.path }}</code>
               </template>
             </p>
+            <PanelRuntimeNotice v-if="job.result" :path="job.result.panelRuntime" />
           </div>
         </li>
       </ul>

@@ -12,4 +12,10 @@ describe('independent panel document',()=>{
  });
  it('bounds selection by the visible content area rather than native authored width',()=>{expect(clipSlot({x:0,y:37,width:317,height:28},{x:7,y:40,width:265,height:206})).toEqual({x:7,y:40,width:265,height:25});});
  it('has labels in both languages for every registered component',()=>{for(const c of panelComponents){expect(panelEditorZh.components).toHaveProperty(c.id);expect(panelEditorEn.components).toHaveProperty(c.id);}});
+ it('offers financial profit and business profit indices in the common library',()=>{
+  const ids=availableComponents([]).map(c=>c.id);
+  expect(ids).toContain('profit');expect(ids).toContain('profit-index');
+  expect(panelComponents.find(c=>c.id==='profit-index')?.metric).toEqual({current:'ProfitToken',previous:'ProfitTokenLast'});
+  expect(insertComponent(doc,'click','profit',0).click[0]).toBe('profit');
+ });
 });

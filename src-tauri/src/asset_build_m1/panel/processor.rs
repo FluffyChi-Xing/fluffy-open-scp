@@ -50,8 +50,15 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
     }
     sources::open(root, &dependency.sources)?;
     let fingerprint = sources::digest(
-        &serde_json::to_vec(&(&config, &dependency, super::RUNTIME, components()))
-            .map_err(|e| e.to_string())?,
+        &serde_json::to_vec(&(
+            &config,
+            &dependency,
+            super::RUNTIME,
+            super::MESSAGES,
+            super::layout::COMPILER_VERSION,
+            components(),
+        ))
+        .map_err(|e| e.to_string())?,
     );
     plan.panel = Some(PanelPlan {
         path: dependency.schema.clone(),
@@ -107,7 +114,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
             return Err(format!("PANEL_SHELL_CONTROL:{control:08X}"));
         }
     }
-    clean_zot(&mut shell);
+    super::layout::prepare_shell(&mut shell)?;
     let layout = ResourceId {
         instance: hash(&format!("OpenSCPPanelShell_{instance:08X}")),
         ..source_id
@@ -126,8 +133,9 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         }
     }
     let suffix = format!(
-        "\n;window.OpenSCPPanelComponents={};\n{}",
+        "\n;window.OpenSCPPanelComponents={};window.OpenSCPPanelMessages={};\n{}",
         serde_json::to_string(&components()).map_err(|e| e.to_string())?,
+        super::MESSAGES,
         super::RUNTIME
     );
     let runtime = [source_game.as_bytes(), suffix.as_bytes()].concat();
@@ -185,11 +193,76 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         &mut asset,
         0x0D7E_ADAC,
         PropType::UInt32,
-        Value::UInt32(hash("kPopulationNone")),
+        Value::UInt32(hash("OpenSCPPanel_headerNone")),
     );
+    let ledger = if panel
+        .config
+        .hover
+        .iter()
+        .chain(&panel.config.click)
+        .any(|id| matches!(id.as_str(), "profit" | "tourism-profit"))
+    {
+        let unit_id = ResourceId {
+            group: 0x40E0_C000,
+            ..asset_id
+        };
+        let mut unit =
+            PropertyFile::parse(ctx.resources.get(&unit_id).ok_or("PANEL_UNIT_MISSING")?)
+                .map_err(|e| e.to_string())?;
+        let mut effective = unit.clone();
+        let mut cursor = unit.clone();
+        let mut seen = std::collections::HashSet::new();
+        while let Some(Value::Key(parent)) = cursor.get(0x00B2_CCCB).and_then(|p| p.scalar()) {
+            let id = ResourceId {
+                type_id: parent.type_id,
+                group: parent.group,
+                instance: parent.instance,
+            };
+            if !seen.insert(id) {
+                return Err("PANEL_UNIT_PARENT_CYCLE".into());
+            }
+            let bytes = if let Some(bytes) = ctx.resources.get(&id) {
+                bytes.clone()
+            } else {
+                sources::read(&packages, id)?
+            };
+            cursor = PropertyFile::parse(&bytes).map_err(|e| e.to_string())?;
+            for p in &cursor.values {
+                if effective.get(p.hash).is_none() {
+                    effective.values.push(p.clone());
+                }
+            }
+        }
+        let provider_id = ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0x40E0_C700,
+            instance: super::ledger::PROVIDER,
+        };
+        let native = PropertyFile::parse(&sources::read(&packages, provider_id)?)
+            .map_err(|e| e.to_string())?;
+        let added = super::ledger::ensure(&mut unit, &effective, &native)?;
+        if added {
+            let bytes = encode(&unit)?;
+            let readback = PropertyFile::parse(&bytes).map_err(|e| e.to_string())?;
+            let mut verify = readback.clone();
+            if super::ledger::ensure(&mut verify, &readback, &native)? {
+                return Err("PANEL_PROFIT_LEDGER_READBACK".into());
+            }
+            ctx.resources.insert(unit_id, bytes);
+        }
+        json!({"provider":provider_id.to_string(),"added":added})
+    } else {
+        serde_json::Value::Null
+    };
     let asset_bytes = encode(&asset)?;
     let readback = PropertyFile::parse(&asset_bytes).map_err(|e| e.to_string())?;
-    for h in [0x0CAB_B2FC, 0x0CAF_BDC3, 0x0CD4_E49C] {
+    for h in [
+        0x0BC5_051B,
+        0x0CAB_B2FC,
+        0x0CAF_BDC3,
+        0x0CD4_E49C,
+        0x0D7E_ADAC,
+    ] {
         let expected = asset.get(h).unwrap();
         if !readback
             .get(h)
@@ -198,7 +271,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
             return Err(format!("PANEL_PROPERTY_READBACK:{h:08X}"));
         }
     }
-    let detail = json!({"schema":panel.path,"fingerprint":panel.fingerprint,"hover":panel.config.hover,"click":panel.config.click,"runtime":{"version":manifest::RUNTIME_VERSION,"tgi":sources::GAME_JS.to_string(),"sha256":sources::digest(&runtime),"output":super::RUNTIME_OUTPUT,"required":true},"layout":layout.to_string()});
+    let detail = json!({"schema":panel.path,"fingerprint":panel.fingerprint,"hover":panel.config.hover,"click":panel.config.click,"ledger":ledger,"runtime":{"version":manifest::RUNTIME_VERSION,"tgi":sources::GAME_JS.to_string(),"sha256":sources::digest(&runtime),"output":super::RUNTIME_OUTPUT,"required":true},"layout":layout.to_string()});
     ctx.resources.insert(asset_id, asset_bytes);
     ctx.resources.insert(
         layout,
@@ -213,28 +286,6 @@ fn has_control(v: &serde_json::Value, id: u32) -> bool {
             .as_array()
             .is_some_and(|a| a.iter().any(|v| has_control(v, id)))
 }
-fn clean_zot(v: &mut serde_json::Value) {
-    if v.pointer("/drawable/images")
-        .and_then(|a| a.as_array())
-        .is_some_and(|a| {
-            a.iter().any(|p| {
-                p.as_str()
-                    .is_some_and(|p| p.ends_with("/rlvr-Zot_Header.png"))
-            })
-        })
-    {
-        v["visibility"] = json!(false);
-        if let Some(node) = v.as_object_mut() {
-            node.remove("drawable");
-        }
-    }
-    if let Some(a) = v["children"].as_array_mut() {
-        for c in a {
-            clean_zot(c);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -379,6 +379,7 @@ mod installed_tests {
             fingerprint: "installed-source-test".into(),
         });
         let mut ctx = crate::asset_build_m1::stages::BuildContext::new(project.clone(), plan);
+        ctx.plan.panel.as_mut().unwrap().config.click = vec!["profit".into()];
         ctx.menu_instance = Some(0xA123_B456);
         let id = ResourceId {
             type_id: 0x00B1B104,
@@ -386,7 +387,11 @@ mod installed_tests {
             instance: 0xA123_B456,
         };
         ctx.resources.insert(id, 0u32.to_be_bytes().to_vec());
+        let unit_id = ResourceId { group: 0x40E0C000, ..id };
+        ctx.resources.insert(unit_id, 0u32.to_be_bytes().to_vec());
         super::super::apply(&mut ctx).unwrap();
+        let unit = sc_properties::PropertyFile::parse(ctx.resources.get(&unit_id).unwrap()).unwrap();
+        assert!(format!("{:?}", unit.get(0x0A0209A4)).contains(&super::super::ledger::PROVIDER.to_string()));
         assert!(ctx.panel_runtime.is_some());
         let mut staging =
             crate::asset_build_m1::filesystem::Staging::create(&project, "installed").unwrap();

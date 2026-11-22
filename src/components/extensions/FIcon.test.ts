@@ -1,4 +1,6 @@
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { CalendarDays } from 'lucide-vue-next'
 import { describe, expect, it } from 'vitest'
 import FIcon from './FIcon.vue'
@@ -15,6 +17,21 @@ describe('FIcon', () => {
     for (const name of ['PanelTop', 'PanelBottom', 'Maximize2', 'Minimize2']) {
       expect(resolveIcon(name)).toBeDefined()
     }
+  })
+
+  it('renders the building panel tab icon instead of the help fallback', () => {
+    const wrapper = mount(FIcon, { props: { name: 'PanelsTopLeft' } })
+    expect(wrapper.find('svg').classes().some(name => name.startsWith('lucide-panels-top-left'))).toBe(true)
+    expect(wrapper.find('svg').classes().some(name => name.startsWith('lucide-circle-help'))).toBe(false)
+  })
+
+  it('registers every icon used by the package configuration tabs', () => {
+    const source = readFileSync(resolve('src/pages/studio/components/asset/PackageProjectForm.vue'), 'utf8')
+    const tabs = source.match(/const TABS:[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1]
+    expect(tabs).toBeDefined()
+    const names = [...tabs!.matchAll(/icon:\s*"([^"]+)"/g)].map(match => match[1])
+    expect(names.length).toBeGreaterThan(5)
+    for (const name of names) expect(resolveIcon(name), name).toBeDefined()
   })
 
   it('applies visual props and labels semantic icons', () => {

@@ -1,5 +1,7 @@
 //! Opt-in building panel compiler. Absence of dependencies.panel is a strict no-op.
 pub mod commands;
+mod layout;
+mod ledger;
 pub mod manifest;
 mod processor;
 mod sources;
@@ -20,6 +22,7 @@ pub(crate) fn publish_runtime(
 }
 pub(crate) const RUNTIME: &str =
     include_str!("../../../src/pages/studio/components/asset/panel-editor/native/runtime.js");
+pub(crate) const MESSAGES: &str = include_str!("../../../src/lib/panel-messages.json");
 
 pub fn hash(name: &str) -> u32 {
     name.bytes().fold(2_166_136_261, |h, b| {

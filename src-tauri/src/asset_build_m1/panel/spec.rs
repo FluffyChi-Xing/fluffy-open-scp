@@ -11,6 +11,14 @@ pub struct Component {
     pub feedback: bool,
     #[serde(default)]
     pub counter: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metric: Option<Metric>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Metric {
+    pub current: String,
+    pub previous: String,
 }
 pub fn components() -> Vec<Component> {
     serde_json::from_str(include_str!("../../../../src/lib/panel-components.json"))

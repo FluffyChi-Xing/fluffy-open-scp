@@ -1,5 +1,8 @@
 import { editorPackagesZh, editorPackagesEn } from "./editor-packages";
 import { panelEditorZh, panelEditorEn } from "./panel-editor";
+import { panelRuntimeZh, panelRuntimeEn } from './panel-runtime';
+import panelMetrics from '@/lib/panel-messages.json';
+import { buildStagesZh, buildStagesEn } from "./build-stages";
 import { sceneZh, sceneEn } from "./property-semantics";
 import { createI18n } from "vue-i18n";
 import { appConfig } from "@/config/app";
@@ -15,6 +18,9 @@ import { spawnerPanelZh, spawnerPanelEn } from './spawner-panel';
 const messages = {
   "zh-CN": {
     panelEditor: panelEditorZh,
+    panelRuntime: panelRuntimeZh,
+    panelMetrics: panelMetrics['zh-CN'],
+    buildStages: buildStagesZh,
     observerMenu: {
       buildings: "建筑观测", menu: "菜单", category: "类别", city: "城市", development: "城市发展",
       power: "电力", water: "供水", sewage: "污水", waste: "垃圾", specialization: "城市专精", fire: "消防", police: "警察", health: "医疗", education: "教育", transit: "公共交通",
@@ -2740,6 +2746,9 @@ const messages = {
   },
   "en-US": {
     panelEditor: panelEditorEn,
+    panelRuntime: panelRuntimeEn,
+    panelMetrics: panelMetrics['en-US'],
+    buildStages: buildStagesEn,
     observerMenu: {
       buildings: "Building watch", menu: "Menu", category: "Category", city: "City", development: "City development",
       power: "Power", water: "Water", sewage: "Sewage", waste: "Waste", specialization: "Specialization", fire: "Fire", police: "Police", health: "Health", education: "Education", transit: "Transit",

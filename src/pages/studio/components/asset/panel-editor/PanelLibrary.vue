@@ -6,6 +6,7 @@ const props=defineProps<{leaves:string[];items:string[];power:boolean;selected?:
 const emit=defineEmits<{add:[id:string];select:[id:string];remove:[id:string];move:[id:string,index:number]}>();const {t}=useI18n();
 const groups=computed(()=>['common',...props.leaves].map(group=>({group,items:availableComponents(props.leaves).filter(c=>c.group===group)})));
 function drag(e:DragEvent,id:string){e.dataTransfer?.setData('application/openscp-panel-component',id);if(e.dataTransfer)e.dataTransfer.effectAllowed='copyMove';}
+function componentHint(id:string){return id==='profit'?t('panelMetrics.dailyProfitHint'):id==='profit-index'?t('panelMetrics.profitIndexHint'):undefined;}
 </script>
 <template>
   <aside class="panel-library">
@@ -13,7 +14,7 @@ function drag(e:DragEvent,id:string){e.dataTransfer?.setData('application/opensc
     <details v-for="group in groups" :key="group.group" open>
       <summary>{{t(`panelEditor.groups.${group.group}`)}}</summary>
       <div class="cards">
-        <button v-for="item in group.items" :key="item.id" type="button" draggable="true" @dragstart="drag($event,item.id)" @click="items.includes(item.id)?emit('select',item.id):emit('add',item.id)">
+        <button v-for="item in group.items" :key="item.id" :title="componentHint(item.id)" type="button" draggable="true" @dragstart="drag($event,item.id)" @click="items.includes(item.id)?emit('select',item.id):emit('add',item.id)">
           <span aria-hidden="true">⠿</span><span>{{t(`panelEditor.components.${item.id}`)}}</span><small v-if="items.includes(item.id)">{{t('panelEditor.added')}}</small>
         </button>
         <button v-if="group.group==='common'" type="button" draggable="true" @dragstart="drag($event,'power')" @click="power?emit('select','power'):emit('add','power')"><span aria-hidden="true">⠿</span>{{t('panelEditor.power')}}<small v-if="power">{{t('panelEditor.added')}}</small></button>

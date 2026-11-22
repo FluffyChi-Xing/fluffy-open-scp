@@ -1,6 +1,8 @@
 [
   {"id":"maintenance","native":"kMaintenance","group":"common"},
   {"id":"feedback","native":"kBasicToyTextFeedback","group":"common","feedback":true},
+  {"id":"profit","native":"kBlockLandmarkProfit","group":"common"},
+  {"id":"profit-index","native":"kBlockLandmarkProfit","group":"common","metric":{"current":"ProfitToken","previous":"ProfitTokenLast"}},
   {"id":"park-feedback","native":"kParkTextFeedback","group":"park","feedback":true},
   {"id":"park-hours","native":"kHoursPark","group":"park"},
   {"id":"park-visitors-title","native":"kStringVisitors","group":"park"},

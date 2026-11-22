@@ -7,6 +7,8 @@ window.createComboData=function(panel,state,missingNames=[]){
  for(let[w,amount]of [[1,8],[2,4],[3,2]])set('TouristW'+w,amount,175);
  set('GuestW2',12,68);set('OpenGuestsW2',56,68);for(let w of [1,3]){set('GuestW'+w,0,0);set('OpenGuestsW'+w,0,0);}
  set('HappinessToken',60,100);set('HappinessTokenLast',58,100);set('ProfitToken',60,100);set('ProfitTokenLast',58,100);
+ set('CasinoSpecialtyCurrentMonthIncome',2400,100000);set('CasinoSpecialtyCurrentMonthExpenses',450,100000);
+ set('CasinoSpecialtyLastMonthIncome',2100,100000);set('CasinoSpecialtyLastMonthExpenses',450,100000);
  set('ParkVisitorsW1ThisPeriod',7,100);set('ParkVisitorsW1PerPeriod',13,100);
  set('ParkGlobals_LocalsDisplay',9,100);set('ParkGlobals_KidsDisplay',3,100);set('HomelessDisplay',1,100);
  set('CanAfford',1,1);set('ShiftLength',8,8);set('Student',50,250);set('SpotsForKids',200,250);

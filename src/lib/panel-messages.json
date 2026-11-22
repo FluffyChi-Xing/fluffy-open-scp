@@ -1,0 +1,4 @@
+{
+  "zh-CN": {"profitIndex":"利润指标","current":"当前","previous":"上次记录","dailyProfitHint":"读取建筑财务账本的今日、昨日净额。构建时补齐原生账本依赖。","profitIndexHint":"读取商业或工业的利润指标及上次采样，不代表每日市政收入。"},
+  "en-US": {"profitIndex":"Profit index","current":"Current","previous":"Previous sample","dailyProfitHint":"Reads today's and yesterday's net totals from the building ledger. Builds include the native ledger dependency.","profitIndexHint":"Reads the commercial or industrial profit index and its previous sample, not daily city revenue."}
+}
