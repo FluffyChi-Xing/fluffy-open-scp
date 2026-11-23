@@ -158,20 +158,7 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             "compute-identity" => compute_identity(ctx),
             "property-patches" => apply_property_patches(ctx),
             "scene-semantics" => apply_scene_semantics(ctx),
-            "behavior-bind" => super::behavior::apply(ctx).and_then(|mut detail| {
-                if super::vehicle_paths::authored(ctx.scene_document.as_ref())
-                    && !ctx.plan.behavior_program.as_ref().is_some_and(|p|p.unit_scope.as_deref()==Some(super::behavior_container::SCOPE)) {
-                    let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
-                    let (unit, lot) = super::vehicle_paths::bind(
-                        ctx.resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing Unit")?,
-                        ctx.resources.get(&lot_id).ok_or("VEHICLE_PATH_BINDING: missing Lot")?,
-                    )?;
-                    ctx.resources.insert(unit_id, unit);
-                    ctx.resources.insert(lot_id, lot);
-                    detail["ordinaryVehiclePath"] = serde_json::Value::Bool(true);
-                }
-                Ok(detail)
-            }),
+            "behavior-bind" => bind_behavior(ctx),
             "vanilla-shadow-strip" => vanilla_shadow_strip(ctx),
             "material-binding-contract" => material_binding_contract(ctx),
             "identity-closure" => identity_closure(ctx),
@@ -590,6 +577,9 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         &ctx.plan.intermediate.scene.document,
         ctx.plan.intermediate.scene.model.as_deref(),
     )?;
+    if let Some(program) = ctx.plan.behavior_program.as_mut() {
+        super::behavior_container_commute::route_base_staffing(program, ctx.scene_document.as_ref());
+    }
     ctx.ground_source = match ctx.scene_document.as_ref() {
         Some(document) if document.lot_mask == Some(super::scene::SceneLotMaskKind::Source) => {
             let source_lot = select_ground_source_lot(
@@ -2140,6 +2130,34 @@ fn vehicle_path_targets(ctx: &BuildContext) -> Result<(ResourceId, ResourceId), 
     Ok((id(unit.group, unit.instance), id(lot.group, lot.instance)))
 }
 
+fn bind_behavior(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
+    let guard = if ctx.menu_instance.is_some()
+        && (ctx.plan.behavior_program.is_some() || ctx.plan.behavior.is_some())
+    {
+        let (_, lot) = vehicle_path_targets(ctx)?;
+        Some(super::behavior_geometry_guard::GeometryGuard::capture(ctx.resources.all(), lot)?)
+    } else {
+        None
+    };
+    let mut detail = super::behavior::apply(ctx)?;
+    if super::vehicle_paths::authored(ctx.scene_document.as_ref())
+        && !ctx.plan.behavior_program.as_ref().is_some_and(|p| p.unit_scope.as_deref() == Some(super::behavior_container::SCOPE) && !p.host_parking_staff)
+    {
+        let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
+        let (unit, lot) = super::vehicle_paths::bind(
+            ctx.resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing Unit")?,
+            ctx.resources.get(&lot_id).ok_or("VEHICLE_PATH_BINDING: missing Lot")?,
+        )?;
+        ctx.resources.insert(unit_id, unit);
+        ctx.resources.insert(lot_id, lot);
+        detail["ordinaryVehiclePath"] = serde_json::Value::Bool(true);
+    }
+    if let Some(guard) = guard {
+        detail["preservedGeometry"] = guard.verify(ctx.resources.all())?;
+    }
+    Ok(detail)
+}
+
 fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     ctx.delta_mode = ctx.plan.intermediate.output.mode != crate::asset_build_m0::OutputMode::Full;
     let mut staging = Staging::create(&ctx.root, &ctx.build_hash)?;
@@ -2211,13 +2229,20 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             ctx.scene_document.as_ref(),
         )?;
     }
+    let mut host_commute = None;
     if super::vehicle_paths::authored(ctx.scene_document.as_ref())
-        && !ctx.plan.behavior_program.as_ref().is_some_and(|p|p.unit_scope.as_deref()==Some(super::behavior_container::SCOPE)) {
+        && !ctx.plan.behavior_program.as_ref().is_some_and(|p| p.unit_scope.as_deref() == Some(super::behavior_container::SCOPE) && !p.host_parking_staff) {
         let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
-        super::vehicle_paths::verify(
-            final_resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing final Unit")?,
-            final_resources.get(&lot_id).ok_or("VEHICLE_PATH_BINDING: missing final Lot")?,
-        )?;
+        let unit = final_resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing final Unit")?;
+        let lot = final_resources.get(&lot_id).ok_or("VEHICLE_PATH_BINDING: missing final Lot")?;
+        super::vehicle_paths::verify(unit, lot)?;
+        if ctx.plan.behavior_program.as_ref().is_some_and(|program| program.host_parking_staff) {
+            super::native_profile::verify_parking_slots(lot, ctx.scene_document.as_ref())?;
+            let mut commute = super::vehicle_paths::describe_commute(unit, lot)?;
+            commute["unit"] = serde_json::json!(unit_id.to_string());
+            commute["lot"] = serde_json::json!(lot_id.to_string());
+            host_commute = Some(commute);
+        }
     }
     let requested_edge = ctx
         .plan
@@ -2286,6 +2311,9 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             street_placement,
         },
     )?;
+    if let Some(commute) = host_commute {
+        final_contract.detail["hostCommute"] = commute;
+    }
     if let Some(program) = ctx.plan.behavior_program.as_ref().filter(|p| p.author_tourism) {
         let instance = ctx.menu_instance.ok_or("tourism contract: missing menu identity")?;
         final_contract.detail["facilityOperation"] = super::author_tourism::verify(

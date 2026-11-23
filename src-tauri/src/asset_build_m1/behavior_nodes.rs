@@ -120,6 +120,8 @@ pub struct ResolvedBehavior {
     pub(super) unit_scope: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) units: Vec<super::behavior_units::UnitBehavior>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) host_parking_staff: bool,
     pub ensure_bundles: Vec<u32>,
     pub remove_bundles: Vec<u32>,
     pub remove_fields: Vec<u32>,

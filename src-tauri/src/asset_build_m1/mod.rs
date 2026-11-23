@@ -25,6 +25,8 @@ mod behavior_tourism;
 mod behavior_tourism_lifetime;
 mod behavior_units;
 mod behavior_container;
+mod behavior_container_commute;
+mod behavior_geometry_guard;
 mod behavior_container_ui;
 mod behavior_container_bars;
 mod behavior_unit_build;

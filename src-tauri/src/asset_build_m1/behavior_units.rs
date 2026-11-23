@@ -101,6 +101,10 @@ pub(super) fn compile(
     }
     let mut primary = compile_with_profile(None, &utilities, false)?;
     primary.unit_scope = Some(super::behavior_container::SCOPE.into());
+    let garbage = super::behavior_container::GARBAGE;
+    if primary.ensure_bundles.contains(&garbage) && !primary.remove_excluded_bundles.contains(&garbage) {
+        primary.remove_excluded_bundles.push(garbage);
+    }
     if let Some(staff) = building_staff {
         let jobs = super::behavior_nodes::add_job_counts(staff, [0; 3])?;
         if staff.min_workers > jobs.iter().sum() {
@@ -115,7 +119,7 @@ pub(super) fn compile(
         compiled.push(UnitBehavior { id: BUILDING_STAFF.into(), program: staffing });
     }
     primary.notes.push(
-        "managed-building-container/v6 (native host lifecycle and modular bar grouping)".into(),
+        "managed-building-container/v7 (native host lifecycle, modular bars and host garbage service)".into(),
     );
     if compiled.len() > 16 || compiled.iter().map(|unit| &unit.id).collect::<HashSet<_>>().len() != compiled.len() {
         return Err("BEHAVIOR_UNIT_SCOPE: expanded components require at most 16 unique unit IDs".into());

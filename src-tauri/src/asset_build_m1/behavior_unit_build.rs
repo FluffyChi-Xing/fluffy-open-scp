@@ -211,6 +211,7 @@ pub(super) fn apply(
         child_ctx.presentation_resources = ctx.presentation_resources.clone();
         child_ctx.resources = BuildResources::from_source(ctx.resources.all().clone());
         let mut unit = PropertyFile::parse(seed).map_err(|e| e.to_string())?;
+        super::behavior_container::exclude_child_garbage(&mut unit)?;
         unit.values.retain(|p| {
             ![
                 CHILDREN,
@@ -316,8 +317,12 @@ pub(super) fn verify(
         return Ok(());
     }
     let unit = parse(resources, id(menu::UNIT_GROUP, host))?;
-    super::behavior_container::verify(&unit)?;
+    super::behavior_container::verify_program(&unit, program)?;
     let host_config = parse(resources, id(menu::lot_group(), host))?;
+    if program.host_parking_staff && (!super::vehicle_paths::has_parking(&host_config)?
+        || program.units.iter().any(|scope| scope.id == super::behavior_units::BUILDING_STAFF)) {
+        return Err("BEHAVIOR_CONTAINER_COMMUTE: parking and the unique base payroll must share the host".into());
+    }
     if host_config.get(0x0AFE_2FEB).and_then(|p| p.scalar()) == Some(&Value::Bool(true)) {
         return Err("BEHAVIOR_UNIT_TABLE: container must be a native base unit".into());
     }
@@ -355,6 +360,7 @@ pub(super) fn verify(
         }
         let unit = parse(resources, id(menu::UNIT_GROUP, child))?;
         super::behavior_container::verify_toggle(&unit)?;
+        super::behavior_container::verify_child_garbage(&unit)?;
         if unit.get(CONFIG).map(|p| &p.kind) != Some(&Kind::Scalar(key(menu::lot_group(), child))) {
             return Err("BEHAVIOR_UNIT_RESOURCE: wrong child config".into());
         }

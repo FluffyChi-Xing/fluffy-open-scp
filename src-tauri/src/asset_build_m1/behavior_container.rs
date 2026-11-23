@@ -15,6 +15,8 @@ pub(super) const SCOPE: &str = "$building-container";
 const ENABLE: [u32; 4] = [0x0A02_09A2, 0x0A02_09A3, 0x0A02_09A4, 0x0A02_09A5];
 const EXCLUDED: u32 = 0x0A02_09B2;
 const TOGGLE: u32 = 0x44F5_CF6C;
+pub(super) const GARBAGE: u32 = 0xD7C6_2954;
+const GARBAGE_AMOUNT: u32 = 0x0C21_6562;
 const RESIDENCE_STATE: &[u32] = &[
     0x182D_2924, // zoned construction and state transitions
     0x933F_0FBF, // ground plop occupancy and state transitions
@@ -24,7 +26,7 @@ const RESIDENCE_STATE: &[u32] = &[
 ];
 // D381A8C4 effective B2; additional leaf-specific behaviors never belong here.
 const DISABLED: &[u32] = &[
-    0xD7C6_2954,
+    GARBAGE,
     0x54AB_8B16,
     0x4893_9D96,
     0x825B_4CA4,
@@ -128,6 +130,7 @@ pub(super) fn patch(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let exclusions = DISABLED
         .iter()
         .chain(BUSINESS)
+        .filter(|&&bundle| bundle != GARBAGE || !active(&identity, GARBAGE))
         .map(|&instance| {
             Value::Key(sc_properties::Key {
                 type_id: 0,
@@ -137,6 +140,15 @@ pub(super) fn patch(bytes: &[u8]) -> Result<Vec<u8>, String> {
         })
         .collect();
     set_array_with_flags(&mut host, EXCLUDED, PropType::Key, exclusions, 0x809C);
+    if active(&identity, GARBAGE) {
+        host.values.retain(|property| property.hash != GARBAGE_AMOUNT);
+        if let Some(amount) = identity.get(GARBAGE_AMOUNT) {
+            host.values.push(amount.clone());
+        }
+        if !active(&host, GARBAGE) {
+            return Err("BEHAVIOR_CONTAINER_GARBAGE: inherited host service was lost".into());
+        }
+    }
     for hash in [
         0x0A79_17C3,
         0x0A79_17C5,
@@ -150,19 +162,32 @@ pub(super) fn patch(bytes: &[u8]) -> Result<Vec<u8>, String> {
     encode(&host)
 }
 pub(super) fn verify(host: &PropertyFile) -> Result<(), String> {
+    verify_with_staffing(host, None)
+}
+
+pub(super) fn verify_program(host: &PropertyFile, program: &super::behavior_nodes::ResolvedBehavior) -> Result<(), String> {
+    verify_with_staffing(host, program.host_parking_staff.then_some(program))
+}
+
+fn verify_with_staffing(host: &PropertyFile, staffing: Option<&super::behavior_nodes::ResolvedBehavior>) -> Result<(), String> {
+    let labor_bundle = 0xD07C_5A04;
     if host.get(menu::HASH_PARENT).is_some()
-        || BUSINESS.iter().any(|&b| active(host, b))
-        || [
-            0x0A79_17C3,
-            0x0A79_17C5,
-            0x0A79_17C6,
-            0x0A79_17C7,
-            0x0A79_17C8,
-        ]
-        .iter()
-        .any(|&h| host.get(h).map(|p| &p.kind) != Some(&Kind::Scalar(Value::Float(0.0))))
+        || BUSINESS.iter().any(|&b| active(host, b) && !(b == labor_bundle && staffing.is_some()))
     {
-        return Err("BEHAVIOR_UNIT_SCOPE: container must not own a business or jobs".into());
+        return Err("BEHAVIOR_UNIT_SCOPE: container must not own a business".into());
+    }
+    if staffing.is_some() && !active(host, labor_bundle) {
+        return Err("BEHAVIOR_CONTAINER_COMMUTE: host labor provider is missing".into());
+    }
+    for hash in [0x0A79_17C3, 0x0A79_17C5, 0x0A79_17C6, 0x0A79_17C7, 0x0A79_17C8] {
+        let expected = match staffing {
+            Some(program) => *program.set_float_fields.get(&hash)
+                .ok_or_else(|| format!("BEHAVIOR_CONTAINER_COMMUTE: missing planned job field {hash:08X}"))? as f32,
+            None => 0.0,
+        };
+        if host.get(hash).and_then(|p| p.scalar()) != Some(&Value::Float(expected)) {
+            return Err(format!("BEHAVIOR_CONTAINER_COMMUTE: unexpected host job field {hash:08X}"));
+        }
     }
     // Housing state belongs to a child slot. Keep its vacancy and abandonment
     // rules and the native FailUnit fallback off the visible, toggleable host.
@@ -184,6 +209,24 @@ pub(super) fn verify(host: &PropertyFile) -> Result<(), String> {
     }
     verify_toggle(host)
 }
+pub(super) fn exclude_child_garbage(unit: &mut PropertyFile) -> Result<(), String> {
+    use super::behavior_templates::{array, key};
+    let mut excluded = array(unit, EXCLUDED)?.to_vec();
+    if excluded.iter().any(|v| matches!(v, Value::Key(key) if key.instance == GARBAGE)) {
+        return Ok(());
+    }
+    excluded.push(key(GARBAGE));
+    set_array_with_flags(unit, EXCLUDED, PropType::Key, excluded, 0x809C);
+    Ok(())
+}
+
+pub(super) fn verify_child_garbage(unit: &PropertyFile) -> Result<(), String> {
+    if active(unit, GARBAGE) {
+        return Err("BEHAVIOR_CONTAINER_GARBAGE: child duplicates the host service".into());
+    }
+    Ok(())
+}
+
 pub(super) fn verify_toggle(unit: &PropertyFile) -> Result<(), String> {
     if !active(unit, TOGGLE) {
         return Err("BEHAVIOR_UNIT_TABLE: missing native building toggle provider".into());
@@ -234,6 +277,23 @@ pub(super) fn validate_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_the_donors_garbage_service_and_amount_on_the_host_only() {
+        let mut donor = common().unwrap();
+        donor.values.retain(|property| property.hash != EXCLUDED);
+        assert!(active(&donor, GARBAGE));
+        set_scalar(&mut donor, GARBAGE_AMOUNT, PropType::Float, Value::Float(1.0));
+        let host = PropertyFile::parse(&patch(&encode(&donor).unwrap()).unwrap()).unwrap();
+        assert!(active(&host, GARBAGE));
+        assert_eq!(host.get(GARBAGE_AMOUNT).and_then(|p| p.scalar()), Some(&Value::Float(1.0)));
+        assert!(verify_child_garbage(&donor).is_err());
+        exclude_child_garbage(&mut donor).unwrap();
+        verify_child_garbage(&donor).unwrap();
+        let inactive_host = PropertyFile::parse(&patch(&encode(&donor).unwrap()).unwrap()).unwrap();
+        assert!(!active(&inactive_host, GARBAGE));
+    }
+
     #[test]
     fn common_host_retains_control_and_identity_without_a_business() {
         let mut source = common().unwrap();

@@ -19,7 +19,7 @@ const INITIAL_FLAGS: u32 = 0x0A88_D179;
 const CAR_RESTRICTION: Value = Value::Int32(49);
 const PARKING_PERCENT_FILL: u32 = 0x0C12_EF60;
 
-fn has_parking(lot: &PropertyFile) -> Result<bool, String> {
+pub(super) fn has_parking(lot: &PropertyFile) -> Result<bool, String> {
     Ok(array(lot, sc_properties::lot_unit::PROP_ID_BASE)?
         .iter()
         .filter_map(instance)
@@ -248,6 +248,27 @@ pub(super) fn verify(unit: &[u8], lot: &[u8]) -> Result<(), String> {
         return Err("VEHICLE_PATH_BINDING: final Lot or Unit is missing the ordinary-vehicle arrival wiring".into());
     }
     Ok(())
+}
+
+pub(super) fn describe_commute(unit: &[u8], lot: &[u8]) -> Result<serde_json::Value, String> {
+    let unit = PropertyFile::parse(unit).map_err(|error| error.to_string())?;
+    let lot = PropertyFile::parse(lot).map_err(|error| error.to_string())?;
+    let (sinks, open_commute) = receivers(&unit)?;
+    let jobs = |hash| match unit.get(hash).and_then(|property| property.scalar()) {
+        Some(Value::Float(value)) => Some(*value),
+        _ => None,
+    };
+    Ok(serde_json::json!({
+        "jobsByWealth": [jobs(0x0A79_17C5), jobs(0x0A79_17C6), jobs(0x0A79_17C7)],
+        "minimumWorkers": jobs(0x0A79_17C8),
+        "workerSlotsByWealth": [jobs(0x0E3F_65A9), jobs(0x0E3F_65B3), jobs(0x0E3F_65B4)],
+        "vehiclePath": format!("{PATH:08X}"),
+        "arrivalSinks": sinks.iter().filter_map(instance).map(|id| format!("{id:08X}")).collect::<Vec<_>>(),
+        "openCommute": open_commute,
+        "parkingSlots": array(&lot, 0x0C12_EF40)?.len(),
+        "parkingUsesVehicleCount": lot.get(PARKING_PERCENT_FILL).and_then(|prop| prop.scalar()) == Some(&Value::Bool(false)),
+        "runtimeVerified": false,
+    }))
 }
 
 #[cfg(test)]
