@@ -2,6 +2,7 @@ export const COMMERCIAL_DEFAULTS = { shoppers: 9, goods: 9 } as const;
 export const MIXED_COMMERCIAL = "ground-mall-mixed-v1";
 export const COMMERCIAL_SHOPPER_FIELDS = ["shoppersW1", "shoppersW2", "shoppersW3"] as const;
 export const COMMERCIAL_FIELDS = [...COMMERCIAL_SHOPPER_FIELDS, "goods"] as const;
+export const COMMERCIAL_JOB_FIELDS = ["jobsW1", "jobsW2", "jobsW3", "retailMinWorkers"] as const;
 export const COMMERCIAL_PROFILES = {
   "ground-commercial-w1-v1": { shoppers: 10, goods: 21 },
   "ground-commercial-w2-v1": { shoppers: 8, goods: 18 },
@@ -14,7 +15,7 @@ export type CommercialParams = {
   type: "commercial";
   commercialProfile?: CommercialProfile;
   shoppers?: number | null;
-} & Partial<Record<(typeof COMMERCIAL_FIELDS)[number], number | null>>;
+} & Partial<Record<(typeof COMMERCIAL_FIELDS | typeof COMMERCIAL_JOB_FIELDS)[number], number | null>>;
 
 export function commercialValues(params: CommercialParams) {
   if (params.commercialProfile === MIXED_COMMERCIAL) {
@@ -44,7 +45,10 @@ export function validCommercial(params: CommercialParams): boolean {
   if (!values) return false;
   const tiers = COMMERCIAL_SHOPPER_FIELDS.map((field) => values[field]);
   const total = tiers.reduce((sum, value) => sum + value, 0);
+  const jobs = COMMERCIAL_JOB_FIELDS.slice(0, 3).reduce((sum, field) => sum + (params[field] ?? 0), 0);
   return tiers.every((value) => Number.isInteger(value) && value >= 0)
     && total >= 1 && total <= 100_000
-    && Number.isInteger(values.goods) && values.goods >= 1 && values.goods <= 100_000;
+    && Number.isInteger(values.goods) && values.goods >= 1 && values.goods <= 100_000
+    && COMMERCIAL_JOB_FIELDS.every((field) => Number.isInteger(params[field] ?? 0) && (params[field] ?? 0) >= 0)
+    && jobs <= 100_000 && (params.retailMinWorkers ?? 0) <= jobs;
 }

@@ -17,7 +17,33 @@ const runtimePath = computed(() => typeof props.path === 'string' ? props.path.t
 </template>
 
 <style scoped>
-.runtime-notice { margin-block: 12px; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; }
-.runtime-path { display: block; margin-block: 8px; overflow-wrap: anywhere; user-select: text; }
-.runtime-notice p { margin-block: 6px; }
+.runtime-notice {
+  margin-block: 12px;
+  padding: 12px;
+  border: 1px solid var(--border, #2b3c54);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--muted-foreground);
+}
+.runtime-notice strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.runtime-path {
+  display: block;
+  margin-block: 6px 8px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.runtime-notice p { margin-block: 4px 0; font: inherit; }
 </style>

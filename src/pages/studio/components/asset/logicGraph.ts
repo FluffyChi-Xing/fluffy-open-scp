@@ -68,6 +68,7 @@ export interface UtilityParams {
 }
 
 export interface BehaviorCoreParams {
+  composition?: "shared" | "independent-v1";
   power: UtilityParams;
   water: UtilityParams;
   garbage: UtilityParams;
@@ -537,12 +538,12 @@ function numberOk(value: unknown, min = 0): boolean {
 export function logicIssues(graph: LogicGraph): LogicIssue[] {
   const issues: LogicIssue[] = [];
   const leaves = graph.nodes.filter(isLeaf);
-  for (const node of leaves.slice(behaviorPolicy.maxLeaves)) {
+  for (const node of leaves.slice(behaviorLeafLimit(graph))) {
     issues.push({ code: "behaviorLeafLimit", nodeId: node.id });
   }
   for (const [index, node] of leaves.entries()) {
     const type = leafTypeOf(graph, node);
-    if (type && leaves.slice(0, index).some((other) => {
+    if (!independentBehaviors(graph) && type && leaves.slice(0, index).some((other) => {
       const previous = leafTypeOf(graph, other);
       return previous != null && behaviorTypesConflict(type, previous);
     })) {
@@ -658,8 +659,14 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
           break;
         case "residence": {
           const error = residenceCapacityError(leaf);
-          if (error)
-            issues.push({ code: error === "populationInvalid" ? "residenceCapacity" : "residenceSlots", nodeId: node.id });
+          if (error) {
+            const code = {
+              populationInvalid: "residenceCapacity",
+              residentSlotsInvalid: "residenceSlots",
+              residentHappinessInvalid: "residenceHappiness",
+            }[error];
+            issues.push({ code, nodeId: node.id });
+          }
           break;
         }
         case "commercial":
@@ -687,6 +694,15 @@ export function behaviorTypesConflict(first: BehaviorLeafType, second: BehaviorL
   return first === second || behaviorPolicy.incompatible.some(([head, ...others]) =>
     (head === first && others.includes(second)) || (head === second && others.includes(first)),
   );
+}
+
+export function independentBehaviors(graph: LogicGraph): boolean {
+  return graph.nodes.some((node) => node.kind === "behavior-core"
+    && (graph.params[node.id] as BehaviorCoreParams | undefined)?.composition === "independent-v1");
+}
+
+export function behaviorLeafLimit(graph: LogicGraph): number {
+  return independentBehaviors(graph) ? 16 : MAX_BEHAVIOR_LEAVES;
 }
 
 export function validHotelRooms(rooms: unknown): boolean {

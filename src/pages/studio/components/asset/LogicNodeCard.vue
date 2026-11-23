@@ -7,7 +7,7 @@ import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
 import BlueprintPortRow from "./BlueprintPortRow.vue";
 import ResidenceBehaviorFields from "./ResidenceBehaviorFields.vue";
 import type { ResidenceParams } from "./residenceBehavior";
-import { COMMERCIAL_FIELDS, COMMERCIAL_SHOPPER_FIELDS, MIXED_COMMERCIAL, commercialValues, type CommercialParams } from "./commercialBehavior";
+import { COMMERCIAL_FIELDS, COMMERCIAL_JOB_FIELDS, COMMERCIAL_SHOPPER_FIELDS, MIXED_COMMERCIAL, commercialValues, type CommercialParams } from "./commercialBehavior";
 import { OFFICE_DEFAULTS, OFFICE_FIELDS, type OfficeParams } from "./officeBehavior";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -71,6 +71,10 @@ function patchRetail(field: (typeof COMMERCIAL_FIELDS)[number], event: Event): v
     shoppers: undefined,
     [field]: value,
   });
+}
+function patchRetailJobs(field: (typeof COMMERCIAL_JOB_FIELDS)[number], event: Event): void {
+  const input = event.target as HTMLInputElement;
+  emit("update-params", { [field]: input.value === "" && !input.validity.badInput ? null : input.valueAsNumber });
 }
 const landFields = computed<readonly (keyof LandvalueParams)[]>(() =>
   (props.params as LandvalueParams).landValueProfile
@@ -271,6 +275,19 @@ const leafOptions = computed(() =>
 
       <!-- 基础行为聚合（不可删；inherit = 沿用 donor 闭环） -->
       <template v-else-if="isCore">
+        <label class="logic-field">
+          <span>{{ t("studio.assetWorkbench.behaviorComposition.label") }}</span>
+          <FSelect
+            :model-value="(params as BehaviorCoreParams).composition ?? 'shared'"
+            :disabled="disabled"
+            :options="[
+              { value: 'shared', label: t('studio.assetWorkbench.behaviorComposition.shared') },
+              { value: 'independent-v1', label: t('studio.assetWorkbench.behaviorComposition.independent') },
+            ]"
+            @update:model-value="emit('update-params', { composition: String($event) })"
+          />
+        </label>
+        <p class="logic-hint">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
         <div v-for="utilitySpec in UTILITIES" :key="utilitySpec.key" class="logic-utility">
           <div class="logic-utility-head">
             <span>{{ t(utilitySpec.labelKey) }}</span>
@@ -445,6 +462,15 @@ const leafOptions = computed(() =>
           />
         </label>
         <p class="logic-field">{{ t("studio.assetWorkbench.behaviorSheet.commercialTotal", { count: retailTotal }) }}</p>
+        <label v-for="field in COMMERCIAL_JOB_FIELDS" :key="field" class="logic-field">
+          <span>{{ t(`studio.assetWorkbench.leaf.commercial.${field}`) }}</span>
+          <input
+            type="number" min="0" max="100000" step="1"
+            :value="commercialParams[field] ?? ''"
+            :disabled="disabled"
+            @change="patchRetailJobs(field, $event)"
+          />
+        </label>
       </template>
 
       <label v-else-if="leafType === 'hotel'" class="logic-field">

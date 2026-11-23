@@ -73,9 +73,13 @@ const fields = [
   "quotaW1",
   "quotaW2",
   "quotaW3",
+  "incomeW1",
+  "incomeW2",
+  "incomeW3",
 ] as const;
 const quotas = ["quotaW1", "quotaW2", "quotaW3"] as const;
 type TourismField = (typeof fields)[number];
+const wholeNumber = (field: TourismField) => field === "shoppers" || field.startsWith("quota");
 
 function patchDraft(patch: Record<string, unknown>): void {
   draft.value = { ...draft.value, ...patch };
@@ -101,7 +105,7 @@ const invalidField = computed(() => {
       (!Number.isFinite(value) ||
         value < (field === "shoppers" ? 1 : 0) ||
         value > 100_000 ||
-        (field !== "attraction" && !Number.isInteger(value)))
+        (wholeNumber(field) && !Number.isInteger(value)))
     );
   });
 });
@@ -170,7 +174,7 @@ function restoreFocus(event: Event): void {
                     type="number"
                     :min="field === 'shoppers' ? 1 : 0"
                     max="100000"
-                    :step="field === 'attraction' ? 'any' : '1'"
+                    :step="wholeNumber(field) ? '1' : 'any'"
                     :placeholder="String(TOURISM_TEMPLATE_DEFAULTS[field])"
                     :value="tourism[field] ?? ''"
                     :aria-invalid="

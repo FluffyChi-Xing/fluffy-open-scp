@@ -4,10 +4,35 @@ import { expect, it, vi } from "vitest";
 import { command } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { i18n } from "@/locales";
-import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec } from "./logicGraph";
+import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec, updateLogicParams, logicIssues } from "./logicGraph";
 import { useBehaviorConflicts } from "./useBehaviorConflicts";
 
 vi.mock("@/api/tauri", () => ({ command: vi.fn() }));
+
+it("allows independent behaviors and sends separate scopes to the authoritative check", async () => {
+  const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
+  const independent = updateLogicParams(core.graph, core.node.id, { composition: "independent-v1" });
+  const office = addLogicNode(independent, leafSpec("office"), [0, 0]);
+  const visits = addLogicNode(office.graph, leafSpec("tourism"), [0, 0]);
+  let graph = connectLogic(visits.graph, core.node.id, "asset", "behavior").graph;
+  graph = connectLogic(graph, office.node.id, core.node.id, "leaf").graph;
+  graph = connectLogic(graph, visits.node.id, core.node.id, "leaf").graph;
+  vi.mocked(command).mockResolvedValue({ conflicts: [], unknownBundles: [] });
+  let result: ReturnType<typeof useBehaviorConflicts> | undefined;
+  const wrapper = mount(defineComponent({ setup() { result = useBehaviorConflicts(); return () => null; } }),
+    { global: { plugins: [i18n] } });
+  try {
+    expect(result!.canAdd(graph, "residence")).toBe(true);
+    expect(logicIssues(graph).some((issue) => issue.code === "behaviorLeafConflict")).toBe(false);
+    await result!.check(graph, visits.node.id);
+    expect(command).toHaveBeenLastCalledWith("asset_build_m1_check_behavior_bins", expect.objectContaining({
+      nodes: expect.arrayContaining([
+        expect.objectContaining({ id: office.node.id, unit: office.node.id }),
+        expect.objectContaining({ id: visits.node.id, unit: visits.node.id }),
+      ]),
+    }));
+  } finally { wrapper.unmount(); useToast().clear(); }
+});
 
 it("warns through the toast when an added leaf shares a bin with another leaf", async () => {
   const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);

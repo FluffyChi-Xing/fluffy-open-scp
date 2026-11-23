@@ -1,7 +1,7 @@
 import { command } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { useI18n } from "vue-i18n";
-import { MAX_BEHAVIOR_LEAVES, behaviorTypesConflict, isLeaf, leafSpec, leafTypeOf, type BehaviorLeafType, type LogicGraph } from "./logicGraph";
+import { behaviorLeafLimit, independentBehaviors, behaviorTypesConflict, isLeaf, leafSpec, leafTypeOf, type BehaviorLeafType, type LogicGraph } from "./logicGraph";
 
 interface BehaviorBinReport {
   conflicts: {
@@ -21,11 +21,12 @@ export function useBehaviorConflicts() {
 
   function canAdd(graph: LogicGraph, type: BehaviorLeafType): boolean {
     const leaves = graph.nodes.filter(isLeaf);
-    if (leaves.length >= MAX_BEHAVIOR_LEAVES) {
-      toast.warning(t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }));
+    const limit = behaviorLeafLimit(graph);
+    if (leaves.length >= limit) {
+      toast.warning(t(`${key}.limit`, { count: limit }));
       return false;
     }
-    for (const node of leaves) {
+    for (const node of independentBehaviors(graph) ? [] : leaves) {
       const other = leafTypeOf(graph, node);
       if (other == null || !behaviorTypesConflict(type, other)) continue;
       toast.warning(t(`${key}.incompatible`, {
@@ -47,7 +48,8 @@ export function useBehaviorConflicts() {
     const nodes = siblings.flatMap((id) => {
       const node = graph.nodes.find((node) => node.id === id);
       const type = node && leafTypeOf(graph, node);
-      return type ? [{ id, type, params: graph.params[id] }] : [];
+      return type ? [{ id, type, params: graph.params[id],
+        ...(independentBehaviors(graph) ? { unit: id } : {}) }] : [];
     });
     const added = nodes.find((node) => node.id === addedId);
     if (!added || nodes.length < 2) return;

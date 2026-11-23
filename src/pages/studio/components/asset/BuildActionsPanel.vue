@@ -224,6 +224,8 @@ function buildError(message: string): string {
   if (roadDiagnostic?.[1] === "base_invalid") return t("roadAsset.draft.chooseBase");
   const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT))\b/);
   if (behaviorDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${behaviorDiagnostic[1]}`);
+  const containerPanelDiagnostic = message.match(/\b(PANEL_CONTAINER_QUERY_UNSUPPORTED|PANEL_CONTAINER_BINDING|PANEL_CONTAINER_POWER_REQUIRED)\b/);
+  if (containerPanelDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${containerPanelDiagnostic[1]}`);
   const queueError = buildQueueErrorKey(message);
   if (queueError) return t(queueError);
   const vehicleDiagnostic = message.match(/\bVEHICLE_PATH_(RECEIVER|BINDING)\b/);
