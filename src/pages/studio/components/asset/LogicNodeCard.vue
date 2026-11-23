@@ -275,18 +275,6 @@ const leafOptions = computed(() =>
 
       <!-- 基础行为聚合（不可删；inherit = 沿用 donor 闭环） -->
       <template v-else-if="isCore">
-        <label class="logic-field">
-          <span>{{ t("studio.assetWorkbench.behaviorComposition.label") }}</span>
-          <FSelect
-            :model-value="(params as BehaviorCoreParams).composition ?? 'shared'"
-            :disabled="disabled"
-            :options="[
-              { value: 'shared', label: t('studio.assetWorkbench.behaviorComposition.shared') },
-              { value: 'independent-v1', label: t('studio.assetWorkbench.behaviorComposition.independent') },
-            ]"
-            @update:model-value="emit('update-params', { composition: String($event) })"
-          />
-        </label>
         <p class="logic-hint">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
         <div v-for="utilitySpec in UTILITIES" :key="utilitySpec.key" class="logic-utility">
           <div class="logic-utility-head">

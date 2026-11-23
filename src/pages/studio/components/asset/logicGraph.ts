@@ -15,7 +15,6 @@
 import { MIXED_COMMERCIAL, validCommercial, type CommercialParams } from "./commercialBehavior";
 import { validOffice, type OfficeParams } from "./officeBehavior";
 import { residenceCapacityError, type ResidenceParams } from "./residenceBehavior";
-import behaviorPolicy from "@/lib/asset-behavior-policy.json";
 
 export type LogicNodeKind = "building-info" | "behavior-core" | "behavior-leaf";
 export type BehaviorLeafType =
@@ -538,17 +537,8 @@ function numberOk(value: unknown, min = 0): boolean {
 export function logicIssues(graph: LogicGraph): LogicIssue[] {
   const issues: LogicIssue[] = [];
   const leaves = graph.nodes.filter(isLeaf);
-  for (const node of leaves.slice(behaviorLeafLimit(graph))) {
+  for (const node of leaves.slice(MAX_BEHAVIOR_LEAVES)) {
     issues.push({ code: "behaviorLeafLimit", nodeId: node.id });
-  }
-  for (const [index, node] of leaves.entries()) {
-    const type = leafTypeOf(graph, node);
-    if (!independentBehaviors(graph) && type && leaves.slice(0, index).some((other) => {
-      const previous = leafTypeOf(graph, other);
-      return previous != null && behaviorTypesConflict(type, previous);
-    })) {
-      issues.push({ code: "behaviorLeafConflict", nodeId: node.id });
-    }
   }
   const ids = new Set<string>();
   for (const node of graph.nodes) {
@@ -688,21 +678,14 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
   return issues;
 }
 
-export const MAX_BEHAVIOR_LEAVES = behaviorPolicy.maxLeaves;
+export const MAX_BEHAVIOR_LEAVES = 16;
 
-export function behaviorTypesConflict(first: BehaviorLeafType, second: BehaviorLeafType): boolean {
-  return first === second || behaviorPolicy.incompatible.some(([head, ...others]) =>
-    (head === first && others.includes(second)) || (head === second && others.includes(first)),
-  );
-}
-
-export function independentBehaviors(graph: LogicGraph): boolean {
-  return graph.nodes.some((node) => node.kind === "behavior-core"
-    && (graph.params[node.id] as BehaviorCoreParams | undefined)?.composition === "independent-v1");
-}
-
-export function behaviorLeafLimit(graph: LogicGraph): number {
-  return independentBehaviors(graph) ? 16 : MAX_BEHAVIOR_LEAVES;
+export function usesBehaviorContainer(graph: LogicGraph): boolean {
+  const cores = new Set(graph.nodes.filter(node => node.kind === "behavior-core").map(node => node.id));
+  const leaves = new Set(graph.nodes.filter(isLeaf).map(node => node.id));
+  const attached = new Set(graph.edges.filter(edge => edge.targetHandle === "leaf" && cores.has(edge.target) && leaves.has(edge.source)).map(edge => edge.source));
+  return attached.size > 1 || (attached.size === 1 && [...cores].some(id =>
+    (graph.params[id] as BehaviorCoreParams | undefined)?.composition === "independent-v1"));
 }
 
 export function validHotelRooms(rooms: unknown): boolean {

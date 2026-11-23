@@ -405,8 +405,13 @@ fn compile_logic(
             }));
         }
     }
-    let independent = cores.iter().any(|core| params.and_then(|values| values.get(*core))
-        .is_some_and(|value| value["composition"] == "independent-v1"));
+    // Mixed behavior graphs always use independent component units. Keep the
+    // explicitly authored one-component containers on their existing route.
+    let independent = leaves.len() > 1
+        || cores.iter().any(|core| {
+            params.and_then(|values| values.get(*core))
+                .is_some_and(|value| value["composition"] == "independent-v1")
+        });
     for leaf in &leaves {
         let Some(node_params) = param_of(params, leaf, errors) else {
             continue;
@@ -428,34 +433,6 @@ fn compile_logic(
             if let Some(labor) = node_params.get("unitLabor") { behavior["labor"] = labor.clone(); }
         }
         behaviors.push(behavior);
-    }
-
-    // Asset Editor permits both tourism and park leaves to author the same
-    // attraction field.  In the game this is one Unit property, not two
-    // additive channels.  Tourism is the requested landmark behavior and is
-    // therefore authoritative; retain the park node's land-value semantics
-    // while dropping only its duplicate attraction write.
-    let tourism_writes_attraction = behaviors.iter().any(|behavior| {
-        behavior.get("type").and_then(Value::as_str) == Some("tourism")
-            && behavior
-                .pointer("/params/attraction")
-                .is_some_and(|value| !value.is_null())
-    });
-    if tourism_writes_attraction && !independent {
-        for behavior in &mut behaviors {
-            if behavior.get("type").and_then(Value::as_str) != Some("park") {
-                continue;
-            }
-            if behavior.pointer("/params/attraction").is_some() {
-                if let Some(params) = behavior.get_mut("params").and_then(Value::as_object_mut) {
-                    params.remove("attraction");
-                    let id = behavior.get("id").and_then(Value::as_str).unwrap_or("park");
-                    warnings.push(format!(
-                        "behavior node {id}: park.attraction ignored because tourism.attraction is authoritative"
-                    ));
-                }
-            }
-        }
     }
 
     // 提前跑一遍行为编译：参数冲突/非法值在入队前点名节点。
@@ -808,6 +785,37 @@ mod tests {
         assert_eq!(compiled.labor.unwrap()["w1"], 20);
         assert_eq!(compiled.behaviors.len(), 2);
         assert_eq!(compiled.behaviors[1]["type"], "education");
+    }
+
+    #[test]
+    fn mixed_workbench_leaves_use_the_same_scopes_regardless_of_saved_composition() {
+        let leaves = [
+            ("office", json!({ "type": "office" })),
+            ("park", json!({ "type": "park", "attraction": 80 })),
+            ("commercial", json!({ "type": "commercial", "commercialProfile": "ground-mall-mixed-v1" })),
+            ("residence", json!({ "type": "residence", "residenceProfile": "ground-residence-w1-v1" })),
+            ("tourism", json!({ "type": "tourism", "tourismProfile": "native-tourism-v1", "attraction": 120 })),
+        ];
+        let mut logic = json!({
+            "nodes": [{ "id": "core", "kind": "behavior-core" }],
+            "edges": [{ "source": "core", "target": "asset", "targetHandle": "behavior" }],
+            "params": { "core": {} },
+        });
+        for (id, params) in &leaves {
+            logic["nodes"].as_array_mut().unwrap().push(json!({ "id": id, "kind": "behavior-leaf" }));
+            logic["edges"].as_array_mut().unwrap().push(json!({ "source": id, "target": "core", "targetHandle": "leaf" }));
+            logic["params"][id] = params.clone();
+        }
+        for mode in [Value::Null, json!("shared"), json!("independent-v1")] {
+            logic["params"]["core"]["composition"] = mode;
+            let built = compile(&document(menu(true), logic.clone()), &|_| true).unwrap();
+            assert_eq!(built.behaviors.len(), leaves.len() + 1);
+            for (id, params) in &leaves {
+                let leaf = built.behaviors.iter().find(|node| node["id"] == *id).unwrap();
+                assert_eq!(leaf["unit"], *id);
+                assert_eq!(&leaf["params"], params);
+            }
+        }
     }
 
     #[test]

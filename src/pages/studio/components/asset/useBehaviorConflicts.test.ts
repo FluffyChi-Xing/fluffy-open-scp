@@ -4,15 +4,14 @@ import { expect, it, vi } from "vitest";
 import { command } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { i18n } from "@/locales";
-import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec, updateLogicParams, logicIssues } from "./logicGraph";
+import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec, MAX_BEHAVIOR_LEAVES, usesBehaviorContainer } from "./logicGraph";
 import { useBehaviorConflicts } from "./useBehaviorConflicts";
 
 vi.mock("@/api/tauri", () => ({ command: vi.fn() }));
 
 it("allows independent behaviors and sends separate scopes to the authoritative check", async () => {
   const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
-  const independent = updateLogicParams(core.graph, core.node.id, { composition: "independent-v1" });
-  const office = addLogicNode(independent, leafSpec("office"), [0, 0]);
+  const office = addLogicNode(core.graph, leafSpec("office"), [0, 0]);
   const visits = addLogicNode(office.graph, leafSpec("tourism"), [0, 0]);
   let graph = connectLogic(visits.graph, core.node.id, "asset", "behavior").graph;
   graph = connectLogic(graph, office.node.id, core.node.id, "leaf").graph;
@@ -22,8 +21,8 @@ it("allows independent behaviors and sends separate scopes to the authoritative 
   const wrapper = mount(defineComponent({ setup() { result = useBehaviorConflicts(); return () => null; } }),
     { global: { plugins: [i18n] } });
   try {
-    expect(result!.canAdd(graph, "residence")).toBe(true);
-    expect(logicIssues(graph).some((issue) => issue.code === "behaviorLeafConflict")).toBe(false);
+    expect(result!.canAdd(graph)).toBe(true);
+    expect(usesBehaviorContainer(graph)).toBe(true);
     await result!.check(graph, visits.node.id);
     expect(command).toHaveBeenLastCalledWith("asset_build_m1_check_behavior_bins", expect.objectContaining({
       nodes: expect.arrayContaining([
@@ -78,11 +77,11 @@ it("warns through the toast when an added leaf shares a bin with another leaf", 
   }
 });
 
-it("rejects incompatible choices and the fifth behavior with a toast", () => {
+it("allows additional components up to the container limit", () => {
   const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
   const hotel = addLogicNode(core.graph, leafSpec("hotel"), [0, 0]);
-  const full = (["park", "tourism", "landvalue", "tree"] as const).reduce(
-    (graph, type) => addLogicNode(graph, leafSpec(type), [0, 0]).graph, core.graph,
+  const full = Array.from({ length: MAX_BEHAVIOR_LEAVES }).reduce<typeof core.graph>(
+    graph => addLogicNode(graph, leafSpec("park"), [0, 0]).graph, core.graph,
   );
   const toast = useToast();
   const previousLocale = i18n.global.locale.value;
@@ -90,15 +89,9 @@ it("rejects incompatible choices and the fifth behavior with a toast", () => {
   const wrapper = mount(defineComponent({
     setup() {
       const { canAdd } = useBehaviorConflicts();
-      expect(canAdd(hotel.graph, "tourism")).toBe(false);
-      expect(toast.toasts.value.at(-1)).toMatchObject({
-        title: "Potential behavior conflict",
-        message: expect.stringContaining("Tourism may conflict with Hotel"),
-      });
-      const retail = addLogicNode(core.graph, leafSpec("commercial"), [0, 0]);
-      expect(canAdd(retail.graph, "tourism")).toBe(true);
-      expect(canAdd(full, "residence")).toBe(false);
-      expect(toast.toasts.value.at(-1)?.message).toContain("up to 4");
+      expect(canAdd(hotel.graph)).toBe(true);
+      expect(canAdd(full)).toBe(false);
+      expect(toast.toasts.value.at(-1)?.message).toContain(`up to ${MAX_BEHAVIOR_LEAVES}`);
       return () => null;
     },
   }), { global: { plugins: [i18n] } });

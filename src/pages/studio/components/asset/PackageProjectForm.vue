@@ -322,7 +322,7 @@ function addCore(): void {
   if (!coreNode.value) emit("update:logic", graphWithCore().graph);
 }
 function addLeaf(type: BehaviorLeafType): void {
-  if (!behaviorConflicts.canAdd(props.logic, type)) return;
+  if (!behaviorConflicts.canAdd(props.logic)) return;
   const core = graphWithCore();
   const added = addLogicNode(core.graph, leafSpec(type), [0, 260]);
   const graph = connectLogic(added.graph, added.node.id, core.node.id, "leaf").graph;
@@ -680,9 +680,7 @@ const tabHint = computed(() => {
             <p v-if="!coreNode" class="ppf-note">
               {{ t("studio.assetWorkbench.projectConfig.noCore") }}
             </p>
-            <p v-else class="ppf-note">
-              {{ t("studio.assetWorkbench.logicNode.behaviorCoreHint") }}
-            </p>
+            <p v-else class="ppf-note">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
           </div>
           <div class="ppf-behavior-block">
             <header>
