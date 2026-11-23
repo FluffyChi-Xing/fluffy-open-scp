@@ -2,9 +2,9 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { availableComponents } from './model';
-const props=defineProps<{leaves:string[];items:string[];power:boolean;selected?:string}>();
+const props=defineProps<{leaves:string[];items:string[];power:boolean;managed?:boolean;selected?:string}>();
 const emit=defineEmits<{add:[id:string];select:[id:string];remove:[id:string];move:[id:string,index:number]}>();const {t}=useI18n();
-const groups=computed(()=>['common',...props.leaves].map(group=>({group,items:availableComponents(props.leaves).filter(c=>c.group===group)})));
+const groups=computed(()=>['common',...props.leaves].map(group=>({group,items:availableComponents(props.leaves,props.managed).filter(c=>c.group===group)})));
 function drag(e:DragEvent,id:string){e.dataTransfer?.setData('application/openscp-panel-component',id);if(e.dataTransfer)e.dataTransfer.effectAllowed='copyMove';}
 function componentHint(id:string){return id==='profit'?t('panelMetrics.dailyProfitHint'):id==='profit-index'?t('panelMetrics.profitIndexHint'):undefined;}
 </script>

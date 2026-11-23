@@ -11,6 +11,10 @@ pub struct Component {
     pub feedback: bool,
     #[serde(default)]
     pub counter: bool,
+    #[serde(default, rename = "singleUnit", skip_serializing_if = "std::ops::Not::not")]
+    pub single_unit: bool,
+    #[serde(default, rename = "reasonList", skip_serializing_if = "std::ops::Not::not")]
+    pub reason_list: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metric: Option<Metric>,
 }

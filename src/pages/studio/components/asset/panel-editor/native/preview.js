@@ -25,7 +25,12 @@ window.run=async function(kind='landmark',mode='extended',fixtureOverrides={}){
  let arr=p[mode]||[],container=find(212238278),result=[];window.nativeItems=[];
  simcity.gRolloverManager={mRolloverUI:{mCurrentUnitRef:{slot:1}}};simcity.audio.LastQueryMsg={mSlot:1};
  simcity.gGameTimeManager={GetElapsedGameTimeSeconds:()=>0};
- const queryLedger=new Map(),queryConflicts=[];const comboData=fixtureOverrides.__compose?createComboData(p,fixtureOverrides.__state||'normal',fixtureOverrides.__missingResources||[]):null;
+ const queryLedger=new Map(),queryConflicts=[];
+ const sampleRci=arr.some(id=>simcity.RolloverItems[names[id]]?.panelSingleUnit);
+ const comboData=fixtureOverrides.__compose?createComboData(p,fixtureOverrides.__state||'normal',fixtureOverrides.__missingResources||[],sampleRci):null;
+ const reasonTables={residential:'0xF6862992',commercial:'0x2F32503C',industrial:'0xE093FD6F'};
+ const reasonName=arr.map(id=>names[id]).find(name=>name?.endsWith('-reasons'));
+ const reasonTable=reasonName&&reasonTables[reasonName.split('_')[1]?.split('-')[0]];
  function dataFor(binding,method){let qs=binding[method]?.('1,0','1,0')||{},data={};for(let[k,q]of Object.entries(qs)){
   const type=q.includes('bins')?'bins':q.includes('flags')?'flags':q.includes('maps')?'maps':'scalar';let value=0;
   if(type==='bins')value={amount:0,capacity:0};
@@ -40,6 +45,13 @@ window.run=async function(kind='landmark',mode='extended',fixtureOverrides={}){
   if(k==='hasToggle')value=false;
   if(k==='unitName'){let t=p.flat[0x09fb78cb]?.[0];value={tableID:t?.table_id||0,stringID:t?.instance_id||0,placeholder:p.names[0]||kind};}
   if(q.includes('nonSimProperties')||q.includes('properties')){let raw=p.flat[q.at(-1)];if(raw!==undefined)value=raw;}
+  if(binding.panelSingleUnit){
+   if(/^W[23]D[123]$/.test(k))value={amount:k.startsWith('W2')?450000:260000};
+   if(k==='defaulttoken')value=40;
+   if(/^(ThresholdE[23]|threshold)$/.test(k))value=100;
+   if(/^SkillTokenE[23]$/.test(k))value=70;
+  }
+  if(k==='textFeedbackFile'&&reasonTable)value=reasonTable;
   if(comboData)value=comboData.resolve(q,value);
   let resolved=Object.hasOwn(fixtureOverrides,k)?fixtureOverrides[k]:value;
   if(comboData){let key=JSON.stringify(q);if(queryLedger.has(key)&&JSON.stringify(queryLedger.get(key).value)!==JSON.stringify(resolved))queryConflicts.push({query:q,alias:k});if(!queryLedger.has(key))queryLedger.set(key,{query:q,value:resolved,aliases:[]});queryLedger.get(key).aliases.push(k);resolved=queryLedger.get(key).value;}

@@ -1,5 +1,5 @@
 /* global simcity */
-window.createComboData=function(panel,state,missingNames=[]){
+window.createComboData=function(panel,state,missingNames=[],sampleRci=false){
  const missing=new Map(missingNames.map(n=>[simcity['kResourceID'+n],n]));
  const resources={},set=(name,amount,capacity=100)=>{let id=simcity['kResourceID'+name];if(id!==undefined)resources[id]={name,amount,capacity,provenance:'explicit synthetic composition fixture'};};
  set('TotalResidents',40,60);set('TotalWorkers',25,34);set('ExpensesFromMaintenance',450,1000);
@@ -12,6 +12,10 @@ window.createComboData=function(panel,state,missingNames=[]){
  set('ParkVisitorsW1ThisPeriod',7,100);set('ParkVisitorsW1PerPeriod',13,100);
  set('ParkGlobals_LocalsDisplay',9,100);set('ParkGlobals_KidsDisplay',3,100);set('HomelessDisplay',1,100);
  set('CanAfford',1,1);set('ShiftLength',8,8);set('Student',50,250);set('SpotsForKids',200,250);
+ if(sampleRci){
+  set('Wealth',2);set('Density',3);set('HappinessDisplay',3);
+  set('HappinessFromPark',20);set('SadnessFromNoPower',12);
+ }
  const props={};for(let name of ['kPropHappiness_HappinessTokensThresholdForDensityUpgrade','kPropProfit_ProfitTokensThresholdForDensityUpgrade'])props[simcity[name]]=100;
  props[simcity.kPropWork_MinimumWorkersForProduction]=5;props[simcity.kPropWork_TotalJobs]=34;
  return {resources,resolve(q,fallback){

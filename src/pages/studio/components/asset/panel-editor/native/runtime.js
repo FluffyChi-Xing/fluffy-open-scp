@@ -10,6 +10,47 @@
     for (key in data) if (Object.prototype.hasOwnProperty.call(data, key) && data[key] === null) keys.push(key);
     return keys;
   }
+  function reasonData(binding, data) {
+    // Unallocated optional counters contribute no reason. Keep the native
+    // state, feedback table and display inputs mandatory.
+    var result = copy(data), queries = binding.panelReasonQueries || {}, key, query;
+    for (key in queries) {
+      if (!Object.prototype.hasOwnProperty.call(queries, key) || result[key] !== null ||
+          /^(normal|textFeedbackFile|happinessDisplay|wealth|openForBusiness)$/.test(key)) continue;
+      query = queries[key];
+      if (query.indexOf(simcity.kDataBins) !== -1) result[key] = { amount: 0, capacity: 0 };
+      else if (query.indexOf(simcity.kDataBinAmount) !== -1) result[key] = 0;
+      else if (query.indexOf(simcity.kDataFlags) !== -1) result[key] = false;
+    }
+    return result;
+  }
+  function updateReasons(binding, info, data) {
+    var native = info.panelNative, additionalUpdate = native.additionalUpdate, reasons = [];
+    var requiredCount = native.getRequiredCount;
+    if (data.normal && (data.openForBusiness === undefined || data.openForBusiness)) {
+      var manager = scrui.gUIManager && scrui.gUIManager.mLocaleManager;
+      reasons = additionalUpdate.call(native, info, data).filter(function (reason) {
+        if (!(reason[0] > 0)) return false;
+        if (!manager || manager.mAsynchronous) return true;
+        // Same severity index and optional table override as kBlockSadnessGeneric.
+        var strings = reason[1], index = Math.max(0, strings.length - 2 - data.happinessDisplay);
+        if (!strings[index]) return false;
+        var locale = new scrui.cLocaleString(reason[3] || data.textFeedbackFile, strings[index]);
+        locale.LoadString();
+        return locale.mLoaded;
+      });
+    }
+    native.titleText = binding.titleText;
+    var count = Math.min(reasons.length, 3);
+    native.getRequiredCount = function () { return count; };
+    native.additionalUpdate = function () { return reasons; };
+    for (var i = 1; i <= 3; i++) {
+      info['textControlLeft' + i].SetVisibility(false);
+      info['textControlRight' + i].SetVisibility(false);
+    }
+    try { native.update(info, data); }
+    finally { native.additionalUpdate = additionalUpdate; native.getRequiredCount = requiredCount; }
+  }
   function fitSlot(info, component) {
     var layout = info.layout, parent = layout.mParentControl;
     if (!parent) return;
@@ -84,9 +125,14 @@
     if (!original) throw Error('PANEL_NATIVE_BINDING:' + component.native);
     var binding = copy(original);
     binding.panelSlot = true;
+    if (component.singleUnit) binding.panelSingleUnit = true;
     // The native batch decoder otherwise aborts every block on the first null.
     // Missing simulation data hides only its own block; it is never invented.
     binding.allowNullResults = true;
+    if (component.reasonList) binding.updateQueries = function (unit) {
+      this.panelReasonQueries = original.updateQueries.call(this, unit);
+      return this.panelReasonQueries;
+    };
     if (component.native === 'kBlockLandmarkProfit' && !component.metric) {
       binding.updateQueries = function (unit) {
         var queries = original.updateQueries.call(original, unit), used = {};
@@ -118,6 +164,7 @@
     };
     binding.update = function (info, data) {
       if (!info.panelNative) info.panelNative = copy(original);
+      if (component.reasonList) data = reasonData(this, data);
       info.panelMissingQueries = missingData(data);
       if (info.panelMissingQueries.length) { this.minimize = true; return; }
       if (component.metric) {
@@ -128,7 +175,8 @@
         info.textControlLeft2.SetText(labels.previous);
         info.textControlRight1.SetText(String(data.current.amount));
         info.textControlRight2.SetText(String(data.previous.amount));
-      } else if (original.update) original.update.call(info.panelNative, info, data);
+      } else if (component.reasonList) updateReasons(this, info, data);
+      else if (original.update) original.update.call(info.panelNative, info, data);
       this.minimize = !!info.panelNative.minimize || !!(hide && missing(info, data));
     };
     // Population updates must not receive the content info object.

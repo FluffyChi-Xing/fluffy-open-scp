@@ -88,6 +88,28 @@ pub(super) fn bind_tourist_capacity(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_every_unsupported_control_with_its_view() {
+        let config = PanelSchema {
+            schema: "openscp.panel".into(),
+            version: 1,
+            shell: "67771F5C:0B07405A:2BDCBFDD".into(),
+            hover: vec!["workers".into()],
+            click: vec!["maintenance".into(), "workers".into(), "density-profit".into()],
+            power: true,
+            missing_feedback: MissingFeedback::Hide,
+        };
+        assert_eq!(
+            verify_queries(&config, &ResolvedBehavior::default()).unwrap_err(),
+            "PANEL_CONTAINER_QUERY_UNSUPPORTED:hover:workers,click:workers,click:density-profit"
+        );
+    }
+}
+
 pub(super) fn verify_queries(
     config: &PanelSchema,
     program: &ResolvedBehavior,
@@ -108,14 +130,21 @@ pub(super) fn verify_queries(
     let tourism_shares_retail = program.units.iter().any(|unit| {
         unit.program.native_tourism.is_some() && unit.program.commercial.is_some()
     });
-    for item in config.hover.iter().chain(&config.click) {
-        match item.as_str() {
-            "maintenance" => {}
-            "tourists" if has_tourism && !hotel && !tourism_shares_retail => {}
-            _ => return Err(format!("PANEL_CONTAINER_QUERY_UNSUPPORTED:{item}")),
+    let mut unsupported = Vec::new();
+    for (view, items) in [("hover", &config.hover), ("click", &config.click)] {
+        for item in items {
+            match item.as_str() {
+                "maintenance" => {}
+                "tourists" if has_tourism && !hotel && !tourism_shares_retail => {}
+                _ => unsupported.push(format!("{view}:{item}")),
+            }
         }
     }
-    Ok(())
+    if unsupported.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("PANEL_CONTAINER_QUERY_UNSUPPORTED:{}", unsupported.join(",")))
+    }
 }
 
 pub(in crate::asset_build_m1) fn verify(

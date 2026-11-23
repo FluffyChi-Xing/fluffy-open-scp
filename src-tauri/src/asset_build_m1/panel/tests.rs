@@ -55,7 +55,7 @@ fn opt_in_output_retains_runtime_and_layout_without_changing_other_resources() {
     ])
     .unwrap();
     fs::write(root.join("ui.package"), &bytes).unwrap();
-    let schema = json!({"$schema":"openscp.panel","schema_version":1,"shell":layout.to_string(),"hover":[],"click":["maintenance"],"power":false,"missingFeedback":"hide"});
+    let schema = json!({"$schema":"openscp.panel","schema_version":1,"shell":layout.to_string(),"hover":[],"click":["maintenance","land-value-commercial","density-profit","commercial-happiness-reasons"],"power":false,"missingFeedback":"hide"});
     fs::write(root.join("panel.json"), schema.to_string()).unwrap();
     let dependency = spec::Dependency {
         schema: "panel.json".into(),
@@ -107,7 +107,18 @@ fn opt_in_output_retains_runtime_and_layout_without_changing_other_resources() {
             .count(),
         1
     );
-    assert!(ctx.panel_runtime.is_some());
+    let runtime = std::str::from_utf8(ctx.panel_runtime.as_ref().unwrap()).unwrap();
+    let catalog = runtime
+        .split_once("window.OpenSCPPanelComponents=")
+        .unwrap()
+        .1
+        .split_once(';')
+        .unwrap()
+        .0;
+    let catalog: Vec<spec::Component> = serde_json::from_str(catalog).unwrap();
+    let reasons = catalog.iter().find(|c| c.id == "commercial-happiness-reasons").unwrap();
+    assert_eq!(reasons.native, "kBlockCommercialHappiness3");
+    assert!(reasons.single_unit && reasons.reason_list);
     let mut staging =
         crate::asset_build_m1::filesystem::Staging::create(&root, "panel-test").unwrap();
     publish_runtime(&mut staging, ctx.panel_runtime.as_ref().unwrap()).unwrap();

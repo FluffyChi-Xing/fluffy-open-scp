@@ -6,13 +6,17 @@ export interface PanelSchema {
 }
 export interface PanelDependency { schema: string; sources: Array<{path: string; sha256: string}>; runtime: string }
 export interface PanelProject { schema: PanelSchema | null; schemaPath: string; dependency?: PanelDependency; manifestRevision: string; schemaRevision: string | null }
-export interface PanelComponent { id: string; native: string; group: string; feedback?: boolean; counter?: boolean; metric?: {current: string; previous: string} }
+export interface PanelComponent { id: string; native: string; group: string; feedback?: boolean; counter?: boolean; singleUnit?: boolean; reasonList?: boolean; metric?: {current: string; previous: string} }
 export interface PanelResource { type: number; group: number; instance: number; locale: string; path: string }
 export interface PanelLibrary { schema: PanelSchema; dependency: PanelDependency; resources: PanelResource[]; gameScript: string; scruiScript: string; css: string; components: PanelComponent[]; contexts: Record<string, Record<string, unknown>>; nativeLocales?: Record<string,string> }
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface PreviewReport { dimensions: [number, number]; contentBounds: Rect; items: Array<{id: number; name: string; visible: boolean; rect: Rect; error?: string}>; text: string; error?: string; powerRect?: Rect }
 export const panelComponents: readonly PanelComponent[] = catalog;
-export function availableComponents(leaves: readonly string[]): PanelComponent[] {
+export function availableComponents(leaves: readonly string[], managed = false): PanelComponent[] {
+  if (managed) {
+    const canReadTourists = leaves.includes('tourism') && !leaves.includes('hotel');
+    return panelComponents.filter(c => c.id === 'maintenance' || (canReadTourists && c.id === 'tourists'));
+  }
   return panelComponents.filter(c => c.group === 'common' || leaves.includes(c.group));
 }
 export function itemName(c: PanelComponent, hide: boolean): string {

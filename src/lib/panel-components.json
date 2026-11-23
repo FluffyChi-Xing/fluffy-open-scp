@@ -23,5 +23,16 @@
   {"id":"education-feedback","native":"kEducationTextFeedback","group":"education","feedback":true},
   {"id":"education-hours","native":"kStudentHours","group":"education"},
   {"id":"students","native":"kBlockEducation","group":"education"},
-  {"id":"workers","native":"kPopulationWorkers","group":"office","counter":true}
+  {"id":"workers","native":"kPopulationWorkers","group":"office","counter":true},
+  {"id":"land-value-residential","native":"kLandValueMeterResidential","group":"common","singleUnit":true},
+  {"id":"land-value-commercial","native":"kLandValueMeterCommercial","group":"common","singleUnit":true},
+  {"id":"industrial-tech-level","native":"kTechLevel","group":"common","singleUnit":true},
+  {"id":"density-happiness","native":"kBlockDensityHappiness","group":"common","singleUnit":true},
+  {"id":"density-profit","native":"kBlockDensityProfit","group":"common","singleUnit":true},
+  {"id":"residential-happiness-reasons","native":"kBlockResidentialHappiness3","group":"common","singleUnit":true,"reasonList":true},
+  {"id":"residential-sadness-reasons","native":"kBlockResidentialSadness3","group":"common","singleUnit":true,"reasonList":true},
+  {"id":"commercial-happiness-reasons","native":"kBlockCommercialHappiness3","group":"common","singleUnit":true,"reasonList":true},
+  {"id":"commercial-sadness-reasons","native":"kBlockCommercialSadness3","group":"common","singleUnit":true,"reasonList":true},
+  {"id":"industrial-happiness-reasons","native":"kBlockIndustrialHappiness3","group":"common","singleUnit":true,"reasonList":true},
+  {"id":"industrial-sadness-reasons","native":"kBlockIndustrialSadness3","group":"common","singleUnit":true,"reasonList":true}
 ]

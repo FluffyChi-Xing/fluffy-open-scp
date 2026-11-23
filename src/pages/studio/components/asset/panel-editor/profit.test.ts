@@ -21,9 +21,15 @@ describe('common profit templates', () => {
     expect(button.attributes('title')).toContain('账本依赖');
     await button.trigger('click');
     expect(wrapper.emitted('add')?.[0]).toEqual(['profit']);
+    const density = wrapper.findAll('button').find(b => b.text().includes('密度（满意度）'))!;
+    await density.trigger('click');
+    expect(wrapper.emitted('add')?.[1]).toEqual(['density-happiness']);
     i18n.global.locale.value = 'en-US'; await nextTick();
     expect(button.text()).toContain('Daily profit');
     expect(button.attributes('title')).toBe(labels['en-US'].dailyProfitHint);
+    expect(density.text()).toContain('Density (satisfaction)');
+    await wrapper.setProps({ managed: true });
+    expect(wrapper.text()).not.toContain('Density (satisfaction)');
   });
 
   it('queries only the four accounting inputs actually used by native daily profit', () => {

@@ -13,6 +13,7 @@ import { useBuildActivityStore } from "@/stores/buildActivity";
 import { buildQueueErrorKey } from "@/lib/buildQueueError";
 import { buildStageLabel } from "@/lib/buildStageLabel";
 import PanelRuntimeNotice from './PanelRuntimeNotice.vue';
+import { unsupportedPanelItems } from './panel-editor/panelBuildDiagnostic';
 
 /**
  * OpenSCP Actions：构建历史 + GitHub Actions 风格步骤耗时/详情日志。
@@ -24,7 +25,7 @@ const props = defineProps<{
   /** 场景编辑器刚入队的任务；打开面板时自动展开详情。 */
   focusJobId?: string | null;
 }>();
-const { t } = useI18n();
+const { t, te } = useI18n();
 const buildActivity = useBuildActivityStore();
 
 interface StepView {
@@ -225,6 +226,15 @@ function buildError(message: string): string {
   const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT))\b/);
   if (behaviorDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${behaviorDiagnostic[1]}`);
   const containerPanelDiagnostic = message.match(/\b(PANEL_CONTAINER_QUERY_UNSUPPORTED|PANEL_CONTAINER_BINDING|PANEL_CONTAINER_POWER_REQUIRED)\b/);
+  const unsupportedItems = unsupportedPanelItems(message);
+  if (unsupportedItems.length) {
+    const items = unsupportedItems.map(({ view, id }) => {
+      const key = `panelEditor.components.${id}`;
+      const name = te(key) ? t(key) : id;
+      return view ? t('panelEditor.controlLocation', { view: t(`panelEditor.${view}`), name }) : name;
+    });
+    return t('panelEditor.unsupportedControls', { items: items.join(t('panelEditor.controlSeparator')) });
+  }
   if (containerPanelDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${containerPanelDiagnostic[1]}`);
   const queueError = buildQueueErrorKey(message);
   if (queueError) return t(queueError);

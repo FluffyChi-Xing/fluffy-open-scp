@@ -54,6 +54,69 @@ function setup() {
 }
 
 describe('panel runtime adapters', () => {
+  it('renders up to three native reasons and clears stale lines as the inputs change', () => {
+    const active = [control(), control(), control()];
+    const inactive = [control(), control(), control()];
+    const untranslated = new Set<string>();
+    class LocaleString {
+      mLoaded = false;
+      constructor(_table: string, private readonly key: string) {}
+      LoadString() { this.mLoaded = !untranslated.has(this.key); }
+    }
+    const info = {
+      panelNative: {}, textControlLeft1: active[0], textControlLeft2: active[1], textControlLeft3: active[2],
+      textControlRight1: inactive[0], textControlRight2: inactive[1], textControlRight3: inactive[2],
+    };
+    const update = (
+      function (this: { getRequiredCount(): number; titleText: string; minimize: boolean; additionalUpdate(info: unknown, data: unknown): [number, string[]][] },
+        row: unknown, data: { normal: boolean; textFeedbackFile: string }) {
+        expect(this.titleText).toBe('native-title');
+        expect(data.textFeedbackFile).toBe('native-feedback');
+        const reasons = this.additionalUpdate(row, data).sort((a, b) => b[0] - a[0]);
+        this.minimize = !data.normal || reasons.length === 0;
+        active.slice(0, this.getRequiredCount()).forEach(line => line.SetVisibility(true));
+      }
+    );
+    const original = {
+      update,
+      titleText: '',
+      getRequiredCount: () => 3,
+      updateQueries() {
+        this.titleText = 'native-title';
+        return { first: ['binAmount'], second: ['bins'], third: ['flags'] };
+      },
+      additionalUpdate: (_info: unknown, data: {first: number; second: { amount: number }; third: boolean}) =>
+        [[data.first, ['first']], [data.second.amount, ['second']], [Number(data.third), ['third']]],
+    };
+    const bindings: Record<string, unknown> = { kNativeReasons: original, kEmptySpace10pt: {} };
+    runInNewContext(runtime, {
+      window: { OpenSCPPanelComponents: [{ id: 'reasons', native: 'kNativeReasons', reasonList: true }] },
+      simcity: { RolloverItems: bindings, kDataBinAmount: 'binAmount', kDataBins: 'bins', kDataFlags: 'flags', cRolloverUI: { prototype: {} } },
+      scrui: { gUIManager: { mLocaleManager: { mAsynchronous: false } }, cLocaleString: LocaleString },
+    });
+    const binding = bindings.OpenSCPPanel_reasons as { updateQueries(unit: string): unknown; update(info: unknown, data: unknown): void; minimize: boolean };
+    binding.updateQueries('1,0');
+    const data = { normal: true, textFeedbackFile: 'native-feedback', happinessDisplay: 3, first: 8, second: { amount: 7 }, third: true };
+    // The real binding creates a separate native receiver for every panel row.
+    info.panelNative = { ...original, titleText: '' };
+    binding.update(info, data);
+    expect(active.map(line => line.mIsVisible)).toEqual([true, true, true]);
+    untranslated.add('first');
+    binding.update(info, data);
+    expect(active.map(line => line.mIsVisible)).toEqual([true, true, false]);
+    untranslated.clear();
+    binding.update(info, { ...data, third: null });
+    expect(active.map(line => line.mIsVisible)).toEqual([true, true, false]);
+    binding.update(info, { ...data, first: null, third: null });
+    expect(active.map(line => line.mIsVisible)).toEqual([true, false, false]);
+    binding.update(info, { ...data, first: null, second: null, third: null });
+    expect(binding.minimize).toBe(true);
+    expect(active.map(line => line.mIsVisible)).toEqual([false, false, false]);
+    binding.update(info, { ...data, textFeedbackFile: null });
+    expect(binding.minimize).toBe(true);
+    expect(original.titleText).toBe('');
+  });
+
   it('opts custom blocks into null delivery and hides only the missing block, then recovers', () => {
     const f = setup(), binding = f.bindings.OpenSCPPanel_maintenance;
     const info = { layout: f.row, panelMissingQueries: [] };
