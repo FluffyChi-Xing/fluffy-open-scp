@@ -32,6 +32,11 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
     let raw =
         fs::read_to_string(project_file(root, &dependency.schema)?).map_err(|e| e.to_string())?;
     let config = parse(&raw)?;
+    if let Some(program) = plan.behavior_program.as_ref()
+        .filter(|program| !program.units.is_empty())
+    {
+        super::container_contract::verify_queries(&config, program)?;
+    }
     let leaves: Vec<&str> = plan
         .intermediate
         .semantics
@@ -49,17 +54,21 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
         }
     }
     sources::open(root, &dependency.sources)?;
-    let fingerprint = sources::digest(
-        &serde_json::to_vec(&(
-            &config,
-            &dependency,
-            super::RUNTIME,
-            super::MESSAGES,
-            super::layout::COMPILER_VERSION,
-            components(),
-        ))
-        .map_err(|e| e.to_string())?,
-    );
+    let mut fingerprint_bytes = serde_json::to_vec(&(
+        &config,
+        &dependency,
+        super::RUNTIME,
+        super::MESSAGES,
+        super::layout::COMPILER_VERSION,
+        components(),
+    ))
+    .map_err(|e| e.to_string())?;
+    if plan.behavior_program.as_ref().is_some_and(|program| {
+        super::container_contract::uses_tourist_capacity(&config, program)
+    }) {
+        fingerprint_bytes.extend_from_slice(super::container_contract::RUNTIME.as_bytes());
+    }
+    let fingerprint = sources::digest(&fingerprint_bytes);
     plan.panel = Some(PanelPlan {
         path: dependency.schema.clone(),
         config,
@@ -69,7 +78,7 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
     Ok(())
 }
 
-fn ids(items: &[String], hide: bool) -> Vec<Value> {
+pub(super) fn ids(items: &[String], hide: bool) -> Vec<Value> {
     if items.is_empty() {
         return vec![Value::UInt32(hash("OpenSCPPanel_empty"))];
     }
@@ -138,7 +147,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         super::MESSAGES,
         super::RUNTIME
     );
-    let runtime = [source_game.as_bytes(), suffix.as_bytes()].concat();
+    let mut runtime = [source_game.as_bytes(), suffix.as_bytes()].concat();
     // Shared, deterministic runtime bytes across every panel from this source/version.
     // No installed file is edited. The UI overlay is an explicit output dependency.
     if ctx
@@ -155,6 +164,14 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     };
     let mut asset = PropertyFile::parse(ctx.resources.get(&asset_id).ok_or("PANEL_ASSET_MISSING")?)
         .map_err(|e| e.to_string())?;
+    let scoped_tourists = ctx.plan.behavior_program.as_ref().filter(|program| {
+        super::container_contract::uses_tourist_capacity(&panel.config, program)
+    });
+    if let Some(program) = scoped_tourists {
+        super::container_contract::bind_tourist_capacity(&ctx.resources, instance, &mut asset, program)?;
+        runtime.extend_from_slice(b"\n;");
+        runtime.extend_from_slice(super::container_contract::RUNTIME.as_bytes());
+    }
     let hide = panel.config.missing_feedback == MissingFeedback::Hide;
     set_scalar(
         &mut asset,
@@ -170,13 +187,13 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         &mut asset,
         0x0CAB_B2FC,
         PropType::UInt32,
-        ids(&panel.config.hover, hide),
+        super::container_contract::bindings(&panel.config.hover, hide, scoped_tourists.is_some()),
     );
     set_array(
         &mut asset,
         0x0CAF_BDC3,
         PropType::UInt32,
-        ids(&panel.config.click, hide),
+        super::container_contract::bindings(&panel.config.click, hide, scoped_tourists.is_some()),
     );
     set_array(
         &mut asset,

@@ -1,0 +1,175 @@
+//! Authored panel contract for a host whose business data lives on modules.
+use super::{PanelPlan, PanelSchema, hash, processor::ids, spec::MissingFeedback};
+use crate::asset_build_m1::{
+    behavior_nodes::ResolvedBehavior, connector::Resources, patch::parse_tgi,
+};
+use sc_properties::{Key, Kind, PropertyFile, Value};
+
+const TOURIST_CAPACITY: u32 = 0x94D4_5158; // openscpContainerTouristCapacity
+const NATIVE_SHOPPER_CAPACITY: u32 = 0x0AD6_A725;
+pub(super) const RUNTIME: &str = include_str!(
+    "../../../../src/pages/studio/components/asset/panel-editor/native/container-tourists.js"
+);
+
+pub(super) fn uses_tourist_capacity(config: &PanelSchema, program: &ResolvedBehavior) -> bool {
+    config
+        .hover
+        .iter()
+        .chain(&config.click)
+        .any(|item| item == "tourists")
+        && program
+            .units
+            .iter()
+            .any(|unit| unit.program.commercial.is_some())
+}
+
+pub(super) fn bindings(items: &[String], hide: bool, scoped_tourists: bool) -> Vec<Value> {
+    let mut result = ids(items, hide);
+    if scoped_tourists {
+        for (item, binding) in items.iter().zip(&mut result) {
+            if item == "tourists" {
+                *binding = Value::UInt32(hash("OpenSCPPanel_containerTourists"));
+            }
+        }
+    }
+    result
+}
+
+fn tourist_capacity(
+    resources: &Resources,
+    host: u32,
+    program: &ResolvedBehavior,
+) -> Result<Value, String> {
+    let mut total = 0.0;
+    for unit in program
+        .units
+        .iter()
+        .filter(|unit| unit.program.native_tourism.is_some())
+    {
+        let id = dbpf::ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0x40E0_C000,
+            instance: crate::asset_build_m1::behavior_unit_build::instance(host, &unit.id),
+        };
+        let file = PropertyFile::parse(
+            resources
+                .get(&id)
+                .ok_or("PANEL_CONTAINER_BINDING: missing tourism Unit")?,
+        )
+        .map_err(|error| error.to_string())?;
+        let Some(Value::Float(amount)) = file.get(NATIVE_SHOPPER_CAPACITY).and_then(|p| p.scalar())
+        else {
+            return Err("PANEL_CONTAINER_BINDING: missing tourism capacity".into());
+        };
+        if !amount.is_finite() || *amount <= 0.0 {
+            return Err("PANEL_CONTAINER_BINDING: invalid tourism capacity".into());
+        }
+        total += amount;
+    }
+    if !total.is_finite() || total <= 0.0 {
+        return Err("PANEL_CONTAINER_BINDING: invalid total tourism capacity".into());
+    }
+    Ok(Value::Float(total))
+}
+
+pub(super) fn bind_tourist_capacity(
+    resources: &Resources,
+    host: u32,
+    asset: &mut PropertyFile,
+    program: &ResolvedBehavior,
+) -> Result<(), String> {
+    let capacity = tourist_capacity(resources, host, program)?;
+    crate::asset_build_m1::property_edit::set_scalar(
+        asset,
+        TOURIST_CAPACITY,
+        sc_properties::PropType::Float,
+        capacity,
+    );
+    Ok(())
+}
+
+pub(super) fn verify_queries(
+    config: &PanelSchema,
+    program: &ResolvedBehavior,
+) -> Result<(), String> {
+    if !config.power {
+        return Err("PANEL_CONTAINER_POWER_REQUIRED".into());
+    }
+    let has_tourism = program
+        .units
+        .iter()
+        .any(|unit| unit.program.native_tourism.is_some());
+    // The native tourist row uses the connected group's shopper bins for its
+    // denominator. A retail or hotel component can contribute its own pool.
+    let hotel = program
+        .units
+        .iter()
+        .any(|unit| unit.program.hotel.is_some());
+    let tourism_shares_retail = program.units.iter().any(|unit| {
+        unit.program.native_tourism.is_some() && unit.program.commercial.is_some()
+    });
+    for item in config.hover.iter().chain(&config.click) {
+        match item.as_str() {
+            "maintenance" => {}
+            "tourists" if has_tourism && !hotel && !tourism_shares_retail => {}
+            _ => return Err(format!("PANEL_CONTAINER_QUERY_UNSUPPORTED:{item}")),
+        }
+    }
+    Ok(())
+}
+
+pub(in crate::asset_build_m1) fn verify(
+    resources: &Resources,
+    host: u32,
+    asset: &PropertyFile,
+    panel: &PanelPlan,
+    program: &ResolvedBehavior,
+) -> Result<(), String> {
+    verify_queries(&panel.config, program)?;
+    let layout = dbpf::ResourceId {
+        instance: hash(&format!("OpenSCPPanelShell_{host:08X}")),
+        ..parse_tgi(&panel.config.shell)?
+    };
+    if !resources.contains_key(&layout) {
+        return Err("PANEL_CONTAINER_BINDING: missing authored shell".into());
+    }
+    let hide = panel.config.missing_feedback == MissingFeedback::Hide;
+    let scoped_tourists = uses_tourist_capacity(&panel.config, program);
+    if scoped_tourists
+        && asset.get(TOURIST_CAPACITY).and_then(|p| p.scalar())
+            != Some(&tourist_capacity(resources, host, program)?)
+    {
+        return Err("PANEL_CONTAINER_BINDING: stale tourism capacity".into());
+    }
+    for (field, expected) in [
+        (
+            0x0BC5_051B,
+            Kind::Scalar(Value::Key(Key {
+                type_id: layout.type_id,
+                group: layout.group,
+                instance: layout.instance,
+            })),
+        ),
+        (
+            0x0CAB_B2FC,
+            Kind::Array(bindings(&panel.config.hover, hide, scoped_tourists)),
+        ),
+        (
+            0x0CAF_BDC3,
+            Kind::Array(bindings(&panel.config.click, hide, scoped_tourists)),
+        ),
+        (
+            0x0CD4_E49C,
+            Kind::Array(vec![Value::UInt32(hash("kOnOffToggle"))]),
+        ),
+        (
+            0x0D7E_ADAC,
+            Kind::Scalar(Value::UInt32(hash("OpenSCPPanel_headerNone"))),
+        ),
+    ] {
+        if asset.get(field).map(|property| &property.kind) != Some(&expected) {
+            return Err(format!("PANEL_CONTAINER_BINDING:{field:08X}"));
+        }
+    }
+    Ok(())
+}

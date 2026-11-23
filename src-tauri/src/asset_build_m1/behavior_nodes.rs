@@ -85,6 +85,23 @@ pub struct LaborSpec {
     pub slots: Option<[i32; 3]>,
 }
 
+pub(super) fn add_job_counts(base: LaborSpec, jobs: [i32; 3]) -> Result<[i32; 3], &'static str> {
+    let tiers = [base.w1, base.w2, base.w3];
+    let [w1, w2, w3] = std::array::from_fn(|index| i64::from(tiers[index]) + i64::from(jobs[index]));
+    if w1 + w2 + w3 > 100_000 {
+        return Err("combined totalJobs");
+    }
+    Ok([w1 as i32, w2 as i32, w3 as i32])
+}
+
+pub(super) fn add_worker_slots(base: [i32; 3], extra: [i32; 3]) -> Result<[i32; 3], &'static str> {
+    let mut total = base;
+    for (slot, increase) in total.iter_mut().zip(extra) {
+        *slot = slot.checked_add(increase).ok_or("combined workerSlots")?;
+    }
+    Ok(total)
+}
+
 /// 表现层请求（教育叶子的 donor 克隆）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PresentationRequest {
@@ -99,6 +116,10 @@ pub struct PresentationRequest {
 /// 合并后的行为指令集：behavior.rs 的唯一输入。
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ResolvedBehavior {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) unit_scope: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) units: Vec<super::behavior_units::UnitBehavior>,
     pub ensure_bundles: Vec<u32>,
     pub remove_bundles: Vec<u32>,
     pub remove_fields: Vec<u32>,
@@ -443,12 +464,12 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
         LaborProfile::AuthorOnly => {
             // 只补岗位合计与学历分布；bundle / 排除表解封 / 内部 path 由
             // labor 闭环（behavior_loops::LABOR）统一落地。
-            let job_w1 = resolved.set_float_fields.get(&JOB_W1).copied();
+            let w1 = resolved.set_float_fields.get(&JOB_W1).copied().unwrap_or(0.0);
             let job_w2 = resolved.set_float_fields.get(&JOB_W2).copied().unwrap_or(0.0);
             let job_w3 = resolved.set_float_fields.get(&JOB_W3).copied().unwrap_or(0.0);
-            let Some(w1) = job_w1.filter(|w| *w > 0.0) else {
+            if w1 + job_w2 + job_w3 <= 0.0 {
                 return;
-            };
+            }
             if !resolved.set_float_fields.contains_key(&JOB_TOTAL) {
                 resolved
                     .set_float_fields
@@ -551,13 +572,24 @@ pub(super) fn compile_with_profile(
     nodes: &[Value],
     author_tourism: bool,
 ) -> Result<ResolvedBehavior, String> {
+    if super::behavior_units::scoped(nodes) {
+        return super::behavior_units::compile(labor, nodes);
+    }
     super::behavior_policy::validate(nodes)?;
     let mut resolved = ResolvedBehavior::default();
     resolved.author_tourism = author_tourism;
-    let office = super::behavior_office::select(nodes)?;
-    let labor = office.as_ref().map(|office| office.labor(labor)).or(labor);
+    let (office, labor) = match super::behavior_office::select(nodes)? {
+        Some(office) => {
+            let (office, staffing) = office.with_labor(labor)?;
+            (Some(office), Some(staffing))
+        }
+        None => (None, labor),
+    };
     let commercial = super::behavior_commercial::select(nodes, labor)?;
-    let labor = commercial.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
+    let labor = match &commercial {
+        Some(recipe) => Some(recipe.labor(labor)?),
+        None => labor,
+    };
     let hotel = super::behavior_hotel::select(nodes)?;
     let labor = hotel.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
     let mut intent =

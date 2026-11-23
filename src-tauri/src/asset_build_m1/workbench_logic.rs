@@ -405,6 +405,8 @@ fn compile_logic(
             }));
         }
     }
+    let independent = cores.iter().any(|core| params.and_then(|values| values.get(*core))
+        .is_some_and(|value| value["composition"] == "independent-v1"));
     for leaf in &leaves {
         let Some(node_params) = param_of(params, leaf, errors) else {
             continue;
@@ -420,7 +422,12 @@ fn compile_logic(
             errors.push(format!("logic leaf {leaf}: unknown behavior type {kind:?}"));
             continue;
         }
-        behaviors.push(json!({"id": leaf, "type": kind, "params": node_params}));
+        let mut behavior = json!({"id": leaf, "type": kind, "params": node_params});
+        if independent {
+            behavior["unit"] = json!(leaf);
+            if let Some(labor) = node_params.get("unitLabor") { behavior["labor"] = labor.clone(); }
+        }
+        behaviors.push(behavior);
     }
 
     // Asset Editor permits both tourism and park leaves to author the same
@@ -434,7 +441,7 @@ fn compile_logic(
                 .pointer("/params/attraction")
                 .is_some_and(|value| !value.is_null())
     });
-    if tourism_writes_attraction {
+    if tourism_writes_attraction && !independent {
         for behavior in &mut behaviors {
             if behavior.get("type").and_then(Value::as_str) != Some("park") {
                 continue;

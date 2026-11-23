@@ -159,7 +159,8 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             "property-patches" => apply_property_patches(ctx),
             "scene-semantics" => apply_scene_semantics(ctx),
             "behavior-bind" => super::behavior::apply(ctx).and_then(|mut detail| {
-                if super::vehicle_paths::authored(ctx.scene_document.as_ref()) {
+                if super::vehicle_paths::authored(ctx.scene_document.as_ref())
+                    && !ctx.plan.behavior_program.as_ref().is_some_and(|p|p.unit_scope.as_deref()==Some(super::behavior_container::SCOPE)) {
                     let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
                     let (unit, lot) = super::vehicle_paths::bind(
                         ctx.resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing Unit")?,
@@ -1735,6 +1736,10 @@ fn golden_shape(ctx: &BuildContext) -> Result<serde_json::Value, String> {
     const RASTER: u32 = 0x2F4E_681C;
     let mut violations: Vec<String> = Vec::new();
     let mut property_files = 0usize;
+    let independent_resources = match ctx.plan.behavior_program.as_ref().filter(|p| !p.units.is_empty()) {
+        Some(program) => super::behavior_unit_build::owned_resources(ctx.resources.all(), instance, program)?,
+        None => Default::default(),
+    };
     let construction_bundle = ctx.plan.behavior_program.as_ref()
         .filter(|program| program.author_tourism)
         .map(|_| super::author_tourism::construction_id(ctx.resources.all(), instance))
@@ -1763,7 +1768,8 @@ fn golden_shape(ctx: &BuildContext) -> Result<serde_json::Value, String> {
             property_files += 1;
             let declared_path_entry =
                 (id.group & 0xFFFF) == 0xC400 && declared_path_entries.contains(&id.instance);
-            if id.instance != instance && !declared_path_entry && construction_bundle != Some(*id) {
+            if id.instance != instance && !declared_path_entry && construction_bundle != Some(*id)
+                && !independent_resources.contains(id) {
                 violations.push(format!(
                     "foreign property {:08X}:{:08X}:{:08X} (identity is {instance:08X})",
                     id.type_id, id.group, id.instance
@@ -1886,7 +1892,13 @@ fn menu_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
             (resources, donor_instance)
         })
     });
-    let report = if ctx.author_building40 {
+    let container = ctx.plan.behavior_program.as_ref().filter(|p|
+        p.unit_scope.as_deref() == Some(super::behavior_container::SCOPE));
+    let report = if let Some(program) = container {
+        super::behavior_container::validate_menu(
+            &ctx.resources, instance, donor, program, ctx.plan.panel.as_ref(),
+        )?
+    } else if ctx.author_building40 {
         super::menu_contract::validate_building40(
             &ctx.resources,
             instance,
@@ -2199,7 +2211,8 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             ctx.scene_document.as_ref(),
         )?;
     }
-    if super::vehicle_paths::authored(ctx.scene_document.as_ref()) {
+    if super::vehicle_paths::authored(ctx.scene_document.as_ref())
+        && !ctx.plan.behavior_program.as_ref().is_some_and(|p|p.unit_scope.as_deref()==Some(super::behavior_container::SCOPE)) {
         let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
         super::vehicle_paths::verify(
             final_resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing final Unit")?,
@@ -2244,6 +2257,9 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     let mut final_contract = super::written_contract::validate(
         &final_resources,
         super::written_contract::WrittenContractSpec {
+            panel: ctx.plan.panel.as_ref(),
+            container_program: ctx.plan.behavior_program.as_ref().filter(|p|
+                p.unit_scope.as_deref() == Some(super::behavior_container::SCOPE)),
             menu_instance: ctx.menu_instance,
             selected_menu_categories: ctx.plan.selected_menu_categories.as_deref(),
             reference_lot: ctx.reference_lot.as_ref().map(|(id, _)| *id),
@@ -2317,6 +2333,15 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         recipe.verify(&unit)?;
         recipe.verify_lot(&final_resources, &ResourceId { group: super::menu::lot_group(), ..id })?;
         final_contract.detail["hotel"] = serde_json::to_value(recipe).map_err(|error| error.to_string())?;
+    }
+    if let Some(program) = ctx.plan.behavior_program.as_ref().filter(|p| !p.units.is_empty()) {
+        let instance = ctx.menu_instance.ok_or("BEHAVIOR_UNIT_RESOURCE: missing host")?;
+        super::behavior_unit_build::verify(&final_resources, instance, program)?;
+        if super::vehicle_paths::authored(ctx.scene_document.as_ref()) {
+            super::behavior_unit_build::verify_vehicle_bindings(&final_resources, instance, program)?;
+        }
+        final_contract.detail["independentUnits"] = serde_json::to_value(&program.units)
+            .map_err(|error| error.to_string())?;
     }
     if ctx.plan.processor_version == super::behavior_plop::PROCESSOR_VERSION
         && let (Some(instance), Some(menu)) = (ctx.menu_instance, ctx.plan.menu.as_ref())

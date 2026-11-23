@@ -49,6 +49,7 @@ pub(super) struct Report {
 
 fn bundles(node: &Value) -> Result<BTreeSet<u32>, String> {
     let program = compile(None, std::slice::from_ref(node))?;
+    let program = if program.units.len()==1 { program.units.into_iter().next().unwrap().program } else { program };
     let mut bundles: BTreeSet<_> = program
         .ensure_bundles
         .into_iter()
@@ -73,6 +74,9 @@ fn shared_retail_shopper_bin(first: u32, second: u32, bin: u32) -> bool {
 
 pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
     let nodes = parse_nodes(nodes)?;
+    if super::behavior_units::scoped(&nodes) {
+        super::behavior_units::compile(None, &nodes)?;
+    }
     let added = nodes
         .iter()
         .find(|node| node["id"] == added_id)
@@ -87,6 +91,10 @@ pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
         }
     }
     for other in nodes.iter().filter(|node| node["id"] != added_id) {
+        if added["unit"].is_string()
+            && other["unit"].as_str().map(str::trim) != added["unit"].as_str().map(str::trim) {
+            continue;
+        }
         let other_id = other["id"]
             .as_str()
             .ok_or("BEHAVIOR_BIN_CHECK: missing leaf id")?;
@@ -167,6 +175,10 @@ mod tests {
                 && row.name.as_deref() == Some("OpenShoppers")
                 && row.other_bundle == "6EA8E701"
         }));
+        let mut same_unit = nodes.clone();
+        same_unit[0]["unit"] = json!(" shared ");
+        same_unit[1]["unit"] = json!("shared");
+        assert!(!check(&same_unit, "tourism").unwrap().conflicts.is_empty());
     }
 
     #[test]

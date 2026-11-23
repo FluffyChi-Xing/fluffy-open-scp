@@ -3,6 +3,7 @@
 //! read by cTransportTraffic::AddSinkPositionsFromDataPaths.
 
 use super::behavior_commercial_mall as mall;
+use super::behavior_residence_d3 as d3;
 use super::behavior_templates::{ENABLE, EXCLUDED, array, key};
 use super::property_edit::{encode, set_array_with_flags, set_scalar};
 use super::scene::SceneDocument;
@@ -65,6 +66,11 @@ const OTHER_ARRIVALS: &[(u32, &[u32])] = &[
             0x5B18_518D,
         ],
     ),
+    // The RCI resident bundles use the native 54325F67 ground return sinks.
+    // Keep them on the residence Unit and leave student and service sinks alone.
+    (0xD4C3_0C02, &[0x487E_1CC6, 0x9B6F_B379, 0xF880_AFAB, 0xE0BC_C3B7]),
+    (0xA8CB_9DE1, &[0xD7CD_9DB9, 0x8735_A8BC, 0xD127_EE76, 0xFCF5_B82A]),
+    (0xAC8B_8A48, &[0x3820_A50C, 0x3FE8_AEDB, 0xA434_E805, 0xF6E8_2C41]),
     (0x75D2_2FD0, &[0x75D2_2FD0]),
     (0x75D2_2FD1, &[0x75D2_2FD1]),
     (0x75D2_2FD2, &[0x75D2_2FD2]),
@@ -110,6 +116,10 @@ fn receivers(unit: &PropertyFile) -> Result<(Vec<Value>, bool), String> {
         }
     };
     collect(&mut sinks, OTHER_ARRIVALS);
+    // The D3 ground profile uses a vehicle intake distinct from D2 and EP1.
+    if active.contains(&d3::TAXES) {
+        collect(&mut sinks, &[(d3::INTAKE, &[d3::MOVE_IN_SINK])]);
+    }
     // Ground retail installs the same labor provider alongside its shoppers.
     // Customer arrivals must not suppress its independent commute sinks.
     let retail = active.contains(&0xD07C_5A04)
@@ -198,6 +208,18 @@ pub(super) fn bind(unit_bytes: &[u8], lot_bytes: &[u8]) -> Result<(Vec<u8>, Vec<
     Ok((encode(&unit)?, encode(&lot)?))
 }
 
+/// Read-only capability query for independently compiled units. A pedestrian
+/// recipe must not receive another unit's commute/car sinks just because its
+/// host owns a driveway. Existing single-Unit bind behavior is unchanged.
+pub(super) fn has_supported_arrivals(unit_bytes: &[u8]) -> Result<bool, String> {
+    let unit=PropertyFile::parse(unit_bytes).map_err(|error|error.to_string())?;
+    match receivers(&unit) {
+        Ok(_) => Ok(true),
+        Err(error) if error.starts_with("VEHICLE_PATH_RECEIVER:") => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 pub(super) fn verify(unit: &[u8], lot: &[u8]) -> Result<(), String> {
     let unit = PropertyFile::parse(unit).map_err(|error| error.to_string())?;
     let lot = PropertyFile::parse(lot).map_err(|error| error.to_string())?;
@@ -231,6 +253,47 @@ pub(super) fn verify(unit: &[u8], lot: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn high_density_ground_residence_routes_move_in_vehicles() {
+        let mut unit = PropertyFile::default();
+        let mut lot = PropertyFile::default();
+        set_array_with_flags(
+            &mut unit,
+            ENABLE[3],
+            PropType::Key,
+            [0xD4C3_0C02, d3::INTAKE, d3::TAXES].map(key).to_vec(),
+            0x809C,
+        );
+        set_array_with_flags(&mut lot, PATH_ENTRIES, PropType::Key, vec![key(PATH)], 0x809C);
+        let (unit, lot) = bind(&encode(&unit).unwrap(), &encode(&lot).unwrap()).unwrap();
+        let properties = PropertyFile::parse(&lot).unwrap();
+        let sinks = array(&properties, SINK_IDS).unwrap();
+        assert!(sinks.contains(&key(d3::MOVE_IN_SINK)));
+        assert!(verify(&unit, &lot).is_ok());
+    }
+
+    #[test]
+    fn ground_residence_routes_only_native_returns_for_its_active_wealth() {
+        for (bundle, expected) in [
+            (0xD4C3_0C02, [0x487E_1CC6, 0x9B6F_B379, 0xF880_AFAB, 0xE0BC_C3B7]),
+            (0xA8CB_9DE1, [0xD7CD_9DB9, 0x8735_A8BC, 0xD127_EE76, 0xFCF5_B82A]),
+            (0xAC8B_8A48, [0x3820_A50C, 0x3FE8_AEDB, 0xA434_E805, 0xF6E8_2C41]),
+        ] {
+            let mut unit = PropertyFile::default();
+            let mut lot = PropertyFile::default();
+            set_array_with_flags(&mut unit, ENABLE[3], PropType::Key, vec![key(bundle)], 0x809C);
+            set_array_with_flags(&mut lot, PATH_ENTRIES, PropType::Key, vec![key(PATH)], 0x809C);
+            let unit_bytes = encode(&unit).unwrap();
+            let original_lot = encode(&lot).unwrap();
+            assert!(verify(&unit_bytes, &original_lot).is_err());
+            let (bound_unit, bound_lot) = bind(&unit_bytes, &original_lot).unwrap();
+            assert_eq!(bound_unit, unit_bytes);
+            let bound_lot_properties = PropertyFile::parse(&bound_lot).unwrap();
+            assert_eq!(array(&bound_lot_properties, SINK_IDS).unwrap(), expected.map(key));
+            assert!(verify(&bound_unit, &bound_lot).is_ok());
+        }
+    }
 
     #[test]
     fn retail_vehicle_receivers_include_customers_and_commuters() {

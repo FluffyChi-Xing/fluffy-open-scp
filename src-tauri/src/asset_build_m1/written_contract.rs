@@ -31,6 +31,8 @@ const PATH_SCOPES: u32 = 0x0D9A_4E54;
 const PATH_CONNECTS: u32 = 0x0D9A_A2BB;
 
 pub(crate) struct WrittenContractSpec<'a> {
+    pub panel: Option<&'a super::panel::PanelPlan>,
+    pub container_program: Option<&'a super::behavior_nodes::ResolvedBehavior>,
     pub menu_instance: Option<u32>,
     pub selected_menu_categories: Option<&'a [u32]>,
     pub reference_lot: Option<ResourceId>,
@@ -71,7 +73,9 @@ pub(crate) fn validate(
     } else {
         spec.reference_lot.expect("lot checked above").group
     };
-    let menu = if spec.author_building40 {
+    let menu = if let Some(program) = spec.container_program {
+        super::behavior_container::validate_menu(resources, instance, spec.donor, program, spec.panel)?
+    } else if spec.author_building40 {
         super::menu_contract::validate_building40(
             resources,
             instance,

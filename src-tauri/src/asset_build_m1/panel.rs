@@ -1,5 +1,6 @@
 //! Opt-in building panel compiler. Absence of dependencies.panel is a strict no-op.
 pub mod commands;
+pub(super) mod container_contract;
 mod layout;
 mod ledger;
 pub mod manifest;

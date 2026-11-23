@@ -30,6 +30,11 @@ const ALTERNATE: [u32; 8] = [
 ];
 const CATEGORY_FIELD: u32 = 0x0E30_E65A;
 const CATEGORY: u32 = 0x7136_D91E;
+const JOB_INPUTS: [&str; 3] = ["jobsW1", "jobsW2", "jobsW3"];
+
+pub(super) fn has_job_inputs(params: &serde_json::Value) -> bool {
+    JOB_INPUTS.into_iter().chain(["retailMinWorkers"]).any(|field| !params[field].is_null())
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(super) struct Commercial {
@@ -84,9 +89,27 @@ pub(super) fn select(
             .map(|value| value as i32)
             .ok_or_else(|| format!("COMMERCIAL_PARAMETER: {name}"))
     };
-    let (jobs, minimum_workers) = building_labor.map_or(([0; 3], 0), |labor| {
+    let (mut jobs, mut minimum_workers) = building_labor.map_or(([0; 3], 0), |labor| {
         ([labor.w1, labor.w2, labor.w3], labor.min_workers)
     });
+    if has_job_inputs(params) {
+        let extra = [
+            capacity(JOB_INPUTS[0], 0, 0)?,
+            capacity(JOB_INPUTS[1], 0, 0)?,
+            capacity(JOB_INPUTS[2], 0, 0)?,
+        ];
+        let extra_total: i32 = extra.iter().sum();
+        let threshold = capacity("retailMinWorkers", (extra_total / 6).max(i32::from(extra_total > 0)), 0)?;
+        if threshold > extra_total {
+            return Err("COMMERCIAL_PARAMETER: minWorkers/behaviorJobs".into());
+        }
+        jobs = match building_labor {
+            Some(base) => super::behavior_nodes::add_job_counts(base, extra)
+                .map_err(|_| "COMMERCIAL_PARAMETER: combined totalJobs")?,
+            None => extra,
+        };
+        minimum_workers = minimum_workers.max(threshold);
+    }
     let total = jobs.into_iter().map(i64::from).sum::<i64>();
     if total > 100_000 || minimum_workers < 0 || i64::from(minimum_workers) > total {
         return Err("COMMERCIAL_PARAMETER: minWorkers/totalJobs".into());
@@ -130,6 +153,10 @@ pub(super) fn select(
 }
 
 impl Commercial {
+    pub(super) fn mixed_tiers(&self) -> Option<[i32; 3]> {
+        self.shoppers_by_wealth.filter(|tiers| tiers.iter().filter(|&&quota| quota > 0).count() > 1)
+    }
+
     pub(super) fn verify_lot(
         &self,
         resources: &super::connector::Resources,
@@ -192,8 +219,17 @@ impl Commercial {
         self.wealth.map_or(CATEGORY, |tier| tier.profile().category)
     }
 
-    pub(super) fn labor(&self, previous: Option<LaborSpec>) -> LaborSpec {
-        LaborSpec {
+    pub(super) fn labor(&self, previous: Option<LaborSpec>) -> Result<LaborSpec, String> {
+        let slots = match previous.and_then(|spec| spec.slots.map(|slots| (spec, slots))) {
+            Some((base, slots)) => {
+                let jobs = [base.w1, base.w2, base.w3];
+                let extra = std::array::from_fn(|index| (self.jobs[index] - jobs[index]) / 2);
+                super::behavior_nodes::add_worker_slots(slots, extra)
+                    .map_err(|_| "COMMERCIAL_PARAMETER: combined workerSlots")?
+            }
+            None => self.worker_slots(),
+        };
+        Ok(LaborSpec {
             w1: self.jobs[0],
             w2: self.jobs[1],
             w3: self.jobs[2],
@@ -209,10 +245,8 @@ impl Commercial {
                     shifts
                 })
             }),
-            slots: previous
-                .and_then(|spec| spec.slots)
-                .or_else(|| Some(self.worker_slots())),
-        }
+            slots: Some(slots),
+        })
     }
 
     fn worker_slots(&self) -> [i32; 3] {
@@ -464,7 +498,7 @@ mod tests {
         .unwrap();
         assert_eq!(recipe.jobs, [0; 3]);
         assert_eq!(recipe.minimum_workers, 0);
-        assert_eq!(recipe.labor(None).schedule, Some([0; 8]));
+        assert_eq!(recipe.labor(None).unwrap().schedule, Some([0; 8]));
         let mut host = PropertyFile::default();
         set_array(
             &mut host,

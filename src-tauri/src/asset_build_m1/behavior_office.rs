@@ -68,17 +68,30 @@ pub(super) fn select(nodes: &[serde_json::Value]) -> Result<Option<Office>, Stri
 }
 
 impl Office {
-    pub(super) fn labor(&self, previous: Option<LaborSpec>) -> LaborSpec {
-        LaborSpec {
+    pub(super) fn with_labor(mut self, previous: Option<LaborSpec>) -> Result<(Self, LaborSpec), String> {
+        let additional_slots = self.jobs.map(|jobs| jobs / 2);
+        if let Some(base) = previous {
+            self.jobs = super::behavior_nodes::add_job_counts(base, self.jobs)
+                .map_err(|_| "OFFICE_PARAMETER: combined totalJobs")?;
+            self.minimum_workers = self.minimum_workers.max(base.min_workers);
+        }
+        if self.minimum_workers > self.jobs.iter().sum() {
+            return Err("OFFICE_PARAMETER: minWorkers/totalJobs".into());
+        }
+        let slots = match previous.and_then(|base| base.slots) {
+            Some(base) => super::behavior_nodes::add_worker_slots(base, additional_slots)
+                .map_err(|_| "OFFICE_PARAMETER: combined workerSlots")?,
+            None => self.jobs.map(|jobs| jobs / 2),
+        };
+        let labor = LaborSpec {
             w1: self.jobs[0],
             w2: self.jobs[1],
             w3: self.jobs[2],
             min_workers: self.minimum_workers,
             schedule: previous.and_then(|spec| spec.schedule),
-            slots: previous
-                .and_then(|spec| spec.slots)
-                .or(Some(self.jobs.map(|jobs| jobs / 2))),
-        }
+            slots: Some(slots),
+        };
+        Ok((self, labor))
     }
 
     fn fields(&self) -> impl Iterator<Item = (u32, f32)> {
