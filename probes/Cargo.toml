@@ -21,6 +21,10 @@ serde_json = "1"
 flate2 = "1"
 sha2 = "0.10"
 
+[[example]]
+name = "lot_alignment"
+path = "property/lot_alignment.rs"
+
 # runtime —— validate a single Menu2 change before a live experiment
 [[example]]
 name = "package_reload_prepare"
