@@ -42,6 +42,9 @@ export function useBehaviorConflicts() {
       toast.warning(t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }));
       return false;
     }
+    if (type === "commercial") {
+      toast.warning(t("studio.assetWorkbench.logicNode.leafCommercialCaution"), { duration: 8000 });
+    }
     return true;
   }
 

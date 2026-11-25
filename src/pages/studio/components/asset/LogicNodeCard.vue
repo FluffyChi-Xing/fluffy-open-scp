@@ -2,11 +2,11 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
-import FSelect from "@/components/ui/FSelect.vue";
 import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
 import BlueprintPortRow from "./BlueprintPortRow.vue";
 import ResidenceBehaviorFields from "./ResidenceBehaviorFields.vue";
 import GarbageBehaviorFields from "./GarbageBehaviorFields.vue";
+import UtilityConsumerFields from "./UtilityConsumerFields.vue";
 import type { ResidenceParams } from "./residenceBehavior";
 import { COMMERCIAL_FIELDS, COMMERCIAL_SHOPPER_FIELDS, MIXED_COMMERCIAL, commercialValues, type CommercialParams } from "./commercialBehavior";
 import { Switch } from "@/components/ui/switch";
@@ -24,7 +24,6 @@ import {
   type ParkParams,
   type TourismParams,
   type TreeParams,
-  type UtilityMode,
   type UtilityParams,
 } from "./logicGraph";
 
@@ -95,28 +94,8 @@ const icon = computed<string | null>(() => {
   return LOGIC_NODE_SPECS.find((spec) => spec.kind === props.node.kind)?.icon ?? "Cpu";
 });
 
-const UTILITIES: { key: "power" | "water"; labelKey: string; hasRate: boolean }[] = [
-  { key: "power", labelKey: "studio.assetWorkbench.utility.power", hasRate: true },
-  { key: "water", labelKey: "studio.assetWorkbench.utility.water", hasRate: false },
-];
-const modeOptions = computed(() => [
-  { value: "inherit", label: t("studio.assetWorkbench.utility.modeInherit") },
-  { value: "explicit", label: t("studio.assetWorkbench.utility.modeExplicit") },
-]);
-
 function utility(key: "power" | "water" | "garbage"): UtilityParams {
   return (props.params as BehaviorCoreParams)[key];
-}
-function patchUtility(
-  key: "power" | "water" | "garbage",
-  patch: Partial<UtilityParams>,
-): void {
-  emit("update-params", {
-    [key]: { ...utility(key), ...patch },
-  });
-}
-function onUtilityMode(key: "power" | "water" | "garbage", mode: string): void {
-  patchUtility(key, { mode: mode as UtilityMode });
 }
 function onNumber(
   patchKey: string,
@@ -271,51 +250,8 @@ const leafOptions = computed(() =>
       <!-- 基础行为聚合（不可删；inherit = 沿用 donor 闭环） -->
       <template v-else-if="isCore">
         <p class="logic-hint">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
-        <div v-for="utilitySpec in UTILITIES" :key="utilitySpec.key" class="logic-utility">
-          <div class="logic-utility-head">
-            <span>{{ t(utilitySpec.labelKey) }}</span>
-            <FSelect
-              class="logic-select"
-              :model-value="utility(utilitySpec.key).mode"
-              :disabled="disabled"
-              :options="modeOptions"
-              @update:model-value="onUtilityMode(utilitySpec.key, String($event))"
-            />
-          </div>
-          <div v-if="utility(utilitySpec.key).mode === 'explicit'" class="logic-utility-params">
-            <label v-if="utilitySpec.hasRate" class="logic-field">
-              <span>{{ t("studio.assetWorkbench.utility.rate") }}</span>
-              <input
-                type="number"
-                min="0"
-                :value="utility(utilitySpec.key).rate ?? ''"
-                :disabled="disabled"
-                @change="
-                  patchUtility(utilitySpec.key, {
-                    rate: Number(($event.target as HTMLInputElement).value) || null,
-                  })
-                "
-              />
-            </label>
-            <label class="logic-field">
-              <span>{{ t("studio.assetWorkbench.utility.amount") }}</span>
-              <input
-                type="number"
-                min="0"
-                :value="utility(utilitySpec.key).amount ?? ''"
-                :disabled="disabled"
-                @change="
-                  patchUtility(utilitySpec.key, {
-                    amount: Number(($event.target as HTMLInputElement).value) || null,
-                  })
-                "
-              />
-            </label>
-            <p class="logic-hint">
-              {{ t("studio.assetWorkbench.utility.capacityHint") }}
-            </p>
-          </div>
-        </div>
+        <UtilityConsumerFields kind="power" :value="utility('power')" :disabled="disabled" @update:value="emit('update-params', { power: $event })" />
+        <UtilityConsumerFields kind="water" :value="utility('water')" :disabled="disabled" @update:value="emit('update-params', { water: $event })" />
         <GarbageBehaviorFields
           :garbage="utility('garbage')"
           :disabled="disabled"

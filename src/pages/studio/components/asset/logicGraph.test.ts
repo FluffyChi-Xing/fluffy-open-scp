@@ -145,6 +145,22 @@ describe("logicIssues", () => {
     expect(codes).toContain("coreAmount:power");
   });
 
+  it("keeps utility cycles across document restore and rejects unsafe intervals", () => {
+    let graph = addLogicNode(emptyLogicGraph(), coreSpec, [0, 0]).graph;
+    graph = connectLogic(graph, "core-1", "asset", "behavior").graph;
+    for (const name of ["power", "water"] as const) {
+      for (const rate of [null, 1, 30, 16_777_216]) {
+        const changed = updateLogicParams(graph, "core-1", { [name]: { mode: "explicit", amount: 25, rate } });
+        expect(logicIssues(changed)).toEqual([]);
+        expect(normalizeLogicGraph(JSON.parse(JSON.stringify(changed))).params["core-1"]).toEqual(changed.params["core-1"]);
+      }
+      for (const rate of [0, -1, 0.5, 30.5, 16_777_218]) {
+        const changed = updateLogicParams(graph, "core-1", { [name]: { mode: "explicit", amount: 25, rate } });
+        expect(logicIssues(changed).map(issue => issue.code)).toContain(`coreRate:${name}`);
+      }
+    }
+  });
+
   it("accepts a complete education leaf", () => {
     let graph = addLogicNode(emptyLogicGraph(), coreSpec, [0, 0]).graph;
     graph = addLogicNode(graph, educationSpec, [0, 100]).graph;

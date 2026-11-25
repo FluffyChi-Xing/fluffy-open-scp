@@ -11,6 +11,7 @@ import MenuBindingForm from "./MenuBindingForm.vue";
 import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
 import BehaviorLeafSheet from "./BehaviorLeafSheet.vue";
 import GarbageBehaviorFields from "./GarbageBehaviorFields.vue";
+import UtilityConsumerFields from "./UtilityConsumerFields.vue";
 import MegaTowerBehaviorForm from "./MegaTowerBehaviorForm.vue";
 import { useBehaviorConflicts } from "./useBehaviorConflicts";
 import { behaviorCombinationConflict } from "./behaviorBuildDiagnostics";
@@ -273,13 +274,12 @@ function patchSchedule(schedule: number[]): void {
 const coreNode = computed<LogicNode | null>(
   () => props.logic.nodes.find((node) => node.kind === "behavior-core") ?? null,
 );
-const coreGarbage = computed(() => coreNode.value
-  ? (props.logic.params[coreNode.value.id] as BehaviorCoreParams | undefined)?.garbage
-  : undefined,
-);
-function updateGarbage(garbage: UtilityParams): void {
+const coreUtilities = computed(() => coreNode.value
+  ? props.logic.params[coreNode.value.id] as BehaviorCoreParams | undefined
+  : undefined);
+function updateUtility(kind: "power" | "water" | "garbage", value: UtilityParams): void {
   const core = graphWithCore();
-  emit("update:logic", updateLogicParams(core.graph, core.node.id, { garbage }));
+  emit("update:logic", updateLogicParams(core.graph, core.node.id, { [kind]: value }));
 }
 const leafNodes = computed(() =>
   props.logic.nodes
@@ -681,7 +681,9 @@ const tabHint = computed(() => {
             </p>
             <template v-else>
               <p class="ppf-note">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
-              <GarbageBehaviorFields :garbage="coreGarbage" :disabled="saving" @update:garbage="updateGarbage" />
+              <UtilityConsumerFields kind="power" :value="coreUtilities?.power" :disabled="saving" @update:value="updateUtility('power', $event)" />
+              <UtilityConsumerFields kind="water" :value="coreUtilities?.water" :disabled="saving" @update:value="updateUtility('water', $event)" />
+              <GarbageBehaviorFields :garbage="coreUtilities?.garbage" :disabled="saving" @update:garbage="updateUtility('garbage', $event)" />
             </template>
           </div>
           <div class="ppf-behavior-block">

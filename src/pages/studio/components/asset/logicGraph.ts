@@ -61,7 +61,7 @@ export type UtilityMode = "inherit" | "explicit";
 
 export interface UtilityParams {
   mode: UtilityMode;
-  /** 周期（仅电力有实证 hash 0x0AFB9882）。 */
+  /** 原版消费间隔（模拟 tick；当前原版时钟每 tick 为一游戏分钟）。 */
   rate: number | null;
   /** 单次消耗量；Capacity 由构建器按 3×amount 派生。 */
   amount: number | null;
@@ -626,7 +626,7 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
         if (utility.mode !== "explicit") continue;
         if (!numberOk(utility.amount, 1))
           issues.push({ code: `coreAmount:${name}`, nodeId: node.id });
-        if (utility.rate !== null && !numberOk(utility.rate))
+        if (utility.rate != null && (!Number.isInteger(utility.rate) || utility.rate < 1 || utility.rate > 16_777_216))
           issues.push({ code: `coreRate:${name}`, nodeId: node.id });
       }
     } else {

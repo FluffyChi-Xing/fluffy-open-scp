@@ -118,3 +118,21 @@ it("blocks a duplicate leaf in every add handler without rejecting distinct comp
   } }), { global: { plugins: [i18n] } });
   wrapper.unmount(); toast.clear(); i18n.global.locale.value = previousLocale;
 });
+
+it("warns about commercial uncertainty in the active language without blocking addition", () => {
+  const toast = useToast();
+  const previous = i18n.global.locale.value;
+  const wrapper = mount(defineComponent({ setup() {
+    const checks = useBehaviorConflicts();
+    for (const locale of ["zh-CN", "en-US"] as const) {
+      i18n.global.locale.value = locale;
+      expect(checks.available(emptyLogicGraph(), "commercial")).toBe(true);
+      expect(checks.canAdd(emptyLogicGraph(), "commercial")).toBe(true);
+      expect(toast.toasts.value.at(-1)).toMatchObject({
+        tone: "warning", message: i18n.global.t("studio.assetWorkbench.logicNode.leafCommercialCaution"),
+      });
+    }
+    return () => null;
+  } }), { global: { plugins: [i18n] } });
+  wrapper.unmount(); toast.clear(); i18n.global.locale.value = previous;
+});

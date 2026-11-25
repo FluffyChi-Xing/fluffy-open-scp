@@ -821,6 +821,11 @@ fn compile_utilities(
         if let Some(rate_key) = rate {
             if let Some(rate_value) = utility.get("rate").filter(|value| !value.is_null()) {
                 let rate_value = number(rate_value, &format!("{name}.rate"))?;
+                // Native SpecialiseRuleBase maps this float to integer simRate.
+                // Restrict to positive exactly representable tick intervals.
+                if rate_value < 1.0 || rate_value > 16_777_216.0 || rate_value.fract() != 0.0 {
+                    return Err(format!("behaviors node {node}: {name}.rate must be a positive whole tick interval"));
+                }
                 resolved.record_float(rate_key, rate_value, node)?;
             }
         }
@@ -1294,6 +1299,27 @@ mod tests {
         assert_eq!(resolved.set_float_fields[&POWER_CAPACITY], 270.0);
         assert_eq!(resolved.set_float_fields[&POWER_CAPACITY_COMPANION], 270.0);
         assert_eq!(resolved.set_float_fields[&POWER_RATE], 72.0);
+    }
+
+    #[test]
+    fn utility_intervals_preserve_native_loops_and_reject_fractional_or_zero_ticks() {
+        for (name, rate, amount, cap, companion, bundle) in [
+            ("power", POWER_RATE, POWER_AMOUNT, POWER_CAPACITY, POWER_CAPACITY_COMPANION, POWER_BUNDLE),
+            ("water", WATER_RATE, WATER_AMOUNT, WATER_CAPACITY, WATER_CAPACITY_COMPANION, WATER_BUNDLE),
+        ] {
+            let nodes = |interval| vec![node("core", "utilities-core", json!({name: {"mode":"explicit", "amount":25,"rate":interval}}))];
+            let result = compile(None, &nodes(json!(30))).unwrap();
+            assert_eq!(result.set_float_fields[&rate], 30.0);
+            assert_eq!(result.set_float_fields[&amount], 25.0);
+            assert_eq!(result.set_float_fields[&cap], 75.0);
+            assert_eq!(result.set_float_fields[&companion], 75.0);
+            assert!(result.ensure_bundles.contains(&bundle));
+            let inherit = compile(None, &nodes(serde_json::Value::Null)).unwrap();
+            assert!(!inherit.set_float_fields.contains_key(&rate));
+            for invalid in [0.0, -1.0, 0.5, 30.5, 16_777_218.0] {
+                assert!(compile(None, &nodes(json!(invalid))).is_err(), "{name}: {invalid}");
+            }
+        }
     }
 
     #[test]
