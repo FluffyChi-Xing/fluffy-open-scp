@@ -59,14 +59,9 @@ impl Staging {
         if base.canonicalize().map_err(|e| e.to_string())? != base || !base.is_dir() {
             return Err(".build must be a real directory under project root".into());
         }
-        // A project build is a replaceable deliverable. Keep the shared
-        // ledger/cache/baseline files, but remove packages from previous
-        // content hashes before allocating the next staging directory so a
-        // long sequence of builds cannot grow `.build` without bound.
-        // Cleanup is best-effort on Windows: Explorer, the desktop app, or
-        // an antivirus scanner may still hold a handle to an older package.
-        // A locked historical output must not prevent a new staging build.
-        prune_previous_builds(&base);
+        // Preserve the last published output until this build has passed all
+        // gates. The caller prunes obsolete hashes only after successful
+        // publication or a verified cache hit.
         let destination = base.join(build_hash);
         if destination.exists()
             && destination.canonicalize().map_err(|e| e.to_string())? != destination
@@ -114,9 +109,10 @@ impl Staging {
     }
 }
 
-/// Remove old content-addressed output directories before a build, including
-/// cache-reuse builds that do not enter the staging path.
-pub(crate) fn prune_previous_builds_for_root(root: &Path) -> Result<(), String> {
+/// Remove obsolete output directories after success, preserving the published
+/// hash and the shared ledger/material cache. Never invalidate run-cache input
+/// or erase the last good output before a replacement passes its gates.
+pub(crate) fn prune_previous_builds_for_root(root: &Path, keep_hash: &str) -> Result<(), String> {
     let base = root.join(".build");
     if !base.exists() {
         return Ok(());
@@ -124,11 +120,11 @@ pub(crate) fn prune_previous_builds_for_root(root: &Path) -> Result<(), String> 
     if base.canonicalize().map_err(|e| e.to_string())? != base || !base.is_dir() {
         return Err(".build must be a real directory under project root".into());
     }
-    prune_previous_builds(&base);
+    prune_previous_builds(&base, keep_hash);
     Ok(())
 }
 
-fn prune_previous_builds(base: &Path) {
+fn prune_previous_builds(base: &Path, keep_hash: &str) {
     let entries = match fs::read_dir(base) {
         Ok(entries) => entries,
         Err(error) => {
@@ -146,6 +142,7 @@ fn prune_previous_builds(base: &Path) {
         };
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
+        if name == keep_hash { continue; }
         if !entry
             .file_type()
             .map(|file_type| file_type.is_dir())

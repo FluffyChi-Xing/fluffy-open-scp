@@ -235,8 +235,10 @@ fn source_lot_property() -> Vec<u8> {
                 hash: 0x00F9_EFBA,
                 prop_type: PropType::BoundingBox,
                 kind: Kind::Scalar(Value::BoundingBox {
-                    min: [-4.0, -4.0, 0.0],
-                    max: [0.0, 0.0, 4.0],
+                    // The v9 fixture uses Building40's native 0-degree
+                    // contract; its mesh spans positive XY, not legacy 180.
+                    min: [0.0, 0.0, 0.0],
+                    max: [4.0, 4.0, 4.0],
                 }),
                 encoding: PropertyEncoding::default(),
             },

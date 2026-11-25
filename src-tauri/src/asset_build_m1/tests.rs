@@ -384,6 +384,12 @@ fn rejects_traversal_and_preserves_existing_build_on_corruption() {
     raw["reference"]["package"] = serde_json::json!("../source.package");
     assert!(build_from_schema(&root, &raw.to_string()).is_err());
     let result = build_from_schema(&root, &schema().to_string()).unwrap();
+    let published = fs::read(&result.path).unwrap();
+    let source = fs::read(root.join("source.package")).unwrap();
+    fs::write(root.join("source.package"), b"invalid replacement input").unwrap();
+    assert!(build_from_schema(&root, &schema().to_string()).is_err());
+    assert_eq!(fs::read(&result.path).unwrap(), published, "failed replacement retains last published output");
+    fs::write(root.join("source.package"), source).unwrap();
     fs::write(&result.path, b"do not overwrite").unwrap();
     assert!(build_from_schema(&root, &schema().to_string()).is_err());
     assert_eq!(fs::read(result.path).unwrap(), b"do not overwrite");
@@ -1683,10 +1689,37 @@ fn rejects_unknown_scene_write_family_before_staging() {
 fn standalone_residence_writes_a_new_plop_menu() {
     let root = temp_root();
     behavior_donor(&root);
-    fs::write(root.join("asset.lot.json"), "{}").unwrap();
+    // A container needs the complete native menu, not the old title-only
+    // education stub. Rebind the shipped fixture's identity and locale.
+    let mut resources = connector::read_source(&root.join("source.package")).unwrap();
+    let mut menu = PropertyFile::parse(include_bytes!("../../resources/sc5/complete-building-menu.bin")).unwrap();
+    let rebind = |v: &mut Value| match v {
+        Value::Key(key) if key.instance == 0x4C0E_8889 => key.instance = 0x8D00_7745,
+        Value::Text(text) if text.table_id == 0xB49D_953D => text.table_id = 0x8D00_7745,
+        _ => (),
+    };
+    for property in &mut menu.values {
+        match &mut property.kind {
+            Kind::Scalar(value) => rebind(value),
+            Kind::Array(values) => values.iter_mut().for_each(rebind),
+            Kind::Empty => (),
+        }
+    }
+    resources.insert(ResourceId {type_id:0x00B1_B104,group:0x0987_8A01,instance:0x8D00_7745}, menu.encode_canonical().unwrap());
+    fs::write(root.join("source.package"), connector::link(&resources).unwrap()).unwrap();
+    // The current plop route preserves authored access instead of inventing
+    // it from a donor. Give this fixture a real paired pedestrian path.
+    fs::write(root.join("asset.lot.json"), serde_json::json!({
+        "lot":{"size":[48,48]},
+        "units":[
+            {"id":"pathPoint:0","kind":"pathPoint","index":0,"point":[0,0,0],"tangent":[1,0,0],"pointIndex":0},
+            {"id":"pathPoint:1","kind":"pathPoint","index":1,"point":[10,0,0],"tangent":[1,0,0],"pointIndex":1}
+        ],
+        "editor":{"workbench":{"paths":[{"id":"path:0","type":"pedestrian","pointIds":["pathPoint:0","pathPoint:1"]}]}}
+    }).to_string()).unwrap();
     let mut schema = behavior_schema("full");
     schema["semantics"] = serde_json::json!({
-        "menu": {"title": "Standalone Residence", "categoryInstances": ["0x899BEA70"]},
+        "menu": {"title": "Standalone Residence", "identityPackage":"source.package", "identityInstance":"0x8D007745", "localeTable":"0x8D007745", "categoryInstances": ["0x899BEA70"]},
         "behaviors": [{"id": "residence", "type": "residence", "params": {"population": 80}}]
     });
     let result = build_from_schema(&root, &schema.to_string()).unwrap();

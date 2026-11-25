@@ -291,7 +291,6 @@ fn build_from_schema_inner(
         return Err("project root must be a directory".into());
     }
     super::panel::attach(&root, &mut plan)?;
-    super::filesystem::prune_previous_builds_for_root(&root)?;
     // G3a 全链复用（用户指令 2026-11-05）："已确认的无变更流程，跑通
     // 构建器自检就能保证结果正确"。输入指纹命中 + 产物包 sha256 自检
     // 通过 → 直接回放上次结果；任何不一致都走全量链重建缓存。
@@ -301,6 +300,7 @@ fn build_from_schema_inner(
         fingerprint = digest(format!("{fingerprint}:{}", panel.fingerprint).as_bytes());
     }
     if let Some(entry) = plan.panel.is_none().then(|| super::build_cache::lookup_run(&root, &fingerprint)).flatten() {
+        super::filesystem::prune_previous_builds_for_root(&root, &entry.build_hash)?;
         let reuse_detail = serde_json::json!({
             "buildHash": entry.build_hash,
             "sha256": entry.sha256,
@@ -344,6 +344,7 @@ fn build_from_schema_inner(
     // 步骤;失败路径的事件随 Err 文本携带阶段名(P2 队列改结构化错误)。
     let mut result = ctx.result.take().expect("chain completed without result");
     result.events = ctx.events.clone();
+    super::filesystem::prune_previous_builds_for_root(&ctx.root, &result.build_hash)?;
     super::build_cache::store_run(
         &ctx.root,
         &fingerprint,

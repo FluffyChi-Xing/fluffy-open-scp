@@ -490,7 +490,6 @@ mod tests {
             "reference":{"package":"source.package", "lot":"00B1B104:40E1C000:4DC31F9B"},
             "scene":{"document":"asset.lot.json"},
             "semantics":{"behaviors":[
-                {"id":"park","type":"park","params":{"landValue":500}},
                 {"id":"residence","type":"residence","params":{"residenceProfile":RESIDENCE_PROFILE,"population":550}},
                 {"id":"land","type":"landvalue","params":{"landValueProfile":LAND_PROFILE,"value":270}}
             ]},

@@ -978,10 +978,21 @@ fn build_donor_locale(spec: &MenuRegistrationSpec, instance: u32, table: u32) ->
         "    \"0x00000001\" : {}",
         serde_json::to_string(spec.title.trim()).unwrap_or_default()
     )];
-    if let Some(description) = &spec.description {
+    if let Some(description) = spec
+        .description
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         lines.push(format!(
             "    \"0x00000002\" : {}",
             serde_json::to_string(description.trim()).unwrap_or_default()
+        ));
+    } else {
+        // clone_donor_identity always points HASH_DESC at row 2. A title-only
+        // project still needs that row to resolve in the written menu gate.
+        lines.push(format!(
+            "    \"0x00000002\" : {}",
+            serde_json::to_string(spec.title.trim()).unwrap_or_default()
         ));
     }
     lines.push("    \"0xffffffff\" : \"0xffffffff\"".to_string());
@@ -1854,6 +1865,17 @@ fn apply_menu_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn donor_locale_keeps_the_description_reference_resolvable_when_omitted() {
+        let spec = MenuRegistrationSpec::from_values(&std::collections::BTreeMap::from([
+            ("title".into(), serde_json::json!("Title only")),
+        ])).unwrap();
+        let bytes = build_donor_locale(&spec, 1, 1);
+        let rows: serde_json::Value = serde_json::from_slice(&bytes[3..]).unwrap();
+        assert_eq!(rows["0x00000001"], "Title only");
+        assert_eq!(rows["0x00000002"], "Title only");
+    }
 
     #[test]
     fn graphics_unit_contract_requires_both_interior_switches() {
