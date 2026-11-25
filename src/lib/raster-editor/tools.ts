@@ -180,22 +180,29 @@ export function floodFill(
   plot: PlotFn,
   tolerance = 0,
   regionKey?: (pixel: Rgba) => number,
+  workspace?: {
+    visited: Uint8Array;
+    pixelAt: (x: number, y: number) => Rgba;
+    sameRegion?: (pixel: Rgba, seed: Rgba) => boolean;
+  },
 ): Rect | null {
   if (!doc.inside(x, y)) return null;
-  const source = doc.pixels.slice();
-  const pixelAt = (px: number, py: number): Rgba => {
+  if (workspace?.visited[y * doc.width + x]) return null;
+  const source = workspace ? doc.pixels : doc.pixels.slice();
+  const pixelAt = workspace?.pixelAt ?? ((px: number, py: number): Rgba => {
     const at = (py * doc.width + px) * 4;
     return [source[at], source[at + 1], source[at + 2], source[at + 3]];
-  };
+  });
   const target = pixelAt(x, y);
   const region = regionKey?.(target);
   const limit = tolerance * tolerance;
-  const visited = new Uint8Array(doc.width * doc.height);
+  const visited = workspace?.visited ?? new Uint8Array(doc.width * doc.height);
   const matches = (px: number, py: number) => {
     if (px < 0 || py < 0 || px >= doc.width || py >= doc.height || visited[py * doc.width + px]) return false;
     const pixel = pixelAt(px, py);
     return regionKey ? regionKey(pixel) === region
-      : pixel.reduce((sum, value, i) => sum + (value - target[i]) ** 2, 0) <= limit;
+      : (workspace?.sameRegion?.(pixel, target) ?? true) &&
+        pixel.reduce((sum, value, i) => sum + (value - target[i]) ** 2, 0) <= limit;
   };
   const stack: [number, number][] = [[x, y]];
   let dirty: Rect | null = null;
