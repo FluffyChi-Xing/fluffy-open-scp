@@ -2247,6 +2247,15 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     }
     let mut host_commute = None;
     if super::vehicle_paths::authored(ctx.scene_document.as_ref())
+        && ctx.plan.behavior_program.as_ref().is_some_and(|p| p.host_base_labor && !p.host_parking_staff) {
+        let (_, lot_id) = vehicle_path_targets(ctx)?;
+        let lot = final_resources.get(&lot_id).ok_or("VEHICLE_PATH_BINDING: missing final Lot")?;
+        let lot = PropertyFile::parse(lot).map_err(|error| error.to_string())?;
+        if super::vehicle_paths::has_parking(&lot)? {
+            return Err("BEHAVIOR_CONTAINER_COMMUTE: host payroll parking must enable final driveway verification".into());
+        }
+    }
+    if super::vehicle_paths::authored(ctx.scene_document.as_ref())
         && !ctx.plan.behavior_program.as_ref().is_some_and(|p| p.unit_scope.as_deref() == Some(super::behavior_container::SCOPE) && !p.host_parking_staff) {
         let (unit_id, lot_id) = vehicle_path_targets(ctx)?;
         let unit = final_resources.get(&unit_id).ok_or("VEHICLE_PATH_BINDING: missing final Unit")?;

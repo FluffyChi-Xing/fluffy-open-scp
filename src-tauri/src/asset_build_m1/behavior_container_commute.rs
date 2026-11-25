@@ -11,6 +11,13 @@ pub(super) fn route_base_staffing(program: &mut ResolvedBehavior, scene: Option<
     }) {
         return;
     }
+    // The Copan plop route already owns its base payroll on the host, so it
+    // has no BUILDING_STAFF child to move. It still needs the ordinary ground
+    // driveway binding and count-based parking draw.
+    if program.host_base_labor {
+        program.host_parking_staff = true;
+        return;
+    }
     let Some(index) = program.units.iter().position(|unit| unit.id == BUILDING_STAFF) else {
         return;
     };
@@ -44,6 +51,27 @@ mod tests {
     use super::*;
     use crate::asset_build_m1::{behavior_nodes, scene::ScenePath};
     use serde_json::json;
+
+    #[test]
+    fn copan_host_payroll_also_enables_the_final_driveway_and_parking_contract() {
+        let labor = behavior_nodes::parse_labor(Some(&json!({"w1":200,"w2":100,"w3":20,"minWorkers":5}))).unwrap();
+        let mut program = super::super::behavior_copan_base::compile_building(labor, &[
+            json!({"id":"park","type":"park","params":{}}),
+        ]).unwrap();
+        assert!(program.host_base_labor);
+        assert!(!program.units.iter().any(|unit| unit.id == BUILDING_STAFF));
+        let before = program.clone();
+        let scene = SceneDocument { units: vec![SceneUnit::Prop {
+            bin: 0, resource_id: Some(0x0AB4_DFE1), transform: None, slot: None,
+            scale: None, randomize_slot: None, percent_fill: None,
+        }], paths: vec![ScenePath {kind: Some("vehicle".into()), entry: None,
+            point_ids: Vec::new(), scope_local: true, road_connect: false}], ..Default::default() };
+        route_base_staffing(&mut program, Some(&scene));
+        assert!(program.host_parking_staff);
+        assert_eq!(program.units, before.units);
+        assert_eq!(program.set_float_fields, before.set_float_fields);
+        assert_eq!(program.ensure_bundles, before.ensure_bundles);
+    }
 
     #[test]
     fn parking_moves_the_authored_low_threshold_payroll_without_changing_business_jobs() {
