@@ -389,6 +389,7 @@ export const tauriApi = {
       entryId: Tgi;
       aspectRatio: number;
       colors: [number, number, number, number][];
+      expectedMaterialInstance?: number;
       baseTile?: number;
       borderColors?: [number, number, number][];
       borderPatternIndices?: number[];
