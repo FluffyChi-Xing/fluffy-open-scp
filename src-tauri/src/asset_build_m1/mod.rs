@@ -27,6 +27,7 @@ mod behavior_office;
 mod behavior_commercial;
 mod behavior_commercial_mall;
 mod behavior_commercial_mixed;
+mod behavior_commercial_tuning;
 mod behavior_unit_income;
 mod behavior_commercial_wealth;
 mod authored_reference;

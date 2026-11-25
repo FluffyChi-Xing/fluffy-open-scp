@@ -750,8 +750,8 @@ export function normalizeLogicGraph(raw: unknown): LogicGraph {
       if (!seen.has(id) || typeof params !== "object" || params === null) continue;
       const config = params as LogicParams;
       if ("type" in config && config.type === "commercial") {
-        const { type, commercialProfile, shoppers, shoppersW1, shoppersW2, shoppersW3, goods } = config;
-        graph.params[id] = { type, commercialProfile, shoppers, shoppersW1, shoppersW2, shoppersW3, goods };
+        const { type, commercialProfile, shoppers, shoppersW1, shoppersW2, shoppersW3, goods, goodsW1, goodsW2, goodsW3 } = config;
+        graph.params[id] = { type, commercialProfile, shoppers, shoppersW1, shoppersW2, shoppersW3, goods, goodsW1, goodsW2, goodsW3 };
       } else {
         graph.params[id] = config;
       }

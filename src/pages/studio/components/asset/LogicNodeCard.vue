@@ -62,7 +62,9 @@ const retailTotal = computed(() => COMMERCIAL_SHOPPER_FIELDS.reduce(
 function patchRetail(field: (typeof COMMERCIAL_FIELDS)[number], event: Event): void {
   const input = event.target as HTMLInputElement;
   const value = input.value === "" && !input.validity.badInput
-    ? (field === "goods" ? 750 : 0)
+    ? (field.startsWith("goods")
+      ? commercialValues({ ...commercialParams.value, [field]: null })?.[field] ?? 750
+      : 0)
     : input.valueAsNumber;
   emit("update-params", {
     ...retailValues.value,
@@ -377,7 +379,7 @@ const leafOptions = computed(() =>
           <span>{{ t(`studio.assetWorkbench.leaf.commercial.${field}`) }}</span>
           <input
             type="number"
-            :min="field === 'goods' ? 1 : 0"
+            :min="field.startsWith('goods') ? 1 : 0"
             max="100000"
             step="1"
             :value="retailValues?.[field]"

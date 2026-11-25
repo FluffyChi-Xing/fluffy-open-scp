@@ -1673,7 +1673,7 @@ const messages = {
           },
           tree: { enabled: "启用树 bundle" },
           office: { w1: "低收入岗位", w2: "中收入岗位", w3: "高收入岗位", minWorkers: "最低开工人数" },
-          commercial: {"shoppersW1":"低收入顾客 ($)","shoppersW2":"中收入顾客 ($$)","shoppersW3":"高收入顾客 ($$$)","goods":"各档商品容量","jobsW1":"商业岗位 ($)","jobsW2":"商业岗位 ($$)","jobsW3":"商业岗位 ($$$)","retailMinWorkers":"商业最低开工人数"},
+          commercial: {"shoppersW1":"低收入顾客 ($)","shoppersW2":"中收入顾客 ($$)","shoppersW3":"高收入顾客 ($$$)","goods":"各档商品容量","goodsW1":"低价值商品数量 ($)","goodsW2":"中价值商品数量 ($$)","goodsW3":"高价值商品数量 ($$$)","jobsW1":"商业岗位 ($)","jobsW2":"商业岗位 ($$)","jobsW3":"商业岗位 ($$$)","retailMinWorkers":"商业最低开工人数"},
           landvalue: {
             value: "地价（值 1）",
             wealth: "财富档（值 1）",
@@ -4507,7 +4507,7 @@ const messages = {
           },
           tree: { enabled: "Enable tree bundle" },
           office: { w1: "Low-wealth jobs", w2: "Medium-wealth jobs", w3: "High-wealth jobs", minWorkers: "Minimum workforce" },
-          commercial: {"shoppersW1":"Low-wealth shoppers ($)","shoppersW2":"Medium-wealth shoppers ($$)","shoppersW3":"High-wealth shoppers ($$$)","goods":"Goods capacity per tier","jobsW1":"Retail jobs ($)","jobsW2":"Retail jobs ($$)","jobsW3":"Retail jobs ($$$)","retailMinWorkers":"Minimum retail workforce"},
+          commercial: {"shoppersW1":"Low-wealth shoppers ($)","shoppersW2":"Medium-wealth shoppers ($$)","shoppersW3":"High-wealth shoppers ($$$)","goods":"Goods capacity per tier","goodsW1":"Low-value goods ($)","goodsW2":"Medium-value goods ($$)","goodsW3":"High-value goods ($$$)","jobsW1":"Retail jobs ($)","jobsW2":"Retail jobs ($$)","jobsW3":"Retail jobs ($$$)","retailMinWorkers":"Minimum retail workforce"},
           landvalue: {
             value: "Land value (pair 1)",
             wealth: "Wealth tier (pair 1)",

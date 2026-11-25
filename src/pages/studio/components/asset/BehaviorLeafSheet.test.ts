@@ -61,16 +61,22 @@ describe("BehaviorLeafSheet", () => {
       const shoppers = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[1];
       expect(shoppers.value).toBe("9");
       expect(shoppers.closest("label")?.textContent?.trim()).toBe("中收入顾客 ($$)");
+      const goods = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[3];
+      expect(goods.closest("label")?.textContent?.trim()).toBe("低价值商品数量 ($)");
       i18n.global.locale.value = "en-US";
       await nextTick();
       expect(shoppers.closest("label")?.textContent?.trim()).toBe("Medium-wealth shoppers ($$)");
+      expect(goods.closest("label")?.textContent?.trim()).toBe("Low-value goods ($)");
+      goods.value = "123";
+      goods.dispatchEvent(new Event("change", { bubbles: true }));
+      await nextTick();
       shoppers.value = "15";
       shoppers.dispatchEvent(new Event("change", { bubbles: true }));
       await nextTick();
       dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       expect(wrapper.emitted("apply")).toEqual([[{
         type: "commercial", commercialProfile: "ground-mall-mixed-v1",
-        shoppers: undefined, shoppersW1: 0, shoppersW2: 15, shoppersW3: 0, goods: 9,
+        shoppers: undefined, shoppersW1: 0, shoppersW2: 15, shoppersW3: 0, goodsW1: 123, goodsW2: 9, goodsW3: 4,
       }]]);
     } finally {
       wrapper.unmount();
@@ -93,7 +99,7 @@ describe("BehaviorLeafSheet", () => {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
       const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
-      expect(fields).toHaveLength(4);
+      expect(fields).toHaveLength(6);
       expect(dialog.textContent).toContain("建筑属性统一设置");
       i18n.global.locale.value = "en-US";
       await nextTick();
@@ -121,7 +127,7 @@ describe("BehaviorLeafSheet", () => {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
       const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
-      expect([...fields].map((field) => field.value)).toEqual(["0", "6", "0", "18"]);
+      expect([...fields].map((field) => field.value)).toEqual(["0", "6", "0", "36", "18", "9"]);
       fields[0].value = "25";
       fields[0].dispatchEvent(new Event("change", { bubbles: true }));
       await nextTick();
@@ -129,7 +135,7 @@ describe("BehaviorLeafSheet", () => {
       dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       expect(wrapper.emitted("apply")).toEqual([[
         { type: "commercial", commercialProfile: "ground-mall-mixed-v1", shoppers: undefined,
-          shoppersW1: 25, shoppersW2: 6, shoppersW3: 0, goods: 18 },
+          shoppersW1: 25, shoppersW2: 6, shoppersW3: 0, goodsW1: 36, goodsW2: 18, goodsW3: 9 },
       ]]);
     } finally {
       wrapper.unmount();

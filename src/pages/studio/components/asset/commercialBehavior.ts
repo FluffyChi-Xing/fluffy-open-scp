@@ -1,7 +1,8 @@
 export const COMMERCIAL_DEFAULTS = { shoppers: 9, goods: 9 } as const;
 export const MIXED_COMMERCIAL = "ground-mall-mixed-v1";
 export const COMMERCIAL_SHOPPER_FIELDS = ["shoppersW1", "shoppersW2", "shoppersW3"] as const;
-export const COMMERCIAL_FIELDS = [...COMMERCIAL_SHOPPER_FIELDS, "goods"] as const;
+export const COMMERCIAL_GOODS_FIELDS = ["goodsW1", "goodsW2", "goodsW3"] as const;
+export const COMMERCIAL_FIELDS = [...COMMERCIAL_SHOPPER_FIELDS, ...COMMERCIAL_GOODS_FIELDS] as const;
 export const COMMERCIAL_JOB_FIELDS = ["jobsW1", "jobsW2", "jobsW3", "retailMinWorkers"] as const;
 export const COMMERCIAL_PROFILES = {
   "ground-commercial-w1-v1": { shoppers: 10, goods: 21 },
@@ -15,7 +16,17 @@ export type CommercialParams = {
   type: "commercial";
   commercialProfile?: CommercialProfile;
   shoppers?: number | null;
+  goods?: number | null;
 } & Partial<Record<(typeof COMMERCIAL_FIELDS | typeof COMMERCIAL_JOB_FIELDS)[number], number | null>>;
+
+function goodsValues(params: CommercialParams, fallback: number) {
+  const medium = params.goods ?? fallback;
+  return {
+    goodsW1: params.goodsW1 ?? Math.min(100_000, medium * 2),
+    goodsW2: params.goodsW2 ?? medium,
+    goodsW3: params.goodsW3 ?? Math.max(1, Math.floor(medium / 2)),
+  };
+}
 
 export function commercialValues(params: CommercialParams) {
   if (params.commercialProfile === MIXED_COMMERCIAL) {
@@ -23,7 +34,7 @@ export function commercialValues(params: CommercialParams) {
       shoppersW1: params.shoppersW1 ?? 60,
       shoppersW2: params.shoppersW2 ?? 60,
       shoppersW3: params.shoppersW3 ?? 60,
-      goods: params.goods ?? 750,
+      ...goodsValues(params, 750),
     };
   }
   const profile = params.commercialProfile;
@@ -36,7 +47,7 @@ export function commercialValues(params: CommercialParams) {
     shoppersW1: low ? capacity : 0,
     shoppersW2: !low && !high ? capacity : 0,
     shoppersW3: high ? capacity : 0,
-    goods: params.goods ?? defaults.goods,
+    ...goodsValues(params, defaults.goods),
   };
 }
 
@@ -47,5 +58,6 @@ export function validCommercial(params: CommercialParams): boolean {
   const total = tiers.reduce((sum, value) => sum + value, 0);
   return tiers.every((value) => Number.isInteger(value) && value >= 0)
     && total >= 1 && total <= 100_000
-    && Number.isInteger(values.goods) && values.goods >= 1 && values.goods <= 100_000;
+    && COMMERCIAL_GOODS_FIELDS.every((field) => Number.isInteger(values[field])
+      && values[field] >= 1 && values[field] <= 100_000);
 }

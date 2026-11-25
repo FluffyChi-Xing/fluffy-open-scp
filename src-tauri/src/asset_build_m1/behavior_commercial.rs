@@ -140,14 +140,17 @@ pub(super) fn select(
         minimum_workers,
         shoppers,
         shoppers_by_wealth,
-        goods: capacity(
-            "goods",
+        goods: super::behavior_commercial_tuning::goods(
+            params,
+            shoppers_by_wealth.map(|tiers| tiers.map(|quota| quota > 0))
+                .unwrap_or_else(|| std::array::from_fn(|index| Some(index) == wealth.map(|tier| match tier {
+                    RetailWealth::W1 => 0, RetailWealth::W2 => 1, RetailWealth::W3 => 2,
+                }))),
             if mall {
                 750
             } else {
                 profile.as_ref().map_or(9, |profile| profile.goods)
             },
-            1,
         )?,
     }))
 }
@@ -307,6 +310,7 @@ impl Commercial {
             (0x0A79_17C4, vacancy_tuning),
         ]
         .into_iter()
+        .chain([super::behavior_commercial_tuning::CHECKOUT_HAPPINESS])
         .chain(self.shoppers_by_wealth.into_iter().flat_map(|tiers| {
             mixed::CAPACITY_FIELDS.into_iter().zip(tiers.map(|value| value as f32))
                 // Each enabled native street bundle independently registers
@@ -538,9 +542,9 @@ mod tests {
     #[test]
     fn commercial_wealth_uses_one_customer_and_profit_provider() {
         for (tier, shopper, cycle, shops, goods) in [
-            ("w1", 0x3A82_63E1, 0x6827_D125, 10.0, 21.0),
+            ("w1", 0x3A82_63E1, 0x6827_D125, 10.0, 42.0),
             ("w2", 0x3A82_63E2, 0x6827_D126, 8.0, 18.0),
-            ("w3", 0x3A82_63E3, 0x6827_D127, 7.0, 15.0),
+            ("w3", 0x3A82_63E3, 0x6827_D127, 7.0, 7.0),
         ] {
             let profile = format!("ground-commercial-{tier}-v1");
             let program = super::super::behavior_nodes::compile(
