@@ -165,13 +165,16 @@ impl NativeTourism {
             PropertyFile::parse(bytes).map_err(|error| format!("TOURISM_RESOURCE: {id}: {error}"))
         };
         let unit = read(unit_id)?;
-        for bundle in self.bundles() {
+        let continuous=ctx.plan.behavior_program.as_ref().filter(|p|p.copan_crown_tourism);
+        let expected:Vec<_>=if continuous.is_some(){vec![super::behavior_tourism_crown::BUNDLE]}else{self.bundles().collect()};
+        for bundle in expected {
             if !ENABLE_ROWS.iter().any(|row| has_key(&unit, *row, bundle))
                 || has_key(&unit, EXCLUDE_ROW, bundle)
             {
                 return Err(format!("TOURISM_BUNDLE: {unit_id}/{bundle:08X}"));
             }
         }
+        if let Some(program)=continuous {super::behavior_tourism_crown::verify(&unit,program)?;}
         let lot = read(lot_id)?;
         let entries = array(&lot, PATH_ENTRIES);
         let connects = array(&lot, PATH_ROAD_CONNECT);

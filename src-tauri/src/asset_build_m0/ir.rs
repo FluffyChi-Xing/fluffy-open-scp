@@ -59,6 +59,10 @@ pub struct SemanticsIr {
     pub labor: Option<Value>,
     /// 逻辑编排图行为节点数组（见 SemanticsSchema::behaviors）。
     pub behaviors: Vec<Value>,
+    #[serde(default, rename = "megaTower", skip_serializing_if = "Option::is_none")]
+    pub mega_tower: Option<Value>,
+    #[serde(default, rename = "ambientOcclusion", skip_serializing_if = "Option::is_none")]
+    pub ambient_occlusion: Option<Value>,
     pub properties: Vec<Value>,
     pub allow_shared_template: bool,
     /// G1 材质指纹闸门声明位：模型/六槽输入有意变更（见 SemanticsSchema）。
@@ -132,6 +136,8 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
             behavior: schema.semantics.behavior.clone(),
             labor: schema.semantics.labor.clone(),
             behaviors: schema.semantics.behaviors.clone(),
+            mega_tower: schema.semantics.mega_tower.clone(),
+            ambient_occlusion: schema.semantics.ambient_occlusion.clone(),
             properties: schema.semantics.properties.clone(),
             allow_shared_template: schema.semantics.allow_shared_template,
             material_change: schema.semantics.material_change,

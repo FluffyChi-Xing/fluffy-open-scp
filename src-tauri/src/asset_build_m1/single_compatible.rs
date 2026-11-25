@@ -11,8 +11,7 @@ use sha2::{Digest, Sha256};
 
 use super::lotm::{LotmDocument, LotmMaterial, MeshMaterialRef};
 
-/// prepare_asset 0.8.6: `require(count<=128,'Palette profile supports at most
-/// 128 source groups')`; the parameter table width is the next power of two.
+/// The author's Building40 palette supports at most 128 material rows.
 pub const MAX_MATERIAL_ROWS: usize = 128;
 pub const CELL: u32 = 512;
 
@@ -20,7 +19,7 @@ pub const CELL: u32 = 512;
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfacePlan {
     pub cell: u32,
-    /// Parameter table width: next power of two of the source group count
+    /// Parameter table width: next power of two of the material row count
     /// (`width=2**int(np.ceil(np.log2(count)))`).
     pub width: u32,
     /// Power-of-two cell grid edge, matching `2**ceil(log2(ceil(sqrt(n))))`.
@@ -41,6 +40,9 @@ pub struct SurfacePlan {
     pub palette_source: Vec<[u32; 2]>,
     /// Original room projection parameters (x scale, y offset) per room.
     pub room_params: Vec<[f32; 2]>,
+    pub(super) source_by_row: Vec<usize>,
+    pub(super) surface_writer: Vec<usize>,
+    pub(super) room_writer: Vec<usize>,
 }
 
 fn f32_params(material: &LotmMaterial) -> Result<[f32; 16], String> {
@@ -103,13 +105,8 @@ fn power_of_two_grid(unique: usize) -> u32 {
 
 /// Reproduce the author's surface/palette/room parameter layout.
 pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
-    let count = document.materials.len();
-    if count == 0 || count > MAX_MATERIAL_ROWS || document.meshes.len() != count {
-        return Err(format!(
-            "author materials: require 1..=128 groups and one material per mesh ({} meshes, {count} materials)",
-            document.meshes.len()
-        ));
-    }
+    let layout = super::author_material_groups::material_layout(document)?;
+    let count = layout.source_by_row.len();
     let mut surface_keys: Vec<String> = Vec::new();
     let mut room_keys: Vec<String> = Vec::new();
     let mut surface_of_row = Vec::with_capacity(count);
@@ -117,10 +114,8 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
     let mut rows = Vec::with_capacity(count);
     let mut palette_source = Vec::with_capacity(count);
     let mut room_params: Vec<[f32; 2]> = Vec::new();
-    for (group, material) in document.materials.iter().enumerate() {
-        if material.param_cols != 1 {
-            return Err(format!("author materials: group {group} has param_cols={}, expected 1", material.param_cols));
-        }
+    for &source in &layout.source_by_row {
+        let material = &document.materials[source];
         let params = f32_params(material)?;
         let surface = surface_key(material);
         let surface_index = surface_keys.iter().position(|key| key == &surface).unwrap_or_else(|| {
@@ -154,6 +149,20 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
         .iter()
         .map(|params| params[8] != 0.0 || params[9] != 0.0)
         .collect();
+    let tile_writers = |keys: &[usize], count| {
+        let mut writers = vec![usize::MAX; count];
+        for &row in &layout.write_order {
+            let writer = &mut writers[keys[row]];
+            // prepare_asset.py:34–59 uses the last source group to determine
+            // which compacted row writes each shared surface and room tile.
+            if layout.compacted || *writer == usize::MAX {
+                *writer = row;
+            }
+        }
+        writers
+    };
+    let surface_writer = tile_writers(&surface_of_row, surface_keys.len());
+    let room_writer = tile_writers(&room_of_row, room_keys.len());
     for (row, params) in rows.iter_mut().enumerate() {
         let x = ((surface_of_row[row] as u32 % grid) * CELL) as f32;
         let y = ((surface_of_row[row] as u32 / grid) * CELL) as f32;
@@ -196,6 +205,9 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
         room_of_row,
         palette_source,
         room_params,
+        source_by_row: layout.source_by_row,
+        surface_writer,
+        room_writer,
     })
 }
 
@@ -363,12 +375,8 @@ pub fn render_atlases(
     let mut tint = RgbaImage::new(size, size);
     let mut normal = RgbaImage::new(size, size);
     let mut shader = RgbaImage::new(size, size);
-    let surface_count = plan.surface_of_row.iter().max().copied().unwrap_or(0) + 1;
-    for surface in 0..surface_count {
-        let Some(row) = plan.surface_of_row.iter().position(|item| *item == surface) else {
-            continue;
-        };
-        let material = &document.materials[row];
+    for (surface, &row) in plan.surface_writer.iter().enumerate() {
+        let material = &document.materials[plan.source_by_row[row]];
         let x = (surface as u32 % plan.grid) * plan.cell;
         let y = (surface as u32 / plan.grid) * plan.cell;
         for (target, slot) in [
@@ -407,7 +415,8 @@ pub fn render_atlases(
     }
 
     let mut palette = RgbaImage::new(512, 16);
-    for (row, material) in document.materials.iter().enumerate() {
+    for (row, &source) in plan.source_by_row.iter().enumerate() {
+        let material = &document.materials[source];
         let source = decode_png(material, LotmMaterial::PNG_PALETTE)?;
         if source.width() < 512 || source.height() != 16 {
             return Err(format!(
@@ -442,9 +451,8 @@ pub fn render_atlases(
     let office_recipe = profile == Some("window-relative-relief-hdr-room-v2");
     let mut interior = RgbaImage::new(plan.room_atlas, plan.room_atlas);
     for (room, parameters) in plan.room_params.iter().enumerate() {
-        let row = plan.room_of_row.iter().position(|item| item == &room)
-            .ok_or("author materials: room has no material row")?;
-        let mut source = decode_png(&document.materials[row], LotmMaterial::PNG_INTERIOR)?;
+        let row = plan.room_writer[room];
+        let mut source = decode_png(&document.materials[plan.source_by_row[row]], LotmMaterial::PNG_INTERIOR)?;
         if migrate_room_rgb {
             for pixel in source.pixels_mut() {
                 for channel in 0..3 {

@@ -169,6 +169,14 @@ pub(crate) fn prepare(
     dependency: &Dependency,
     schema: Value,
 ) -> Result<Value, String> {
+    let mut dependency = dependency.clone();
+    if let Some(base) = dependency.sources.iter().find(|source| Path::new(&source.path).file_name().is_some_and(|name| name == "SimCity_Game.package")) {
+        let base = sources::path(root, &base.path)?;
+        let ep1 = base.with_file_name("SimCityDataEP1.package");
+        if ep1.is_file() && !dependency.sources.iter().any(|source| Path::new(&source.path).file_name().is_some_and(|name| name == "SimCityDataEP1.package")) {
+            dependency.sources.push(sources::source(&ep1)?);
+        }
+    }
     let packages = sources::open(root, &dependency.sources)?;
     let fallback = if schema.is_null() {
         serde_json::to_value(PanelSchema {

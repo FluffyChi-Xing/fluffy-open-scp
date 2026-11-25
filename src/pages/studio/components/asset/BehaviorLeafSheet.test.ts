@@ -16,6 +16,33 @@ describe("BehaviorLeafSheet", () => {
     i18n.global.locale.value = previousLocale;
   });
 
+  it("edits pure park capacities in both languages and rejects fractional seats", async () => {
+    i18n.global.locale.value = "zh-CN";
+    const wrapper = mount(BehaviorLeafSheet, {
+      attachTo: document.body, global: { plugins: [i18n] },
+      props: { node: { ...node, id: "park", position: [0, 0] },
+        params: { type: "park", landValue: 500, attraction: 500 },
+        labelKey: "studio.assetWorkbench.logicNode.leafPark", trigger: null },
+    });
+    try {
+      await nextTick();
+      const dialog = document.querySelector('[role="dialog"]')!;
+      const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
+      expect([...fields].map(input => input.value)).toEqual(["90", "80", "960"]);
+      expect(fields[1].closest("label")?.textContent).toContain("儿童接待容量");
+      i18n.global.locale.value = "en-US"; await nextTick();
+      expect(fields[1].closest("label")?.textContent).toContain("Child capacity");
+      fields[1].value = "12.5";
+      fields[1].dispatchEvent(new Event("change", { bubbles: true })); await nextTick();
+      dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(wrapper.emitted("apply")).toBeUndefined();
+      fields[1].value = "120";
+      fields[1].dispatchEvent(new Event("change", { bubbles: true })); await nextTick();
+      dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(wrapper.emitted("apply")?.[0]?.[0]).toMatchObject({ childrenCapacity: 120 });
+    } finally { wrapper.unmount(); }
+  });
+
   it("translates the retail capacity controls and saves a custom value", async () => {
     i18n.global.locale.value = "zh-CN";
     const wrapper = mount(BehaviorLeafSheet, {
@@ -50,7 +77,7 @@ describe("BehaviorLeafSheet", () => {
     }
   });
 
-  it("edits retail staffing alongside shopper and goods capacities", async () => {
+  it("leaves staffing in Building Properties while editing retail", async () => {
     i18n.global.locale.value = "zh-CN";
     const wrapper = mount(BehaviorLeafSheet, {
       attachTo: document.body,
@@ -66,17 +93,13 @@ describe("BehaviorLeafSheet", () => {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
       const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
-      expect(fields).toHaveLength(8);
-      expect(dialog.textContent).toContain("商业岗位与建筑岗位累计");
+      expect(fields).toHaveLength(4);
+      expect(dialog.textContent).toContain("建筑属性统一设置");
       i18n.global.locale.value = "en-US";
       await nextTick();
-      expect(dialog.textContent).toContain("Retail jobs add to Building Info jobs");
+      expect(dialog.textContent).toContain("Set jobs and shifts in Building Properties");
       expect(dialog.querySelector('[role="alert"]')).toBeNull();
-      fields[4].value = "15";
-      fields[4].dispatchEvent(new Event("change", { bubbles: true }));
-      await nextTick();
-      dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      expect(wrapper.emitted("apply")?.[0]?.[0]).toMatchObject({ jobsW1: 15, shoppers: 20, goods: 20 });
+
     } finally {
       wrapper.unmount();
     }
@@ -98,7 +121,7 @@ describe("BehaviorLeafSheet", () => {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
       const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
-      expect([...fields].map((field) => field.value)).toEqual(["0", "6", "0", "18", "", "", "", ""]);
+      expect([...fields].map((field) => field.value)).toEqual(["0", "6", "0", "18"]);
       fields[0].value = "25";
       fields[0].dispatchEvent(new Event("change", { bubbles: true }));
       await nextTick();
@@ -314,21 +337,11 @@ describe("BehaviorLeafSheet", () => {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
       const inputs = Array.from(dialog.querySelectorAll<HTMLInputElement>('input[type="number"]'));
-      expect(inputs.map((input) => input.value)).toEqual(["400", "200", "100", "1"]);
-      expect(inputs[0].closest("label")?.textContent?.trim()).toBe("低收入岗位");
+      expect(inputs).toHaveLength(0);
+      expect(dialog.textContent).toContain("在建筑属性页设置岗位");
       i18n.global.locale.value = "en-US";
       await nextTick();
-      expect(inputs[0].closest("label")?.textContent?.trim()).toBe("Low-wealth jobs");
-      const minimum = inputs[3];
-      minimum.value = "701";
-      minimum.dispatchEvent(new Event("change", { bubbles: true }));
-      await nextTick();
-      expect(dialog.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
-      minimum.value = "10";
-      minimum.dispatchEvent(new Event("change", { bubbles: true }));
-      await nextTick();
-      dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      expect(wrapper.emitted("apply")).toEqual([[{ type: "office", minWorkers: 10 }]]);
+      expect(dialog.textContent).toContain("Set jobs, minimum staffing, and shifts in Building Properties");
     } finally {
       wrapper.unmount();
     }

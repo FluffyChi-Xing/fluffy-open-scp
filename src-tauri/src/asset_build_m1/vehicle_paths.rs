@@ -55,6 +55,10 @@ const COMMUTE: &[(u32, &[u32])] = &[
     (0x3A70_FAA2, &[0x1BB6_F93B, 0x863E_354E, 0xC253_84A9]),
 ];
 const OTHER_ARRIVALS: &[(u32, &[u32])] = &[
+    // Native park visitor car receivers; walking/kid/homeless sinks stay native.
+    (0x265F_B8DD, &[0x0992_906D]),
+    (0x265F_B8DE, &[0x0992_906E]),
+    (0x265F_B8DF, &[0x0992_906F]),
     (
         0xAB9A_0A3E,
         &[
@@ -74,6 +78,8 @@ const OTHER_ARRIVALS: &[(u32, &[u32])] = &[
     (0x75D2_2FD0, &[0x75D2_2FD0]),
     (0x75D2_2FD1, &[0x75D2_2FD1]),
     (0x75D2_2FD2, &[0x75D2_2FD2]),
+    // Native 61EFC700:02E94AD8 combines the same three tourist car sinks.
+    (0x02E9_4AD8, &[0x75D2_2FD0, 0x75D2_2FD1, 0x75D2_2FD2]),
     (0x6C04_2366, &[0xD10F_7B4E, 0x6688_3F3B, 0x8365_DE58]),
     (0x3A82_63E2, &[0x8A97_E8AF, 0xAD48_46DB]),
     (0x1C1F_5978, &[0x6CCF_B5D2, 0x14A0_C36E]),
@@ -274,6 +280,22 @@ pub(super) fn describe_commute(unit: &[u8], lot: &[u8]) -> Result<serde_json::Va
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crown_and_legacy_tourism_preserve_identical_native_car_bindings() {
+        let build=|bundles:&[u32]| {
+            let mut unit=PropertyFile::default();
+            let mut lot=PropertyFile::default();
+            set_array_with_flags(&mut unit,ENABLE[3],PropType::Key,bundles.iter().copied().map(key).collect(),0x809C);
+            set_array_with_flags(&mut lot,PATH_ENTRIES,PropType::Key,vec![key(PATH)],0x809C);
+            let unit_bytes=encode(&unit).unwrap();
+            assert!(has_supported_arrivals(&unit_bytes).unwrap());
+            let (unit,lot)=bind(&unit_bytes,&encode(&lot).unwrap()).unwrap();
+            verify(&unit,&lot).unwrap();
+            lot
+        };
+        assert_eq!(build(&[0x02E9_4AD8]),build(&[0x75D2_2FD0,0x75D2_2FD1,0x75D2_2FD2]));
+    }
 
     #[test]
     fn high_density_ground_residence_routes_move_in_vehicles() {

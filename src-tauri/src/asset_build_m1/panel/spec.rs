@@ -15,6 +15,8 @@ pub struct Component {
     pub single_unit: bool,
     #[serde(default, rename = "reasonList", skip_serializing_if = "std::ops::Not::not")]
     pub reason_list: bool,
+    #[serde(default, rename = "towerOperations", skip_serializing_if = "std::ops::Not::not")]
+    pub tower_operations: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metric: Option<Metric>,
 }

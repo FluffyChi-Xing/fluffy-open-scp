@@ -188,8 +188,6 @@ export const tauriApi = {
   },
   // ── P2 构建队列(OpenSCP Actions 页) ──
   buildQueue: {
-    enqueue: (project: string, schema: string, label?: string) =>
-      command<string>("build_queue_enqueue", { root: project, schema, label }),
     /** 一键构建：自动发现 schema，并把工作台逻辑图编译进 semantics 后入队。 */
     enqueueProject: (project: string, label?: string) =>
       command<{

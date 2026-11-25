@@ -28,11 +28,46 @@ RESOURCES = {
     1825323535: ("workers", "workerW1"),
     1825323532: ("workers", "workerW2"),
     1825323533: ("workers", "workerW3"),
+    0x6106B1CB: ("workers", "extraWorkerW1"),
+    0x6106B1C8: ("workers", "extraWorkerW2"),
+    0x6106B1C9: ("workers", "extraWorkerW3"),
+    0xD3A424B9: ("workers", "jobsW1"),
+    0xD3A424BA: ("workers", "jobsW2"),
+    0xD3A424BB: ("workers", "jobsW3"),
     444274501: ("tourists", "touristW1"),
     444274502: ("tourists", "touristW2"),
     444274503: ("tourists", "touristW3"),
     1400428281: ("lighting", "workersNeeded"),
-    70888836: ("lighting", "totalResidents"),
+    0x0439AD84: ("residence", "totalResidents"),
+    0xB8928907: ("residence", "happinessToken"),
+    0xFA2C5AAA: ("residence", "happinessDisplay"),
+    0xE22F66AA: ("residence", "rentSadness"),
+    0xC1F569B9: ("commerce", "totalShoppers"),
+    0x13014ACE: ("commerce", "shopperAverage"),
+    0x0735A595: ("economy", "incomeToday"),
+    0x0D0B5542: ("economy", "expensesToday"),
+    0xCD51E152: ("economy", "incomeYesterday"),
+    0xCCF9FA95: ("economy", "expensesYesterday"),
+    0xA5B3BE12: ("economy", "landmarkIncomeToday"),
+    0x3DEAB6DC: ("economy", "landmarkExpensesToday"),
+    0xCE32088F: ("economy", "landmarkIncomeYesterday"),
+    0x90E00435: ("economy", "landmarkExpensesYesterday"),
+    0xFBF3E9D3: ("economy", "maintenanceExpense"),
+    116259821: ("education", "studentCount"),
+    335331786: ("visitors", "hotelGuests"),
+    3617895960: ("visitors", "parkVisitors"),
+    3218409028: ("visitors", "parkLocalVisitors"),
+    2604781581: ("visitors", "parkChildVisitors"),
+    0x14984C68: ("trees", "treeBin1"),
+    0x14984C69: ("trees", "treeBin2"),
+    0x14984C6A: ("trees", "treeBin3"),
+    0x14984C6B: ("trees", "treeBin4"),
+    0x8E8B4E10: ("utilities", "power"),
+    0x9E3C3DFA: ("utilities", "water"),
+    0xCD1DDC35: ("utilities", "sewage"),
+    0x7CB23A4E: ("utilities", "garbage"),
+    0x54CA89F0: ("utilities", "garbageDisplayCount"),
+    0xEEE64A65: ("utilities", "garbageGenerationBudget"),
     INTERIOR_LIGHTS: ("lighting", "interiorLights"),
     **VEHICLE_RESOURCES,
 }
@@ -177,7 +212,7 @@ def read_interiors(reader, graphics, game, base, slot):
                 drivenByActive=bool(raw[0x1D]), allLitWhenActive=bool(raw[0x1C])), checks
 
 
-def sample(reader, game, scripts, graphics, base, iid, resources=RESOURCES):
+def sample(reader, game, scripts, graphics, base, iid, resources=RESOURCES, component_entries=()):
     tick = reader.u32(game + 0x17A0)
     if game_scripts(reader, game, base) != scripts:
         raise ValueError("asset_city_changed")
@@ -194,15 +229,14 @@ def sample(reader, game, scripts, graphics, base, iid, resources=RESOURCES):
         return None
     values = {}
     matches = set()
+    entries = {iid, *component_entries}
     checks = []
     # Read unit descriptors in chunks to avoid a system call for each city slot.
     for start in range(ub, ue, 1024 * 0x380):
         units = reader.read(start, min(ue - start, 1024 * 0x380))
         for offset in range(0, len(units), 0x380):
-            if (
-                struct.unpack_from("<I", units, offset + 12)[0] != iid
-                or units[offset + 0x65]
-            ):
+            entry = struct.unpack_from("<I", units, offset + 12)[0]
+            if entry not in entries or units[offset + 0x65]:
                 continue
             unit = start + offset
             slot = (unit - ub) // 0x380
@@ -218,7 +252,9 @@ def sample(reader, game, scripts, graphics, base, iid, resources=RESOURCES):
                 resource = by_index.get(index)
                 if resource in resources:
                     values[(slot, stamp, resource)] = {"amount": amount, "capacity": capacity}
-            if graphics:
+                    if entry != iid:
+                        values[(slot, stamp, resource)]["componentEntryId"] = entry
+            if graphics and entry == iid:
                 try:
                     interiors = read_interiors(reader, graphics, game, base, slot)
                     if interiors:
@@ -230,7 +266,7 @@ def sample(reader, game, scripts, graphics, base, iid, resources=RESOURCES):
                             del values[(slot, stamp, INTERIOR_LIGHTS)]
                 except (OSError, ValueError):
                     pass
-            checks.extend(((unit + 0x210, bin_header), (unit + 12, struct.pack("<I", iid)), (unit + 0x65, b"\0"),
+            checks.extend(((unit + 0x210, bin_header), (unit + 12, struct.pack("<I", entry)), (unit + 0x65, b"\0"),
                            (sb + slot * 4, struct.pack("<I", stamp))))
     checks.extend(((game + 0x554, unit_header), (game + 0x584, stamp_header),
                    (game + 0x18A4, ids_header), (game + 0x18D4, times_header),
@@ -253,7 +289,8 @@ def changes(previous, current, tick, clock, iid, resources=RESOURCES):
         metric, name = resources[resource]
         source = "graphics-interiors" if resource == INTERIOR_LIGHTS else "unit-local"
         row = dict(channel="asset.resource", semantic="resource_change", source=source,
-                   unitEntryId=iid, unitSlot=slot, unitStamp=stamp,
+                   unitEntryId=(after or before).get("componentEntryId", iid),
+                   buildingEntryId=iid, unitSlot=slot, unitStamp=stamp,
                    resourceId=resource if source == "unit-local" else None,
                    gameClockSeconds=clock, gameClockSource="eco_game.day_period", simTicks=tick,
                    metric=metric, name=name,
@@ -272,7 +309,7 @@ def vehicle_inventory(readings):
     return counts
 
 
-def capture(reader, game, scripts, graphics, base, iid, seconds, directory, state, save, resources=RESOURCES):
+def capture(reader, game, scripts, graphics, base, iid, seconds, directory, state, save, resources=RESOURCES, component_entries=()):
     deadline = time.monotonic() + seconds
     stop = directory.with_suffix(".stop")
     previous, last_tick, sequence = {}, None, 0
@@ -281,7 +318,7 @@ def capture(reader, game, scripts, graphics, base, iid, seconds, directory, stat
     with (directory / "trace.jsonl").open("w", encoding="utf-8") as trace:
         while time.monotonic() < deadline and not stop.exists():
             try:
-                result = sample(reader, game, scripts, graphics, base, iid, resources)
+                result = sample(reader, game, scripts, graphics, base, iid, resources, component_entries)
             except OSError:
                 result = None
             if result is None:
@@ -329,6 +366,7 @@ def main():
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--seconds", type=int, choices=range(5, 301), required=True)
     parser.add_argument("--unit-entry", type=int, required=True)
+    parser.add_argument("--component-entry", type=int, action="append", default=[])
     parser.add_argument("--city-metrics", action="store_true")
     parser.add_argument("--directory", type=Path, required=True)
     args = parser.parse_args()
@@ -356,7 +394,7 @@ def main():
         binding = discover_game(reader, module["base"], stop)
         if binding:
             resources = RESOURCES | CITY_RESOURCES if args.city_metrics else RESOURCES
-            capture(reader, *binding, module["base"], args.unit_entry, args.seconds, directory, state, save, resources)
+            capture(reader, *binding, module["base"], args.unit_entry, args.seconds, directory, state, save, resources, args.component_entry)
     except (OSError, RuntimeError, ValueError) as error:
         state["error"] = str(error)
     finally:

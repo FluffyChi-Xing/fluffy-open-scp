@@ -263,6 +263,7 @@ watch(
           v-else-if="tab === 'capture' && showCapture"
           :key="project.id"
           :project="project.relPath"
+          :project-root="project.folderPath ?? undefined"
         />
       </div>
     </template>

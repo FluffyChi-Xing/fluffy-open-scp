@@ -76,6 +76,7 @@ pub(crate) fn export_native_rust(
     atlas: &Path,
     source: &Path,
     work_dir: &Path,
+    atlas_extension: Option<crate::blend_native::atlas_extension::AtlasExtension>,
 ) -> Result<Vec<u8>, String> {
     let script = work_dir.join("extract_blend.py");
     std::fs::write(&script, EXTRACT_SCRIPT).map_err(|error| error.to_string())?;
@@ -112,10 +113,14 @@ pub(crate) fn export_native_rust(
     let bundle = crate::blend_native::dump::Bundle::parse(&bundle_bytes)
         .map_err(|error| format!("bundle parse failed: {error}"))?;
     let store = crate::blend_native::resources::PackStore::new(atlas);
-    let catalog = crate::blend_native::catalog::Catalog::parse(
+    let mut catalog = crate::blend_native::catalog::Catalog::parse(
         &std::fs::read(atlas.join("catalog.json")).map_err(|error| error.to_string())?,
     )
     .map_err(|error| format!("catalog parse failed: {error}"))?;
+    let store = match atlas_extension {
+        Some(extension) => extension.merge(&mut catalog, store),
+        None => store,
+    };
     let index = catalog.index();
     let report = crate::blend_native::export::export(&crate::blend_native::export::ExportInput {
         bundle: &bundle,

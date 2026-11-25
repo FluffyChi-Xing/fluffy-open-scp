@@ -153,8 +153,16 @@ pub(super) fn select(
 }
 
 impl Commercial {
+    pub(super) fn uses_tower_income(&self) -> bool {
+        self.mall
+    }
+
     pub(super) fn mixed_tiers(&self) -> Option<[i32; 3]> {
         self.shoppers_by_wealth.filter(|tiers| tiers.iter().filter(|&&quota| quota > 0).count() > 1)
+    }
+
+    pub(super) fn has_mixed_capacity(&self) -> bool {
+        self.shoppers_by_wealth.is_some()
     }
 
     pub(super) fn verify_lot(
@@ -461,7 +469,9 @@ impl Commercial {
             if array(unit, ENABLE[3])?.last() != Some(&native_bundle(id.instance))
                 || resources.get(&id) != Some(&mixed::bundle()?)
             {
-                return Err("COMMERCIAL_BUNDLE: mixed-capacity binding".into());
+                return Err(format!("COMMERCIAL_BUNDLE: mixed-capacity binding unit={:08X} last={:?} expected={:?} payload={}",
+                    unit_id.instance,array(unit, ENABLE[3])?.last(),native_bundle(id.instance),
+                    resources.get(&id)==Some(&mixed::bundle()?)));
             }
         }
         Ok(())

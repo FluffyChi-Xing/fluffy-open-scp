@@ -106,11 +106,14 @@ fn prepare(baseline: &Path, candidate: &Path, instance: u32, output: &Path) -> R
             );
         }
         let hash = menu_change(&old_bytes, &new_bytes)?;
-        delta = Some((hash, new_bytes));
+        delta = Some((hash, old_bytes, new_bytes));
     }
 
-    let (property, bytes) = delta.ok_or("Package has no changed resource payloads")?;
-    let overlay = write_uncompressed_overlay(&[OverlayEntry::new(target, bytes)])?;
+    let (property, old_payload, new_payload) =
+        delta.ok_or("Package has no changed resource payloads")?;
+    let baseline_payload_hash = format!("{:x}", Sha256::digest(&old_payload));
+    let candidate_payload_hash = format!("{:x}", Sha256::digest(&new_payload));
+    let overlay = write_uncompressed_overlay(&[OverlayEntry::new(target, new_payload)])?;
     if package_sha256(baseline.path())? != baseline_hash
         || package_sha256(candidate.path())? != candidate_hash
     {
@@ -127,6 +130,8 @@ fn prepare(baseline: &Path, candidate: &Path, instance: u32, output: &Path) -> R
         "status": "prepared",
         "baselineSha256": baseline_hash,
         "candidateSha256": candidate_hash,
+        "baselinePayloadSha256": baseline_payload_hash,
+        "candidatePayloadSha256": candidate_payload_hash,
         "overlaySha256": format!("{:x}", Sha256::digest(&overlay)),
         "overlay": output,
         "tgi": target.to_string(),
@@ -215,16 +220,22 @@ mod tests {
         };
         write_package(&a, 1, b"same");
         write_package(&b, 3, b"same");
-        for (before, after, title) in [(&a, &b, 3), (&b, &a, 1)] {
+        for (before, after, old_title, title) in [(&a, &b, 1, 3), (&b, &a, 3, 1)] {
             let output = folder.join(format!("delta-{title}.package"));
             let manifest = prepare(before, after, target.instance, &output).unwrap();
             assert_eq!(manifest["property"], "0A09F5FA");
+            assert_eq!(
+                manifest["baselinePayloadSha256"],
+                format!("{:x}", Sha256::digest(menu(old_title, 2)))
+            );
             assert_eq!(manifest["overlaySha256"], package_sha256(&output).unwrap());
             let delta = Package::open(&output).unwrap();
             assert_eq!(delta.entries().len(), 1);
+            let payload = delta.read(delta.entry(target).unwrap()).unwrap();
+            assert_eq!(payload, menu(title, 2));
             assert_eq!(
-                delta.read(delta.entry(target).unwrap()).unwrap(),
-                menu(title, 2)
+                manifest["candidatePayloadSha256"],
+                format!("{:x}", Sha256::digest(payload))
             );
             assert!(prepare(before, after, target.instance, &output).is_err());
         }

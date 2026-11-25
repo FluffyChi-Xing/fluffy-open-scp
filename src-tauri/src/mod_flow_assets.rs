@@ -147,7 +147,12 @@ pub(super) fn import(root: &Path, payload: &Value, blend_atlas: Option<&Path>) -
 
 /// Read the Blend file with Blender and convert it to LOTM with Rust.
 fn import_blend(root: &Path, source: &Path, blend_atlas: Option<&Path>) -> Result<Value, String> {
-    let cache_key = blend_cache_key(source)?;
+    let atlas_extension = crate::blend_native::atlas_extension::AtlasExtension::read(source)?;
+    let mut cache_key = blend_cache_key(source)?;
+    if let Some(extension) = &atlas_extension {
+        cache_key.push('-');
+        cache_key.push_str(&extension.fingerprint);
+    }
     if let Some(mut cached) = read_blend_cache(root, &cache_key) {
         cached["cache"] = json!("hit");
         crate::blend_native::trace::emit(
@@ -179,7 +184,7 @@ fn import_blend(root: &Path, source: &Path, blend_atlas: Option<&Path>) -> Resul
     // writes never collide with stale temps (Windows os error 183).
     let _ = fs::remove_dir_all(&temp);
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
-    let lotm_bytes = match blender_service::export_native_rust(&atlas, source, &temp) {
+    let lotm_bytes = match blender_service::export_native_rust(&atlas, source, &temp, atlas_extension) {
         Ok(bytes) => {
             crate::blend_native::trace::emit("native_ok", json!({ "lotm_bytes": bytes.len() }));
             bytes

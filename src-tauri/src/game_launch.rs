@@ -9,6 +9,8 @@ use tauri::State;
 
 use crate::activity::{AppState, CommandError};
 
+mod panel_preflight;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameProcessInfo {
@@ -145,6 +147,7 @@ pub async fn deploy_game_mod(
                 "Game data directory is unavailable",
             ));
         }
+        panel_preflight::verify(&artifact, &game_data)?;
         let packages = game_data
             .parent()
             .unwrap_or(&game_data)

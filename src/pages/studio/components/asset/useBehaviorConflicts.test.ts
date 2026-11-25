@@ -4,12 +4,12 @@ import { expect, it, vi } from "vitest";
 import { command } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { i18n } from "@/locales";
-import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec, MAX_BEHAVIOR_LEAVES, usesBehaviorContainer } from "./logicGraph";
+import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec, MAX_BEHAVIOR_LEAVES } from "./logicGraph";
 import { useBehaviorConflicts } from "./useBehaviorConflicts";
 
 vi.mock("@/api/tauri", () => ({ command: vi.fn() }));
 
-it("allows independent behaviors and sends separate scopes to the authoritative check", async () => {
+it("sends behavior leaves without private Unit scopes", async () => {
   const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
   const office = addLogicNode(core.graph, leafSpec("office"), [0, 0]);
   const visits = addLogicNode(office.graph, leafSpec("tourism"), [0, 0]);
@@ -22,12 +22,11 @@ it("allows independent behaviors and sends separate scopes to the authoritative 
     { global: { plugins: [i18n] } });
   try {
     expect(result!.canAdd(graph)).toBe(true);
-    expect(usesBehaviorContainer(graph)).toBe(true);
     await result!.check(graph, visits.node.id);
     expect(command).toHaveBeenLastCalledWith("asset_build_m1_check_behavior_bins", expect.objectContaining({
       nodes: expect.arrayContaining([
-        expect.objectContaining({ id: office.node.id, unit: office.node.id }),
-        expect.objectContaining({ id: visits.node.id, unit: visits.node.id }),
+        expect.objectContaining({ id: office.node.id }),
+        expect.objectContaining({ id: visits.node.id }),
       ]),
     }));
   } finally { wrapper.unmount(); useToast().clear(); }
@@ -77,7 +76,7 @@ it("warns through the toast when an added leaf shares a bin with another leaf", 
   }
 });
 
-it("allows additional components up to the container limit", () => {
+it("allows additional components up to the shared behavior limit", () => {
   const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
   const hotel = addLogicNode(core.graph, leafSpec("hotel"), [0, 0]);
   const full = Array.from({ length: MAX_BEHAVIOR_LEAVES }).reduce<typeof core.graph>(
@@ -98,4 +97,24 @@ it("allows additional components up to the container limit", () => {
   wrapper.unmount();
   toast.clear();
   i18n.global.locale.value = previousLocale;
+});
+
+it("blocks a duplicate leaf in every add handler without rejecting distinct component behaviors", () => {
+  const park = addLogicNode(emptyLogicGraph(), leafSpec("park"), [0, 0]).graph;
+  const toast = useToast();
+  const previousLocale = i18n.global.locale.value;
+  i18n.global.locale.value = "zh-CN";
+  const wrapper = mount(defineComponent({ setup() {
+    const checks = useBehaviorConflicts();
+    expect(checks.available(park, "park")).toBe(false);
+    expect(checks.canAdd(park, "park")).toBe(false);
+    expect(checks.addHint(park, "park")).toContain("编辑已有叶子");
+    i18n.global.locale.value = "en-US";
+    expect(checks.addHint(park, "park")).toContain("existing behavior");
+    for (const type of ["residence", "tourism", "office", "commercial", "landvalue"] as const) {
+      expect(checks.available(park, type)).toBe(true);
+    }
+    return () => null;
+  } }), { global: { plugins: [i18n] } });
+  wrapper.unmount(); toast.clear(); i18n.global.locale.value = previousLocale;
 });

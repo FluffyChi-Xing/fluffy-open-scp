@@ -10,6 +10,32 @@
     for (key in data) if (Object.prototype.hasOwnProperty.call(data, key) && data[key] === null) keys.push(key);
     return keys;
   }
+  var containerQuery = function (unit) {
+    return [simcity.kDataUnits, unit, simcity.kDataNonSimProperties, 0x0FB2DB9A];
+  };
+  var towerLedger = { incomeToday: 0x0735A595, expensesToday: 0x0D0B5542,
+    incomeYesterday: 0xCD51E152, expensesYesterday: 0xCCF9FA95 };
+  function withContainerCounters(unit, queries, ledger) {
+    queries.panelContainer = containerQuery(unit);
+    Object.keys(ledger).forEach(function (key) {
+      queries['component_' + key] = [simcity.kDataConnectedUnits, unit, simcity.kDataBinAmount, ledger[key]];
+    });
+    return queries;
+  }
+  function readContainerCounters(data, combine) {
+    data = copy(data);
+    Object.keys(data).forEach(function (key) {
+      if (key.indexOf('component_') !== 0) return;
+      var field = key.slice(10), amount = data[key];
+      if ((data.panelContainer === true || data.panelContainer === 1) && typeof amount === 'number' && amount >= 0) {
+        if (!combine) data[field] = amount;
+        else if (typeof data[field] === 'number') data[field] += amount;
+      }
+      delete data[key];
+    });
+    delete data.panelContainer;
+    return data;
+  }
   function reasonData(binding, data) {
     // Unallocated optional counters contribute no reason. Keep the native
     // state, feedback table and display inputs mandatory.
@@ -102,6 +128,22 @@
       text.Private_SetHorizontalAlignment(scrui.cText.kHAlignCenter);
     }
   }
+  function fitFeedbackRow(info) {
+    var row = info.layout;
+    var branch = info.normalRollover && info.normalRollover.mIsVisible ? info.normalRollover : info.vacantRollover;
+    var text = branch && branch.FindControlByID(222285689);
+    if (!text || !text.mIsVisible) return;
+    // Native feedback can measure its wrapped text while the row is hidden.
+    // Measure again after visibility is set, before reserving its stack space.
+    text.Private_SetVerticalAlignment(scrui.cText.kVAlignCenter);
+    var height = Math.max(row.mHeight, text.GetTextHeight() + 8);
+    row.SetPosition(row.mLeft, row.mTop, row.mWidth, height);
+    var offset = 0, parent = text.mParentControl;
+    while (parent && parent !== row) { offset += parent.mTop; parent = parent.mParentControl; }
+    if (parent !== row) return;
+    text.SetPosition(text.mLeft, -offset, text.mWidth, height);
+    text.Private_UpdateTextSubComponents();
+  }
   function counterInit(info, native) {
     var p = info.layout, label = null;
     while (p && !label) { label = p.FindControlByID(226403367); p = p.mParentControl; }
@@ -121,24 +163,37 @@
     return true;
   }
   function register(component, hide) {
-    var original = simcity.RolloverItems[component.native];
+    var original = component.towerOperations
+      ? (window.OpenSCPPanelTowerBindings || {})[component.native]
+      : simcity.RolloverItems[component.native];
+    if (component.towerOperations && !original) return;
     if (!original) throw Error('PANEL_NATIVE_BINDING:' + component.native);
     var binding = copy(original);
     binding.panelSlot = true;
     if (component.singleUnit) binding.panelSingleUnit = true;
+    if (component.towerOperations) binding.panelTowerOperations = true;
     // The native batch decoder otherwise aborts every block on the first null.
     // Missing simulation data hides only its own block; it is never invented.
     binding.allowNullResults = true;
+    var commercialReasons = component.reasonList && /^commercial-/.test(component.id);
+    var buildingProfit = component.id === 'profit';
     if (component.reasonList) binding.updateQueries = function (unit) {
       this.panelReasonQueries = original.updateQueries.call(this, unit);
-      return this.panelReasonQueries;
+      if (!commercialReasons) return this.panelReasonQueries;
+      var counters = {}, queries = this.panelReasonQueries;
+      Object.keys(queries).forEach(function (key) {
+        var query = queries[key];
+        if (query[0] === simcity.kDataUnits && query[2] === simcity.kDataBinAmount) counters[key] = query[3];
+      });
+      return simcity.kDataConnectedUnits ? withContainerCounters(unit, copy(queries), counters) : queries;
     };
     if (component.native === 'kBlockLandmarkProfit' && !component.metric) {
       binding.updateQueries = function (unit) {
         var queries = original.updateQueries.call(original, unit), used = {};
         var fields = ['incomeToday', 'expensesToday', 'incomeYesterday', 'expensesYesterday'], index;
         for (index = 0; index < fields.length; index++) used[fields[index]] = queries[fields[index]];
-        return used;
+        // Only a managed building adds component accounts to its host ledger.
+        return buildingProfit && simcity.kDataConnectedUnits ? withContainerCounters(unit, used, towerLedger) : used;
       };
     }
     if (component.metric) binding.updateQueries = function (unit) {
@@ -157,15 +212,18 @@
         var unusedTitle = info.layout.FindControlByID(simcity.cRolloverUI.kTxtIDRolloverItemTitleRight);
         if (unusedTitle) unusedTitle.SetVisibility(false);
       }
-      stretchNativeContent(info.layout);
+      // The office template has three adjacent meters. Expanding its first
+      // track to the row width puts it underneath the other two tracks.
+      if (component.id !== 'workers-by-wealth') stretchNativeContent(info.layout);
       if (component.feedback) centerFeedback(info.layout);
       fitSlot(info, component);
       info.layout.SetVisibility(false);
     };
     binding.update = function (info, data) {
       if (!info.panelNative) info.panelNative = copy(original);
+      if (buildingProfit || commercialReasons) data = readContainerCounters(data, buildingProfit);
       if (component.reasonList) data = reasonData(this, data);
-      info.panelMissingQueries = missingData(data);
+      info.panelMissingQueries = original.missingQueries ? original.missingQueries(data) : missingData(data);
       if (info.panelMissingQueries.length) { this.minimize = true; return; }
       if (component.metric) {
         var code = scrui.gUIManager.mLocaleManager.mLocaleCode;
@@ -213,6 +271,7 @@
       var row = items[i].layout;
       row.SetPosition(row.mLeft, row.mTop, box.mWidth, row.mHeight);
       row.SetPinning(scrui.cControlBase.kPinStretch, row.mVerticalPinType);
+      if (row.mIsVisible) fitFeedbackRow(items[i]);
     }
     nativePositions.call(this);
     container.SetPosition(container.mLeft, container.mTop, container.mWidth, box.mHeight);

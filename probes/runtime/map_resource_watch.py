@@ -21,6 +21,10 @@ LAYERS = {
     0x1D716F2E: "radiation",
     0xF69DF1C6: "groundPollution",
 }
+LAND_VALUE_LAYERS = {
+    0xCC5539CC: "residentialLandValueW2",
+    0xCC5539CD: "residentialLandValueW3",
+}
 
 # Retail EXE (EXE_HASH), not the development PDB layout. GetMapsFromIDs
 # 0x5D01F0 uses IndexFromMapID 0x5F7750 and the map vector at game+0x544.
@@ -46,7 +50,7 @@ def assert_city(reader, base, game, scripts, graphics, environment):
         raise ValueError("asset_city_changed")
 
 
-def sample(reader, base, game, scripts, graphics, environment):
+def sample(reader, base, game, scripts, graphics, environment, layers=LAYERS):
     assert_city(reader, base, game, scripts, graphics, environment)
     tick = reader.u32(game + TICK_OFFSET)
     clock, _, _ = day_clock(reader, game)
@@ -56,7 +60,7 @@ def sample(reader, base, game, scripts, graphics, environment):
     maps = {}
     descriptors = []
     for map_id, index in struct.iter_unpack("<Ii", lookup_data):
-        if map_id not in LAYERS:
+        if map_id not in layers:
             continue
         if map_id in maps or not 0 <= index < (end - begin) // MAP_STRIDE:
             raise ValueError("map_capture_layout")
@@ -86,7 +90,7 @@ def sample(reader, base, game, scripts, graphics, environment):
     return tick, clock, maps
 
 
-def changes(previous, current):
+def changes(previous, current, layers=LAYERS):
     for map_id, grid in current.items():
         old = previous.get(map_id)
         if old is None or old[:2] != grid[:2] or old.data == grid.data:
@@ -105,14 +109,14 @@ def changes(previous, current):
             if len(examples) < 8:
                 examples.append(dict(x=index % grid.width, y=index // grid.width, delta=delta))
         yield dict(
-            channel="map.resource", semantic="resource_change", name=LAYERS[map_id],
+            channel="map.resource", semantic="resource_change", name=layers[map_id],
             mapId=map_id, width=grid.width, height=grid.height, changedCells=count,
             increased=increased, decreased=decreased, amountDelta=increased - decreased,
             cellExamples=examples,
         )
 
 
-def capture(reader, base, binding, seconds, directory, state, save):
+def capture(reader, base, binding, seconds, directory, state, save, layers=LAYERS):
     game, scripts, graphics = binding
     if not graphics:
         raise ValueError("map_capture_city_required")
@@ -125,7 +129,7 @@ def capture(reader, base, binding, seconds, directory, state, save):
     with (directory / "trace.jsonl").open("w", encoding="utf-8") as trace:
         while time.monotonic() < deadline and not stop.exists():
             try:
-                result = sample(reader, base, game, scripts, graphics, environment)
+                result = sample(reader, base, game, scripts, graphics, environment, layers)
             except OSError:
                 result = None
             if result is None:
@@ -135,7 +139,7 @@ def capture(reader, base, binding, seconds, directory, state, save):
                 if last_tick is not None and (tick < last_tick or maps.keys() != previous.keys()
                                               or any(maps[key][:2] != previous[key][:2] for key in maps)):
                     raise ValueError("asset_city_changed")
-                for row in changes(previous, maps):
+                for row in changes(previous, maps, layers):
                     sequence += 1
                     trace.write(json.dumps(dict(
                         row, sequence=sequence, simTicks=tick, gameClockSeconds=clock,
@@ -154,6 +158,7 @@ def main():
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--seconds", type=int, choices=range(5, 301), required=True)
     parser.add_argument("--directory", type=Path, required=True)
+    parser.add_argument("--land-value", action="store_true")
     args = parser.parse_args()
     directory = args.directory
     directory.mkdir(exist_ok=False)
@@ -177,7 +182,8 @@ def main():
             raise ValueError("unsupported_exe")
         binding = discover_game(reader, module["base"], directory.with_suffix(".stop"))
         if binding:
-            capture(reader, module["base"], binding, args.seconds, directory, state, save)
+            capture(reader, module["base"], binding, args.seconds, directory, state, save,
+                    LAND_VALUE_LAYERS if args.land_value else LAYERS)
     except OSError:
         state["error"] = "map_capture_read_failed"
     except (RuntimeError, ValueError) as error:

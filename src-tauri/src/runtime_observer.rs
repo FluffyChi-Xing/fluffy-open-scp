@@ -179,6 +179,7 @@ pub async fn observer_start(
     profile: Option<String>,
     observation: Option<String>,
     unit_entry: Option<u32>,
+    component_entries: Option<Vec<u32>>,
     project_capture: Option<bool>,
 ) -> Result<ObserverStatus, CommandError> {
     let manager = state.observer.clone();
@@ -211,7 +212,8 @@ pub async fn observer_start(
     std::fs::create_dir_all(dir.parent().unwrap())
         .map_err(|e| CommandError::internal(e.to_string()))?;
     let observation = observation.unwrap_or_else(|| "ui:all".into());
-    let map_scope = observation == "map:resources" && unit_entry.is_none();
+    let land_value_scope = observation == "map:land-value" && unit_entry.is_none();
+    let map_scope = (observation == "map:resources" && unit_entry.is_none()) || land_value_scope;
     let city_unit = observation
         .strip_prefix("city:")
         .map(|id| {
@@ -246,6 +248,16 @@ pub async fn observer_start(
         if city_unit.is_some() {
             command.arg("--city-metrics");
         }
+        if let Some(entries) = component_entries {
+            if entries.len() > 64 || entries.contains(&0) {
+                return Err(CommandError::new("asset_capture_member_limit", "Invalid observable component IDs"));
+            }
+            for entry in entries.into_iter().filter(|&entry| entry != unit_entry) {
+                command.args(["--component-entry", &entry.to_string()]);
+            }
+        }
+    } else if land_value_scope {
+        command.arg("--land-value");
     } else if !map_scope {
         command.args(["--profile", &profile, "--observation", &observation]);
     }

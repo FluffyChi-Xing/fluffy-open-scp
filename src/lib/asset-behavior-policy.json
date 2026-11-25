@@ -4,6 +4,7 @@
     ["commercial", "education", "residence", "office", "park", "hotel"],
     ["office", "education", "residence", "hotel"],
     ["hotel", "education", "residence", "tourism", "park"],
-    ["education", "residence"]
+    ["education", "residence"],
+    ["park", "landvalue"]
   ]
 }

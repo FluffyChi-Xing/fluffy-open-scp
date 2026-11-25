@@ -1,4 +1,6 @@
 export const mapResourcesZh = {
+  residentialLandValueW2: "中收入住宅地价影响",
+  residentialLandValueW3: "高收入住宅地价影响",
   title: "地图资源编辑", source: "选择地图来源", loaded: "已加载的地形包",
   choose: "导入地形包", selectPackage: "选择已加载的包", region: "区域",
   chooseSave: "导入区域存档", saveSource: "存档来源", removeSave: "移除存档",
@@ -31,6 +33,8 @@ export const mapResourcesZh = {
 };
 
 export const mapResourcesEn: typeof mapResourcesZh = {
+  residentialLandValueW2: "Medium-wealth residential land value",
+  residentialLandValueW3: "High-wealth residential land value",
   title: "Map resources", source: "Choose a map source", loaded: "Loaded terrain packages",
   choose: "Import terrain package", selectPackage: "Select a loaded package", region: "Region",
   chooseSave: "Import region save", saveSource: "Save source", removeSave: "Remove save",

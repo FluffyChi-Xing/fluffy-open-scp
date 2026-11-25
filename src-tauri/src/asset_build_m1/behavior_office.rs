@@ -20,7 +20,7 @@ const BUNDLES: [u32; 8] = [
     0x1BAB_0227,
     0xF236_BB93,
 ];
-const PRODUCTION: [(u32, f32); 3] = [(0x0FC6_E602, 2.0), (0x0FC6_E604, 12.0), (0x0FC6_E605, 1.0)];
+pub(super) const PRODUCTION: [(u32, f32); 3] = [(0x0FC6_E602, 2.0), (0x0FC6_E604, 12.0), (0x0FC6_E605, 1.0)];
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(super) struct Office {

@@ -22,6 +22,44 @@ All user-facing interface text must use i18n, including labels, hints, errors,
 empty states, dialog titles, and accessibility labels. Maintain both zh-CN and
 en-US messages and verify that switching languages updates the active UI.
 
+## UI switches (user directive, 2026-11-24)
+
+Use the shared Switch component for every user-facing on/off setting,
+including enabling or disabling a feature or behavior. Checkbox controls
+and native checkbox inputs are prohibited for on/off settings. Preserve
+the selection semantics of multi-select and indeterminate selection controls.
+
+## Feature impact and regression gate (user directive, 2026-11-24)
+
+For every feature, trace the affected callers, persisted data and downstream
+consumers without waiting for the user to enumerate them. For major changes,
+identify the full regression scope before implementation and revisit it against
+the final diff. Include shared contracts, supported existing configurations,
+and success and failure paths through the normal entry points.
+
+Before handing off a major change, run the existing regression suites that cover
+the affected scope and exercise the end-to-end workflow with representative
+existing configurations, new configurations and affected feature combinations.
+Cover gaps with targeted regression checks. Fix regressions and rerun the
+affected checks before delivery. Report what ran, its results, and any
+unverified scope with the specific blocker. A blocked or skipped required check
+leaves acceptance pending.
+
+Behavior changes cover the editor and saved workbench graph, production schema
+discovery, validation, compilation, package writeback and readback, Actions,
+and runtime log capture. Verify that runtime capture resolves the built asset
+and its components, captures the relevant metrics, and identifies their source.
+Keep the raw failure and its phase visible in Actions and project capture even
+when validation stops a build before enqueueing. Verify previously supported
+nodes and affected combinations alongside new behavior. Record static package
+checks and probe tests separately from in-game operation and live capture.
+Follow the game-verification and rendering rules below for runtime acceptance.
+
+Actions has one build entry point using the saved project and its authored
+scene. Keep raw schema submission out of Actions. Choose the host and internal
+component assignments before compiling any behavior. A compile failure must
+stop the build and be recorded instead of retrying with another building topology.
+
 ## Code standards (user directive, 2026-10-27)
 New `.ts` files must stay under 1000 lines (enforced by ESLint `max-lines`;
 legacy oversize files are grandfathered in `eslint.config.js
@@ -147,3 +185,36 @@ This is the cheap acceptance test that avoids save pollution entirely.
    生命周期接线与 `0FB2DB9A` 原版模块柱图汇总不得因其它功能调整而退化。
    该包不是所有建筑渲染效果或全部业务运营的替代验收；每个资产继续继承
    自己已验证的源材质、内景与身份约束。
+
+## 部署即替换（user directive, 2026-11-25）
+
+每次部署某个建筑或资产，含义始终是：从 SimCityData 撤下该资产的旧包，再换上最新版。
+同一资产的旧版与新版不得同时留在游戏目录加载。GOLDEN 参照只能保存在游戏目录外的
+归档或不可变交付目录，不能以保留参照为由让旧包继续参与加载。继续使用
+`scripts/archive_test_package.py` 登记撤下/部署与哈希；部署后必须检查该资产只剩最新版。
+共享面板运行库维持唯一实例，未经修改的运行库和其他资产包不替换。
+
+## 住宅与观光配方冻结（user directive, 2026-11-25）
+
+和平饭店 `87a9a8b67156bcc43b5349b7c37be230a6adc0bacb016cf713ec12ddaa3ec5ac`
+已由用户确认住宅＋观光组合正常，真实游客立即抵达；此前确认的渲染、水电、垃圾、
+快乐度初值和面板共存继续作为验收基线。纯住宅、纯观光及住宅＋观光组合，以及
+工作台“普通单体行为配方”入口，统一使用这套已验证配方，不另走备用旧配方。
+保留宿主唯一外部服务、住宅迁入迁出链、原生观光冠楼 `02E94AD8` 的发布/补货、
+三档游客车辆入口与共享面板运行库。既有构建/写盘闸门和渲染冻结要求继续生效。
+详见 `docs/re/plop-tourism-crown-boundary-20261125.md`。
+
+## 商办与公园组合的用户验收基线（2026-11-25）
+
+用户确认以下实际部署版本运行游戏内一个月，整体平稳、符合预期。部署文件与
+不可变交付文件已重新验 SHA-256，标记 `GOLDEN-known-working`：
+
+- 瓦科（地价＋公园＋商业＋办公）：`4de04ced26a4ecededf6037a230e23462cdddb46b829e201f8e6aa0dc3e1a9f0`。
+- 泡芙（绿化＋地价＋商业）：`a322e1f1e0c476aab9fda0f60fc4a422d747206805411b07e14c98e2378a6ce9`。
+- 共用面板运行库：`597a9677ba0bbc1aa4e90c096ee2693f9495820d111e153e83c5bd391a7fa84b`。
+
+冻结已通过路径：宿主统一公共服务、巨塔商场三档独立消费与末位容量绑定、
+办公到岗产出、公园原生访问与组件面板查询。不因后续功能顺手改动。该验收只涵盖
+上述实际组合；本轮未单独验证夜景、整栋开关循环、游民到访及全部任意组合。
+详见 `docs/re/park-mall-office-core-boundary-20261125.md` 和
+`tmp/park-business-core-20261125/runtime-acceptance.json`。确认时不改变游戏包集合。

@@ -14,6 +14,7 @@ import { buildQueueErrorKey } from "@/lib/buildQueueError";
 import { buildStageLabel } from "@/lib/buildStageLabel";
 import PanelRuntimeNotice from './PanelRuntimeNotice.vue';
 import { unsupportedPanelItems } from './panel-editor/panelBuildDiagnostic';
+import { describeBehaviorConflict } from './behaviorBuildDiagnostics';
 
 /**
  * OpenSCP Actions：构建历史 + GitHub Actions 风格步骤耗时/详情日志。
@@ -40,9 +41,6 @@ const selectedId = ref<string | null>(null);
 const expandedStage = ref<string | null>(null);
 const loading = ref(false);
 let refreshRequest = 0;
-const schemaText = ref("");
-const enqueueBusy = ref(false);
-const enqueueError = ref("");
 const projectBuildBusy = ref(false);
 const projectBuildError = ref("");
 const projectSchema = ref("");
@@ -52,7 +50,6 @@ const projectLogic = ref<{
   behaviors: number;
   warnings: string[];
 } | null>(null);
-const showDiagnostic = ref(false);
 
 const selectedJob = computed(
   () => jobs.value.find((job) => job.id === selectedId.value) ?? null,
@@ -223,8 +220,19 @@ function buildError(message: string): string {
   if (roadDiagnostic?.[1] === "layout_unsupported") return t("roadAsset.draft.unsupported");
   if (roadDiagnostic?.[1] === "empty") return t("roadAsset.draft.emptyBuild");
   if (roadDiagnostic?.[1] === "base_invalid") return t("roadAsset.draft.chooseBase");
-  const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT))\b/);
+  const pair = message.match(/\bBEHAVIOR_LEAF_CONFLICT:\s*([\w-]+)\/([\w-]+)/);
+  if (pair) return describeBehaviorConflict(pair[1], pair[2], t);
+  const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT)|BEHAVIOR_COPAN_(?:BASE|SERVICES|RESIDENCE))\b/);
   if (behaviorDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${behaviorDiagnostic[1]}`);
+  const missingTowerLayout = message.match(/\bPANEL_TOWER_LAYOUT_MISSING:([\w-]+):([\w:]+)/);
+  if (missingTowerLayout) {
+    const [, id, resource] = missingTowerLayout;
+    const key = `panelEditor.components.${id}`;
+    return t('panelEditor.towerLayoutMissing', { name: te(key) ? t(key) : id, resource });
+  }
+  if (/\bPANEL_TOWER_OPERATIONS_REQUIRE_COMPONENTS\b/.test(message)) return t('panelEditor.towerOperationsRequireComponents');
+  const runtimeDiagnostic = message.match(/\b(PANEL_RUNTIME_(?:PATCH_IDENTITY|COMPOSITION_CONFLICT|PATCH_DEPENDENCY|CONTRACT|CAPABILITY|SOURCE))\b/);
+  if (runtimeDiagnostic) return t(`panelEditor.runtimeErrors.${runtimeDiagnostic[1]}`);
   const containerPanelDiagnostic = message.match(/\b(PANEL_CONTAINER_QUERY_UNSUPPORTED|PANEL_CONTAINER_BINDING|PANEL_CONTAINER_POWER_REQUIRED)\b/);
   const unsupportedItems = unsupportedPanelItems(message);
   if (unsupportedItems.length) {
@@ -292,32 +300,17 @@ async function enqueueProject() {
         ? (cause as { message: string }).message
         : String(cause);
     projectBuildError.value = message;
+    await refresh();
+    const failed = jobs.value.filter(job => job.status === "failed" && job.error === message).at(-1);
+    if (failed) {
+      selectedId.value = failed.id;
+      expandedStage.value = "project-preflight";
+    }
   } finally {
     projectBuildBusy.value = false;
   }
 }
 
-async function enqueueSchema() {
-  enqueueError.value = "";
-  const schema = schemaText.value.trim();
-  if (!schema) return;
-  try {
-    JSON.parse(schema);
-  } catch (cause) {
-    enqueueError.value = String(cause);
-    return;
-  }
-  enqueueBusy.value = true;
-  try {
-    await tauriApi.buildQueue.enqueue(props.project, schema);
-    schemaText.value = "";
-    await refresh();
-  } catch (cause) {
-    enqueueError.value = String(cause);
-  } finally {
-    enqueueBusy.value = false;
-  }
-}
 </script>
 
 <template>
@@ -383,6 +376,10 @@ async function enqueueSchema() {
         <p v-if="projectBuildError" class="enqueue-error">
           {{ buildError(projectBuildError) }}
         </p>
+        <details v-if="projectBuildError && buildError(projectBuildError) !== projectBuildError" class="diagnostic">
+          <summary>{{ t("assetCapture.rawBuildError") }}</summary>
+          <pre class="diagnostic-body">{{ projectBuildError }}</pre>
+        </details>
       </div>
     </section>
 
@@ -475,38 +472,6 @@ async function enqueueSchema() {
       </ul>
     </div>
 
-    <div class="diagnostic">
-      <button
-        type="button"
-        class="diagnostic-toggle"
-        :aria-expanded="showDiagnostic"
-        @click="showDiagnostic = !showDiagnostic"
-      >
-        <FIcon
-          :name="showDiagnostic ? 'ChevronDown' : 'ChevronRight'"
-          :size="12"
-          aria-label=""
-        />
-        {{ t("studio.assetWorkbench.actionsEnqueueTitle") }}
-      </button>
-      <div v-if="showDiagnostic" class="diagnostic-body">
-        <textarea
-          v-model="schemaText"
-          class="schema-input"
-          :placeholder="t('studio.assetWorkbench.actionsEnqueueHint')"
-          spellcheck="false"
-        />
-        <button
-          type="button"
-          class="diagnostic-button"
-          :disabled="enqueueBusy || !schemaText.trim()"
-          @click="enqueueSchema"
-        >
-          {{ t("studio.assetWorkbench.actionsEnqueueButton") }}
-        </button>
-        <p v-if="enqueueError" class="enqueue-error">{{ buildError(enqueueError) }}</p>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -884,52 +849,11 @@ async function enqueueSchema() {
   border-top: 1px solid var(--border);
   padding-top: 4px;
 }
-.diagnostic-toggle {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  font-size: 11px;
-  gap: 4px;
-  padding: 6px 2px;
-}
-.diagnostic-toggle:hover {
-  color: var(--foreground);
-}
 .diagnostic-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 0 0 4px;
-}
-.schema-input {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--foreground);
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  height: 96px;
-  padding: 8px 10px;
-  width: 100%;
-}
-.diagnostic-button {
-  align-self: flex-start;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--foreground);
-  cursor: pointer;
-  font-size: 12px;
-  min-height: 28px;
-  padding: 0 12px;
-}
-.diagnostic-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 .enqueue-error {
   color: var(--danger, #ef4444);

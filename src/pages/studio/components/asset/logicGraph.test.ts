@@ -19,6 +19,12 @@ import {
   type LogicNodeSpec,
 } from "./logicGraph";
 
+it("flags duplicate behavior kinds restored from a document before building", () => {
+  const first = addLogicNode(emptyLogicGraph(), leafSpec("park"), [0, 0]);
+  const second = addLogicNode(first.graph, leafSpec("park"), [0, 0]);
+  expect(logicIssues(second.graph)).toContainEqual({ code: "behaviorLeafDuplicate", nodeId: second.node.id });
+});
+
 const spec = (kind: LogicNodeSpec["kind"], leafType?: LogicNodeSpec["leafType"]) =>
   LOGIC_NODE_SPECS.find(
     (item) => item.kind === kind && item.leafType === leafType,

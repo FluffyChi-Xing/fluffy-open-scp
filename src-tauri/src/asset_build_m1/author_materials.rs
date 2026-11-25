@@ -1,8 +1,7 @@
 //! Strict LOTM9 material compiler ported from the latest SC5 Asset Packager.
 //!
-//! The six payloads are produced directly from the source groups. No display
-//! RGB baking, material deduplication, palette resizing, or legacy NH fallback
-//! participates in this route.
+//! The six payloads are produced from the author's material row layout, with
+//! exact deduplication when the LOTM has more source groups than palette rows.
 
 use std::collections::HashMap;
 
@@ -209,6 +208,9 @@ mod tests {
             room_of_row: vec![0, 0],
             palette_source: vec![[0, 0], [0, 0]],
             room_params: vec![[0.0, 0.0]],
+            source_by_row: vec![0, 1],
+            surface_writer: vec![0],
+            room_writer: vec![0],
         };
         let bytes = parameter_table_bytes(&plan);
         assert_eq!(bytes.len(), 4 * 2 * 4 * 4);

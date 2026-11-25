@@ -1,5 +1,5 @@
 /* global simcity */
-window.createComboData=function(panel,state,missingNames=[],sampleRci=false){
+window.createComboData=function(panel,state,missingNames=[],sampleRci=false,sampleTower=false){
  const missing=new Map(missingNames.map(n=>[simcity['kResourceID'+n],n]));
  const resources={},set=(name,amount,capacity=100)=>{let id=simcity['kResourceID'+name];if(id!==undefined)resources[id]={name,amount,capacity,provenance:'explicit synthetic composition fixture'};};
  set('TotalResidents',40,60);set('TotalWorkers',25,34);set('ExpensesFromMaintenance',450,1000);
@@ -15,6 +15,15 @@ window.createComboData=function(panel,state,missingNames=[],sampleRci=false){
  if(sampleRci){
   set('Wealth',2);set('Density',3);set('HappinessDisplay',3);
   set('HappinessFromPark',20);set('SadnessFromNoPower',12);
+ }
+ if(sampleTower){
+  for(let [tier,workers,jobs] of [[1,80,100],[2,32,50],[3,0,0]]){
+   set('WorkerW'+tier,workers);set('JobsW'+tier,jobs);
+  }
+  for(let [id,amount,capacity] of [[0x13014ACE,82,2400],[0x0735A595,4600,100000],
+   [0x0D0B5542,1200,100000],[0xCD51E152,2700,100000],[0xCCF9FA95,3000,100000]]){
+   resources[id]={name:'resource:'+id,amount,capacity,provenance:'tower operations preview fixture'};
+  }
  }
  const props={};for(let name of ['kPropHappiness_HappinessTokensThresholdForDensityUpgrade','kPropProfit_ProfitTokensThresholdForDensityUpgrade'])props[simcity[name]]=100;
  props[simcity.kPropWork_MinimumWorkersForProduction]=5;props[simcity.kPropWork_TotalJobs]=34;

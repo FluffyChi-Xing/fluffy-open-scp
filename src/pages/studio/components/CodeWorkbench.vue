@@ -230,8 +230,8 @@ async function buildDeployAndLaunch() {
       toast.success(t("flow.launchStarted", { pid: process.pid }));
     }
   } catch (cause) {
-    const code = (cause as { code?: string }).code ?? "";
-    toast.error(t(`flow.${code || "deployFailed"}`));
+    const error = cause as { code?: string; message?: string } | null;
+    toast.error(t(`flow.${error?.code || "deployFailed"}`, { detail: error?.message ?? "" }));
   } finally {
     deployBusy.value = false;
   }

@@ -13,7 +13,8 @@
  */
 
 import { MIXED_COMMERCIAL, validCommercial, type CommercialParams } from "./commercialBehavior";
-import { validOffice, type OfficeParams } from "./officeBehavior";
+import type { OfficeParams } from "./officeBehavior";
+import behaviorPolicy from "@/lib/asset-behavior-policy.json";
 import { residenceCapacityError, type ResidenceParams } from "./residenceBehavior";
 
 export type LogicNodeKind = "building-info" | "behavior-core" | "behavior-leaf";
@@ -115,11 +116,15 @@ export const TOURISM_TEMPLATE_DEFAULTS = {
 
 export interface ParkParams {
   type: "park";
-  landValue: number;
-  landWealth: number;
-  landValue2: number;
-  landWealth2: number;
-  attraction: number;
+  residentCapacity?: number;
+  childrenCapacity?: number;
+  visitBudget?: number;
+  /** Legacy park parameters remain readable; land value now belongs to its leaf. */
+  landValue?: number;
+  landWealth?: number;
+  landValue2?: number;
+  landWealth2?: number;
+  attraction?: number;
 }
 
 export interface TreeParams {
@@ -279,11 +284,9 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     hintKey: "studio.assetWorkbench.logicNode.leafParkHint",
     defaultParams: () => ({
       type: "park",
-      landValue: 500,
-      landWealth: 3,
-      landValue2: 500,
-      landWealth2: 2,
-      attraction: 500,
+      residentCapacity: 90,
+      childrenCapacity: 80,
+      visitBudget: 960,
     }),
   },
   {
@@ -537,6 +540,12 @@ function numberOk(value: unknown, min = 0): boolean {
 export function logicIssues(graph: LogicGraph): LogicIssue[] {
   const issues: LogicIssue[] = [];
   const leaves = graph.nodes.filter(isLeaf);
+  const leafTypes = new Set<BehaviorLeafType>();
+  for (const node of leaves) {
+    const type = leafTypeOf(graph, node);
+    if (type && leafTypes.has(type)) issues.push({ code: "behaviorLeafDuplicate", nodeId: node.id });
+    if (type) leafTypes.add(type);
+  }
   for (const node of leaves.slice(MAX_BEHAVIOR_LEAVES)) {
     issues.push({ code: "behaviorLeafLimit", nodeId: node.id });
   }
@@ -638,8 +647,9 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
             issues.push({ code: "leafHashInvalid", nodeId: node.id });
           break;
         case "park":
-          if (!numberOk(leaf.landValue) || !numberOk(leaf.landValue2))
-            issues.push({ code: "landValueInvalid", nodeId: node.id });
+          if ([leaf.residentCapacity, leaf.childrenCapacity, leaf.visitBudget].some(
+            value => value != null && (!Number.isInteger(value) || value < 1 || value > 100_000),
+          )) issues.push({ code: "parkCapacityInvalid", nodeId: node.id });
           break;
         case "landvalue":
           if (leaf.landValueProfile
@@ -666,7 +676,6 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
           if (!validHotelRooms(leaf.rooms)) issues.push({ code: "hotelRooms", nodeId: node.id });
           break;
         case "office":
-          if (!validOffice(leaf)) issues.push({ code: "officeInvalid", nodeId: node.id });
           break;
         case "tree":
           break;
@@ -678,15 +687,7 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
   return issues;
 }
 
-export const MAX_BEHAVIOR_LEAVES = 16;
-
-export function usesBehaviorContainer(graph: LogicGraph): boolean {
-  const cores = new Set(graph.nodes.filter(node => node.kind === "behavior-core").map(node => node.id));
-  const leaves = new Set(graph.nodes.filter(isLeaf).map(node => node.id));
-  const attached = new Set(graph.edges.filter(edge => edge.targetHandle === "leaf" && cores.has(edge.target) && leaves.has(edge.source)).map(edge => edge.source));
-  return attached.size > 1 || (attached.size === 1 && [...cores].some(id =>
-    (graph.params[id] as BehaviorCoreParams | undefined)?.composition === "independent-v1"));
-}
+export const MAX_BEHAVIOR_LEAVES = behaviorPolicy.maxLeaves;
 
 export function validHotelRooms(rooms: unknown): boolean {
   return rooms == null || (typeof rooms === "number" && Number.isInteger(rooms) && rooms >= 1 && rooms <= 1000);

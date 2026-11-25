@@ -16,7 +16,14 @@ const ENABLE: [u32; 4] = [0x0A02_09A2, 0x0A02_09A3, 0x0A02_09A4, 0x0A02_09A5];
 const EXCLUDED: u32 = 0x0A02_09B2;
 const TOGGLE: u32 = 0x44F5_CF6C;
 pub(super) const GARBAGE: u32 = 0xD7C6_2954;
+pub(super) const GARBAGE_SCHEDULE: u32 = 0x54AB_8B16;
 const GARBAGE_AMOUNT: u32 = 0x0C21_6562;
+const POWER: u32 = 0x4893_9D96;
+const WATER: u32 = 0x825B_4CA4;
+const UTILITY_CAPACITY_FIELDS: [u32; 6] = [
+    0x0B88_904E, 0x0C09_DAA0, 0x0C09_DAB2,
+    0x0C09_DA65, 0x0C09_DA5A, 0x0C09_DA6E,
+];
 const RESIDENCE_STATE: &[u32] = &[
     0x182D_2924, // zoned construction and state transitions
     0x933F_0FBF, // ground plop occupancy and state transitions
@@ -27,9 +34,7 @@ const RESIDENCE_STATE: &[u32] = &[
 // D381A8C4 effective B2; additional leaf-specific behaviors never belong here.
 const DISABLED: &[u32] = &[
     GARBAGE,
-    0x54AB_8B16,
-    0x4893_9D96,
-    0x825B_4CA4,
+    GARBAGE_SCHEDULE,
     0x1B94_6073,
     0xDFFA_74FC,
     0xCDE7_D1E2,
@@ -127,10 +132,18 @@ pub(super) fn patch(bytes: &[u8]) -> Result<Vec<u8>, String> {
             host.values.push(p.clone());
         }
     }
+    // Retain the original building's power and water inputs. The ordinary
+    // host uses the Toy consumer bundles and has no EP1 replacement for them.
+    for hash in UTILITY_CAPACITY_FIELDS.into_iter().chain([0x0AFB_9882, 0x0C09_DA6A]) {
+        if let Some(property) = identity.get(hash) {
+            host.values.retain(|p| p.hash != hash);
+            host.values.push(property.clone());
+        }
+    }
     let exclusions = DISABLED
         .iter()
         .chain(BUSINESS)
-        .filter(|&&bundle| bundle != GARBAGE || !active(&identity, GARBAGE))
+        .filter(|&&bundle| ![GARBAGE, GARBAGE_SCHEDULE].contains(&bundle) || !active(&identity, GARBAGE))
         .map(|&instance| {
             Value::Key(sc_properties::Key {
                 type_id: 0,
@@ -167,6 +180,10 @@ pub(super) fn verify(host: &PropertyFile) -> Result<(), String> {
 
 pub(super) fn verify_program(host: &PropertyFile, program: &super::behavior_nodes::ResolvedBehavior) -> Result<(), String> {
     verify_with_staffing(host, program.host_parking_staff.then_some(program))
+}
+
+pub(super) fn verify_host_staffing(host: &PropertyFile, program: &super::behavior_nodes::ResolvedBehavior) -> Result<(), String> {
+    verify_with_staffing(host, Some(program))
 }
 
 fn verify_with_staffing(host: &PropertyFile, staffing: Option<&super::behavior_nodes::ResolvedBehavior>) -> Result<(), String> {
@@ -207,6 +224,22 @@ fn verify_with_staffing(host: &PropertyFile, staffing: Option<&super::behavior_n
     if !active(host, 0x3064_5625) {
         return Err("BEHAVIOR_CONTAINER_LIGHTING: native lifecycle provider 30645625 is missing".into());
     }
+    for bundle in [POWER, WATER] {
+        if !active(host, bundle) {
+            return Err(format!("BEHAVIOR_CONTAINER_UTILITIES: inactive consumer {bundle:08X}"));
+        }
+    }
+    for hash in UTILITY_CAPACITY_FIELDS {
+        if !matches!(
+            host.get(hash).and_then(|property| property.scalar()),
+            Some(Value::Float(value)) if value.is_finite() && *value > 0.0
+        ) {
+            return Err(format!("BEHAVIOR_CONTAINER_UTILITIES: invalid consumer input {hash:08X}"));
+        }
+    }
+    if active(host, GARBAGE) && !active(host, GARBAGE_SCHEDULE) {
+        return Err("BEHAVIOR_CONTAINER_GARBAGE: missing native daily production schedule".into());
+    }
     verify_toggle(host)
 }
 pub(super) fn exclude_child_garbage(unit: &mut PropertyFile) -> Result<(), String> {
@@ -223,6 +256,36 @@ pub(super) fn exclude_child_garbage(unit: &mut PropertyFile) -> Result<(), Strin
 pub(super) fn verify_child_garbage(unit: &PropertyFile) -> Result<(), String> {
     if active(unit, GARBAGE) {
         return Err("BEHAVIOR_CONTAINER_GARBAGE: child duplicates the host service".into());
+    }
+    Ok(())
+}
+
+pub(super) fn exclude_child_utility_connections(unit: &mut PropertyFile) -> Result<(), String> {
+    use super::behavior_templates::{array, key};
+    let mut excluded = array(unit, EXCLUDED)?.to_vec();
+    for bundle in [POWER, WATER] {
+        if !excluded.iter().any(|value| matches!(value, Value::Key(k) if k.instance == bundle)) {
+            excluded.push(key(bundle));
+        }
+    }
+    set_array_with_flags(unit, EXCLUDED, PropType::Key, excluded, 0x809C);
+    verify_child_utility_connections(unit)
+}
+
+pub(super) fn verify_child_utility_connections(unit: &PropertyFile) -> Result<(), String> {
+    for bundle in [POWER, WATER] {
+        if active(unit, bundle) {
+            return Err(format!("BEHAVIOR_CONTAINER_UTILITIES: child duplicates host connection {bundle:08X}"));
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn verify_host_utility_connections(unit: &PropertyFile) -> Result<(), String> {
+    for bundle in [POWER, WATER] {
+        if !active(unit, bundle) {
+            return Err(format!("BEHAVIOR_CONTAINER_UTILITIES: inactive host connection {bundle:08X}"));
+        }
     }
     Ok(())
 }
@@ -279,6 +342,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn restores_native_host_consumers_and_rejects_excluding_them_again() {
+        let mut donor = common().unwrap();
+        let amount = 0x0B88_904E;
+        set_scalar(&mut donor, amount, PropType::Float, Value::Float(27.0));
+        let mut host = PropertyFile::parse(&patch(&encode(&donor).unwrap()).unwrap()).unwrap();
+        assert_eq!(host.get(amount), donor.get(amount));
+        assert!(active(&host, POWER) && active(&host, WATER));
+        let mut excluded = super::super::behavior_templates::array(&host, EXCLUDED).unwrap().to_vec();
+        excluded.push(super::super::behavior_templates::key(POWER));
+        set_array_with_flags(&mut host, EXCLUDED, PropType::Key, excluded, 0x809C);
+        assert_eq!(
+            verify(&host).unwrap_err(),
+            "BEHAVIOR_CONTAINER_UTILITIES: inactive consumer 48939D96"
+        );
+    }
+
+    #[test]
     fn keeps_the_donors_garbage_service_and_amount_on_the_host_only() {
         let mut donor = common().unwrap();
         donor.values.retain(|property| property.hash != EXCLUDED);
@@ -286,6 +366,7 @@ mod tests {
         set_scalar(&mut donor, GARBAGE_AMOUNT, PropType::Float, Value::Float(1.0));
         let host = PropertyFile::parse(&patch(&encode(&donor).unwrap()).unwrap()).unwrap();
         assert!(active(&host, GARBAGE));
+        assert!(active(&host, GARBAGE_SCHEDULE));
         assert_eq!(host.get(GARBAGE_AMOUNT).and_then(|p| p.scalar()), Some(&Value::Float(1.0)));
         assert!(verify_child_garbage(&donor).is_err());
         exclude_child_garbage(&mut donor).unwrap();

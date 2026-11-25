@@ -27,7 +27,8 @@ window.run=async function(kind='landmark',mode='extended',fixtureOverrides={}){
  simcity.gGameTimeManager={GetElapsedGameTimeSeconds:()=>0};
  const queryLedger=new Map(),queryConflicts=[];
  const sampleRci=arr.some(id=>simcity.RolloverItems[names[id]]?.panelSingleUnit);
- const comboData=fixtureOverrides.__compose?createComboData(p,fixtureOverrides.__state||'normal',fixtureOverrides.__missingResources||[],sampleRci):null;
+ const sampleTower=arr.some(id=>simcity.RolloverItems[names[id]]?.panelTowerOperations);
+ const comboData=fixtureOverrides.__compose?createComboData(p,fixtureOverrides.__state||'normal',fixtureOverrides.__missingResources||[],sampleRci,sampleTower):null;
  const reasonTables={residential:'0xF6862992',commercial:'0x2F32503C',industrial:'0xE093FD6F'};
  const reasonName=arr.map(id=>names[id]).find(name=>name?.endsWith('-reasons'));
  const reasonTable=reasonName&&reasonTables[reasonName.split('_')[1]?.split('-')[0]];
@@ -71,9 +72,9 @@ window.run=async function(kind='landmark',mode='extended',fixtureOverrides={}){
     item.SetVisibility(false);entry.hiddenReason={code:'missing-feedback-locale',table:locale.mTableID,string:locale.mStringID};
    }
   }
-  entry.visible=item.mIsVisible;window.nativeItems.push({id,name,item,entry});
+  entry.visible=item.mIsVisible;window.nativeItems.push({id,name,item,entry,info});
  }catch(e){entry.error=e.message;window.failures.push({kind,mode,name,error:e.message});}}
- let controller={mCurrentLayout:layout,mOriginalHeight:layout.mHeight,mSkyTowerGlobalInfoExists:false};simcity.cRolloverUI.prototype.UpdateItemPositions.call(controller);
+ let controller={mCurrentLayout:layout,mOriginalHeight:layout.mHeight,mSkyTowerGlobalInfoExists:false,mItemInfoArray:window.nativeItems.map(n=>n.info)};simcity.cRolloverUI.prototype.UpdateItemPositions.call(controller);
  let menu=find(215191523);menu.SetVisibility(false);
  const popup=[];
  if(mode==='extended'){

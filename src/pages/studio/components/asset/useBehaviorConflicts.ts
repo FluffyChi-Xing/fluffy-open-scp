@@ -1,7 +1,7 @@
 import { command } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { useI18n } from "vue-i18n";
-import { MAX_BEHAVIOR_LEAVES, isLeaf, leafSpec, leafTypeOf, type LogicGraph } from "./logicGraph";
+import { MAX_BEHAVIOR_LEAVES, isLeaf, leafSpec, leafTypeOf, type LogicGraph, type BehaviorLeafType } from "./logicGraph";
 
 interface BehaviorBinReport {
   conflicts: {
@@ -19,9 +19,26 @@ export function useBehaviorConflicts() {
   const toast = useToast();
   const key = "studio.assetWorkbench.behaviorConflicts";
 
-  function canAdd(graph: LogicGraph): boolean {
+  function additionIssue(graph: LogicGraph, type?: BehaviorLeafType): "duplicate" | "limit" | undefined {
     const leaves = graph.nodes.filter(isLeaf);
-    if (leaves.length >= MAX_BEHAVIOR_LEAVES) {
+    if (type && leaves.some(node => leafTypeOf(graph, node) === type)) return "duplicate";
+    if (leaves.length >= MAX_BEHAVIOR_LEAVES) return "limit";
+  }
+  function addHint(graph: LogicGraph, type: BehaviorLeafType): string {
+    const issue = additionIssue(graph, type);
+    if (issue === "duplicate") return t(`${key}.duplicate`, { behavior: t(leafSpec(type).labelKey) });
+    return issue === "limit" ? t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }) : "";
+  }
+  function available(graph: LogicGraph, type: BehaviorLeafType): boolean {
+    return !additionIssue(graph, type);
+  }
+  function canAdd(graph: LogicGraph, type?: BehaviorLeafType): boolean {
+    const issue = additionIssue(graph, type);
+    if (issue === "duplicate" && type) {
+      toast.warning(addHint(graph, type));
+      return false;
+    }
+    if (issue === "limit") {
       toast.warning(t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }));
       return false;
     }
@@ -39,11 +56,10 @@ export function useBehaviorConflicts() {
     const nodes = siblings.flatMap((id) => {
       const node = graph.nodes.find((node) => node.id === id);
       const type = node && leafTypeOf(graph, node);
-      return type ? [{ id, type, params: graph.params[id], unit: id }] : [];
+      return type ? [{ id, type, params: graph.params[id] }] : [];
     });
     const added = nodes.find((node) => node.id === addedId);
     if (!added || nodes.length < 2) return;
-
     try {
       const result = await command<BehaviorBinReport>("asset_build_m1_check_behavior_bins", {
         nodes,
@@ -73,5 +89,5 @@ export function useBehaviorConflicts() {
     }
   }
 
-  return { canAdd, check };
+  return { canAdd, check, available, addHint };
 }

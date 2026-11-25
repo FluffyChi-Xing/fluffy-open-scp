@@ -40,3 +40,4 @@ pub mod resources;
 pub mod settings;
 pub mod trace;
 mod window_signature;
+pub(crate) mod atlas_extension;

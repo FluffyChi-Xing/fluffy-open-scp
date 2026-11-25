@@ -6,18 +6,36 @@ export interface PanelSchema {
 }
 export interface PanelDependency { schema: string; sources: Array<{path: string; sha256: string}>; runtime: string }
 export interface PanelProject { schema: PanelSchema | null; schemaPath: string; dependency?: PanelDependency; manifestRevision: string; schemaRevision: string | null }
-export interface PanelComponent { id: string; native: string; group: string; feedback?: boolean; counter?: boolean; singleUnit?: boolean; reasonList?: boolean; metric?: {current: string; previous: string} }
+export interface PanelComponent { id: string; native: string; group: string; feedback?: boolean; counter?: boolean; singleUnit?: boolean; reasonList?: boolean; towerOperations?: boolean; metric?: {current: string; previous: string} }
 export interface PanelResource { type: number; group: number; instance: number; locale: string; path: string }
 export interface PanelLibrary { schema: PanelSchema; dependency: PanelDependency; resources: PanelResource[]; gameScript: string; scruiScript: string; css: string; components: PanelComponent[]; contexts: Record<string, Record<string, unknown>>; nativeLocales?: Record<string,string> }
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface PreviewReport { dimensions: [number, number]; contentBounds: Rect; items: Array<{id: number; name: string; visible: boolean; rect: Rect; error?: string}>; text: string; error?: string; powerRect?: Rect }
 export const panelComponents: readonly PanelComponent[] = catalog;
-export function availableComponents(leaves: readonly string[], managed = false): PanelComponent[] {
+export function panelLibraryGroup(component: PanelComponent, leaves: readonly string[]): string {
+  if (component.id === 'tower-business-profit' || component.id === 'workers-by-wealth') {
+    return 'building-stats';
+  }
+  if (component.id === 'profit-index' && leaves.includes('commercial')) return 'commercial';
+  return component.group;
+}
+export function availableComponents(leaves: readonly string[], managed = false, mall = false): PanelComponent[] {
   if (managed) {
     const canReadTourists = leaves.includes('tourism') && !leaves.includes('hotel');
-    return panelComponents.filter(c => c.id === 'maintenance' || (canReadTourists && c.id === 'tourists'));
+    const canReadShoppers = leaves.includes('commercial') && !leaves.includes('hotel');
+    const office = leaves.includes('office');
+    return panelComponents.filter(c => ['maintenance', 'feedback', 'profit'].includes(c.id) || (canReadTourists && c.id === 'tourists')
+      || (leaves.includes('park') && ['park-feedback', 'park-hours', 'park-visitors-title', 'park-visitors'].includes(c.id))
+      || (leaves.includes('residence') && ['residence-feedback', 'residents', 'land-value-residential', 'residential-happiness-reasons', 'residential-sadness-reasons'].includes(c.id))
+      || (canReadShoppers && c.id === 'shoppers') || (mall && c.id === 'mall-average-shoppers')
+      || (canReadShoppers && ['commercial-happiness-reasons', 'commercial-sadness-reasons'].includes(c.id))
+      || (office && c.id === 'workers-by-wealth')
+      || (office && mall && !leaves.includes('hotel') && !leaves.includes('tourism') && c.id === 'tower-business-profit'));
   }
-  return panelComponents.filter(c => c.group === 'common' || leaves.includes(c.group));
+  const sharedBusiness = mall && leaves.includes('office') && leaves.includes('commercial')
+    && !leaves.includes('hotel') && !leaves.includes('tourism');
+  return panelComponents.filter(c => (!c.towerOperations || sharedBusiness)
+    && (c.group === 'common' || leaves.includes(c.group)));
 }
 export function itemName(c: PanelComponent, hide: boolean): string {
   return `OpenSCPPanel_${c.id}${c.feedback ? hide ? '_hide' : '_native' : ''}`;

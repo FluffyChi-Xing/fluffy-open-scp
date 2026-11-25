@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, shallowRef, useId } from "vue";
+import { computed, shallowRef, useId, watch } from "vue";
+import { tauriApi } from "@/api";
 import { useI18n } from "vue-i18n";
 import FSelect from "@/components/ui/FSelect.vue";
 import FButton from "@/components/ui/FButton.vue";
@@ -7,7 +8,7 @@ import LogStream from "@/components/runtime-observer/LogStream.vue";
 import VehicleInventory from "./VehicleInventory.vue";
 import { useAssetCapture } from "./useAssetCapture";
 
-const props = defineProps<{ project: string }>();
+const props = defineProps<{ project: string; projectRoot?: string }>();
 const { t, te } = useI18n();
 const {
   processes,
@@ -19,6 +20,7 @@ const {
   loading,
   error,
   epoch,
+  landValueCapture,
   scan,
   start,
   stop,
@@ -26,7 +28,7 @@ const {
 const metric = shallowRef("");
 const metricLabel = useId();
 const metricOptions = computed(() =>
-  ["", "vehicles", "workers", "tourists", "lighting"].map((value) => ({
+  ["", "vehicles", "workers", "tourists", "lighting", "utilities", "commerce", "economy", "residence", "education", "visitors", "trees"].map((value) => ({
     value,
     label: t(`assetCapture.filter.${value || "all"}`),
   })),
@@ -53,6 +55,21 @@ const processOptions = computed(() =>
     : [{ value: "", label: t("assetCapture.noProcess") }],
 );
 const running = computed(() => Boolean(status.value?.running));
+const buildFailure = shallowRef("");
+const buildLogUnavailable = shallowRef(false);
+watch(() => props.projectRoot, (root, _, onCleanup) => {
+  let active = true;
+  onCleanup(() => { active = false; });
+  buildFailure.value = "";
+  buildLogUnavailable.value = false;
+  if (!root) return;
+  void tauriApi.buildQueue.list(root).then(jobs => {
+    const latest = jobs.at(-1);
+    if (active && latest?.status === "failed") buildFailure.value = latest.error ?? "";
+  }, () => {
+    if (active) buildLogUnavailable.value = true;
+  });
+}, { immediate: true });
 const failure = computed(() => {
   const code = error.value || status.value?.status?.error;
   if (!code) return "";
@@ -62,6 +79,7 @@ const failure = computed(() => {
 const summary = computed(() => {
   const sample = status.value?.status;
   if (loading.value) return t("assetCapture.loading");
+  if (landValueCapture.value && status.value) return t("assetCapture.landValueStatus");
   if (!targets.value.length) return t("assetCapture.noBuild");
   if (!processes.value.length) return t("assetCapture.noProcess");
   if (!status.value) return t("assetCapture.ready");
@@ -81,6 +99,11 @@ const summary = computed(() => {
 
 <template>
   <section class="capture-panel" :aria-label="t('assetCapture.title')">
+    <details v-if="buildFailure" open>
+      <summary>{{ t("assetCapture.buildFailure") }}</summary>
+      <pre class="capture-build-detail">{{ buildFailure }}</pre>
+    </details>
+    <p v-else-if="buildLogUnavailable" class="capture-error">{{ t("assetCapture.buildLogUnavailable") }}</p>
     <div class="capture-controls">
       <div class="capture-field">
         <label :for="buildLabel">{{ t("assetCapture.build") }}</label>
@@ -116,18 +139,21 @@ const summary = computed(() => {
       <FButton
         v-else
         :disabled="busy || loading || !pid || !targetKey"
-        @click="start"
+        @click="start()"
         >{{ t("runtimeObserver.start") }}</FButton
       >
+      <FButton v-if="!running" variant="secondary" :disabled="busy || loading || !pid" @click="start(true)">
+        {{ t("assetCapture.recordLandValue") }}
+      </FButton>
     </div>
     <p class="capture-status" role="status">{{ summary }}</p>
     <p v-if="failure" class="capture-error" role="alert">{{ failure }}</p>
-    <VehicleInventory :sample="status?.status" :running="running" />
-    <div class="capture-field">
+    <VehicleInventory v-if="!landValueCapture" :sample="status?.status" :running="running" />
+    <div v-if="!landValueCapture" class="capture-field">
       <label :for="metricLabel">{{ t("assetCapture.metrics") }}</label>
       <FSelect :id="metricLabel" v-model="metric" :options="metricOptions" />
     </div>
-    <p v-if="metric === 'lighting'" class="capture-status">
+    <p v-if="!landValueCapture && metric === 'lighting'" class="capture-status">
       {{ t("assetCapture.lightingHint") }}
       <span v-if="status?.status?.ready">
         {{
@@ -139,7 +165,7 @@ const summary = computed(() => {
     </p>
     <p
       v-if="
-        metric &&
+        !landValueCapture && metric &&
         status?.status?.ready &&
         Number(status.status.matched) > 0 &&
         (status.status.metricCounts as Record<string, number> | undefined)?.[
@@ -153,7 +179,7 @@ const summary = computed(() => {
     <p v-if="(status?.records ?? 0) > 1000" class="capture-status">
       {{ t("assetCapture.displayLimit", { records: status?.records }) }}
     </p>
-    <LogStream :key="epoch" :rows="status?.recent ?? []" :metric="metric" />
+    <LogStream :key="epoch" :rows="status?.recent ?? []" :metric="landValueCapture ? '' : metric" />
   </section>
 </template>
 
@@ -187,6 +213,7 @@ const summary = computed(() => {
 .capture-error {
   color: var(--destructive);
 }
+.capture-build-detail { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;

@@ -1,7 +1,7 @@
 //! Independent simulation scopes. Legacy unscoped recipes never enter here.
 //! Each scope is compiled by the existing single-Unit compiler, with its own
 //! parameters, bins and sinks. Sharing a scope still requires normal validation.
-//! Every business belongs to a component; the host only manages the building.
+//! Explicit legacy scopes and host-owned workbench components share the binder.
 use super::behavior_nodes::{
     LaborSpec, ResolvedBehavior, compile_with_profile, parse_labor, parse_nodes,
 };
@@ -15,6 +15,8 @@ pub(super) const BUILDING_STAFF: &str = "building-staff";
 pub(super) struct UnitBehavior {
     pub id: String,
     pub program: ResolvedBehavior,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub shares_building_site: bool,
 }
 
 pub(super) fn scoped(nodes: &[Value]) -> bool {
@@ -25,6 +27,52 @@ pub(super) fn compile(
     labor: Option<LaborSpec>,
     nodes: &[Value],
 ) -> Result<ResolvedBehavior, String> {
+    compile_scopes(labor, nodes, false)
+}
+
+pub(super) fn compile_workbench(
+    labor: Option<LaborSpec>,
+    nodes: &[Value],
+    author_tourism: bool,
+) -> Result<ResolvedBehavior, String> {
+    let primary = ["commercial", "office", "hotel", "residence", "education", "tourism", "park", "landvalue", "tree"]
+        .into_iter()
+        .find(|&kind| nodes.iter().any(|node| node["type"] == kind))
+        .ok_or("BEHAVIOR_UNIT_SCOPE: no primary node")?;
+    let (host_nodes, mut components): (Vec<_>, Vec<_>) = nodes.iter().cloned().partition(|node| {
+        node["type"] == "utilities-core" || node["type"] == primary
+            || (primary == "commercial" && node["type"] == "office")
+    });
+    let native_tourism_host = author_tourism && super::author_tourism::selected(&host_nodes);
+    let mut host = super::behavior_mega_tower::compile_host(labor, host_nodes, native_tourism_host)?;
+    if !components.is_empty() {
+        components.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+        for node in &mut components {
+            node["unit"] = node["id"].clone();
+        }
+        host.units = compile_scopes(None, &components, true)?.units;
+    }
+    Ok(host)
+}
+
+fn compile_scopes(
+    labor: Option<LaborSpec>,
+    nodes: &[Value],
+    shares_building_site: bool,
+) -> Result<ResolvedBehavior, String> {
+    compile_scopes_mode(labor,nodes,shares_building_site,true)
+}
+
+pub(super) fn compile_copan(labor: Option<LaborSpec>,nodes: &[Value]) -> Result<ResolvedBehavior,String> {
+    compile_scopes_mode(labor,nodes,true,false)
+}
+
+fn compile_scopes_mode(
+    labor: Option<LaborSpec>,
+    nodes: &[Value],
+    shares_building_site: bool,
+    allow_complete_tourism_donor: bool,
+) -> Result<ResolvedBehavior,String> {
     let nodes = parse_nodes(nodes)?;
     let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
     let mut utilities = Vec::new();
@@ -69,7 +117,7 @@ pub(super) fn compile(
         } else {
             native_labor(&group)
         };
-        let author = super::author_tourism::selected(&group);
+        let author = allow_complete_tourism_donor && super::author_tourism::selected(&group);
         if let [leaf] = group.as_slice()
             && let Some(recipe) = super::behavior_commercial::select(&group, own_labor)?
             && let Some(tiers) = recipe.mixed_tiers()
@@ -91,12 +139,15 @@ pub(super) fn compile(
                 }
                 let mut program = compile_with_profile(Some(staffing[index]), &[leaf], false)?;
                 program.unit_scope = Some(scope.clone());
-                compiled.push(UnitBehavior { id: scope, program });
+                compiled.push(UnitBehavior { id: scope, program, shares_building_site });
             }
         } else {
-            let mut program = compile_with_profile(own_labor, &group, author)?;
+            let mut program = if !allow_complete_tourism_donor
+                && matches!(group.as_slice(),[leaf] if leaf["type"]=="park") {
+                super::behavior_park_core::compile(&group[0]["params"])?
+            } else {compile_with_profile(own_labor, &group, author)?};
             program.unit_scope = Some(id.clone());
-            compiled.push(UnitBehavior { id, program });
+            compiled.push(UnitBehavior { id, program, shares_building_site });
         }
     }
     let mut primary = compile_with_profile(None, &utilities, false)?;
@@ -104,6 +155,12 @@ pub(super) fn compile(
     let garbage = super::behavior_container::GARBAGE;
     if primary.ensure_bundles.contains(&garbage) && !primary.remove_excluded_bundles.contains(&garbage) {
         primary.remove_excluded_bundles.push(garbage);
+    }
+    if primary.ensure_bundles.contains(&garbage) {
+        let schedule = super::behavior_container::GARBAGE_SCHEDULE;
+        if !primary.remove_excluded_bundles.contains(&schedule) {
+            primary.remove_excluded_bundles.push(schedule);
+        }
     }
     if let Some(staff) = building_staff {
         let jobs = super::behavior_nodes::add_job_counts(staff, [0; 3])?;
@@ -116,7 +173,7 @@ pub(super) fn compile(
         staffing.ensure_bundles.push(toggle);
         staffing.remove_excluded_bundles.push(toggle);
         staffing.remove_bundles.retain(|&id| id != toggle);
-        compiled.push(UnitBehavior { id: BUILDING_STAFF.into(), program: staffing });
+        compiled.push(UnitBehavior { id: BUILDING_STAFF.into(), program: staffing, shares_building_site });
     }
     primary.notes.push(
         "managed-building-container/v7 (native host lifecycle, modular bars and host garbage service)".into(),
@@ -155,6 +212,28 @@ fn native_labor(nodes: &[Value]) -> Option<LaborSpec> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn adding_an_incompatible_node_keeps_commercial_and_office_on_the_host() {
+        let labor = parse_labor(Some(&json!({"w1":200,"w2":100,"w3":20,"minWorkers":5}))).unwrap();
+        let base = vec![
+            json!({"id":"office","type":"office","params":{}}),
+            json!({"id":"store","type":"commercial","params":{"commercialProfile":"ground-mall-mixed-v1"}}),
+        ];
+        let expected = super::super::behavior_mega_tower::compile_building(labor, &base, false).unwrap();
+        let mut nodes = base;
+        nodes.extend([
+            json!({"id":"school","type":"education","params":{}}),
+            json!({"id":"park","type":"park","params":{}}),
+        ]);
+        let mut resolved = super::super::behavior_mega_tower::compile_building(labor, &nodes, false).unwrap();
+        nodes.reverse();
+        assert_eq!(resolved, super::super::behavior_mega_tower::compile_building(labor, &nodes, false).unwrap());
+        let components = std::mem::take(&mut resolved.units);
+        assert_eq!(resolved, expected);
+        assert_eq!(components.iter().map(|unit| unit.id.as_str()).collect::<Vec<_>>(), ["park", "school"]);
+        assert!(components.iter().all(|unit| unit.shares_building_site));
+    }
 
     #[test]
     fn building_staff_and_business_jobs_are_additive_in_both_routes() {

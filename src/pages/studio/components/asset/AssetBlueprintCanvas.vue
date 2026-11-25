@@ -387,7 +387,7 @@ function addNode(spec: LogicNodeSpec, position: [number, number]): void {
   let graph = props.logic;
   let addedLeafId: string | undefined;
   if (spec.kind === "behavior-leaf") {
-    if (spec.leafType && !behaviorConflicts.canAdd(graph)) return;
+    if (spec.leafType && !behaviorConflicts.canAdd(graph, spec.leafType)) return;
     const core = ensureCoreNode(graph, [position[0] - 360, position[1]]);
     graph = core.graph;
     const added = addLogicNode(graph, spec, position);
@@ -423,7 +423,7 @@ function addNodeFromMenu(spec: LogicNodeSpec): void {
 
 /** 聚合节点上的「添加行为」：叶子建在右侧并自动连线。 */
 function onAddLeaf(coreId: string, type: BehaviorLeafType): void {
-  if (!behaviorConflicts.canAdd(props.logic)) return;
+  if (!behaviorConflicts.canAdd(props.logic, type)) return;
   const core = props.logic.nodes.find((node) => node.id === coreId);
   const spec = leafSpec(type);
   const siblings = props.logic.edges.filter(
@@ -452,7 +452,7 @@ function onRemoveNode(id: string): void {
 function onDuplicateNode(id: string): void {
   const node = props.logic.nodes.find((node) => node.id === id);
   const type = node && leafTypeOf(props.logic, node);
-  if (type && !behaviorConflicts.canAdd(props.logic)) return;
+  if (type && !behaviorConflicts.canAdd(props.logic, type)) return;
   const result = duplicateLogicNode(props.logic, id);
   if (result.node) emit("update:logic", result.graph);
 }
@@ -488,7 +488,7 @@ function onConnect(connection: Connection): void {
   if (handle === "leaf" && leaf && !behaviorConflicts.canAdd({
     ...props.logic,
     nodes: props.logic.nodes.filter((item) => item.id !== source),
-  })) return;
+  }, leaf)) return;
   const result = connectLogic(props.logic, source, target, handle);
   if (result.error) {
     toast.warning(t(`studio.assetWorkbench.logicIssue.${result.error}`));

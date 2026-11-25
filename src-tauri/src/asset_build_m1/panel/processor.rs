@@ -33,7 +33,7 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
         fs::read_to_string(project_file(root, &dependency.schema)?).map_err(|e| e.to_string())?;
     let config = parse(&raw)?;
     if let Some(program) = plan.behavior_program.as_ref()
-        .filter(|program| !program.units.is_empty())
+        .filter(|program| !program.units.is_empty() && !program.office_and_retail)
     {
         super::container_contract::verify_queries(&config, program)?;
     }
@@ -53,7 +53,18 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
             return Err(format!("PANEL_BEHAVIOR_REQUIRED:{}:{}", c.id, c.group));
         }
     }
-    sources::open(root, &dependency.sources)?;
+    let packages = sources::open(root, &dependency.sources)?;
+    let tower_operations = super::tower_operations::selected(&config);
+    if tower_operations {
+        if plan.behavior_program.as_ref().is_none_or(|program| {
+            config.hover.iter().chain(&config.click).filter(|id| {
+                components().iter().any(|component| component.id == **id && component.tower_operations)
+            }).any(|id| !super::tower_operations::supported(id, program))
+        }) {
+            return Err("PANEL_TOWER_OPERATIONS_REQUIRE_COMPONENTS".into());
+        }
+        super::tower_operations::verify_layouts(&config, &packages)?;
+    }
     let mut fingerprint_bytes = serde_json::to_vec(&(
         &config,
         &dependency,
@@ -63,11 +74,11 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
         components(),
     ))
     .map_err(|e| e.to_string())?;
-    if plan.behavior_program.as_ref().is_some_and(|program| {
-        super::container_contract::uses_tourist_capacity(&config, program)
-    }) {
-        fingerprint_bytes.extend_from_slice(super::container_contract::RUNTIME.as_bytes());
-    }
+    fingerprint_bytes.extend_from_slice(super::container_contract::RUNTIME.as_bytes());
+    fingerprint_bytes.extend_from_slice(super::container_shoppers::RUNTIME.as_bytes());
+    fingerprint_bytes.extend_from_slice(super::tower_operations::RUNTIME.as_bytes());
+    fingerprint_bytes.extend_from_slice(super::component_queries::RUNTIME.as_bytes());
+    fingerprint_bytes.extend_from_slice(super::runtime_bundle::COMPILER_VERSION.as_bytes());
     let fingerprint = sources::digest(&fingerprint_bytes);
     plan.panel = Some(PanelPlan {
         path: dependency.schema.clone(),
@@ -136,18 +147,13 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     if source_game.contains("OpenSCPPanelRuntimeVersion") {
         return Err("PANEL_RUNTIME_SOURCE_ALREADY_PATCHED".into());
     }
-    for c in components() {
+    for c in components().into_iter().filter(|component| !component.tower_operations) {
         if !source_game.contains(&format!("simcity.RolloverItems.{}", c.native)) {
             return Err(format!("PANEL_NATIVE_BINDING:{}", c.native));
         }
     }
-    let suffix = format!(
-        "\n;window.OpenSCPPanelComponents={};window.OpenSCPPanelMessages={};\n{}",
-        serde_json::to_string(&components()).map_err(|e| e.to_string())?,
-        super::MESSAGES,
-        super::RUNTIME
-    );
-    let mut runtime = [source_game.as_bytes(), suffix.as_bytes()].concat();
+    let tower_operations = super::tower_operations::selected(&panel.config);
+    let runtime = super::runtime_bundle::compose(source_game.as_bytes())?;
     // Shared, deterministic runtime bytes across every panel from this source/version.
     // No installed file is edited. The UI overlay is an explicit output dependency.
     if ctx
@@ -164,13 +170,25 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     };
     let mut asset = PropertyFile::parse(ctx.resources.get(&asset_id).ok_or("PANEL_ASSET_MISSING")?)
         .map_err(|e| e.to_string())?;
+    if tower_operations && ctx.plan.behavior_program.as_ref().is_some_and(|program| program.office_and_retail) {
+        set_scalar(&mut asset, super::tower_operations::SINGLE_BUSINESS, PropType::Float, Value::Float(1.0));
+    }
     let scoped_tourists = ctx.plan.behavior_program.as_ref().filter(|program| {
         super::container_contract::uses_tourist_capacity(&panel.config, program)
     });
     if let Some(program) = scoped_tourists {
         super::container_contract::bind_tourist_capacity(&ctx.resources, instance, &mut asset, program)?;
-        runtime.extend_from_slice(b"\n;");
-        runtime.extend_from_slice(super::container_contract::RUNTIME.as_bytes());
+    }
+    let scoped_shoppers = ctx.plan.behavior_program.as_ref().filter(|program| {
+        super::container_shoppers::enabled(&panel.config, program)
+    });
+    // The game loads one UI overlay. The newer shoppers runtime also supports
+    // previously built containers that use the scoped tourist binding.
+    if let Some(program) = scoped_shoppers {
+        super::container_shoppers::write(&ctx.resources, instance, &mut asset, program)?;
+    }
+    if let Some(program)=ctx.plan.behavior_program.as_ref().filter(|p|p.copan_plop_base) {
+        super::component_queries::write(&mut asset,&panel.config,program,instance)?;
     }
     let hide = panel.config.missing_feedback == MissingFeedback::Hide;
     set_scalar(
@@ -187,13 +205,13 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         &mut asset,
         0x0CAB_B2FC,
         PropType::UInt32,
-        super::container_contract::bindings(&panel.config.hover, hide, scoped_tourists.is_some()),
+        super::container_contract::bindings(&panel.config.hover, hide, scoped_tourists.is_some(), scoped_shoppers.is_some(),ctx.plan.behavior_program.as_ref()),
     );
     set_array(
         &mut asset,
         0x0CAF_BDC3,
         PropType::UInt32,
-        super::container_contract::bindings(&panel.config.click, hide, scoped_tourists.is_some()),
+        super::container_contract::bindings(&panel.config.click, hide, scoped_tourists.is_some(), scoped_shoppers.is_some(),ctx.plan.behavior_program.as_ref()),
     );
     set_array(
         &mut asset,

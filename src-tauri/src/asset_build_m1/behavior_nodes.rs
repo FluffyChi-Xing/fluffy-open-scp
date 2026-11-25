@@ -116,12 +116,26 @@ pub struct PresentationRequest {
 /// 合并后的行为指令集：behavior.rs 的唯一输入。
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ResolvedBehavior {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) copan_plop_base: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) copan_service_budget: Option<super::behavior_copan_services::Budget>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) copan_residence_balance: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) copan_crown_tourism: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) copan_park_core: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) host_base_labor: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) unit_scope: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) units: Vec<super::behavior_units::UnitBehavior>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) host_parking_staff: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) office_and_retail: bool,
     pub ensure_bundles: Vec<u32>,
     pub remove_bundles: Vec<u32>,
     pub remove_fields: Vec<u32>,

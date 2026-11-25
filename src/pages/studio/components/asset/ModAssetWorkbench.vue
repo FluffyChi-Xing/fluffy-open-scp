@@ -1088,11 +1088,13 @@ function templateOf(resourceId: number) {
             :project="props.project"
             :menu="asset.menu"
             :logic="asset.draftLogic.value"
+            :mega-tower="asset.draftMegaTower.value"
             :saved-dirty="asset.savedDirty.value"
             :save-document="asset.saveDocument"
             :document-path="asset.documentPath"
             @update:menu="asset.setMenuBinding($event)"
             @update:logic="asset.setLogicGraph($event)"
+            @update:mega-tower="asset.setMegaTower($event)"
             @close="selectedFile = null"
           />
         </div>

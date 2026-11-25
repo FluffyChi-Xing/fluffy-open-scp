@@ -28,16 +28,37 @@ describe('common profit templates', () => {
     expect(button.text()).toContain('Daily profit');
     expect(button.attributes('title')).toBe(labels['en-US'].dailyProfitHint);
     expect(density.text()).toContain('Density (satisfaction)');
+    await wrapper.setProps({ leaves: ['commercial', 'tourism'], mall: true });
+    expect(wrapper.findAll('details').find(group => group.find('summary').text() === 'Commercial')?.text())
+      .toContain(labels['en-US'].profitIndexHint);
+    expect(wrapper.findAll('details').find(group => group.find('summary').text() === 'Tourism')?.text())
+      .toContain(labels['en-US'].tourismRevenueHint);
+    expect(wrapper.text()).not.toContain(labels['en-US'].buildingStats);
+    await wrapper.setProps({ leaves: ['office', 'commercial'] });
+    const shared = wrapper.findAll('details').find(group => group.find('summary').text() === labels['en-US'].buildingStats);
+    expect(shared?.text()).toContain(labels['en-US'].sharedBusinessProfitHint);
+    expect(shared?.text()).toContain(labels['en-US'].buildingWorkersHint);
+    i18n.global.locale.value = 'zh-CN'; await nextTick();
+    expect(shared?.find('summary').text()).toBe(labels['zh-CN'].buildingStats);
+    expect(shared?.text()).toContain(labels['zh-CN'].sharedBusinessProfitHint);
+    expect(shared?.text()).toContain(labels['zh-CN'].buildingWorkersHint);
     await wrapper.setProps({ managed: true });
-    expect(wrapper.text()).not.toContain('Density (satisfaction)');
+    expect(wrapper.text()).not.toContain('密度（满意度）');
   });
 
-  it('queries only the four accounting inputs actually used by native daily profit', () => {
+  it('adds component ledger amounts only for a scoped building', () => {
     const f = bindings();
     const query = f.daily.updateQueries('1,0');
-    expect(Object.keys(query)).toEqual(['incomeToday','expensesToday','incomeYesterday','expensesYesterday']);
+    expect(query.component_incomeToday).toEqual(['connectedUnits', '1,0', 'binAmount', 0x0735A595]);
     expect(query).not.toHaveProperty('maintCost');
     expect(query).not.toHaveProperty('income');
+    const info = { layout: { SetVisibility() {} } };
+    const inputs = { incomeToday: 0, expensesToday: 1500, incomeYesterday: 100, expensesYesterday: 2000,
+      component_incomeToday: 2300, component_expensesToday: 10,
+      component_incomeYesterday: 4000, component_expensesYesterday: 20 };
+    f.daily.update(info, { ...inputs, panelContainer: true });
+    f.daily.update(info, { ...inputs, panelContainer: null });
+    expect(f.dailyReadings).toEqual([790, -1500]);
   });
 
   it('shows actual business indices with localized current/previous labels, without currency', () => {
@@ -57,10 +78,20 @@ describe('common profit templates', () => {
 });
 
 function bindings() {
+  const dailyReadings: number[] = [];
   const text = () => ({ text: '', SetText(value: string) { this.text = value; } });
   const controls = { textControlTitle: text(), textControlLeft1: text(), textControlLeft2: text(), textControlRight1: text(), textControlRight2: text() };
   const simcity = {
-    RolloverItems: { kBlockLandmarkProfit: { updateQueries: () => ({ incomeToday: [], expensesToday: [], incomeYesterday: [], expensesYesterday: [], maintCost: [], income: [], expenses: [] }) }, kEmptySpace10pt: {} } as Record<string, unknown>,
+    kDataConnectedUnits: 'connectedUnits', kDataBinAmount: 'binAmount',
+    RolloverItems: {
+      kBlockLandmarkProfit: {
+        updateQueries: () => ({ incomeToday: [], expensesToday: [], incomeYesterday: [], expensesYesterday: [], maintCost: [], income: [], expenses: [] }),
+        update(_info: unknown, data: { incomeToday: number; expensesToday: number }) {
+          dailyReadings.push(data.incomeToday - data.expensesToday);
+        },
+      },
+      kEmptySpace10pt: {},
+    } as Record<string, unknown>,
     cRolloverUI: { prototype: { UpdateItemPositions() {} } },
   };
   const locale = { mLocaleCode: 'zh-tw' };
@@ -71,5 +102,5 @@ function bindings() {
   // Runtime bindings live across the VM boundary and include mutable native state.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const registered = simcity.RolloverItems as Record<string, any>;
-  return { daily: registered.OpenSCPPanel_profit, index: registered['OpenSCPPanel_profit-index'], controls, locale };
+  return { daily: registered.OpenSCPPanel_profit, index: registered['OpenSCPPanel_profit-index'], controls, locale, dailyReadings };
 }

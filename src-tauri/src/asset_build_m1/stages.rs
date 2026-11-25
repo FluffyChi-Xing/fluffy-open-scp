@@ -1478,7 +1478,7 @@ fn layout_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
     let mut arrays = 0usize;
     let mut skipped_shadows = 0usize;
     let mut violations: Vec<String> = Vec::new();
-    let vanilla_shadows = vanilla_shadow_instances();
+    let vanilla_shadows = vanilla_shadow_instances(&SHADOW_GROUPS);
     for (id, bytes) in ctx.resources.iter() {
         if id.type_id != 0x00B1_B104 {
             continue;
@@ -1546,7 +1546,7 @@ const SHADOW_GROUPS: [u32; 7] = [
 /// vanilla-shadow-strip 与 layout-contract 共用的 shadow 组表与游戏侧
 /// instance 集（元数据枚举，不解压内容）。OPENSCP_GAME_DATA 缺省（测试
 /// 构建）= 空集（非部署构建，不跳过、不剥离）。
-fn vanilla_shadow_instances() -> std::collections::HashSet<(u32, u32)> {
+fn vanilla_shadow_instances(groups: &[u32]) -> std::collections::HashSet<(u32, u32)> {
     let mut vanilla = std::collections::HashSet::new();
     let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") else {
         return vanilla;
@@ -1556,7 +1556,7 @@ fn vanilla_shadow_instances() -> std::collections::HashSet<(u32, u32)> {
             continue;
         };
         for entry in package.entries() {
-            if entry.id.type_id == 0x00B1_B104 && SHADOW_GROUPS.contains(&entry.id.group) {
+            if entry.id.type_id == 0x00B1_B104 && groups.contains(&entry.id.group) {
                 vanilla.insert((entry.id.group, entry.id.instance));
             }
         }
@@ -1584,16 +1584,17 @@ fn vanilla_shadow_strip(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             "reason": "OPENSCP_GAME_DATA unset (non-deployment build); shadow check skipped",
         }));
     }
-    let vanilla = vanilla_shadow_instances();
+    let groups = &SHADOW_GROUPS;
+    let vanilla = vanilla_shadow_instances(groups);
     let dropped = ctx
         .resources
-        .strip_vanilla_shadows(&SHADOW_GROUPS, &vanilla);
+        .strip_vanilla_shadows(groups, &vanilla);
     // 复核：剥离后不允许残留"与 vanilla 撞车"的条目（防御未来回归）。
     // 非撞车的新身份（我们自己的建筑）不受影响。
     let mut remaining: Vec<String> = Vec::new();
     for (id, _bytes) in ctx.resources.iter() {
         if id.type_id == 0x00B1_B104
-            && SHADOW_GROUPS.contains(&id.group)
+            && groups.contains(&id.group)
             && vanilla.contains(&(id.group, id.instance))
         {
             remaining.push(format!(
@@ -1885,9 +1886,13 @@ fn menu_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
     let container = ctx.plan.behavior_program.as_ref().filter(|p|
         p.unit_scope.as_deref() == Some(super::behavior_container::SCOPE));
     let report = if let Some(program) = container {
-        super::behavior_container::validate_menu(
+        if program.copan_plop_base && program.units.is_empty() {
+            super::behavior_copan_base::validate_base_menu(
+                &ctx.resources, instance, donor, program, ctx.plan.panel.as_ref(),
+            )?
+        } else { super::behavior_container::validate_menu(
             &ctx.resources, instance, donor, program, ctx.plan.panel.as_ref(),
-        )?
+        )? }
     } else if ctx.author_building40 {
         super::menu_contract::validate_building40(
             &ctx.resources,
@@ -2159,6 +2164,17 @@ fn bind_behavior(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
 }
 
 fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
+    let ambient_occlusion = ctx.plan.ambient_occlusion.as_ref().map(|settings| {
+        let asset = ctx.menu_instance.map(|instance| ResourceId {
+            type_id: super::menu::PROPERTY_TYPE,
+            group: super::menu::lot_group(),
+            instance,
+        }).or_else(|| ctx.reference_lot.as_ref().map(|(id, _)| *id))
+            .ok_or("ambient occlusion: missing Asset identity")?;
+        let original = ctx.resources.get(&asset).ok_or("ambient occlusion: missing Asset")?;
+        ctx.resources.insert(asset, settings.apply(original)?);
+        Ok::<_, String>(asset)
+    }).transpose()?;
     ctx.delta_mode = ctx.plan.intermediate.output.mode != crate::asset_build_m0::OutputMode::Full;
     let mut staging = Staging::create(&ctx.root, &ctx.build_hash)?;
     if let Some(runtime) = &ctx.panel_runtime {
@@ -2285,6 +2301,11 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             panel: ctx.plan.panel.as_ref(),
             container_program: ctx.plan.behavior_program.as_ref().filter(|p|
                 p.unit_scope.as_deref() == Some(super::behavior_container::SCOPE)),
+            ground_behavior_selection: ctx.plan.ground_behavior_selection
+                || ctx.plan.behavior_program.as_ref().is_some_and(|program| program.office_and_retail),
+            ground_landscape_components: ctx.plan.behavior_program.as_ref()
+                .filter(|program| program.office_and_retail)
+                .map_or(0, |program| program.units.len()),
             menu_instance: ctx.menu_instance,
             selected_menu_categories: ctx.plan.selected_menu_categories.as_deref(),
             reference_lot: ctx.reference_lot.as_ref().map(|(id, _)| *id),
@@ -2311,6 +2332,13 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             street_placement,
         },
     )?;
+    if let Some(asset) = ambient_occlusion {
+        let settings = ctx.plan.ambient_occlusion.as_ref().expect("AO Asset selected");
+        let bytes = final_resources.get(&asset).ok_or("ambient occlusion: missing written Asset")?;
+        settings.verify(bytes)?;
+        final_contract.detail["ambientOcclusion"] = serde_json::to_value(settings)
+            .map_err(|error| error.to_string())?;
+    }
     if let Some(commute) = host_commute {
         final_contract.detail["hostCommute"] = commute;
     }
@@ -2349,6 +2377,9 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         let bytes = final_resources.get(&id).ok_or("COMMERCIAL_RESOURCE: Unit")?;
         let unit = PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
         recipe.verify(&unit)?;
+        if ctx.plan.behavior_program.as_ref().is_some_and(|program| program.office_and_retail) {
+            super::behavior_office_retail::verify(&unit)?;
+        }
         recipe.verify_mixed_capacity(&unit, id, &final_resources)?;
         recipe.verify_lot(&final_resources, &ResourceId { group: super::menu::lot_group(), ..id })?;
         final_contract.detail["commercial"] = serde_json::to_value(recipe).map_err(|error| error.to_string())?;

@@ -13,7 +13,6 @@ import {
 import FIcon from "@/components/extensions/FIcon.vue";
 import LogicNodeCard from "./LogicNodeCard.vue";
 import { validCommercial } from "./commercialBehavior";
-import { validOffice } from "./officeBehavior";
 import { groundResidence, residenceCapacityError } from "./residenceBehavior";
 import {
   cloneLogicParams,
@@ -45,6 +44,7 @@ const description = computed(() => {
   if (draft.value.type === "commercial") return "commercialTemplate";
   if (draft.value.type === "hotel") return "hotelTemplate";
   if (draft.value.type === "office") return "officeTemplate";
+  if (draft.value.type === "park") return "parkTemplate";
   if (draft.value.type === "residence") {
     if (groundResidence(draft.value)) return "residenceGroundTemplate";
     return draft.value.residenceProfile === "megatower-residence-v1"
@@ -56,9 +56,11 @@ const description = computed(() => {
 });
 const invalidTemplateValue = computed(() => {
   const current = draft.value;
+  if (current.type === "park") return [current.residentCapacity, current.childrenCapacity, current.visitBudget].some(
+    value => value != null && (!Number.isInteger(value) || value < 1 || value > 100_000),
+  ) ? "parkInvalid" : null;
   if (current.type === "commercial") return validCommercial(current) ? null : "commercialInvalid";
   if (current.type === "hotel") return validHotelRooms(current.rooms) ? null : "hotelRooms";
-  if (current.type === "office") return validOffice(current) ? null : "officeInvalid";
   if (current.type === "residence") return residenceCapacityError(current);
   if (current.type === "landvalue" && current.landValueProfile) {
     return [current.value, current.value2].some(

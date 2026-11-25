@@ -23,13 +23,16 @@ pub(super) fn uses_tourist_capacity(config: &PanelSchema, program: &ResolvedBeha
             .any(|unit| unit.program.commercial.is_some())
 }
 
-pub(super) fn bindings(items: &[String], hide: bool, scoped_tourists: bool) -> Vec<Value> {
+pub(super) fn bindings(items: &[String], hide: bool, scoped_tourists: bool, scoped_shoppers: bool, program:Option<&ResolvedBehavior>) -> Vec<Value> {
     let mut result = ids(items, hide);
-    if scoped_tourists {
-        for (item, binding) in items.iter().zip(&mut result) {
-            if item == "tourists" {
-                *binding = Value::UInt32(hash("OpenSCPPanel_containerTourists"));
-            }
+    for (item, binding) in items.iter().zip(&mut result) {
+        if let Some(value)=program.and_then(|p|super::component_queries::binding(item,hide,p)) {
+            *binding=value;continue;
+        }
+        match item.as_str() {
+            "tourists" if scoped_tourists => *binding = Value::UInt32(hash("OpenSCPPanel_containerTourists")),
+            "shoppers" if scoped_shoppers => *binding = Value::UInt32(hash(super::container_shoppers::BINDING)),
+            _ => {}
         }
     }
     result
@@ -130,12 +133,17 @@ pub(super) fn verify_queries(
     let tourism_shares_retail = program.units.iter().any(|unit| {
         unit.program.native_tourism.is_some() && unit.program.commercial.is_some()
     });
+    let retail = program.units.iter().any(|unit| unit.program.commercial.is_some());
     let mut unsupported = Vec::new();
     for (view, items) in [("hover", &config.hover), ("click", &config.click)] {
         for item in items {
             match item.as_str() {
-                "maintenance" => {}
+                "maintenance" | "feedback" | "profit" => {}
+                "commercial-happiness-reasons" | "commercial-sadness-reasons" if retail && !hotel && !tourism_shares_retail => {}
                 "tourists" if has_tourism && !hotel && !tourism_shares_retail => {}
+                "shoppers" if retail && !hotel && !tourism_shares_retail => {}
+                _ if super::component_queries::supported(item,program) => {}
+                _ if super::tower_operations::supported(item, program) => {}
                 _ => unsupported.push(format!("{view}:{item}")),
             }
         }
@@ -155,6 +163,7 @@ pub(in crate::asset_build_m1) fn verify(
     program: &ResolvedBehavior,
 ) -> Result<(), String> {
     verify_queries(&panel.config, program)?;
+    if program.copan_plop_base {super::component_queries::verify(resources,asset,&panel.config,program,host)?;}
     let layout = dbpf::ResourceId {
         instance: hash(&format!("OpenSCPPanelShell_{host:08X}")),
         ..parse_tgi(&panel.config.shell)?
@@ -164,11 +173,17 @@ pub(in crate::asset_build_m1) fn verify(
     }
     let hide = panel.config.missing_feedback == MissingFeedback::Hide;
     let scoped_tourists = uses_tourist_capacity(&panel.config, program);
+    let scoped_shoppers = super::container_shoppers::enabled(&panel.config, program);
     if scoped_tourists
         && asset.get(TOURIST_CAPACITY).and_then(|p| p.scalar())
             != Some(&tourist_capacity(resources, host, program)?)
     {
         return Err("PANEL_CONTAINER_BINDING: stale tourism capacity".into());
+    }
+    if scoped_shoppers && asset.get(super::container_shoppers::CAPACITY).and_then(|p| p.scalar())
+        != Some(&super::container_shoppers::capacity(resources, host, program)?)
+    {
+        return Err("PANEL_CONTAINER_BINDING: stale retail capacity".into());
     }
     for (field, expected) in [
         (
@@ -181,11 +196,11 @@ pub(in crate::asset_build_m1) fn verify(
         ),
         (
             0x0CAB_B2FC,
-            Kind::Array(bindings(&panel.config.hover, hide, scoped_tourists)),
+            Kind::Array(bindings(&panel.config.hover, hide, scoped_tourists, scoped_shoppers,Some(program))),
         ),
         (
             0x0CAF_BDC3,
-            Kind::Array(bindings(&panel.config.click, hide, scoped_tourists)),
+            Kind::Array(bindings(&panel.config.click, hide, scoped_tourists, scoped_shoppers,Some(program))),
         ),
         (
             0x0CD4_E49C,

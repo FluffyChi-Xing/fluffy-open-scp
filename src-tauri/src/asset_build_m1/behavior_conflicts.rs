@@ -40,7 +40,7 @@ pub(super) struct Conflict {
     other_bundle: String,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Debug)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Report {
     conflicts: Vec<Conflict>,
@@ -145,10 +145,32 @@ pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
     Ok(report)
 }
 
+/// Match the actual new-building compiler before comparing local bins.
+/// Identical bin hashes in distinct component Units cannot collide.
+pub(super) fn check_building(nodes:&[Value],added_id:&str)->Result<Report,String>{
+    let nodes=parse_nodes(nodes)?;
+    if !nodes.iter().any(|n|n["id"]==added_id){return Err("BEHAVIOR_BIN_CHECK: missing added leaf".into());}
+    if super::behavior_copan_base::supports(&nodes){
+        super::behavior_copan_base::compile_building(None,&nodes)?;
+        Ok(Report::default())
+    }else{check(&nodes,added_id)}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn building_check_uses_isolated_scopes_and_still_rejects_duplicates_and_limit(){
+        let nodes=[json!({"id":"park","type":"park","params":{}}),
+            json!({"id":"visits","type":"tourism","params":{"tourismProfile":"native-tourism-v1"}})];
+        assert!(check_building(&nodes,"visits").unwrap().conflicts.is_empty());
+        let duplicate=[nodes[0].clone(),json!({"id":"park2","type":"park","params":{}})];
+        assert!(check_building(&duplicate,"park2").unwrap_err().starts_with("BEHAVIOR_LEAF_CONFLICT"));
+        let too_many=["park","tourism","office","commercial","residence"].map(|kind|json!({"id":kind,"type":kind,"params":{}}));
+        assert!(check_building(&too_many,"park").unwrap_err().starts_with("BEHAVIOR_LEAF_LIMIT"));
+    }
 
     #[test]
     fn retail_and_tourism_intentionally_share_one_shopper_pool() {

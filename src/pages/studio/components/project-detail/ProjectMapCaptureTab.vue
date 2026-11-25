@@ -55,7 +55,7 @@ const failure = computed(() => {
       </div>
       <FButton variant="secondary" :disabled="busy || running || loading" @click="scan">{{ t("assetCapture.refresh") }}</FButton>
       <FButton v-if="running" variant="secondary" :disabled="busy" @click="stop">{{ t("runtimeObserver.stop") }}</FButton>
-      <FButton v-else :disabled="busy || loading || !pid" @click="start">{{ t("runtimeObserver.start") }}</FButton>
+      <FButton v-else :disabled="busy || loading || !pid" @click="start()">{{ t("runtimeObserver.start") }}</FButton>
     </div>
     <p v-if="failure" class="error" role="alert">{{ failure }}</p>
     <p v-else class="status" role="status">{{ summary }}</p>

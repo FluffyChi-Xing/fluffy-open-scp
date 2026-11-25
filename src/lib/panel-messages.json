@@ -1,4 +1,26 @@
 {
-  "zh-CN": {"profitIndex":"利润指标","current":"当前","previous":"上次记录","dailyProfitHint":"读取建筑财务账本的今日、昨日净额。构建时补齐原生账本依赖。","profitIndexHint":"读取商业或工业的利润指标及上次采样，不代表每日市政收入。"},
-  "en-US": {"profitIndex":"Profit index","current":"Current","previous":"Previous sample","dailyProfitHint":"Reads today's and yesterday's net totals from the building ledger. Builds include the native ledger dependency.","profitIndexHint":"Reads the commercial or industrial profit index and its previous sample, not daily city revenue."}
+  "zh-CN": {
+    "profitIndex": "利润指标",
+    "current": "当前",
+    "previous": "上次记录",
+    "buildingStats": "整栋建筑统计",
+    "dailyProfitHint": "使用地标财务账本显示今日和昨日净额（§）。构建时补齐原生账本依赖。",
+    "profitIndexHint": "商业或工业经营指标。显示当前值和上次采样，无货币单位。",
+    "tourismProfitHint": "观光地标账本的今日和昨日净额（§），已扣除账本记入的支出。",
+    "tourismRevenueHint": "各收入档的当前游客数乘以对应费率（§/小时）。",
+    "sharedBusinessProfitHint": "全楼共用账本的今日和昨日净额（§），合计办公和零售收入并扣除已记账支出。",
+    "buildingWorkersHint": "按收入档显示整栋建筑的在岗劳工与岗位数。每档人数含基础劳工和额外在岗劳工。"
+  },
+  "en-US": {
+    "profitIndex": "Profit index",
+    "current": "Current",
+    "previous": "Previous sample",
+    "buildingStats": "Building-wide statistics",
+    "dailyProfitHint": "Shows today's and yesterday's net totals (§) from the landmark ledger. Builds include the native ledger dependency.",
+    "profitIndexHint": "Shows the current and previous commercial or industrial performance index, without currency units.",
+    "tourismProfitHint": "Shows today's and yesterday's net totals (§) from the tourism landmark ledger after recorded expenses.",
+    "tourismRevenueHint": "Multiplies the current tourist count in each wealth tier by its rate (§/hour).",
+    "sharedBusinessProfitHint": "Shows today's and yesterday's building-wide net totals (§), combining office and retail income and deducting recorded expenses.",
+    "buildingWorkersHint": "Shows workers on duty and jobs across the building by wealth tier, including both base and additional workers on duty."
+  }
 }

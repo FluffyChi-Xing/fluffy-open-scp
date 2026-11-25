@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const runtime = readFileSync(resolve('src/pages/studio/components/asset/panel-editor/native/runtime.js'), 'utf8');
 
@@ -37,7 +37,7 @@ function setup() {
       kWinIDRolloverItemIcon: 1, kWinWhiteBox: 3, kWinIDRolloverItemContainer: 4,
     }),
   };
-  const scrui = { cControlBase: { kPinStretch: 2 } };
+  const scrui = { cControlBase: { kPinStretch: 2 }, cText: { kVAlignCenter: 1 } };
   runInNewContext(runtime, {
     window: { OpenSCPPanelComponents: [
       { id: 'maintenance', native: 'kMaintenance' }, { id: 'shoppers', native: 'kShoppers' },
@@ -54,6 +54,87 @@ function setup() {
 }
 
 describe('panel runtime adapters', () => {
+  it('reads the selected Unit for a single business and keeps connected totals for existing containers', () => {
+    const adapters = readFileSync(resolve('src/pages/studio/components/asset/panel-editor/native/tower-operations.js'), 'utf8');
+    const window: { OpenSCPPanelTowerBindings?: Record<string, {
+      updateQueries(unit: number): Record<string, unknown[]>;
+      update(info: unknown, data: Record<string, number>): void;
+      missingQueries(data: Record<string, number | boolean | null>): string[];
+    }> } = {};
+    runInNewContext(adapters, {
+      window, scrui: { cLocaleString: class {} },
+      simcity: {
+        kDataUnits: 'unit', kDataConnectedUnits: 'connected', kDataBinAmount: 'amount',
+        kDataNonSimProperties: 'nonSim', kDataBins: 'bins', cRolloverUI: {}, RolloverItems: {},
+        kResourceIDExtraWorkerW1: 1627828683,
+      },
+    });
+    const bindings = window.OpenSCPPanelTowerBindings!;
+    const profit = bindings.kBlockSkyTowerLevelProfit;
+    expect(profit.updateQueries(42).local_incomeToday).toEqual(['unit', 42, 'amount', 0x0735A595]);
+    expect(bindings.kSkyTowerLevelMallPopulation.updateQueries(42).local_average).toEqual(['unit', 42, 'bins', 0x13014ACE]);
+    const workers = bindings.kSkyTowerLevelOfficePopulationW1;
+    const workerQueries = workers.updateQueries(42);
+    expect(workerQueries.local_jobs1.slice(0, 3)).toEqual(['unit', 42, 'amount']);
+    expect(workerQueries.extraWorkers1).toEqual(['connected', 42, 'amount', 1627828683]);
+    expect(workerQueries.local_extraWorkers1).toEqual(['unit', 42, 'amount', 1627828683]);
+    expect(workers.missingQueries({
+      singleBusiness: null, workers1: 15, jobs1: 450, extraWorkers1: null,
+      local_workers1: null, local_jobs1: null, local_extraWorkers1: null,
+    })).toEqual([]);
+    expect(workers.missingQueries({
+      singleBusiness: true, workers1: null, jobs1: null, extraWorkers1: null,
+      local_workers1: 15, local_jobs1: 350, local_extraWorkers1: null,
+    })).toEqual([]);
+    expect(workers.missingQueries({
+      singleBusiness: 1, workers1: 15, jobs1: 450, local_workers1: null, local_jobs1: 350,
+    })).toEqual(['workers1']);
+    const workerReadings: Array<{ amount: number; capacity: number }> = [];
+    const workerBar = {
+      text: { SetLocaleText(_label: unknown, reading: { amount: number; capacity: number }) { workerReadings.push(reading); } },
+      backing: { mWidth: 100 }, fill: { SetWidth() {} },
+    };
+    const workersData = {
+      workers1: 15, jobs1: 450, extraWorkers1: 40,
+      local_workers1: 5, local_jobs1: 350, local_extraWorkers1: 136,
+    };
+    workers.update({ workerBars: [workerBar] }, { ...workersData, singleBusiness: 1 });
+    workers.update({ workerBars: [workerBar] }, workersData);
+    expect(workerReadings).toEqual([{ amount: 141, capacity: 350 }, { amount: 55, capacity: 450 }]);
+    const shown: number[] = [];
+    const row = { UpdateLocaleText({ cost }: { cost: number }) { shown.push(cost); }, SetTextColor() {} };
+    const data = {
+      incomeToday: 9, expensesToday: 4, incomeYesterday: 8, expensesYesterday: 5,
+      local_incomeToday: 25, local_expensesToday: 10, local_incomeYesterday: 31, local_expensesYesterday: 11,
+    };
+    profit.update({ profitRows: [row, row] }, { ...data, singleBusiness: 1 });
+    profit.update({ profitRows: [row, row] }, data);
+    expect(shown).toEqual([15, 20, 5, 3]);
+  });
+
+  it('retains the native spacing between all three labor bars when fitting the panel row', () => {
+    const tracks = [
+      { ...control(142), mLeft: 18 },
+      { ...control(47), mLeft: 165 },
+      { ...control(41), mLeft: 217 },
+    ];
+    const parent = control(279);
+    const row = { ...control(278), mParentControl: parent, mChildren: tracks };
+    const bindings: Record<string, unknown> = { kEmptySpace10pt: {} };
+    runInNewContext(runtime, {
+      window: {
+        OpenSCPPanelComponents: [{ id: 'workers-by-wealth', native: 'kOffice', towerOperations: true }],
+        OpenSCPPanelTowerBindings: { kOffice: {} },
+      },
+      simcity: { RolloverItems: bindings, cRolloverUI: { prototype: {} } },
+      scrui: { cControlBase: { kPinStretch: 2 } },
+    });
+    const binding = bindings['OpenSCPPanel_workers-by-wealth'] as { init(info: unknown): void };
+    binding.init({ layout: row });
+    expect(row.mWidth).toBe(279);
+    expect(tracks.map(({ mLeft, mWidth }) => [mLeft, mWidth])).toEqual([[18, 142], [165, 47], [217, 41]]);
+  });
+
   it('renders up to three native reasons and clears stale lines as the inputs change', () => {
     const active = [control(), control(), control()];
     const inactive = [control(), control(), control()];
@@ -180,6 +261,30 @@ describe('panel runtime adapters', () => {
     const f = setup();
     f.simcity.cRolloverUI.prototype.UpdateItemPositions.call({ mItemInfoArray: [] });
     expect(f.positions()).toBe(1);
+  });
+
+  it('reflows visible feedback inside the row before stacking other controls', () => {
+    const f = setup();
+    const box = control(279);
+    const row = { ...control(279, 28), mIsVisible: true };
+    const branch = { ...control(279, 28), mTop: -4, mParentControl: row };
+    const frame = { ...control(279, 17), mTop: 6, mParentControl: branch };
+    const refresh = vi.fn();
+    const text = {
+      ...control(279, 28), mParentControl: frame,
+      GetTextHeight: () => 34,
+      Private_SetVerticalAlignment: vi.fn(),
+      Private_UpdateTextSubComponents: refresh,
+    };
+    const normalRollover = { ...branch, FindControlByID: () => text };
+    f.simcity.cRolloverUI.prototype.UpdateItemPositions.call({
+      mItemInfoArray: [{ layout: row, normalRollover, dataBinding: { panelSlot: true } }],
+      mCurrentLayout: { FindControlByID: (id: number) => id === 3 ? box : f.parent },
+    });
+    expect(row.mHeight).toBe(42);
+    expect(text.mHeight).toBe(row.mHeight);
+    expect(text.mTop + frame.mTop + branch.mTop).toBe(0);
+    expect(refresh).toHaveBeenCalledOnce();
   });
 
   it.each([222464035, 222514320])('centers the nested feedback text path (%s)', branchId => {

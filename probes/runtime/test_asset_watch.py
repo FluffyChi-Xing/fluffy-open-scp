@@ -101,6 +101,17 @@ class AssetWatchTest(unittest.TestCase):
         self.assertTrue(all(row["after"] is None for row in updates if row["unitStamp"] == 99))
         self.assertFalse(sample(mem, game, scripts, graphics, base, iid + 1)[2])
 
+        # A project capture discovers child entries from the built package.
+        _, _, members, component = sample(
+            mem, game, scripts, graphics, base, iid + 1, component_entries=(iid,),
+        )
+        self.assertEqual(members, {(0, 100)})
+        rows = list(changes({}, component, tick, clock, iid + 1))
+        self.assertTrue(rows)
+        self.assertTrue(all(row["unitEntryId"] == iid for row in rows))
+        self.assertTrue(all(row["buildingEntryId"] == iid + 1 for row in rows))
+        self.assertEqual({row["name"] for row in rows}, {"totalWorkers", "touristW1"})
+
 
 if __name__ == "__main__":
     unittest.main()

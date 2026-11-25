@@ -63,6 +63,10 @@ pub(super) struct Templates {
 }
 
 impl Templates {
+    pub(super) fn ground_residence(&self) -> Option<&GroundResidence> {
+        self.ground_residence.as_ref()
+    }
+
     pub(super) fn is_empty(&self) -> bool {
         !self.residence() && !self.land_value()
     }

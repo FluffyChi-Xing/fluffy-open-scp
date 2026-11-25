@@ -1,4 +1,7 @@
 export const panelRciZh = {
+  'workers-by-wealth': '全楼在岗劳工与岗位（三档）',
+  'mall-average-shoppers': '商场平均客流／小时',
+  'tower-business-profit': '全楼净利润（今日／昨日）',
   'land-value-residential': '住宅地价',
   'land-value-commercial': '商业地价',
   'industrial-tech-level': '工业技术等级',
@@ -13,6 +16,9 @@ export const panelRciZh = {
 };
 
 export const panelRciEn = {
+  'workers-by-wealth': 'Building-wide workers and jobs by wealth',
+  'mall-average-shoppers': 'Average mall shoppers per hour',
+  'tower-business-profit': 'Building-wide net profit (today / yesterday)',
   'land-value-residential': 'Residential land value',
   'land-value-commercial': 'Commercial land value',
   'industrial-tech-level': 'Industrial tech level',

@@ -176,19 +176,22 @@ impl GroundResidence {
     pub(super) fn bundles(&self) -> impl Iterator<Item = u32> {
         let ground = if self.high_density { d3::GROUND } else { GROUND };
         COMMON.iter().copied().map(|id| {
-            if self.high_density && id == d3::GROWTH_STATE { d3::PLOP_STATE } else { id }
+            // Every workbench residence is ploppable. The zoning construction
+            // initializer is replaced by Copan's plop lifecycle at every density.
+            if id == d3::GROWTH_STATE { d3::PLOP_STATE } else { id }
         }).chain(self.variant().iter().chain(ground).copied())
     }
 
-    fn excluded(&self) -> impl Iterator<Item = u32> {
+    pub(super) fn excluded(&self) -> impl Iterator<Item = u32> {
         ALTERNATE
             .iter()
             .chain(W1)
             .chain(W2)
             .chain(W3)
+            .chain(std::iter::once(&d3::GROWTH_STATE))
             .chain(if self.high_density { d3::ALTERNATE } else { &[] })
             .copied()
-            .filter(|id| !(self.variant().contains(id) || self.high_density && *id == d3::PLOP_STATE))
+            .filter(|id| !(self.variant().contains(id) || *id == d3::PLOP_STATE))
     }
 
     pub(super) fn fields(&self) -> Vec<(u32, PropType, Value)> {
@@ -296,9 +299,7 @@ impl GroundResidence {
             }
         }
         let mut flags = array(unit, INITIAL_FLAGS)?.to_vec();
-        if self.high_density {
-            flags.retain(|flag| !d3::blocks_move_in(flag));
-        }
+        flags.retain(|flag| !d3::blocks_move_in(flag));
         if !flags.contains(&VACANT) {
             flags.push(VACANT);
         }
@@ -310,7 +311,7 @@ impl GroundResidence {
 
     pub(super) fn verify(&self, unit: &PropertyFile) -> Result<(), String> {
         let flags = array(unit, INITIAL_FLAGS)?;
-        if !flags.contains(&VACANT) || self.high_density && flags.iter().any(d3::blocks_move_in) {
+        if !flags.contains(&VACANT) || flags.iter().any(d3::blocks_move_in) {
             return Err("RESIDENCE_GROUND_VACANT".into());
         }
         for id in self.bundles() {
@@ -340,6 +341,28 @@ impl GroundResidence {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn every_ground_wealth_uses_plop_construction_and_accepts_move_in() {
+        for profile in ["ground-residence-w1-v1", "ground-residence-w2-v1", "ground-residence-w3-v1"] {
+            let residence = GroundResidence::select(
+                &json!({"residenceProfile":profile,"population":600}), "home"
+            ).unwrap().unwrap();
+            let mut unit = PropertyFile::default();
+            super::super::property_edit::set_array(
+                &mut unit, INITIAL_FLAGS, PropType::Int32,
+                [13, 14, 49, 23].map(Value::Int32).to_vec(),
+            );
+            residence.patch(&mut unit).unwrap();
+            assert_eq!(array(&unit, INITIAL_FLAGS).unwrap(),
+                [Value::Int32(49), Value::Int32(23), VACANT]);
+            assert!(contains(&unit, &ENABLE, d3::PLOP_STATE));
+            assert!(!contains(&unit, &ENABLE, d3::GROWTH_STATE));
+            assert!(contains(&unit, &[EXCLUDED], d3::GROWTH_STATE));
+            let bytes = super::super::property_edit::encode(&unit).unwrap();
+            residence.verify(&PropertyFile::parse(&bytes).unwrap()).unwrap();
+        }
+    }
 
     #[test]
     fn high_density_ground_residence_uses_native_intake_tax_and_happiness() {

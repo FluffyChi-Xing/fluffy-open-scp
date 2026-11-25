@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from map_resource_watch import Grid, capture, changes, sample
+from map_resource_watch import Grid, LAND_VALUE_LAYERS, capture, changes, sample
 
 
 COAL = 0xD779C976
@@ -53,6 +53,13 @@ class MapResourceWatchTest(unittest.TestCase):
         self.assertEqual(sample(*args), (47, 43200.0, {
             COAL: Grid(2, 1, struct.pack("<ii", 500, 200)),
         }))
+        land_value = 0xCC5539CC
+        reader.words(0x62000, land_value, 1)
+        *_, before = sample(*args, LAND_VALUE_LAYERS)
+        reader.words(0x63000, 550, 200)
+        *_, after = sample(*args, LAND_VALUE_LAYERS)
+        row, = changes(before, after, LAND_VALUE_LAYERS)
+        self.assertEqual((row["name"], row["amountDelta"]), ("residentialLandValueW2", 50))
         reader.words(graphics, base + 0x91F8A4, 0, 0, 0xA0000)
         with self.assertRaisesRegex(ValueError, "asset_city_changed"):
             sample(*args)

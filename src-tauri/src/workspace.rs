@@ -1562,6 +1562,7 @@ pub async fn code_package_entries(
 pub async fn code_package_observable_units(
     state: State<'_, AppState>,
     request: CodePathRequest,
+    unit_entry: Option<u32>,
 ) -> Result<Vec<u32>, CommandError> {
     use crate::asset_build_m1::menu::{MENU_GROUP, PROPERTY_TYPE, UNIT_GROUP};
     let store = Arc::clone(&state.store);
@@ -1579,6 +1580,37 @@ pub async fn code_package_observable_units(
         }).collect();
         ids.sort_unstable();
         ids.dedup();
+        if let Some(host) = unit_entry {
+            use sc_properties::{Kind, PropertyFile, Value};
+            if !ids.contains(&host) {
+                return Err(CommandError::new("asset_capture_host_missing", "Build package does not contain the selected building"));
+            }
+            let mut members = vec![host];
+            let mut index = 0;
+            while let Some(&instance) = members.get(index) {
+                index += 1;
+                let id = dbpf::ResourceId { type_id: PROPERTY_TYPE, group: UNIT_GROUP, instance };
+                let entry = package.entry(id).expect("member in package");
+                let bytes = package.read(entry).map_err(|error| CommandError::internal(error.to_string()))?;
+                let unit = PropertyFile::parse(&bytes).map_err(|error| CommandError::internal(error.to_string()))?;
+                if let Some(Kind::Array(values)) = unit.get(0x07E0_AD0A).map(|p| &p.kind) {
+                    for value in values {
+                        if let Value::Key(key) = value
+                            && [0, UNIT_GROUP].contains(&key.group)
+                            && [0, PROPERTY_TYPE].contains(&key.type_id)
+                            && package.entry(dbpf::ResourceId { instance: key.instance, ..id }).is_some()
+                            && !members.contains(&key.instance)
+                        {
+                            members.push(key.instance);
+                        }
+                    }
+                }
+                if members.len() > 64 {
+                    return Err(CommandError::new("asset_capture_member_limit", "Build package has more than 64 observable components"));
+                }
+            }
+            return Ok(members);
+        }
         Ok(ids)
     })
     .await

@@ -220,10 +220,15 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     };
 
     let independent_seed = if program.units.is_empty() { None } else {
-        Some(ctx.resources.get(&unit_id).ok_or("BEHAVIOR_UNIT_RESOURCE: host seed")?.clone())
+        let seed=ctx.resources.get(&unit_id).ok_or("BEHAVIOR_UNIT_RESOURCE: host seed")?;
+        Some(if program.copan_plop_base { super::behavior_copan_base::patch(seed)? } else {seed.clone()})
     };
     if program.unit_scope.as_deref() == Some(super::behavior_container::SCOPE) {
-        let host=super::behavior_container::patch(ctx.resources.get(&unit_id).unwrap())?;
+        let host = if program.copan_plop_base {
+            super::behavior_copan_base::patch(ctx.resources.get(&unit_id).unwrap())?
+        } else {
+            super::behavior_container::patch(ctx.resources.get(&unit_id).unwrap())?
+        };
         ctx.resources.insert(unit_id,host);
     }
     // Menu-layer freeze baseline: capture the bytes the output must preserve.
@@ -302,7 +307,11 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     if let Some(recipe) = &program.commercial {
         recipe.verify_lot(ctx.resources.all(), &lot_id)?;
         let bytes = ctx.resources.get(&unit_id).ok_or("COMMERCIAL_RESOURCE: Unit")?;
-        let unit = recipe.patch(bytes)?;
+        let unit = if program.office_and_retail {
+            recipe.patch(&super::behavior_office_retail::patch(bytes)?)?
+        } else {
+            recipe.patch(bytes)?
+        };
         let unit = if let Some((unit, id, bundle)) = recipe.bind_mixed_capacity(&unit, unit_id)? {
             if ctx.resources.get(&id).is_some() {
                 return Err("COMMERCIAL_BUNDLE: mixed-capacity resource collision".into());

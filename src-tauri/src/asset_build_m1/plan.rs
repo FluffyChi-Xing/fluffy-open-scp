@@ -25,6 +25,10 @@ pub struct PropertyBuildPlan {
     /// 逻辑编排图编译后的行为指令集（`semantics.labor` + `semantics.behaviors`）。
     /// 与 legacy `behavior` 互斥；menu + behaviors 允许组合（行为绑定到新菜单身份）。
     pub behavior_program: Option<super::behavior_nodes::ResolvedBehavior>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) ground_behavior_selection: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) ambient_occlusion: Option<super::ambient_occlusion::Settings>,
     /// `scene.writes`（delta 模式声明）：只有列出的列族会被场景写回覆盖。
     pub scene_writes: super::scene::SceneWrites,
     #[serde(skip)]
@@ -60,6 +64,11 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         Some(spec)
     };
     let scene_writes = super::scene::SceneWrites::parse(&im.scene.writes);
+    let ambient_occlusion = im.semantics.ambient_occlusion.as_ref()
+        .map(super::ambient_occlusion::Settings::parse).transpose()?;
+    if ambient_occlusion.is_some() && menu.is_none() && im.references.lot.is_none() {
+        return Err("semantics.ambientOcclusion requires an Asset identity".into());
+    }
     // 声明位拼写错误必须 fail-closed：`"path"` 会被 parse 静默忽略，构建
     // 看起来"成功"但什么都没写——这正是 r10 类事故的温床。
     for family in &im.scene.writes {
@@ -80,6 +89,12 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
     }
     let has_composed = im.semantics.labor.is_some() || !im.semantics.behaviors.is_empty();
+    let mega_tower = im.semantics.mega_tower.clone().map(super::behavior_mega_tower::Selection::parse).transpose()?;
+    if mega_tower.is_some() && (menu.is_none() || has_composed || !im.semantics.behavior.is_empty()
+        || im.output.mode != crate::asset_build_m0::OutputMode::Full)
+    {
+        return Err("MEGA_TOWER_CONFIG: single-building behavior selection requires a new menu and full output".into());
+    }
     if has_composed && !im.semantics.behavior.is_empty() {
         return Err(
             "semantics.behavior and semantics.behaviors/labor are mutually exclusive; \
@@ -112,7 +127,9 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         )?)
     };
     let mut completed_plop_menu = false;
-    let behavior_program = if has_composed {
+    let behavior_program = if let Some(selection) = &mega_tower {
+        Some(selection.compile_with_copan_base(menu.is_some())?)
+    } else if has_composed {
         let mut labor = super::behavior_nodes::parse_labor(im.semantics.labor.as_ref())?;
         let nodes = super::behavior_nodes::parse_nodes(&im.semantics.behaviors)?;
         if menu.is_none() && nodes.iter().any(|node| node["type"] == "hotel") {
@@ -128,7 +145,11 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         {
             labor.min_workers = 0;
         }
-        Some(super::behavior_nodes::compile_with_profile(labor, &nodes, author_tourism)?)
+        Some(if menu.is_some() && !super::behavior_units::scoped(&nodes) && super::behavior_copan_base::supports(&nodes) {
+            super::behavior_copan_base::compile_building(labor, &nodes)?
+        } else {
+            super::behavior_mega_tower::compile_building(labor, &nodes, author_tourism)?
+        })
     } else {
         None
     };
@@ -236,7 +257,11 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         // /53–55: ordinary vehicle paths use Tokyo Tower's 03106C2E entry.
         // Bump whenever game-side lowering/geometry contracts change. The
         // run cache must never replay a package built by an older interpreter.
-        processor_version: if completed_plop_menu {
+        processor_version: if behavior_program.as_ref().is_some_and(|p| p.copan_plop_base) {
+            super::behavior_copan_base::VERSION
+        } else if mega_tower.is_some() {
+            "openscp.property.m1/ground-behavior-selection-1"
+        } else if completed_plop_menu {
             super::behavior_plop::PROCESSOR_VERSION
         } else if behavior_program
             .as_ref()
@@ -257,6 +282,8 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         menu,
         behavior,
         behavior_program,
+        ground_behavior_selection: mega_tower.is_some(),
+        ambient_occlusion,
         scene_writes,
         order: ["property", "dbpf", "readback"],
     })
@@ -314,7 +341,9 @@ mod tests {
                 assert_eq!(spec.menu_parent_instance, expected_parent);
                 assert_eq!(spec.building_category_instance, Some(0xC710_B6E9));
                 assert_eq!(spec.unit_donor.as_deref(), Some("generic-park"));
-                assert_eq!(plan.processor_version, super::super::behavior_plop::PROCESSOR_VERSION);
+                assert_eq!(plan.processor_version, if kind=="hotel" {
+                    super::super::behavior_plop::PROCESSOR_VERSION
+                } else {super::super::behavior_copan_base::VERSION});
             }
         }
     }

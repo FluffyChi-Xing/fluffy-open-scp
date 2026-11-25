@@ -422,11 +422,7 @@ fn validate_profile(
     })
 }
 
-fn validate_complete_building(
-    menu: &PropertyFile,
-    unit: &PropertyFile,
-    instance: u32,
-) -> Result<Vec<String>, String> {
+pub(super) fn validate_complete_panel(menu: &PropertyFile, instance: u32) -> Result<(), String> {
     // These are presentation fields present in both the s31 GOLDEN menu and
     // the complete reference candidate, but absent from Hope's 22-field leaf.
     for hash in [
@@ -448,6 +444,15 @@ fn validate_complete_building(
             menu.values.len()
         ));
     }
+    Ok(())
+}
+
+fn validate_complete_building(
+    menu: &PropertyFile,
+    unit: &PropertyFile,
+    instance: u32,
+) -> Result<Vec<String>, String> {
+    validate_complete_panel(menu, instance)?;
     // The stock elementary-school leaf is intentionally short and obtains
     // common utility bundles from the game's typed Unit template chain.
     let native_school = scalar_key(unit, 0x00B2_CCCB).is_some_and(|parent| {

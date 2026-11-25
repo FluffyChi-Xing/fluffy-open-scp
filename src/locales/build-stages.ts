@@ -1,4 +1,5 @@
 export const buildStagesZh = {
+  'project-preflight': '校验项目配置',
   'load-inputs': '读取构建输入',
   'insert-textures': '编译纹理',
   'insert-model': '编译建筑模型',
@@ -22,6 +23,7 @@ export const buildStagesZh = {
 };
 
 export const buildStagesEn = {
+  'project-preflight': 'Validate project configuration',
   'load-inputs': 'Load build inputs',
   'insert-textures': 'Compile textures',
   'insert-model': 'Compile building model',

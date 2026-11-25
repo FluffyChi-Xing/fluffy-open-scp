@@ -5,7 +5,9 @@ import PanelCanvas from './PanelCanvas.vue';
 import PanelLibrary from './PanelLibrary.vue';
 import {usePanelProject} from './usePanelProject';
 import {availableComponents,insertComponent,type PanelMode} from './model';
-import {usesBehaviorContainer,type LogicGraph,type BehaviorLeafType} from '../logicGraph';
+import {type LogicGraph,type BehaviorLeafType} from '../logicGraph';
+import { MIXED_COMMERCIAL } from '../commercialBehavior';
+import { behaviorCombinationConflict, usesCopanComponents } from '../behaviorBuildDiagnostics';
 const props=defineProps<{project:string;logic:LogicGraph;title:string;active:boolean}>();
 const emit=defineEmits<{dirty:[value:boolean]}>();
 const {t,te}=useI18n(),state=usePanelProject(toRef(props,'project'));
@@ -13,8 +15,13 @@ const {schema,library,busy,error,dirty,undo,redo,saved}=state;
 const mode=shallowRef<PanelMode>('click'),closed=shallowRef(false),previewError=shallowRef('');
 const selected=shallowRef<string>();
 const leaves=computed(()=>[...new Set(props.logic.nodes.filter(n=>n.kind==='behavior-leaf'&&props.logic.edges.some(e=>e.source===n.id&&props.logic.nodes.some(core=>core.id===e.target&&core.kind==='behavior-core'))).map(n=>(props.logic.params[n.id] as {type?:BehaviorLeafType})?.type).filter((type):type is BehaviorLeafType=>!!type))]);
-const managed=computed(()=>usesBehaviorContainer(props.logic));
-const available=computed(()=>availableComponents(leaves.value,managed.value));
+const mall=computed(()=>props.logic.edges.some(edge=>{
+  if(edge.targetHandle!=='leaf'||!props.logic.nodes.some(node=>node.id===edge.target&&node.kind==='behavior-core'))return false;
+  const capability=props.logic.params[edge.source] as {type?:string;commercialProfile?:string}|undefined;
+  return capability?.type==='commercial'&&[MIXED_COMMERCIAL,'ground-megatower-mall-w2-v1'].includes(capability.commercialProfile??'');
+}));
+const managed=computed(()=>usesCopanComponents(leaves.value)||Boolean(behaviorCombinationConflict(leaves.value)));
+const available=computed(()=>availableComponents(leaves.value,managed.value,mall.value));
 const invalid=computed(()=>{
   const allowed=new Set(available.value.map(c=>c.id));
   return (['hover','click'] as const).flatMap(view=>(schema.value?.[view]??[]).filter(id=>!allowed.has(id)).map(id=>({view,id})));
@@ -43,10 +50,9 @@ defineExpose({save:state.save});
     <p v-if="invalid.length" class="error" role="alert">{{t('panelEditor.unsupportedControls',{items:invalidLabels})}}</p>
     <div v-if="schema&&library" class="panel-workspace" :inert="busy">
       <PanelCanvas v-if="active" :schema="schema" :library="library" :mode="mode" :closed="closed" :title="title" :selected="selected" @insert="insert" @remove="remove" @error="previewError=$event" @select="selected=$event" />
-      <PanelLibrary :leaves="leaves" :items="schema[mode]" :power="schema.power" :managed="managed" :selected="selected" @add="insert" @select="selected=$event" @remove="remove" @move="insert" />
+      <PanelLibrary :leaves="leaves" :items="schema[mode]" :power="schema.power" :managed="managed" :mall="mall" :selected="selected" @add="insert" @select="selected=$event" @remove="remove" @move="insert" />
     </div>
     <p v-if="schema" class="preview-hint">{{t('panelEditor.previewHint')}}</p>
-    <p v-if="schema&&managed" class="preview-hint">{{t('panelEditor.singleUnitHint')}}</p>
     <p v-if="schema" class="preview-hint">{{t('panelEditor.runtimeHint')}}</p>
   </section>
 </template>

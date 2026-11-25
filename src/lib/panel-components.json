@@ -34,5 +34,8 @@
   {"id":"commercial-happiness-reasons","native":"kBlockCommercialHappiness3","group":"common","singleUnit":true,"reasonList":true},
   {"id":"commercial-sadness-reasons","native":"kBlockCommercialSadness3","group":"common","singleUnit":true,"reasonList":true},
   {"id":"industrial-happiness-reasons","native":"kBlockIndustrialHappiness3","group":"common","singleUnit":true,"reasonList":true},
-  {"id":"industrial-sadness-reasons","native":"kBlockIndustrialSadness3","group":"common","singleUnit":true,"reasonList":true}
+  {"id":"industrial-sadness-reasons","native":"kBlockIndustrialSadness3","group":"common","singleUnit":true,"reasonList":true},
+  {"id":"workers-by-wealth","native":"kSkyTowerLevelOfficePopulationW1","group":"office","towerOperations":true},
+  {"id":"mall-average-shoppers","native":"kSkyTowerLevelMallPopulation","group":"commercial","towerOperations":true},
+  {"id":"tower-business-profit","native":"kBlockSkyTowerLevelProfit","group":"common","towerOperations":true}
 ]

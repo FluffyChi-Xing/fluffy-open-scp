@@ -23,8 +23,14 @@ describe('independent panel document',()=>{
   expect(availableComponents([], true).filter(component => controls.includes(component.id))).toEqual([]);
  });
  it('offers only supported container controls and reads both new and historical errors', () => {
-  expect(availableComponents(['tourism','commercial'], true).map(c=>c.id)).toEqual(['maintenance','tourists']);
-  expect(availableComponents(['tourism','hotel'], true).map(c=>c.id)).toEqual(['maintenance']);
+  expect(availableComponents(['tourism','commercial'], true).map(c=>c.id)).toEqual([
+   'maintenance','feedback','profit','shoppers','tourists','commercial-happiness-reasons','commercial-sadness-reasons',
+  ]);
+  expect(availableComponents(['tourism','hotel'], true).map(c=>c.id)).toEqual(['maintenance','feedback','profit']);
+  expect(availableComponents(['office','commercial'], true, true).map(c=>c.id)).toEqual([
+   'maintenance','feedback','profit','shoppers','commercial-happiness-reasons','commercial-sadness-reasons',
+   'workers-by-wealth','mall-average-shoppers','tower-business-profit',
+  ]);
   expect(unsupportedPanelItems('[panel] PANEL_CONTAINER_QUERY_UNSUPPORTED:hover:workers,click:workers,click:density-profit')).toEqual([
    {view:'hover',id:'workers'}, {view:'click',id:'workers'}, {view:'click',id:'density-profit'},
   ]);

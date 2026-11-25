@@ -18,6 +18,9 @@ const CHILDREN: u32 = 0x07E0_AD0A;
 const OFFSETS: u32 = 0x07E0_AD0B;
 const CONNECT: u32 = 0x0D36_3DF3;
 const CONFIG: u32 = 0x08E1_7ED7;
+// cUnitLotEntry::FillFromProps and readPlacementTransform use these with
+// the graphics bounds. Without the frontage/depth the engine sizes a second lot.
+const SITE_PLACEMENT: [u32; 3] = [0x0BBB_CDED, 0x0BBB_CE2A, 0x0DB7_FB17];
 const PATHS: [u32; 7] = [
     0x0CC8_FE7A,
     0x0CAA_6841,
@@ -110,7 +113,7 @@ fn attach(unit: &mut PropertyFile, child: u32) -> Result<(), String> {
     Ok(())
 }
 
-fn child_lot(host: &PropertyFile) -> Result<Vec<u8>, String> {
+fn child_lot(host: &PropertyFile, shares_building_site: bool) -> Result<Vec<u8>, String> {
     let mut lot = PropertyFile::default();
     // Exact native invisible secondary config identity, not the host's model.
     set_scalar(
@@ -122,6 +125,13 @@ fn child_lot(host: &PropertyFile) -> Result<Vec<u8>, String> {
     set_scalar(&mut lot, 0x0AD9_0138, PropType::Bool, Value::Bool(false));
     set_scalar(&mut lot, 0x0AFE_2FEB, PropType::Bool, Value::Bool(true));
     super::behavior_container_ui::copy_bounds(host, &mut lot);
+    if shares_building_site {
+        for field in SITE_PLACEMENT {
+            if let Some(property) = host.get(field) {
+                lot.values.push(property.clone());
+            }
+        }
+    }
     for hash in PATHS {
         if let Some(property) = host.get(hash) {
             lot.values.push(property.clone());
@@ -237,9 +247,11 @@ pub(super) fn apply(
         child_ctx
             .resources
             .insert(id(menu::UNIT_GROUP, child), encode(&unit)?);
-        child_ctx
-            .resources
-            .insert(id(menu::lot_group(), child), child_lot(&host_lot)?);
+        let mut lot_bytes=child_lot(&host_lot,scope.shares_building_site)?;
+        if program.copan_plop_base && scope.program.templates.residence() {
+            lot_bytes=super::behavior_residence_feedback::patch(&lot_bytes)?;
+        }
+        child_ctx.resources.insert(id(menu::lot_group(),child),lot_bytes);
         // Temporary menu is solely the existing binder's freeze baseline. It
         // is never emitted: the player places exactly one host menu entry.
         let menu_bytes = ctx
@@ -251,6 +263,54 @@ pub(super) fn apply(
             .resources
             .insert(id(menu::MENU_GROUP, child), menu_bytes);
         let mut detail = behavior::apply(&mut child_ctx)?;
+        if scope.program.copan_residence_balance {
+            for (resource,bytes) in super::behavior_copan_residence::apply(child_ctx.resources.all(),child,&scope.program)? {
+                child_ctx.resources.insert(resource,bytes);
+            }
+        }
+        let unit_id = id(menu::UNIT_GROUP, child);
+        if scope.program.author_tourism {
+            // The native landmark rebuilds the Unit from its own template.
+            let mut unit = parse(child_ctx.resources.all(), unit_id)?;
+            if super::behavior_container::verify_child_garbage(&unit).is_err() {
+                super::behavior_container::exclude_child_garbage(&mut unit)?;
+                child_ctx.resources.insert(unit_id, encode(&unit)?);
+            }
+        }
+        if scope.shares_building_site {
+            let mut unit = parse(child_ctx.resources.all(), unit_id)?;
+            if !program.copan_plop_base {
+                super::behavior_container::exclude_child_utility_connections(&mut unit)?;
+            } else {
+                for (resource,bytes) in super::behavior_copan_services::patch_child(&mut unit,child)? {
+                    child_ctx.resources.insert(resource,bytes);
+                }
+            }
+            if program.copan_plop_base && scope.program.templates.residence() {
+                super::behavior_copan_base::patch_residence_component(&mut unit)?;
+            }
+            if program.copan_plop_base && super::behavior_business_services::manages_components(program) {
+                super::behavior_business_services::apply(&mut unit)?;
+            }
+            if scope.program.copan_park_core {
+                for (resource,bytes) in super::behavior_park_core::apply(&mut unit,child)? {
+                    child_ctx.resources.insert(resource,bytes);
+                }
+            }
+            child_ctx.resources.insert(unit_id, encode(&unit)?);
+        }
+        if let Some(input) = super::behavior_unit_income::capacity_input(&scope.program) {
+            let (unit, bundle, bytes) =
+                super::behavior_unit_income::bind(child_ctx.resources.all(), unit_id, input)?;
+            child_ctx.resources.insert(unit_id, unit);
+            child_ctx.resources.insert(bundle, bytes);
+            detail["incomeCapacity"] = serde_json::json!(input * 2.0);
+        }
+        if program.copan_plop_base && scope.program.commercial.as_ref().is_some_and(|r|r.has_mixed_capacity()) {
+            let mut unit=parse(child_ctx.resources.all(),unit_id)?;
+            super::behavior_business_services::finalize_mall_capacity(&mut unit,child)?;
+            child_ctx.resources.insert(unit_id,encode(&unit)?);
+        }
         let car_arrivals = super::vehicle_paths::has_supported_arrivals(
             child_ctx
                 .resources
@@ -258,7 +318,11 @@ pub(super) fn apply(
                 .unwrap(),
         )?;
         if super::vehicle_paths::authored(ctx.scene_document.as_ref()) && car_arrivals {
-            let (unit, lot) = super::vehicle_paths::bind(
+            let source_unit=child_ctx.resources.get(&id(menu::UNIT_GROUP,child)).unwrap();
+            let source_lot=child_ctx.resources.get(&id(menu::lot_group(),child)).unwrap();
+            let (unit,lot)=if scope.program.copan_residence_balance {
+                super::behavior_copan_residence::bind_vehicle_arrival(source_unit,source_lot,&scope.program)?
+            } else {super::vehicle_paths::bind(
                 child_ctx
                     .resources
                     .get(&id(menu::UNIT_GROUP, child))
@@ -267,7 +331,7 @@ pub(super) fn apply(
                     .resources
                     .get(&id(menu::lot_group(), child))
                     .unwrap(),
-            )?;
+            )?};
             child_ctx
                 .resources
                 .insert(id(menu::UNIT_GROUP, child), unit);
@@ -313,11 +377,28 @@ pub(super) fn verify(
     host: u32,
     program: &ResolvedBehavior,
 ) -> Result<(), String> {
+    if program.copan_plop_base {
+        let unit = parse(resources, id(menu::UNIT_GROUP, host))?;
+        super::behavior_copan_base::verify(&unit, Some(program))?;
+    }
     if program.units.is_empty() {
         return Ok(());
     }
+    if program.copan_plop_base {
+        super::behavior_copan_services::verify(resources,host,program)?;
+    }
     let unit = parse(resources, id(menu::UNIT_GROUP, host))?;
-    super::behavior_container::verify_program(&unit, program)?;
+    if program.unit_scope.as_deref() == Some(super::behavior_container::SCOPE) {
+        if !program.copan_plop_base {
+            super::behavior_container::verify_program(&unit, program)?;
+        }
+    } else {
+        if program.office_and_retail {
+            super::behavior_office_retail::verify(&unit)?;
+        }
+        super::behavior_container::verify_toggle(&unit)?;
+        super::behavior_container::verify_host_utility_connections(&unit)?;
+    }
     let host_config = parse(resources, id(menu::lot_group(), host))?;
     if program.host_parking_staff && (!super::vehicle_paths::has_parking(&host_config)?
         || program.units.iter().any(|scope| scope.id == super::behavior_units::BUILDING_STAFF)) {
@@ -359,12 +440,36 @@ pub(super) fn verify(
             return Err("BEHAVIOR_UNIT_TABLE: child not connected".into());
         }
         let unit = parse(resources, id(menu::UNIT_GROUP, child))?;
+        if scope.program.copan_crown_tourism {
+            super::behavior_tourism_crown::verify(&unit,&scope.program)?;
+        }
+        if scope.program.copan_park_core {
+            super::behavior_park_core::verify(resources,&unit,child,&scope.program)?;
+        }
+        if program.copan_plop_base && super::behavior_business_services::manages_components(program) {
+            super::behavior_business_services::verify(&unit)?;
+        }
         super::behavior_container::verify_toggle(&unit)?;
         super::behavior_container::verify_child_garbage(&unit)?;
         if unit.get(CONFIG).map(|p| &p.kind) != Some(&Kind::Scalar(key(menu::lot_group(), child))) {
             return Err("BEHAVIOR_UNIT_RESOURCE: wrong child config".into());
         }
         let lot = parse(resources, id(menu::lot_group(), child))?;
+        if program.copan_plop_base && scope.program.templates.residence() {
+            super::behavior_residence_feedback::verify(&lot)?;
+        }
+        if scope.shares_building_site {
+            if program.copan_plop_base {
+                super::behavior_copan_services::verify_child(resources,&unit,child)?;
+            } else {
+                super::behavior_container::verify_child_utility_connections(&unit)?;
+            }
+            for field in SITE_PLACEMENT {
+                if lot.get(field) != host_config.get(field) {
+                    return Err(format!("BEHAVIOR_UNIT_SITE: child placement differs from host at {field:08X}"));
+                }
+            }
+        }
         if lot.get(super::behavior_container_ui::BOUNDS) != host_config.get(super::behavior_container_ui::BOUNDS) {
             return Err("BEHAVIOR_UNIT_TABLE: component render bounds differ from building".into());
         }
@@ -392,11 +497,28 @@ pub(super) fn verify(
                 }
             }
         }
+        if program.copan_plop_base {
+            super::behavior_copan_base::verify_component(&unit)?;
+            if scope.program.templates.residence() {
+                super::behavior_copan_base::verify_residence_component(&unit)?;
+            }
+        }
         if let Some(commercial) = &scope.program.commercial {
+            if program.copan_plop_base {
+                super::behavior_copan_base::verify_commercial(&unit, &scope.program)?;
+            }
             commercial.verify(&unit)?;
             commercial.verify_mixed_capacity(&unit, id(menu::UNIT_GROUP, child), resources)?;
         }
-        if !scope.program.templates.is_empty() {
+        if scope.program.office_and_retail {
+            super::behavior_office_retail::verify(&unit)?;
+        }
+        if let Some(input) = super::behavior_unit_income::capacity_input(&scope.program) {
+            super::behavior_unit_income::verify(resources, &unit, child, input)?;
+        }
+        if scope.program.copan_residence_balance {
+            super::behavior_copan_residence::verify(resources,child,&scope.program)?;
+        } else if !scope.program.templates.is_empty() {
             scope.program.templates.verify(resources, child)?;
         }
         if let Some(hotel) = &scope.program.hotel {
@@ -423,6 +545,18 @@ pub(super) fn owned_resources(
         let child = instance(host, &scope.id);
         owned.insert(id(menu::UNIT_GROUP, child));
         owned.insert(id(menu::lot_group(), child));
+        if program.copan_plop_base {
+            owned.extend(super::behavior_utility_state::resources(child));
+        }
+        if scope.program.copan_park_core {
+            owned.insert(super::behavior_park_core::opening_id(child));
+        }
+        if scope.program.copan_residence_balance {
+            owned.extend(super::behavior_copan_residence::bundle_ids(child));
+        }
+        if super::behavior_unit_income::capacity_input(&scope.program).is_some() {
+            owned.insert(super::behavior_unit_income::bundle_id(child));
+        }
         if scope.program.author_tourism {
             owned.insert(super::author_tourism::construction_id(resources, child)?);
         }
@@ -449,6 +583,9 @@ pub(super) fn verify_vehicle_bindings(
             let lot = resources.get(&id(menu::lot_group(), child))
                 .ok_or("BEHAVIOR_UNIT_RESOURCE: missing vehicle Asset")?;
             super::vehicle_paths::verify(unit, lot)?;
+            if scope.program.copan_residence_balance {
+                super::behavior_copan_residence::verify_vehicle_arrival(lot,&scope.program)?;
+            }
         }
     }
     Ok(())

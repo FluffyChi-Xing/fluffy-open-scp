@@ -21,7 +21,7 @@ pub(super) fn complete_menu(spec: &mut MenuRegistrationSpec, nodes: &[Value]) ->
     if !nodes.iter().any(|node| {
         matches!(
             node["type"].as_str(),
-            Some("residence" | "office" | "hotel" | "commercial")
+            Some("residence" | "office" | "hotel" | "commercial" | "utilities-core")
         )
     }) {
         return false;

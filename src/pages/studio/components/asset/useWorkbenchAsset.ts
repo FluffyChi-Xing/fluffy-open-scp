@@ -101,6 +101,7 @@ interface WorkbenchSourceBlock {
   writes?: string[];
   /** 逻辑编排图（建筑信息/行为聚合/行为叶子）；构建时编译成 semantics。 */
   logic?: LogicGraph;
+  megaTower?: unknown;
   /** 草稿模型伪单元变换（行主序 12 floats）。 */
   modelTransform?: number[] | null;
   /** 临街吸附边（lot 本地角；与模型旋转无关）。 */
@@ -812,6 +813,7 @@ export function useWorkbenchAsset(
       // type/entry/scope/roadConnect 与有序点引用；entry 由构建器按 type
       // 换算，作者不接触。恢复见 restoreUnits。
       paths: draftPaths.value.map((path) => ({ ...path })),
+      megaTower: draftMegaTower.value,
       // 编辑族声明（delta 写回 + delta-audit 的意图来源）。
       writes: [...draftWrites.value].sort(),
       // 逻辑编排图（构建时编译成 semantics.labor/behaviors）。
@@ -849,6 +851,7 @@ export function useWorkbenchAsset(
     draftEdit.reset();
     draftWrites.value = new Set();
     draftLogic.value = emptyLogicGraph();
+    draftMegaTower.value = undefined;
     addedModelPayloads.value = new Map();
     draftProps.value = emptyDraftPropModels();
     draftSelectedId.value = null;
@@ -1071,6 +1074,10 @@ export function useWorkbenchAsset(
 
   // ---- 路径规划（2026-10-27）：路径为一等实体，几何挂在 pathPoint 单元 ----
   const draftPaths = ref<WorkbenchPath[]>([]);
+  const draftMegaTower = shallowRef<unknown>();
+  function setMegaTower(value: unknown): void {
+    draftMegaTower.value = value;
+  }
   /** 绘制中的路径（Draw 模式点击落点追加到它）。 */
   const activePathId = ref<string | null>(null);
   /** 聚焦路径：视口折线只画它（多路径防串线；冻结区视口改造前的前离方案）。 */
@@ -1641,10 +1648,12 @@ export function useWorkbenchAsset(
         paths?: WorkbenchPath[];
         writes?: string[];
         logic?: unknown;
+        megaTower?: unknown;
       };
     };
     Object.assign(current.groupVisibility, editor?.groups ?? {});
     draftWrites.value = new Set(editor?.workbench?.writes ?? []);
+    draftMegaTower.value = editor?.workbench?.megaTower;
     if (current.editMode === "draft") {
       // 键位与 schemaDocument 写出侧一致：editor.workbench.paths
       // 陈旧引用自愈 GC:坏会话保存的 pointIds(点已不存在)会永久卡死
@@ -2156,6 +2165,8 @@ export function useWorkbenchAsset(
     dependencySyncError,
     markUnitTouched,
     draftLogic,
+    draftMegaTower,
+    setMegaTower,
     setLogicGraph,
     restoreFromProject,
     closeAsset,

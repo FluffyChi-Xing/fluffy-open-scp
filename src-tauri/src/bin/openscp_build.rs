@@ -2,8 +2,8 @@
 //!
 //! 用法：`openscp-build <project-root> [schema-path]`
 //!
-//! 以磁盘 schema 文件驱动 asset_build_m1 责任链（与 build_queue_enqueue 的
-//! 前端内存 schema 不同源——这正是 F1 "构建输入不入库" 的无头复现通道）。
+//! 默认从已保存项目解析 schema 和场景，使用与 Actions 相同的生产编译器。
+//! 显式 schema 参数供独立命令行诊断使用。
 //! 成功时把 `M1BuildResult`（含 events 台账）以 pretty JSON 打到 stdout；
 //! 失败时把错误文本打到 stderr 并以非零码退出。构建产物与台账仍写入
 //! 项目内 `.build/`（与 app 构建同位，便于基线对拍）。
@@ -14,6 +14,13 @@ use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg|arg=="--panel-runtime-check") {
+        match panel_runtime_check(&args[1..]) {
+            Ok(report)=>println!("{}",serde_json::to_string_pretty(&report).unwrap()),
+            Err(error)=>{eprintln!("{error}");std::process::exit(1);},
+        }
+        return;
+    }
     let Some(root_arg) = args.first() else {
         eprintln!("usage: openscp-build <project-root> [schema-path]");
         std::process::exit(2);
@@ -98,4 +105,20 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+fn panel_runtime_check(args:&[String])->Result<Value,String>{
+    use fluffy_open_scp_lib::asset_build_m1::panel::runtime_bundle;
+    if args.len()<3{return Err("usage: openscp-build --panel-runtime-check <stock.package> <shared-runtime.package> <required-runtime.package>...".into());}
+    let read=|path:&str|runtime_bundle::read_package(std::path::Path::new(path));
+    let stock=read(&args[0])?;let candidate=read(&args[1])?;
+    let receipt=runtime_bundle::inspect(&candidate)?;
+    let mut rows=vec![];
+    for path in &args[2..] {
+        let required=read(path)?;
+        runtime_bundle::compatible(&stock,&required,&candidate).map_err(|e|format!("{e}:{path}"))?;
+        rows.push(serde_json::json!({"requiredRuntime":path,"compatible":true}));
+    }
+    Ok(serde_json::json!({"sharedRuntime":args[1],"receipt":receipt,"requirements":rows,
+        "comparisonLayer":"offline runtime source and declared API compatibility","runtimeVerified":false}))
 }

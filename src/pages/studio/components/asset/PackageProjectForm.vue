@@ -10,7 +10,10 @@ import { useToast } from "@/composables/useToast";
 import MenuBindingForm from "./MenuBindingForm.vue";
 import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
 import BehaviorLeafSheet from "./BehaviorLeafSheet.vue";
+import GarbageBehaviorFields from "./GarbageBehaviorFields.vue";
+import MegaTowerBehaviorForm from "./MegaTowerBehaviorForm.vue";
 import { useBehaviorConflicts } from "./useBehaviorConflicts";
+import { behaviorCombinationConflict } from "./behaviorBuildDiagnostics";
 import {
   LOGIC_NODE_SPECS,
   addLogicNode,
@@ -20,10 +23,12 @@ import {
   removeLogicNode,
   updateLogicParams,
   type BehaviorLeafType,
+  type BehaviorCoreParams,
   type BuildingInfoParams,
   type LeafParams,
   type LogicGraph,
   type LogicNode,
+  type UtilityParams,
 } from "./logicGraph";
 import type { WorkbenchMenuBinding } from "./menuBinding";
 import VanillaVariantMenuForm from "./VanillaVariantMenuForm.vue";
@@ -42,6 +47,7 @@ const props = defineProps<{
   project: string;
   menu: WorkbenchMenuBinding;
   logic: LogicGraph;
+  megaTower?: unknown;
   /** 工作台文档是否有未保存修改。 */
   savedDirty: boolean;
   /** 保存工作台文档（内部会同步 package.json dependencies）。 */
@@ -52,6 +58,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:menu": [patch: Partial<WorkbenchMenuBinding>];
   "update:logic": [graph: LogicGraph];
+  "update:megaTower": [value: unknown];
   close: [];
 }>();
 
@@ -266,6 +273,14 @@ function patchSchedule(schedule: number[]): void {
 const coreNode = computed<LogicNode | null>(
   () => props.logic.nodes.find((node) => node.kind === "behavior-core") ?? null,
 );
+const coreGarbage = computed(() => coreNode.value
+  ? (props.logic.params[coreNode.value.id] as BehaviorCoreParams | undefined)?.garbage
+  : undefined,
+);
+function updateGarbage(garbage: UtilityParams): void {
+  const core = graphWithCore();
+  emit("update:logic", updateLogicParams(core.graph, core.node.id, { garbage }));
+}
 const leafNodes = computed(() =>
   props.logic.nodes
     .filter((node) => node.kind === "behavior-leaf")
@@ -287,6 +302,10 @@ const leafCatalog = computed(() =>
     }),
   ),
 );
+const behaviorConflict = computed(() => {
+  const pair = behaviorCombinationConflict(leafNodes.value.flatMap(leaf => leaf.type ? [leaf.type] : []));
+  return Boolean(pair && pair[0] !== pair[1]);
+});
 const editingLeafId = ref<string | null>(null);
 const editTrigger = ref<HTMLElement | null>(null);
 const editingLeaf = computed(() => {
@@ -322,7 +341,7 @@ function addCore(): void {
   if (!coreNode.value) emit("update:logic", graphWithCore().graph);
 }
 function addLeaf(type: BehaviorLeafType): void {
-  if (!behaviorConflicts.canAdd(props.logic)) return;
+  if (!behaviorConflicts.canAdd(props.logic, type)) return;
   const core = graphWithCore();
   const added = addLogicNode(core.graph, leafSpec(type), [0, 260]);
   const graph = connectLogic(added.graph, added.node.id, core.node.id, "leaf").graph;
@@ -617,6 +636,19 @@ const tabHint = computed(() => {
                 @change="patchInfo(field, $event)"
               />
             </label>
+          <div class="ppf-field wide">
+            <span>{{ t("studio.assetWorkbench.scheduleTitle") }}</span>
+            <ShiftScheduleSlider
+              :schedule="
+                Array.isArray(infoParams.schedule) && infoParams.schedule.length === 8
+                  ? infoParams.schedule
+                  : [6, 6, 7, 7, 6, 6, 7, 6]
+              "
+              :disabled="saving"
+              @update:schedule="patchSchedule($event)"
+            />
+          </div>
+          <p class="ppf-hint wide">{{ t("studio.assetWorkbench.scheduleHint") }}</p>
             <p class="ppf-hint wide">{{ t("studio.assetWorkbench.labor.hint") }}</p>
           </template>
           <div v-else class="ppf-empty">
@@ -630,41 +662,8 @@ const tabHint = computed(() => {
 
         <!-- 行为 -->
         <div v-else-if="activeTab === 'behavior'" class="ppf-behavior">
-          <div v-if="infoParams && infoNode" class="ppf-behavior-block">
-            <header>
-              <span>{{ t("studio.assetWorkbench.behaviorRecruit") }}</span>
-            </header>
-            <div class="ppf-fields">
-              <label
-                v-for="field in (['w1', 'w2', 'w3', 'minWorkers'] as const)"
-                :key="field"
-                class="ppf-field"
-              >
-                <span>{{ t(`studio.assetWorkbench.labor.${field}`) }}</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  :value="infoParams[field]"
-                  :disabled="saving"
-                  @change="patchInfo(field, $event)"
-                />
-              </label>
-              <div class="ppf-field wide">
-                <span>{{ t("studio.assetWorkbench.scheduleTitle") }}</span>
-                <ShiftScheduleSlider
-                  :schedule="
-                    Array.isArray(infoParams.schedule) && infoParams.schedule.length === 8
-                      ? infoParams.schedule
-                      : [6, 6, 7, 7, 6, 6, 7, 6]
-                  "
-                  :disabled="saving"
-                  @update:schedule="patchSchedule($event)"
-                />
-              </div>
-              <p class="ppf-hint wide">{{ t("studio.assetWorkbench.scheduleHint") }}</p>
-            </div>
-          </div>
+          <MegaTowerBehaviorForm :model-value="megaTower" :disabled="saving" @update:model-value="emit('update:megaTower', $event)" />
+          <template v-if="megaTower == null">
           <div class="ppf-behavior-block">
             <header>
               <span>{{ t("studio.assetWorkbench.logicNode.behaviorCore") }}</span>
@@ -680,12 +679,16 @@ const tabHint = computed(() => {
             <p v-if="!coreNode" class="ppf-note">
               {{ t("studio.assetWorkbench.projectConfig.noCore") }}
             </p>
-            <p v-else class="ppf-note">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
+            <template v-else>
+              <p class="ppf-note">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
+              <GarbageBehaviorFields :garbage="coreGarbage" :disabled="saving" @update:garbage="updateGarbage" />
+            </template>
           </div>
           <div class="ppf-behavior-block">
             <header>
               <span>{{ t("studio.assetWorkbench.projectConfig.leaves") }}</span>
             </header>
+            <p v-if="behaviorConflict" class="ppf-note">{{ t("studio.assetWorkbench.behaviorComposition.isolated") }}</p>
             <ul class="ppf-leaf-list">
               <li v-for="leaf in leafNodes" :key="leaf.node.id">
                 <span>{{ t(leaf.labelKey) }}</span>
@@ -720,13 +723,15 @@ const tabHint = computed(() => {
                 v-for="option in leafCatalog"
                 :key="option.type"
                 type="button"
-                :disabled="saving"
+                :disabled="saving || !behaviorConflicts.available(logic, option.type)"
+                :title="behaviorConflicts.addHint(logic, option.type)"
                 @click="addLeaf(option.type)"
               >
                 {{ option.label }}
               </button>
             </div>
           </div>
+          </template>
         </div>
 
         <!-- 依赖与资源 -->

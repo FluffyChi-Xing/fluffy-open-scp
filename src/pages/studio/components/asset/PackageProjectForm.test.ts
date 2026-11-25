@@ -3,6 +3,9 @@ import { nextTick } from "vue";
 import { expect, it, vi } from "vitest";
 import { i18n } from "@/locales";
 import PackageProjectForm from "./PackageProjectForm.vue";
+import MegaTowerBehaviorForm from "./MegaTowerBehaviorForm.vue";
+import GarbageBehaviorFields from "./GarbageBehaviorFields.vue";
+import FSelect from "@/components/ui/FSelect.vue";
 import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec, leafTypeOf } from "./logicGraph";
 import { emptyMenuBinding } from "./menuBinding";
 
@@ -14,7 +17,7 @@ vi.mock("@/api/tauri", () => ({ command: vi.fn().mockResolvedValue({ conflicts: 
 it("lets an existing office and park add retail and housing directly from the behavior form", async () => {
   const { graph: initial, node: core } = ensureCoreNode(emptyLogicGraph(), [0, 0]);
   let graph = connectLogic(initial, core.id, "asset", "behavior").graph;
-  for (const type of ["landvalue", "office", "park"] as const) {
+  for (const type of ["office", "park"] as const) {
     const added = addLogicNode(graph, leafSpec(type), [0, 0]);
     graph = connectLogic(added.graph, added.node.id, core.id, "leaf").graph;
   }
@@ -31,8 +34,38 @@ it("lets an existing office and park add retail and housing directly from the be
     await flushPromises();
     const behaviorTab = wrapper.findAll('[role="tab"]').find(tab => tab.text() === i18n.global.t("studio.assetWorkbench.projectConfig.tabBehavior"))!;
     await behaviorTab.trigger("click");
+    const recipe = wrapper.getComponent(MegaTowerBehaviorForm);
+    const enabled = recipe.get('[role="switch"]');
+    expect(enabled.attributes("aria-checked")).toBe("false");
+    await enabled.trigger("click");
+    expect(wrapper.emitted("update:megaTower")?.at(-1)).toEqual([{ floors: [{ kind: "commercial" }] }]);
+    await wrapper.setProps({ megaTower: { floors: [{ kind: "commercial" }] } });
+    expect(enabled.attributes("aria-checked")).toBe("true");
+    expect(recipe.findAll('[role="switch"]')).toHaveLength(8);
+    expect(recipe.find('input[type="checkbox"]').exists()).toBe(false);
+    await recipe.findAll('[role="switch"]')
+      .find(toggle => toggle.attributes("aria-label") === i18n.global.t("studio.assetWorkbench.megaTower.office"))!
+      .trigger("click");
+    expect(wrapper.emitted("update:megaTower")?.at(-1)).toEqual([{ floors: [{ kind: "commercial" }, { kind: "office" }] }]);
+    await enabled.trigger("click");
+    expect(wrapper.emitted("update:megaTower")?.at(-1)).toEqual([undefined]);
+    await wrapper.setProps({ megaTower: undefined });
     const emittedGraph = () => wrapper.emitted<[typeof graph]>("update:logic")!.at(-1)![0];
     expect(wrapper.find(".ppf-behavior select").exists()).toBe(false);
+    const garbage = wrapper.getComponent(GarbageBehaviorFields);
+    const select = garbage.getComponent(FSelect);
+    expect(garbage.find("input").exists()).toBe(false);
+    select.vm.$emit("update:modelValue", "explicit");
+    await wrapper.setProps({ logic: emittedGraph() });
+    await garbage.get("input").setValue("3");
+    const updated = emittedGraph();
+    expect(updated.params[core.id]).toEqual({
+      ...graph.params[core.id],
+      garbage: { mode: "explicit", amount: 3, rate: null },
+    });
+    expect(updated.edges).toEqual(graph.edges);
+    graph = updated;
+    await wrapper.setProps({ logic: graph });
     for (const type of ["commercial", "residence"] as const) {
       const add = wrapper.findAll(".ppf-add-leaves button").find(button => button.text() === i18n.global.t(leafSpec(type).labelKey))!;
       await add.trigger("click");
@@ -45,6 +78,7 @@ it("lets an existing office and park add retail and housing directly from the be
     i18n.global.locale.value = "en-US";
     await nextTick();
     expect(wrapper.text()).toContain("one switch");
+    expect(garbage.text()).toContain("Garbage generation amount");
   } finally {
     wrapper.unmount();
     i18n.global.locale.value = locale;

@@ -45,10 +45,7 @@ export function validCommercial(params: CommercialParams): boolean {
   if (!values) return false;
   const tiers = COMMERCIAL_SHOPPER_FIELDS.map((field) => values[field]);
   const total = tiers.reduce((sum, value) => sum + value, 0);
-  const jobs = COMMERCIAL_JOB_FIELDS.slice(0, 3).reduce((sum, field) => sum + (params[field] ?? 0), 0);
   return tiers.every((value) => Number.isInteger(value) && value >= 0)
     && total >= 1 && total <= 100_000
-    && Number.isInteger(values.goods) && values.goods >= 1 && values.goods <= 100_000
-    && COMMERCIAL_JOB_FIELDS.every((field) => Number.isInteger(params[field] ?? 0) && (params[field] ?? 0) >= 0)
-    && jobs <= 100_000 && (params.retailMinWorkers ?? 0) <= jobs;
+    && Number.isInteger(values.goods) && values.goods >= 1 && values.goods <= 100_000;
 }

@@ -6,9 +6,9 @@ import FSelect from "@/components/ui/FSelect.vue";
 import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
 import BlueprintPortRow from "./BlueprintPortRow.vue";
 import ResidenceBehaviorFields from "./ResidenceBehaviorFields.vue";
+import GarbageBehaviorFields from "./GarbageBehaviorFields.vue";
 import type { ResidenceParams } from "./residenceBehavior";
-import { COMMERCIAL_FIELDS, COMMERCIAL_JOB_FIELDS, COMMERCIAL_SHOPPER_FIELDS, MIXED_COMMERCIAL, commercialValues, type CommercialParams } from "./commercialBehavior";
-import { OFFICE_DEFAULTS, OFFICE_FIELDS, type OfficeParams } from "./officeBehavior";
+import { COMMERCIAL_FIELDS, COMMERCIAL_SHOPPER_FIELDS, MIXED_COMMERCIAL, commercialValues, type CommercialParams } from "./commercialBehavior";
 import { Switch } from "@/components/ui/switch";
 import {
   LOGIC_NODE_SPECS,
@@ -72,10 +72,6 @@ function patchRetail(field: (typeof COMMERCIAL_FIELDS)[number], event: Event): v
     [field]: value,
   });
 }
-function patchRetailJobs(field: (typeof COMMERCIAL_JOB_FIELDS)[number], event: Event): void {
-  const input = event.target as HTMLInputElement;
-  emit("update-params", { [field]: input.value === "" && !input.validity.badInput ? null : input.valueAsNumber });
-}
 const landFields = computed<readonly (keyof LandvalueParams)[]>(() =>
   (props.params as LandvalueParams).landValueProfile
     ? ["value", "value2"]
@@ -99,10 +95,9 @@ const icon = computed<string | null>(() => {
   return LOGIC_NODE_SPECS.find((spec) => spec.kind === props.node.kind)?.icon ?? "Cpu";
 });
 
-const UTILITIES: { key: "power" | "water" | "garbage"; labelKey: string; hasRate: boolean }[] = [
+const UTILITIES: { key: "power" | "water"; labelKey: string; hasRate: boolean }[] = [
   { key: "power", labelKey: "studio.assetWorkbench.utility.power", hasRate: true },
   { key: "water", labelKey: "studio.assetWorkbench.utility.water", hasRate: false },
-  { key: "garbage", labelKey: "studio.assetWorkbench.utility.garbage", hasRate: false },
 ];
 const modeOptions = computed(() => [
   { value: "inherit", label: t("studio.assetWorkbench.utility.modeInherit") },
@@ -321,6 +316,11 @@ const leafOptions = computed(() =>
             </p>
           </div>
         </div>
+        <GarbageBehaviorFields
+          :garbage="utility('garbage')"
+          :disabled="disabled"
+          @update:garbage="emit('update-params', { garbage: $event })"
+        />
         <div class="logic-add-leaf">
           <span>{{ t("studio.assetWorkbench.logicAddLeaf") }}</span>
           <button
@@ -425,13 +425,13 @@ const leafOptions = computed(() =>
       </template>
 
       <template v-else-if="leafType === 'park'">
-        <label v-for="field in (['landValue', 'landWealth', 'landValue2', 'landWealth2', 'attraction'] as const)" :key="field" class="logic-field">
+        <label v-for="field in (['residentCapacity', 'childrenCapacity', 'visitBudget'] as const)" :key="field" class="logic-field">
           <span>{{ t(`studio.assetWorkbench.leaf.park.${field}`) }}</span>
           <input
-            type="number"
-            :value="(params as ParkParams)[field]"
+            type="number" min="1" max="100000" step="1"
+            :value="(params as ParkParams)[field] ?? ({ residentCapacity: 90, childrenCapacity: 80, visitBudget: 960 })[field]"
             :disabled="disabled"
-            @change="onNumber(field, $event, params as unknown as Record<string, unknown>, 0)"
+            @change="onNumber(field, $event, params as unknown as Record<string, unknown>, ({ residentCapacity: 90, childrenCapacity: 80, visitBudget: 960 })[field])"
           />
         </label>
       </template>
@@ -450,15 +450,6 @@ const leafOptions = computed(() =>
           />
         </label>
         <p class="logic-field">{{ t("studio.assetWorkbench.behaviorSheet.commercialTotal", { count: retailTotal }) }}</p>
-        <label v-for="field in COMMERCIAL_JOB_FIELDS" :key="field" class="logic-field">
-          <span>{{ t(`studio.assetWorkbench.leaf.commercial.${field}`) }}</span>
-          <input
-            type="number" min="0" max="100000" step="1"
-            :value="commercialParams[field] ?? ''"
-            :disabled="disabled"
-            @change="patchRetailJobs(field, $event)"
-          />
-        </label>
       </template>
 
       <label v-else-if="leafType === 'hotel'" class="logic-field">
@@ -475,20 +466,7 @@ const leafOptions = computed(() =>
         />
       </label>
 
-      <template v-else-if="leafType === 'office'">
-        <label v-for="field in OFFICE_FIELDS" :key="field" class="logic-field">
-          <span>{{ t(`studio.assetWorkbench.leaf.office.${field}`) }}</span>
-          <input
-            type="number"
-            :min="field === 'minWorkers' ? 1 : 0"
-            max="100000"
-            step="1"
-            :value="(params as OfficeParams)[field] ?? OFFICE_DEFAULTS[field]"
-            :disabled="disabled"
-            @change="onNumber(field, $event, params as unknown as Record<string, unknown>, OFFICE_DEFAULTS[field])"
-          />
-        </label>
-      </template>
+      <p v-else-if="leafType === 'office'" class="logic-hint">{{ t("studio.assetWorkbench.behaviorSheet.sharedWorkforce") }}</p>
 
       <ResidenceBehaviorFields
         v-else-if="leafType === 'residence'"

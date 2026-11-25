@@ -1,13 +1,20 @@
 //! Opt-in building panel compiler. Absence of dependencies.panel is a strict no-op.
 pub mod commands;
 pub(super) mod container_contract;
+mod container_shoppers;
+mod component_queries;
+mod tower_operations;
 mod layout;
 mod ledger;
 pub mod manifest;
 mod processor;
+mod runtime_registry;
+pub mod runtime_bundle;
 mod sources;
 mod spec;
 pub(crate) use processor::{apply, attach};
+pub(super) use tower_operations::verify_single_business;
+pub(crate) use sources::GAME_JS as PANEL_GAME_JS;
 pub(crate) use spec::PanelPlan;
 pub use spec::{Component, PanelSchema, components, parse};
 pub(crate) const RUNTIME_OUTPUT: &str = "dependencies/openscp-panel-runtime-v1.package";

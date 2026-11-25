@@ -411,7 +411,15 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                         material.prop_str("ny_resource_signature")?,
                     )
                 })
-                .ok_or_else(|| format!("unknown window style {}", state.style))?;
+                .ok_or_else(|| {
+                    let missing = material.prop_str("ny_resource_signature").and_then(|signature| {
+                        super::window_signature::missing_pack(input.catalog, &state.style, signature)
+                    });
+                    match missing {
+                        Some(pack) => format!("missing atlas pack {pack} for window {}", state.style),
+                        None => format!("unknown window style {}", state.style),
+                    }
+                })?;
             let recovered_recipe_key = recovered.then(|| {
                 format!(
                     "|{}|{}|{:?}|{:?}|{:?}",
