@@ -125,11 +125,19 @@ export function buildDecalFallbackMaterial(
 export async function buildDecalBody(
   input: DecalBodyInput,
 ): Promise<ThreeNamespace.Object3D | null> {
-  const { THREE, unit, texture, decoded, proxies, env, state } = input;
+  const { texture } = input;
   if (!texture.png) {
     console.warn("[decal] DTO 无 png：", texture.idInstance, texture.error ?? "unknown");
     return null;
   }
+  return buildDecodedDecalBody(input);
+}
+
+/** Preview sources with a live data texture use the same assembly without a PNG transfer. */
+export async function buildDecodedDecalBody(
+  input: DecalBodyInput,
+): Promise<ThreeNamespace.Object3D | null> {
+  const { THREE, unit, texture, decoded, proxies, env, state } = input;
   const aspect = texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
   const framePlan = decalFramePlan(unit.transform?.matrix, unit.scale, unit.depth, aspect);
   const frame = framePlan ? decalFrameObject(THREE, framePlan) : null;

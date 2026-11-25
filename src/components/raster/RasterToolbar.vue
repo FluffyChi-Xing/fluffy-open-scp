@@ -15,6 +15,8 @@ const tools = computed<{ id: RasterTool; label: string; icon: string }[]>(() => 
   { id: "curve", label: t("rasterEditor.text105"), icon: "Spline" },
   { id: "rect", label: t("rasterEditor.text106"), icon: "Square" },
   { id: "rect-fill", label: t("rasterEditor.filledRectangle"), icon: "SquarePen" },
+  { id: "circle", label: t("rasterEditor.circle"), icon: "Circle" },
+  { id: "circle-fill", label: t("rasterEditor.filledCircle"), icon: "Circle" },
   { id: "polyline", label: t("rasterEditor.polyline"), icon: "Pencil" },
   { id: "polygon", label: t("rasterEditor.polygon"), icon: "GitBranch" },
   { id: "fill", label: t("rasterEditor.text107"), icon: "PaintBucket" },
@@ -31,7 +33,7 @@ const hint = (entry: { id: RasterTool; label: string }) =>
       <FTooltip v-for="entry in tools" :key="entry.id" :text="hint(entry)">
         <template #trigger>
           <button type="button" :aria-label="entry.label" :aria-pressed="tool === entry.id" @click="tool = entry.id">
-            <FIcon :name="entry.icon" :size="16" />
+            <FIcon :name="entry.icon" :size="16" :class="{ 'filled-circle-icon': entry.id === 'circle-fill' }" />
           </button>
         </template>
       </FTooltip>
@@ -48,6 +50,7 @@ const hint = (entry: { id: RasterTool; label: string }) =>
   </div>
 </template>
 <style scoped>
+.filled-circle-icon { fill: currentColor; }
 .raster-toolbar {
   display: block;
   padding: 5px;

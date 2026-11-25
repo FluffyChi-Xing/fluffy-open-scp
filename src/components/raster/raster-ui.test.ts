@@ -7,7 +7,9 @@ import RasterEditor from "./RasterEditor.vue";
 import DecalTypeTabs from "./sign/DecalTypeTabs.vue";
 import RasterSignControls from "./sign/RasterSignControls.vue";
 import RasterDecalPreview from "./RasterDecalPreview.vue";
+import GraffitiProjectionPreview from "./sign/GraffitiProjectionPreview.vue";
 import RasterToolbar from "./RasterToolbar.vue";
+import RasterCanvas from "./RasterCanvas.vue";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
 import LotEdgeControls from "./LotEdgeControls.vue";
@@ -221,6 +223,7 @@ describe("Raster editor regressions", () => {
       { value: "", label: "选择 Raster 类型以开始" },
       { value: "lot-mask", label: "地面绘制" },
       { value: "decal-sign", label: "贴花绘制" },
+      { value: "decal-graffiti", label: "涂鸦" },
     ]);
     select.vm.$emit("update:modelValue", "lot-mask");
     await nextTick();
@@ -230,22 +233,57 @@ describe("Raster editor regressions", () => {
     expect(panel.getComponent(RasterSourcePanel).props("profile")).toBe("decal-sign");
     const tabs = panel.getComponent(DecalTypeTabs);
     expect(tabs.get('[aria-selected="true"]').text()).toBe("招牌 / 广告牌");
-    expect(tabs.findAll('button[role="tab"]:not([disabled])')).toHaveLength(1);
-    expect(tabs.findAll('button[role="tab"][disabled]')).toHaveLength(6);
+    expect(tabs.findAll('button[role="tab"]:not([disabled])')).toHaveLength(2);
+    expect(tabs.findAll('button[role="tab"][disabled]')).toHaveLength(5);
     await panel.getComponent(RasterSignControls).findAll('input[type="radio"]')[1].setValue();
     expect(panel.text()).toContain("扫光速度");
+    await panel.get(".sign-start button").trigger("click");
+    panel.getComponent(RasterToolbar).vm.$emit("update:tool", "fill");
+    await nextTick();
+    expect(panel.get(".editor-controls").text()).toContain("穿过锁定轮廓");
 
     i18n.global.locale.value = "en-US";
     await nextTick();
     expect(select.props("options")).toEqual([
       { value: "lot-mask", label: "Ground painting" },
       { value: "decal-sign", label: "Decal painting" },
+      { value: "decal-graffiti", label: "Graffiti" },
     ]);
     expect(tabs.get('[aria-selected="true"]').text()).toBe("Signs and billboards");
     expect(panel.get(".sign-properties-toggle").text()).toBe("Properties");
     expect(panel.get(".sign-document-settings summary").text()).toContain("Decal details");
-    expect(panel.get(".sign-canvas-settings summary").text()).toBe("Canvas settings");
+    expect(panel.get(".sign-canvas-settings summary").text()).toContain("Canvas settings");
     expect(panel.text()).toContain("Sweep speed");
+    expect(panel.get(".editor-controls").text()).toContain("Fill through locked outlines");
+    panel.unmount();
+  });
+  it("switches to graffiti and edits paint strength without changing the sign material", async () => {
+    const panel = shallowMount(RasterEditor, {
+      props: { initialProfile: "decal-sign" },
+      global: { ...global, stubs: { DecalTypeTabs: false, RasterSignControls: false } },
+    });
+    await panel.getComponent(DecalTypeTabs).get('[aria-selected="true"]').trigger("keydown", { key: "ArrowRight" });
+    expect(panel.getComponent(DecalTypeTabs).get('[aria-selected="true"]').text()).toBe("涂鸦");
+    await panel.get(".sign-start button").trigger("click");
+    const controls = panel.getComponent(RasterSignControls);
+    expect(controls.find('input[type="radio"]').exists()).toBe(false);
+    await controls.get('input[type="range"]').setValue("180");
+    await controls.findAll(".palette-row button")[3].trigger("click");
+    expect(panel.getComponent(RasterCanvas).props("color")).toEqual([0, 0, 0, 180]);
+    panel.getComponent(RasterCanvas).vm.$emit("pick-color", [210, 0, 0, 0]);
+    await nextTick();
+    expect(panel.getComponent(RasterCanvas).props("color")).toEqual([210, 0, 0, 0]);
+    expect(panel.getComponent(GraffitiProjectionPreview).props("aspectRatio")).toBe(2);
+    expect(panel.findComponent(RasterDecalPreview).exists()).toBe(false);
+    const snapshot = panel.vm.snapshot()!;
+    expect(snapshot).toMatchObject({ profile: "decal-graffiti", image: { width: 128, height: 64 } });
+    expect(snapshot.decal.sign).toBeUndefined();
+    i18n.global.locale.value = "en-US";
+    await nextTick();
+    expect(controls.text()).toContain("Paint strength");
+    const restored = shallowMount(RasterEditor, { props: { initialSchema: snapshot }, global });
+    expect(restored.getComponent(GraffitiProjectionPreview).props("aspectRatio")).toBe(2);
+    restored.unmount();
     panel.unmount();
   });
   it("rejects an unsupported document in the panel and accepts a decal document", async () => {
@@ -337,9 +375,14 @@ describe("Raster editor regressions", () => {
       },
       global,
     });
+    expect(toolbar.find('button[aria-label="圆形"]').exists()).toBe(true);
+    expect(toolbar.find('button[aria-label="填充圆形"]').exists()).toBe(true);
     i18n.global.locale.value = "en-US";
     await nextTick();
     expect(toolbar.findAll("button[aria-label]").map(b => b.attributes("aria-label"))).toContain("Brush");
+    await toolbar.get('button[aria-label="Circle"]').trigger("click");
+    await toolbar.get('button[aria-label="Filled circle"]').trigger("click");
+    expect(toolbar.emitted("update:tool")).toEqual([["circle"], ["circle-fill"]]);
     expect(toolbar.text()).not.toMatch(/[\u3400-\u9fff]/);
     toolbar.unmount();
   });

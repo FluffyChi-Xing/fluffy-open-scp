@@ -10,6 +10,7 @@ import {
 import { encodeRgbaPng } from "@/lib/raster-editor/png";
 import { lotSizeForImage } from "@/lib/lot-ground/ground";
 import { reverseMaskRows } from "@/lib/lot-ground/maskRows";
+import { visibleDecalPixels } from "@/lib/raster-editor/decalLayers";
 
 export function downloadJson(value: unknown, name: string) {
   const url = URL.createObjectURL(
@@ -34,7 +35,7 @@ export function downloadRasterAsset(value: RasterSchema) {
     image.height,
     schema.profile === "lot-mask"
       ? reverseMaskRows(pixels, image.width, image.height)
-      : pixels,
+      : visibleDecalPixels(pixels, schema.decal.layers),
   );
   const url = URL.createObjectURL(
     new Blob([new Uint8Array(bytes)], { type: "image/png" }),
@@ -113,7 +114,9 @@ export async function saveRasterCopy(
     height,
     rgbaBase64: s.profile === "lot-mask"
       ? rgbaToBase64(reverseMaskRows(base64ToRgba(data), width, height))
-      : data,
+      : s.decal.layers?.some(({ visible }) => !visible)
+        ? rgbaToBase64(visibleDecalPixels(base64ToRgba(data), s.decal.layers))
+        : data,
     generateMips: s.sampling.generateMips,
     outputPath,
   };
@@ -143,6 +146,7 @@ export async function saveRasterCopy(
       },
       aspectRatio: s.decal.aspectRatio,
       colors: s.decal.colors.map(storageColor),
+      ...(s.profile === "decal-graffiti" ? { expectedMaterialInstance: 0xe5390a98 } : {}),
       replaceInstance,
     });
   } else {

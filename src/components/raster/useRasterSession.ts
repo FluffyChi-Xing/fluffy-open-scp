@@ -80,6 +80,7 @@ export function useRasterSession(initial?: RasterSchema) {
     decal.value.entryId = "";
     decal.value.replaceInstance = "";
     delete decal.value.entryTgi;
+    delete decal.value.layers;
     decal.value.aspectRatio = image.width / image.height;
     changed();
   }
@@ -152,6 +153,7 @@ export function useRasterSession(initial?: RasterSchema) {
     profile.value = value;
     lot.value.target = null;
     decal.value.atlas = null;
+    delete decal.value.layers;
     sampling.value.generateMips = false;
     changed();
   }

@@ -3,6 +3,7 @@ import { useI18n } from "vue-i18n";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
 import RasterDecalPreview from "./RasterDecalPreview.vue";
+import GraffitiProjectionPreview from "./sign/GraffitiProjectionPreview.vue";
 import type { RasterSource, RasterSchema } from "@/lib/raster-editor/schema";
 import { computed, onBeforeUnmount, shallowRef, watch } from "vue";
 import {
@@ -30,6 +31,7 @@ const props = defineProps<{
   colors: [number, number, number, number][];
   decalColors: string[];
   decalAspectRatio: number;
+  decalPreviewDoc?: RasterDocument;
 }>();
 const { t } = useI18n();
 const previewVersion = shallowRef(props.version);
@@ -160,8 +162,16 @@ const currentLotAlbedoPng = computed(() => {
       v-if="profile.startsWith('decal-')"
       :title="t(`rasterEditor.previewTitle.${profile}`)"
     >
+      <GraffitiProjectionPreview
+        v-if="profile === 'decal-graffiti'"
+        :doc="decalPreviewDoc ?? doc"
+        :version="version"
+        :colors="decalColors"
+        :aspect-ratio="decalAspectRatio"
+      />
       <RasterDecalPreview
-        :doc="doc"
+        v-else
+        :doc="decalPreviewDoc ?? doc"
         :version="version"
         :profile="profile"
         :colors="decalColors"

@@ -3,6 +3,7 @@ const t = i18n.global.t;
 import type { Tgi } from "@/api/tauri";
 import { base64ToRgba } from "./encoders";
 import { isSignSettings, type SignSettings } from "./signPaint";
+import type { DecalLayerState } from "./decalLayers";
 
 export const RASTER_PROFILES = [
   {
@@ -173,6 +174,8 @@ export type RasterTool =
   | "parking"
   | "curve"
   | "rect-fill"
+  | "circle"
+  | "circle-fill"
   | "polyline"
   | "polygon"
   | "layer-picker";
@@ -224,6 +227,7 @@ export interface RasterSchema {
     replaceInstance: string;
     atlas: RasterSource | null;
     sign?: SignSettings;
+    layers?: DecalLayerState[];
   };
 }
 export function isMaskProfile(profile: RasterProfile) {
@@ -332,7 +336,12 @@ export function parseRasterSchema(input: unknown): RasterSchema {
     typeof s.decal.entryId !== "string" ||
     typeof s.decal.replaceInstance !== "string" ||
     (s.decal.sign !== undefined &&
-      (s.profile !== "decal-sign" || !isSignSettings(s.decal.sign)))
+      (s.profile !== "decal-sign" || !isSignSettings(s.decal.sign))) ||
+    (s.decal.layers !== undefined &&
+      ((s.profile !== "decal-sign" && s.profile !== "decal-graffiti") ||
+        !Array.isArray(s.decal.layers) || s.decal.layers.length !== 4 ||
+        !s.decal.layers.every((layer: DecalLayerState | null) =>
+          layer && typeof layer.visible === "boolean" && typeof layer.locked === "boolean")))
   )
     throw new Error(t("rasterEditor.text161"));
   for (const source of [

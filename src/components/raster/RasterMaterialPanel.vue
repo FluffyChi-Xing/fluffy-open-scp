@@ -14,7 +14,7 @@ import type {
   RasterSchema,
   RasterSource,
 } from "@/lib/raster-editor/schema";
-const props = defineProps<{ profile: RasterProfile; disabled?: boolean }>();
+const props = defineProps<{ profile: RasterProfile; disabled?: boolean; hideDecalPalette?: boolean }>();
 const lot = defineModel<RasterSchema["lot"]>("lot", { required: true });
 const decal = defineModel<RasterSchema["decal"]>("decal", { required: true });
 const sampling = defineModel<RasterSchema["sampling"]>("sampling", {
@@ -174,7 +174,7 @@ const label = (s: RasterSource | null) =>
         </button>
       </template>
       <template v-if="isDecal">
-        <div v-if="PROFILE_BEHAVIOR[profile].palette" class="colors">
+        <div v-if="PROFILE_BEHAVIOR[profile].palette && !hideDecalPalette" class="colors">
           <label v-for="(c, i) in decal.colors" :key="i"
             >{{ t("rasterEditor.decalColor", { n: i + 1 })
             }}<input

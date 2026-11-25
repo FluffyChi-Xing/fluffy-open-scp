@@ -27,10 +27,15 @@ import {
   type Rgba,
 } from "@/lib/raster-editor/tools";
 import type { RasterTool } from "@/lib/raster-editor/schema";
+import { drawCircle } from "@/lib/raster-editor/circlePaint";
 import { pickedLayer } from "@/lib/raster-editor/profileBehavior";
 import { lotRegion } from "@/lib/raster-editor/lotPaint";
 import { viewportToPixel } from "@/lib/raster-editor/viewport";
 import { oppositeMaskRow } from "@/lib/lot-ground/maskRows";
+import {
+  canPaintDecalLayer, createDecalFillGesture, protectDecalPaint, visibleDecalPixel,
+  type DecalLayerState,
+} from "@/lib/raster-editor/decalLayers";
 
 /**
  * 绘制工具使用文档坐标。地面合成预览按屏幕密度绘制材质，通道视图按原始像素显示。
@@ -41,8 +46,10 @@ const props = defineProps<{
   tool: RasterTool;
   color: Rgba;
   brushSize: number;
+  circleRadius?: number;
   /** 油漆桶容差（RGBA 欧氏距离，0 = 精确匹配；抗锯齿图片建议 16-48）。 */
   fillTolerance?: number;
+  fillThroughLocked?: boolean;
   /** 停车位笔刷：单条停车线长度（px，垂直于拖拽方向）。 */
   parkingLength?: number;
   /** 停车位笔刷：相邻停车线间距（px，沿拖拽方向）。 */
@@ -64,6 +71,8 @@ const props = defineProps<{
   /** 橡皮擦清空全部通道（Lot 地面：擦除 = 露出底图）。 */
   eraseAllChannels?: boolean;
   centerOnResize?: boolean;
+  decalLayers?: readonly DecalLayerState[];
+  decalActiveLayer?: number;
 }>();
 const emit = defineEmits<{
   change: [];
@@ -206,13 +215,14 @@ defineExpose({
   zoomOut: () => setZoom(zoom.value / 1.25),
   setZoom: (value: number) => setZoom(value),
   applyEdit,
+  cancelDraft,
 });
 
 /** 宿主发起的整幅修改（如移除材质）：同样进入撤销栈。 */
-function applyEdit(mutate: (pixels: Uint8ClampedArray) => Rect | null) {
+function applyEdit(mutate: (pixels: Uint8ClampedArray, before: Uint8ClampedArray) => Rect | null) {
   cancelDraft();
   const before = props.doc.pixels.slice();
-  pushEdit(mutate(props.doc.pixels), before);
+  pushEdit(mutate(props.doc.pixels, before), before);
 }
 
 function setZoom(value: number) {
@@ -239,8 +249,9 @@ function fit() {
 
 // ── 指针交互 ──
 
-type DragMode = "none" | "paint" | "shape" | "pan";
+type DragMode = "none" | "paint" | "shape" | "pan" | "fill";
 let dragMode: DragMode = "none";
+let fillGesture: ReturnType<typeof createDecalFillGesture> | null = null;
 /** 拖拽起点的整幅像素快照：历史 before 与形状预览回滚的共同数据源。 */
 let dragBefore: Uint8ClampedArray | null = null;
 let dragDirty: Rect | null = null;
@@ -313,9 +324,24 @@ const cursorText = computed(() => {
 });
 
 const eraserColor: Rgba = [0, 0, 0, 0];
+const isCircleTool = computed(() => props.tool === "circle" || props.tool === "circle-fill");
 
 function activeColor(): Rgba {
   return props.tool === "eraser" ? eraserColor : props.color;
+}
+
+const noPlot = () => {};
+function paintPlot(before: Uint8ClampedArray | null) {
+  return before && props.decalLayers
+    ? protectDecalPaint(props.doc, before, props.decalLayers, props.decalActiveLayer ?? 0, props.tool === "eraser")
+    : noPlot;
+}
+
+function dragFillAt(pixel: { x: number; y: number }) {
+  const dirty = fillGesture?.(pixel);
+  if (!dirty) return;
+  dragDirty = unionRect(dragDirty, dirty);
+  renderRegion(dirty);
 }
 
 function parkingOptions() {
@@ -333,13 +359,14 @@ function drawShapeDraft(
 ) {
   if (!dragBefore) return;
   props.doc.pixels.set(dragBefore);
+  const plot = paintPlot(dragBefore);
   if (props.tool === "line") {
     dragDirty = strokePath(
       props.doc,
       [from, to],
       props.brushSize,
       activeColor(),
-      () => {},
+      plot,
     );
   } else if (props.tool === "parking") {
     dragDirty = strokeParkingRow(
@@ -349,7 +376,7 @@ function drawShapeDraft(
       props.brushSize,
       activeColor(),
       parkingOptions(),
-      () => {},
+      plot,
     );
   } else if (props.tool === "curve") {
     dragDirty = strokeQuadCurve(
@@ -359,8 +386,12 @@ function drawShapeDraft(
       to,
       props.brushSize,
       activeColor(),
-      () => {},
+      plot,
     );
+  } else if (isCircleTool.value) {
+    const dragRadius = Math.round(Math.hypot(to.x - from.x, to.y - from.y));
+    const radius = dragRadius || props.circleRadius || 16;
+    dragDirty = drawCircle(props.doc, from, radius, props.brushSize, activeColor(), props.tool === "circle-fill", plot);
   } else {
     dragDirty = drawRect(
       props.doc,
@@ -369,7 +400,7 @@ function drawShapeDraft(
       props.brushSize,
       activeColor(),
       props.tool === "rect-fill",
-      () => {},
+      plot,
     );
   }
   render();
@@ -379,9 +410,10 @@ function drawMultiPointDraft(cursor?: { x: number; y: number }) {
   if (!polygonDraft) return;
   props.doc.pixels.set(polygonDraft.base);
   const vertices = cursor ? [...polygonDraft.vertices, cursor] : polygonDraft.vertices;
+  const plot = paintPlot(polygonDraft.base);
   dragDirty = props.tool === "polygon" && vertices.length >= 3
-    ? fillPolygon(props.doc, vertices, activeColor(), () => {})
-    : strokePath(props.doc, vertices, props.brushSize, activeColor(), () => {});
+    ? fillPolygon(props.doc, vertices, activeColor(), plot)
+    : strokePath(props.doc, vertices, props.brushSize, activeColor(), plot);
   render();
 }
 
@@ -405,7 +437,7 @@ function previewCurveBend(control: { x: number; y: number }) {
     state.p2,
     props.brushSize,
     activeColor(),
-    () => {},
+    paintPlot(state.base),
   );
   render();
 }
@@ -437,10 +469,13 @@ function onPointerDown(event: PointerEvent) {
   }
   if (props.tool === "picker") {
     if (props.doc.inside(pixel.x, pixel.y)) {
-      emit("pick-color", props.doc.getPixel(pixel.x, pixel.y));
+      const sample = props.doc.getPixel(pixel.x, pixel.y);
+      emit("pick-color", props.decalLayers ? visibleDecalPixel(sample, props.decalLayers) : sample);
     }
     return;
   }
+  const activeLayer = props.decalActiveLayer ?? 0;
+  if (props.decalLayers && !canPaintDecalLayer(props.decalLayers[activeLayer])) return;
   if (props.tool === "polyline" || props.tool === "polygon") {
     if (!props.doc.inside(pixel.x, pixel.y)) return;
     if (!polygonDraft) polygonDraft = { base: props.doc.pixels.slice(), vertices: [] };
@@ -453,6 +488,15 @@ function onPointerDown(event: PointerEvent) {
   }
   if (props.tool === "fill") {
     const before = props.doc.pixels.slice();
+    if (props.decalLayers) {
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+      dragMode = "fill";
+      dragBefore = before;
+      dragDirty = null;
+      fillGesture = createDecalFillGesture(props.doc, before, props.decalLayers, activeLayer, activeColor(), props.fillTolerance ?? 0, props.fillThroughLocked);
+      dragFillAt(pixel);
+      return;
+    }
     const dirty = floodFill(
       props.doc,
       pixel.x,
@@ -479,11 +523,13 @@ function onPointerDown(event: PointerEvent) {
     props.tool === "line" ||
     props.tool === "rect" ||
     props.tool === "rect-fill" ||
+    isCircleTool.value ||
     props.tool === "parking" ||
     props.tool === "curve"
   ) {
     dragMode = "shape";
     dragStart = pixel;
+    if (isCircleTool.value) drawShapeDraft(pixel, pixel);
     return;
   }
   dragMode = "paint";
@@ -493,7 +539,7 @@ function onPointerDown(event: PointerEvent) {
     [pixel],
     props.brushSize,
     activeColor(),
-    () => {},
+    paintPlot(dragBefore),
   );
   preserveErasedLotLayers(dragBefore, dragDirty);
   render();
@@ -529,13 +575,17 @@ function onPointerMove(event: PointerEvent) {
       points.slice(-2),
       props.brushSize,
       activeColor(),
-      () => {},
+      paintPlot(dragBefore),
     );
     if (dirty) {
       if (dragBefore) preserveErasedLotLayers(dragBefore, dirty);
       dragDirty = unionRect(dragDirty, dirty);
       renderRegion(dirty);
     }
+    return;
+  }
+  if (dragMode === "fill") {
+    dragFillAt(pixel);
     return;
   }
   if (dragMode === "shape" && dragStart) {
@@ -582,7 +632,8 @@ function onPointerUp(event: PointerEvent) {
     render();
     return;
   }
-  if (dragMode === "paint" || dragMode === "shape") {
+  if (dragMode === "paint" || dragMode === "shape" || dragMode === "fill") {
+    if (dragMode === "fill") dragFillAt(toPixel(event));
     if (dragMode === "shape" && dragStart && props.tool !== "curve")
       drawShapeDraft(dragStart, constrainedEnd(dragStart, toPixel(event), event.shiftKey));
     commitDrag();
@@ -605,6 +656,7 @@ function commitDrag() {
   if (before) preserveErasedLotLayers(before, dragDirty);
   pushEdit(dragDirty, before);
   dragMode = "none";
+  fillGesture = null;
   dragBefore = null;
   dragDirty = null;
   dragStart = null;
@@ -623,7 +675,7 @@ function commitCurve(control: { x: number; y: number }) {
     state.p2,
     props.brushSize,
     activeColor(),
-    () => {},
+    paintPlot(state.base),
   );
   pushEdit(dirty, state.base);
 }
@@ -631,12 +683,15 @@ function commitCurve(control: { x: number; y: number }) {
 /** 统一提交：clamp 脏区 → 从拖拽前快照取 before 入历史栈。 */
 function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null) {
   const rect = dirty ? clampRect(dirty, props.doc) : null;
+  let didChange = !!rect;
   if (rect && before) {
     restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
-    historyInstance.value.push(makeEdit(rect, before));
+    const edit = makeEdit(rect, before);
+    didChange = !props.decalLayers || edit.after.some((value, index) => value !== edit.before[index]);
+    if (didChange) historyInstance.value.push(edit);
   }
   render();
-  if (rect) emit("change");
+  if (didChange) emit("change");
 }
 
 /** 取消当前草稿（Esc / pointercancel / 切换工具）：回滚文档并清状态。 */
@@ -657,6 +712,7 @@ function cancelDraft() {
   }
   if (dragBefore) props.doc.pixels.set(dragBefore);
   dragMode = "none";
+  fillGesture = null;
   dragBefore = null;
   dragDirty = null;
   dragStart = null;
@@ -766,6 +822,7 @@ watch(
   () => props.tool,
   () => cancelDraft(),
 );
+watch(() => [props.decalLayers, props.decalActiveLayer], () => cancelDraft());
 watch(
   () => props.doc,
   () => {
@@ -775,6 +832,7 @@ watch(
     curve = null;
     polygonDraft = null;
     dragMode = "none";
+    fillGesture = null;
     points = [];
     fit();
     render();

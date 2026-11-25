@@ -19,6 +19,31 @@ beforeEach(() => {
   vi.mocked(tauriApi.packages.saveFile).mockResolvedValue("copy.package");
 });
 describe("native Raster copy adapters", () => {
+  it("exports graffiti as raw paint channels and enforces the non-emissive dictionary", async () => {
+    const session = useRasterSession();
+    session.changeProfile("decal-graffiti");
+    session.create(2, 1);
+    const pixels = new Uint8ClampedArray([180, 0, 0, 0, 0, 0, 0, 220]);
+    session.doc.value!.pixels.set(pixels);
+    const atlas = { packageId: 42, tgi: { typeId: 0xb1b104, group: 0xfb661651, instance: 0xeefd390c } };
+    session.decal.value.atlas = { name: "graffiti", ...atlas };
+    await expect(saveRasterCopy(session.snapshot(), "decal")).resolves.toBe("copy.package");
+    expect(tauriApi.raster.registerDecalEntry).toHaveBeenCalledWith(expect.objectContaining({
+      atlas,
+      rgbaBase64: rgbaToBase64(pixels),
+      expectedMaterialInstance: 0xe5390a98,
+      replaceInstance: undefined,
+    }));
+    session.decal.value.layers = Array.from({ length: 4 }, (_, index) => ({
+      visible: index !== 0, locked: index === 0,
+    }));
+    const draft = session.snapshot();
+    await saveRasterCopy(draft, "decal");
+    expect(tauriApi.raster.registerDecalEntry).toHaveBeenLastCalledWith(expect.objectContaining({
+      rgbaBase64: rgbaToBase64(new Uint8ClampedArray([0, 0, 0, 0, 0, 0, 0, 220])),
+    }));
+    expect(draft.image?.data).toBe(rgbaToBase64(pixels));
+  });
   it("does not save a marquee draft as a package without its animation settings", async () => {
     const session = useRasterSession();
     session.changeProfile("decal-sign");
