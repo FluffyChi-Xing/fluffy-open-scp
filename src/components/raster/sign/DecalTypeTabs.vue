@@ -7,40 +7,39 @@ const unavailable = ["graffiti", "neon", "interior", "rgba", "hologram", "ground
 </script>
 
 <template>
-  <div class="decal-tabs" role="tablist" :aria-label="t('rasterEditor.sign.tabs')">
-    <button :id="tabId" type="button" role="tab" aria-selected="true" :aria-controls="panelId">
-      {{ t("rasterEditor.sign.signs") }}
-    </button>
-    <button v-for="type in unavailable" :key="type" type="button" role="tab" aria-selected="false" disabled>
-      {{ t(`rasterEditor.sign.types.${type}`) }}
-    </button>
+  <div class="decal-type-field">
+    <span :id="`${tabId}-label`">{{ t("rasterEditor.sign.tabs") }}</span>
+    <div class="decal-tabs" role="tablist" :aria-labelledby="`${tabId}-label`">
+      <button :id="tabId" class="sign-control" type="button" role="tab" aria-selected="true" :aria-controls="panelId">
+        {{ t("rasterEditor.sign.signs") }}
+      </button>
+      <button v-for="type in unavailable" :key="type" class="sign-control" type="button" role="tab" aria-selected="false" disabled>
+        {{ t(`rasterEditor.sign.types.${type}`) }}
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.decal-type-field {
+  display: grid;
+  gap: var(--sign-row-gap);
+  font-size: 12px;
+  font-weight: 600;
+}
 .decal-tabs {
-  display: flex;
-  flex: none;
-  gap: 4px;
-  padding-inline: 16px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sign-row-gap);
 }
 .decal-tabs button {
-  flex: none;
-  padding: 10px 12px 8px;
-  color: var(--foreground);
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  font: inherit;
-  font-size: 12px;
+  text-align: start;
 }
 .decal-tabs button[aria-selected="true"] {
-  border-bottom-color: var(--primary);
+  grid-column: 1 / -1;
+  border-color: var(--primary);
+  background: var(--accent);
   font-weight: 650;
 }
 .decal-tabs button:disabled { color: var(--muted-foreground); opacity: 0.65; }
-.decal-tabs button:focus-visible { outline: 2px solid var(--primary); outline-offset: -3px; }
 </style>

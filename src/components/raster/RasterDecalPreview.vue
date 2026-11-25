@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
       role="img"
       :aria-label="t('rasterEditor.decalPreview')"
     />
-    <button v-if="sign?.effect === 'marquee' && !failed" type="button" @click="togglePlayback">
+    <button v-if="sign?.effect === 'marquee' && !failed" class="sign-control" type="button" @click="togglePlayback">
       {{ t(playing ? "rasterEditor.sign.pause" : "rasterEditor.sign.play") }}
     </button>
     <p v-if="!sign">{{ t(`rasterEditor.profileGuide.${profile}`) }}</p>
@@ -203,7 +203,7 @@ onBeforeUnmount(() => {
 .decal-image :deep(canvas) {
   display: block;
 }
-.sign-preview { gap: 8px; }
+.sign-preview { gap: var(--sign-row-gap, 8px); }
 .sign-preview .decal-image {
   flex: auto;
   height: 120px;

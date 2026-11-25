@@ -143,6 +143,7 @@ const profileOptions = computed(() => {
 const isLot = computed(() => profile.value === "lot-mask");
 const isSign = computed(() => props.mode === "standalone" && profile.value === "decal-sign");
 const signId = useId();
+const signInspectorOpen = ref(true);
 const signSettings = computed(() => decal.value.sign ?? defaultSignSettings);
 const signAnimated = computed(() => isSign.value && signSettings.value.effect === "marquee");
 const signPreview = computed(() => isSign.value && doc.value
@@ -574,15 +575,21 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         >
           {{ t("rasterEditor.text019") }}
         </button>
+        <button
+          v-if="editorStarted && isSign"
+          type="button"
+          class="sign-properties-toggle"
+          :aria-controls="`${signId}-inspector`"
+          :aria-expanded="signInspectorOpen"
+          @click="signInspectorOpen = !signInspectorOpen"
+        >
+          <FIcon name="SlidersHorizontal" :size="15" />
+          {{ t("rasterEditor.sign.inspector") }}
+        </button>
       </div>
     </header>
-    <DecalTypeTabs v-if="editorStarted && isSign" :tab-id="`${signId}-tab`" :panel-id="`${signId}-panel`" />
-    <div
-class="editor-layout" :class="{ 'is-empty': !editorStarted, 'sign-layout': isSign }"
-      :id="editorStarted && isSign ? `${signId}-panel` : undefined"
-      :role="editorStarted && isSign ? 'tabpanel' : undefined"
-      :aria-labelledby="editorStarted && isSign ? `${signId}-tab` : undefined">
-      <aside v-if="editorStarted" class="left-rail">
+    <div class="editor-layout" :class="{ 'is-empty': !editorStarted, 'sign-layout': isSign, 'sign-inspector-closed': isSign && !signInspectorOpen }">
+      <aside v-if="editorStarted && !isSign" class="left-rail">
         <div v-if="profile === 'lot-mask' && doc" class="layer-section">
           <h2>{{ t("rasterEditor.baseLayer") }}</h2>
           <div v-if="baseLotPixels" class="base-layer-row">
@@ -600,17 +607,7 @@ class="editor-layout" :class="{ 'is-empty': !editorStarted, 'sign-layout': isSig
             <span class="base-layer-name">{{ t("rasterEditor.drawingLayer") }}</span>
           </div>
         </div>
-        <section v-if="isSign" class="sign-sizes">
-          <h2>{{ t("rasterEditor.sign.canvas") }}</h2>
-          <button
-v-for="preset in signSizes" :key="preset.name" type="button" :disabled="locked"
-            @click="createBlank(preset.width, preset.height)">
-            <span>{{ t(`rasterEditor.sign.sizes.${preset.name}`) }}</span>
-            <small>{{ preset.width }} × {{ preset.height }}</small>
-          </button>
-        </section>
-        <component :is="isSign ? 'details' : 'div'" class="rail-section source-section">
-          <summary v-if="isSign" class="sign-disclosure">{{ t("rasterEditor.sign.sources") }}</summary>
+        <div class="rail-section source-section">
           <RasterSourcePanel
             :image-width="doc?.width"
             :image-height="doc?.height"
@@ -629,18 +626,24 @@ v-for="preset in signSizes" :key="preset.name" type="button" :disabled="locked"
                 })
             "
           />
-        </component>
+        </div>
       </aside>
-      <main class="workspace" :inert="locked">
-        <div v-if="editorStarted" class="document-heading">
+      <main
+        class="workspace"
+        :inert="locked"
+        :id="isSign ? `${signId}-panel` : undefined"
+        :role="isSign ? 'tabpanel' : undefined"
+        :aria-labelledby="isSign ? `${signId}-tab` : undefined"
+      >
+        <div v-if="editorStarted && !isSign" class="document-heading">
           <div>
-            <strong>{{ isSign ? t("rasterEditor.sign.signs") : descriptor.label }}</strong>
+            <strong>{{ descriptor.label }}</strong>
           </div>
           <span class="dirty-state">{{
             dirty ? t("rasterEditor.text020") : t("rasterEditor.text021")
           }}</span>
         </div>
-        <label v-if="editorStarted" class="document-name">
+        <label v-if="editorStarted && !isSign" class="document-name">
           {{ t("rasterEditor.text022") }}
           <input v-model="name" :disabled="locked" @input="changed"
         /></label>
@@ -654,6 +657,14 @@ v-for="preset in signSizes" :key="preset.name" type="button" :disabled="locked"
         />
         <template v-else-if="doc && history">
           <div class="canvas-stage">
+            <RasterToolbar
+              v-model:tool="tool"
+              :lot="profile === 'lot-mask'"
+              :can-undo="canUndo"
+              :can-redo="canRedo"
+              @undo="canvas?.undo()"
+              @redo="canvas?.redo()"
+            />
             <RasterCanvas
               :key="`${profile}:${doc.width}:${doc.height}`"
               ref="canvas"
@@ -677,17 +688,10 @@ v-for="preset in signSizes" :key="preset.name" type="button" :disabled="locked"
               :paint-preview="isSign ? signPreview : ground.paintPreview.value"
               :backdrop="ground.backdrop.value"
               :erase-all-channels="isLot || isSign"
+              :center-on-resize="isSign"
               @change="onCanvasChange"
               @pick-color="pick"
               @pick-layer="onPickLayer"
-            />
-            <RasterToolbar
-              v-model:tool="tool"
-              :lot="profile === 'lot-mask'"
-              :can-undo="canUndo"
-              :can-redo="canRedo"
-              @undo="canvas?.undo()"
-              @redo="canvas?.redo()"
             />
           </div>
           <div class="editor-guidance">
@@ -745,13 +749,60 @@ v-for="preset in signSizes" :key="preset.name" type="button" :disabled="locked"
           <pre>{{ schemaText.slice(0, 8000) }}</pre>
         </details>
       </main>
-      <aside v-if="editorStarted" class="inspector">
-        <section v-if="isSign && doc" class="sign-live">
-          <h2>{{ t("rasterEditor.sign.preview") }}</h2>
-          <RasterDecalPreview
-:doc="doc" :version="version" :profile="profile"
-            :colors="decal.colors" :aspect-ratio="decal.aspectRatio" :sign="signSettings" />
-        </section>
+      <aside
+        v-if="editorStarted"
+        v-show="!isSign || signInspectorOpen"
+        :id="isSign ? `${signId}-inspector` : undefined"
+        :aria-label="isSign ? t('rasterEditor.sign.inspector') : undefined"
+        :class="{ 'sign-inspector': isSign }"
+        class="inspector"
+      >
+        <details v-if="isSign" class="sign-document-settings">
+          <summary class="sign-disclosure">
+            {{ t("rasterEditor.sign.documentSettings") }}
+            <small>{{ dirty ? t("rasterEditor.text020") : t("rasterEditor.text021") }}</small>
+          </summary>
+          <div class="sign-document-fields">
+            <label class="sign-name-field">
+              {{ t("rasterEditor.text022") }}
+              <input v-model="name" class="sign-control" :disabled="locked" @input="changed" />
+            </label>
+            <DecalTypeTabs :tab-id="`${signId}-tab`" :panel-id="`${signId}-panel`" />
+          </div>
+        </details>
+        <details v-if="isSign" :open="!doc" class="sign-canvas-settings">
+          <summary class="sign-disclosure">
+            {{ t("rasterEditor.sign.canvas") }}
+            <small v-if="doc">{{ doc.width }} × {{ doc.height }}</small>
+          </summary>
+          <div class="sign-sizes">
+            <button
+              v-for="preset in signSizes"
+              :key="preset.name"
+              :class="`sign-size-${preset.name}`"
+              type="button"
+              :disabled="locked"
+              @click="createBlank(preset.width, preset.height)"
+            >
+              <span class="sign-size-shape" aria-hidden="true" />
+              <span>{{ t(`rasterEditor.sign.sizes.${preset.name}`) }}</span>
+              <small>{{ preset.width }} × {{ preset.height }}</small>
+            </button>
+          </div>
+          <details class="sign-import source-section">
+            <summary class="sign-disclosure">{{ t("rasterEditor.sign.sources") }}</summary>
+            <RasterSourcePanel
+              :image-width="doc?.width"
+              :image-height="doc?.height"
+              :profile="profile"
+              :disabled="locked"
+              @load-decal="loadDecal"
+              @create="createBlank"
+              @image="image"
+              @schema="restore"
+            />
+          </details>
+        </details>
         <RasterSignControls
 v-if="isSign" :layer="layer" :settings="signSettings" :colors="decal.colors"
           :disabled="locked" :can-letter="!!doc" @update:layer="onPickLayer" @settings="setSignSettings"
@@ -797,6 +848,13 @@ v-if="isSign" :layer="layer" :settings="signSettings" :colors="decal.colors"
             <label v-if="channel !== 'rgba'">{{ t("rasterEditor.channelValue", { channel: channel.toUpperCase() }) }}<input v-model.number="channelValue" type="number" min="0" max="255" /></label>
             <label>{{ t("rasterEditor.text122") }}<FSelect :model-value="channel" :options="['rgba','r','g','b','a'].map((value) => ({ value, label: value.toUpperCase() }))" @update:model-value="channel = $event as Channel" /></label>
           </template>
+        </section>
+        <section v-if="isSign && signInspectorOpen && doc" class="sign-live">
+          <h2>{{ t("rasterEditor.sign.preview") }}</h2>
+          <RasterDecalPreview
+            :doc="doc" :version="version" :profile="profile"
+            :colors="decal.colors" :aspect-ratio="decal.aspectRatio" :sign="signSettings"
+          />
         </section>
         <p v-if="signAnimated" class="sign-export-note">{{ t("rasterEditor.sign.animatedExport") }}</p>
         <component v-if="profile !== 'slot0' && !signAnimated" :is="isSign ? 'details' : 'div'">
@@ -880,6 +938,7 @@ h1 span {
   display: flex;
   gap: 8px;
 }
+.actions:has(.sign-properties-toggle) { flex-wrap: wrap; }
 button {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -912,29 +971,112 @@ button:disabled {
 .sign-layout {
   --sign-stage: #171f2c;
   --sign-grid: #8390ad18;
+  grid-template-columns: minmax(0, 1fr) clamp(260px, 22%, 304px);
 }
-.sign-sizes, .sign-live { padding: 16px; }
-.sign-sizes h2, .sign-live h2 { margin: 0 0 9px; font-size: 12px; }
-.sign-sizes button {
-  display: flex;
-  width: 100%;
+.sign-layout.sign-inspector-closed { grid-template-columns: minmax(0, 1fr); }
+.sign-layout .workspace {
+  border-inline: 0;
+  overflow: auto;
+}
+.sign-inspector {
+  --sign-inset: 16px;
+  --sign-section-padding: 14px;
+  --sign-group-gap: 16px;
+  --sign-row-gap: 8px;
+  --sign-control-height: 32px;
+  --sign-control-radius: 6px;
+  border-inline-start: 1px solid var(--border);
+}
+.sign-inspector :deep(.sign-control),
+.sign-inspector :deep(.source-panel :is(input:not([type="file"]), button, .f-select)),
+.sign-inspector :deep(.material-panel :is(input:not([type="checkbox"]), button, .f-select)) {
+  box-sizing: border-box;
+  min-inline-size: 0;
+  min-block-size: var(--sign-control-height);
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--sign-control-radius);
+  background: var(--surface);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+}
+.sign-inspector :deep(input.sign-control) { inline-size: 100%; }
+.sign-inspector :deep(.sign-control:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.sign-inspector :deep(button.sign-control:enabled:hover) { background: var(--surface-hover); }
+.sign-properties-toggle {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
-  padding: 8px;
-  margin-top: 5px;
-  text-align: start;
 }
-.sign-sizes small { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.sign-properties-toggle[aria-expanded="true"] { background: var(--accent); }
+.sign-properties-toggle:hover,
+.sign-disclosure:hover { background: var(--surface-hover); }
+.sign-document-settings,
+.sign-canvas-settings,
+.sign-inspector :deep(.sign-controls),
+.sign-live { border-block-end: 1px solid var(--border); }
+.sign-document-fields {
+  display: grid;
+  gap: var(--sign-group-gap);
+  padding: var(--sign-row-gap) var(--sign-inset) var(--sign-section-padding);
+}
+.sign-name-field {
+  display: grid;
+  gap: var(--sign-row-gap);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sign-live { padding: var(--sign-section-padding) var(--sign-inset); }
+.sign-live h2 { margin: 0 0 var(--sign-row-gap); font-size: 12px; font-weight: 600; }
+.sign-sizes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sign-row-gap);
+  padding: var(--sign-row-gap) var(--sign-inset);
+}
+.sign-sizes button {
+  display: grid;
+  grid-template-rows: 24px auto auto;
+  place-items: center;
+  gap: 4px;
+  padding: 8px 3px;
+  border-radius: var(--sign-control-radius);
+}
+.sign-size-shape {
+  inline-size: 24px;
+  block-size: 12px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  color: var(--muted-foreground);
+}
+.sign-size-tall .sign-size-shape { inline-size: 12px; block-size: 24px; }
+.sign-size-square .sign-size-shape { inline-size: 18px; block-size: 18px; }
+.sign-sizes small,
+.sign-disclosure small { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 .sign-sizes button:hover:enabled, .sign-start button:hover:enabled { background: var(--accent); }
 .sign-disclosure {
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
-  color: var(--muted-foreground);
+  padding: 10px var(--sign-inset);
+  color: var(--foreground);
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
-.sign-export-note { margin: 0; padding: 0 16px 14px; color: var(--muted-foreground); font-size: 12px; }
+.sign-disclosure small { float: inline-end; font-size: 11px; font-weight: 400; }
+.sign-import .sign-disclosure { color: var(--muted-foreground); }
+.sign-inspector :deep(:is(.source-panel, .material-panel)) {
+  padding: var(--sign-row-gap) var(--sign-inset) var(--sign-section-padding);
+  border-block-start: 0;
+}
+.sign-export-note {
+  margin: 0;
+  padding: var(--sign-section-padding) var(--sign-inset);
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
 .empty-canvas.sign-empty {
   color: #e4e9f4;
   background: var(--sign-stage);
@@ -1012,7 +1154,7 @@ button:disabled {
   color: var(--muted-foreground);
 }
 .layer-icon-button:hover { color: var(--foreground); background: var(--surface-hover); }
-.source-section :deep(.source-panel) {
+.left-rail .source-section :deep(.source-panel) {
   padding: 14px;
 }
 .workspace {
@@ -1075,7 +1217,7 @@ button:disabled {
   height: auto;
   border-radius: var(--radius-sm);
 }
-.canvas-stage :deep(.raster-toolbar) {
+.editor-layout:not(.sign-layout) .canvas-stage :deep(.raster-toolbar) {
   position: absolute;
   z-index: 5;
   left: 50%;
@@ -1088,6 +1230,38 @@ button:disabled {
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(14px);
+}
+.sign-layout .canvas-stage {
+  flex-direction: column;
+  min-block-size: 220px;
+  padding: 0;
+}
+.sign-layout .canvas-stage :deep(.raster-toolbar) {
+  flex: none;
+  display: grid;
+  justify-content: safe center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.sign-layout .canvas-stage :deep(.tools) { flex-wrap: wrap; }
+.sign-layout .editor-canvas {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: var(--sign-stage);
+}
+.sign-layout .document-footer {
+  flex: none;
+  min-height: 24px;
+  font-size: 10px;
+}
+.sign-layout .editor-guidance {
+  margin: 0;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--muted-foreground);
 }
 .document-footer {
   display: flex;
@@ -1167,6 +1341,28 @@ button:disabled {
 }
 .editor-controls input[type="color"] { width: 34px; padding: 2px; }
 .editor-controls :deep(.f-select) { min-height: 30px; font-size: 11px; }
+.sign-inspector .editor-controls {
+  gap: var(--sign-row-gap);
+  padding: var(--sign-section-padding) var(--sign-inset);
+}
+.sign-inspector .editor-controls h2 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 12px;
+}
+.sign-inspector .editor-controls label {
+  gap: var(--sign-row-gap);
+  font-size: 12px;
+  white-space: normal;
+}
+.sign-inspector .editor-controls input {
+  inline-size: 8ch;
+  min-block-size: var(--sign-control-height);
+  border-radius: var(--sign-control-radius);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.sign-inspector .editor-controls input:focus-visible { outline-offset: 1px; }
 .editor-guidance {
   flex: none;
   margin: 0 10px 8px;
@@ -1208,16 +1404,27 @@ pre {
   padding: 8px;
 }
 @media (max-width: 1100px) {
-  .editor-layout {
+  .editor-layout:not(.sign-layout) {
     grid-template-columns: 190px minmax(0, 1fr);
   }
   .editor-layout.is-empty { grid-template-columns: minmax(0, 1fr); }
-  .inspector {
+  .inspector:not(.sign-inspector) {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     border-top: 1px solid var(--border);
     max-height: 360px;
+  }
+}
+@media (max-width: 760px) {
+  .editor-layout.sign-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(440px, 1fr) auto;
+    overflow: auto;
+  }
+  .sign-inspector {
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--border);
   }
 }
 @media (max-width: 700px) {
@@ -1237,10 +1444,10 @@ pre {
   .inspector {
     display: block;
   }
-  .sign-layout .inspector { max-height: none; }
+  .sign-layout .workspace { min-block-size: 440px; }
   .canvas-stage { min-height: 480px; }
   .sign-layout .canvas-stage { min-height: 360px; }
-  .canvas-stage :deep(.raster-toolbar) {
+  .editor-layout:not(.sign-layout) .canvas-stage :deep(.raster-toolbar) {
     left: 50%;
     bottom: 42px;
     max-width: calc(100% - 24px);

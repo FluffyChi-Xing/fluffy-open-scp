@@ -35,7 +35,7 @@ function setSpeed(event: Event) {
           <input
 type="radio" :name="`${id}-effect`" :checked="settings.effect === effect"
             @change="emit('settings', { ...settings, effect })" />
-          <span>{{ t(`rasterEditor.sign.${effect}`) }}</span>
+          <span class="sign-control">{{ t(`rasterEditor.sign.${effect}`) }}</span>
         </label>
       </div>
     </fieldset>
@@ -47,7 +47,7 @@ type="radio" :name="`${id}-effect`" :checked="settings.effect === effect"
             <input
 type="radio" :name="`${id}-axis`" :checked="settings.axis === axis"
               @change="emit('settings', { ...settings, axis })" />
-            <span>{{ t(`rasterEditor.sign.${axis}`) }}</span>
+            <span class="sign-control">{{ t(`rasterEditor.sign.${axis}`) }}</span>
           </label>
         </div>
       </fieldset>
@@ -60,7 +60,7 @@ type="radio" :name="`${id}-axis`" :checked="settings.axis === axis"
     <fieldset class="sign-field" :disabled="disabled">
       <legend>{{ t("rasterEditor.sign.layers") }}</legend>
       <div class="palette">
-        <div v-for="(color, index) in colors" :key="index" class="palette-row" :class="{ active: layer === index }">
+        <div v-for="(color, index) in colors" :key="index" class="palette-row sign-control" :class="{ active: layer === index }">
           <button type="button" :aria-pressed="layer === index" @click="layer = index">
             {{ t("rasterEditor.sign.layer", { number: index + 1 }) }}
           </button>
@@ -72,36 +72,40 @@ type="color" :value="color" :aria-label="t('rasterEditor.decalColor', { n: index
     </fieldset>
     <form v-if="canLetter" class="lettering" @submit.prevent="emit('lettering', lettering.trim())">
       <label :for="`${id}-lettering`">{{ t("rasterEditor.sign.lettering") }}</label>
-      <input :id="`${id}-lettering`" v-model="lettering" type="text" maxlength="80" :disabled="disabled" />
-      <button type="submit" :disabled="disabled || !lettering.trim()">{{ t("rasterEditor.sign.addLettering") }}</button>
+      <input :id="`${id}-lettering`" v-model="lettering" class="sign-control" type="text" maxlength="80" :disabled="disabled" />
+      <button class="sign-control" type="submit" :disabled="disabled || !lettering.trim()">{{ t("rasterEditor.sign.addLettering") }}</button>
     </form>
   </div>
 </template>
 
 <style scoped>
-.sign-controls { display: grid; gap: 14px; padding: 16px; }
+.sign-controls {
+  display: grid;
+  gap: var(--sign-group-gap, 16px);
+  padding: var(--sign-section-padding, 14px) var(--sign-inset, 16px);
+}
 .sign-field { border: 0; padding: 0; margin: 0; min-width: 0; }
-.sign-field legend { margin-bottom: 7px; font-size: 12px; font-weight: 650; }
-.segments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.sign-field legend { margin-bottom: var(--sign-row-gap, 8px); font-size: 12px; font-weight: 600; }
+.segments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sign-row-gap, 8px); }
 .segments label { position: relative; display: grid; }
 .segments input { position: absolute; opacity: 0; }
-.segments span,
-.palette-row { border: 1px solid var(--border); border-radius: 5px; background: var(--surface); }
-.segments span { padding: 6px 4px; text-align: center; font-size: 12px; cursor: pointer; }
-.segments input:checked + span, .palette-row.active {
+.segments span { display: grid; place-items: center; text-align: center; cursor: pointer; }
+.segments input:checked + span, .palette .palette-row.active {
   background: var(--accent);
   border-color: var(--primary);
 }
 .segments input:focus-visible + span,
-.palette-row :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.speed { display: grid; grid-template-columns: 1fr auto; gap: 5px; font-size: 12px; }
+.palette-row :focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.speed { display: grid; grid-template-columns: 1fr auto; gap: var(--sign-row-gap, 8px); font-size: 12px; }
 .speed output { font-variant-numeric: tabular-nums; }
 .speed input { grid-column: 1 / -1; width: 100%; accent-color: var(--primary); }
-.palette { display: grid; gap: 4px; }
-.palette-row { display: flex; align-items: center; }
+.palette { display: grid; gap: var(--sign-row-gap, 8px); }
+.palette .palette-row.sign-control { display: flex; align-items: center; padding: 0; }
 .palette-row button {
+  align-self: stretch;
   flex: 1;
-  padding: 6px 8px;
+  min-width: 0;
+  padding: 4px 9px;
   color: var(--foreground);
   background: transparent;
   border: 0;
@@ -109,20 +113,11 @@ type="color" :value="color" :aria-label="t('rasterEditor.decalColor', { n: index
   font-size: 12px;
   cursor: pointer;
 }
-.palette-row input { width: 36px; height: 28px; border: 0; background: transparent; cursor: pointer; }
+.palette-row input { flex: none; width: 34px; height: 26px; margin-inline-end: 3px; border: 0; background: transparent; cursor: pointer; }
 .sign-field:disabled { opacity: 0.55; }
-.lettering { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
-.lettering label { grid-column: 1 / -1; font-size: 12px; font-weight: 650; }
-.lettering :is(input, button) {
-  min-width: 0;
-  padding: 5px 7px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--surface);
-  color: var(--foreground);
-  font: inherit;
-  font-size: 12px;
-}
+.lettering { display: grid; gap: var(--sign-row-gap, 8px); }
+.lettering label { font-size: 12px; font-weight: 600; }
+.lettering button { justify-self: end; }
 .lettering button:enabled { cursor: pointer; }
 .lettering button:disabled { opacity: 0.55; }
 </style>

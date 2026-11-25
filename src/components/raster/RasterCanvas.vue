@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useResizeObserver } from "@vueuse/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import {
   RasterDocument,
@@ -62,6 +63,7 @@ const props = defineProps<{
   backdrop?: string | null;
   /** 橡皮擦清空全部通道（Lot 地面：擦除 = 露出底图）。 */
   eraseAllChannels?: boolean;
+  centerOnResize?: boolean;
 }>();
 const emit = defineEmits<{
   change: [];
@@ -80,6 +82,23 @@ const panning = ref(false);
 /** 经 computed 解引用，避免对 props 的直接方法调用（vue/no-mutating-props）。 */
 const historyInstance = computed(() => props.history);
 const documentInstance = computed(() => props.doc);
+
+let viewportSize: { width: number; height: number } | undefined;
+useResizeObserver(
+  () => (props.centerOnResize ? wrap.value : null),
+  ([{ target }]) => {
+    const width = target.clientWidth;
+    const height = target.clientHeight;
+    if (!width || !height) return;
+    if (viewportSize) {
+      pan.value = {
+        x: pan.value.x + (width - viewportSize.width) / 2,
+        y: pan.value.y + (height - viewportSize.height) / 2,
+      };
+    }
+    viewportSize = { width, height };
+  },
+);
 
 let ctx: CanvasRenderingContext2D | null = null;
 let spaceDown = false;

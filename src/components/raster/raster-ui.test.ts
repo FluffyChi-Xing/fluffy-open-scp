@@ -242,6 +242,9 @@ describe("Raster editor regressions", () => {
       { value: "decal-sign", label: "Decal painting" },
     ]);
     expect(tabs.get('[aria-selected="true"]').text()).toBe("Signs and billboards");
+    expect(panel.get(".sign-properties-toggle").text()).toBe("Properties");
+    expect(panel.get(".sign-document-settings summary").text()).toContain("Decal details");
+    expect(panel.get(".sign-canvas-settings summary").text()).toBe("Canvas settings");
     expect(panel.text()).toContain("Sweep speed");
     panel.unmount();
   });
@@ -269,11 +272,28 @@ describe("Raster editor regressions", () => {
     const panel = shallowMount(RasterEditor, { global });
     panel.getComponent(FSelect).vm.$emit("update:modelValue", "decal-sign");
     await nextTick();
+    const inspector = panel.get<HTMLElement>(".sign-inspector");
+    expect(panel.find(".left-rail").exists()).toBe(false);
+    expect(inspector.get(".sign-document-settings").attributes()).not.toHaveProperty("open");
+    expect(inspector.findComponent(DecalTypeTabs).exists()).toBe(true);
+    expect(panel.get(".workspace").findComponent(DecalTypeTabs).exists()).toBe(false);
+    expect(inspector.get(".sign-canvas-settings").attributes()).toHaveProperty("open");
+    expect(inspector.findComponent(RasterSourcePanel).exists()).toBe(true);
     await panel.get(".sign-start button").trigger("click");
+    expect(inspector.get(".sign-canvas-settings").attributes()).not.toHaveProperty("open");
     const settings = { effect: "marquee", axis: "vertical", speed: 0.6 } as const;
     panel.getComponent(RasterSignControls).vm.$emit("settings", settings);
     await nextTick();
     expect(panel.getComponent(RasterDecalPreview).props("sign")).toEqual(settings);
+    const properties = panel.get(".sign-properties-toggle");
+    await properties.trigger("click");
+    expect(properties.attributes("aria-expanded")).toBe("false");
+    expect(inspector.element.style.display).toBe("none");
+    expect(panel.findComponent(RasterToolbar).exists()).toBe(true);
+    await properties.trigger("click");
+    expect(properties.attributes("aria-expanded")).toBe("true");
+    expect(inspector.element.style.display).not.toBe("none");
+    expect(panel.getComponent(RasterSignControls).props("settings")).toEqual(settings);
     const snapshot = panel.vm.snapshot();
     expect(snapshot?.image).toMatchObject({ width: 256, height: 128 });
     expect(snapshot?.decal.sign).toEqual(settings);
