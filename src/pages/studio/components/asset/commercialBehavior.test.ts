@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { commercialValues, validCommercial, MIXED_COMMERCIAL, type CommercialParams } from "./commercialBehavior";
+import { commercialValues, usesMallProfile, validCommercial, MIXED_COMMERCIAL, type CommercialParams } from "./commercialBehavior";
 import { normalizeLogicGraph } from "./logicGraph";
 
 describe("commercial goods tiers", () => {
+  it("uses the mall for omitted profiles without dropping saved single-tier quotas", () => {
+    const blank: CommercialParams = { type: "commercial" };
+    expect(usesMallProfile(blank)).toBe(true);
+    expect(commercialValues(blank)).toEqual(commercialValues({ ...blank, commercialProfile: MIXED_COMMERCIAL }));
+    expect(commercialValues({ ...blank, shoppers: 21, goods: 80 })).toMatchObject({
+      shoppersW1: 0, shoppersW2: 21, shoppersW3: 0, goodsW2: 80,
+    });
+    expect(commercialValues({ ...blank, shoppers: 21, shoppersW1: 9 })).toMatchObject({ shoppersW1: 9, shoppersW2: 60 });
+  });
+
   it("defaults to more low-value goods while preserving the medium baseline", () => {
     expect(commercialValues({ type: "commercial", commercialProfile: MIXED_COMMERCIAL, goods: 450 }))
       .toMatchObject({ goodsW1: 900, goodsW2: 450, goodsW3: 225 });

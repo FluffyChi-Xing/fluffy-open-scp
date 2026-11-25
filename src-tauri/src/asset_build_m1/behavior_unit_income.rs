@@ -20,13 +20,12 @@ pub(super) fn capacity_input(program: &ResolvedBehavior) -> Option<f32> {
     if program.office.is_some() {
         // Medium-tech office 61EFC000:6EF67CC5.
         Some(1460.0)
-    } else if program
+    } else if let Some(recipe) = program
         .commercial
         .as_ref()
-        .is_some_and(|recipe| recipe.uses_tower_income())
+        .filter(|recipe| recipe.uses_tower_income())
     {
-        // Standard W2 mall 61EFC000:8A807C96, also the mixed mall economy donor.
-        Some(1150.0)
+        Some(recipe.floor_income_input())
     } else {
         None
     }

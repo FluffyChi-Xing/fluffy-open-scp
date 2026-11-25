@@ -1,5 +1,5 @@
-export const COMMERCIAL_DEFAULTS = { shoppers: 9, goods: 9 } as const;
 export const MIXED_COMMERCIAL = "ground-mall-mixed-v1";
+const W2_MALL = "ground-megatower-mall-w2-v1";
 export const COMMERCIAL_SHOPPER_FIELDS = ["shoppersW1", "shoppersW2", "shoppersW3"] as const;
 export const COMMERCIAL_GOODS_FIELDS = ["goodsW1", "goodsW2", "goodsW3"] as const;
 export const COMMERCIAL_FIELDS = [...COMMERCIAL_SHOPPER_FIELDS, ...COMMERCIAL_GOODS_FIELDS] as const;
@@ -8,7 +8,7 @@ export const COMMERCIAL_PROFILES = {
   "ground-commercial-w1-v1": { shoppers: 10, goods: 21 },
   "ground-commercial-w2-v1": { shoppers: 8, goods: 18 },
   "ground-commercial-w3-v1": { shoppers: 7, goods: 15 },
-  "ground-megatower-mall-w2-v1": { shoppers: 180, goods: 750 },
+  [W2_MALL]: { shoppers: 180, goods: 750 },
 } as const;
 export type CommercialProfile = keyof typeof COMMERCIAL_PROFILES | typeof MIXED_COMMERCIAL;
 
@@ -18,6 +18,17 @@ export type CommercialParams = {
   shoppers?: number | null;
   goods?: number | null;
 } & Partial<Record<(typeof COMMERCIAL_FIELDS | typeof COMMERCIAL_JOB_FIELDS)[number], number | null>>;
+
+function commercialProfile(params: CommercialParams): CommercialProfile {
+  const hasLegacyQuota = params.shoppers !== null && params.shoppers !== undefined;
+  const hasTierQuota = COMMERCIAL_SHOPPER_FIELDS.some((field) => params[field] !== null && params[field] !== undefined);
+  return params.commercialProfile ?? (hasLegacyQuota && !hasTierQuota ? W2_MALL : MIXED_COMMERCIAL);
+}
+
+export function usesMallProfile(params: CommercialParams): boolean {
+  const profile = commercialProfile(params);
+  return profile === MIXED_COMMERCIAL || profile === W2_MALL;
+}
 
 function goodsValues(params: CommercialParams, fallback: number) {
   const medium = params.goods ?? fallback;
@@ -29,7 +40,8 @@ function goodsValues(params: CommercialParams, fallback: number) {
 }
 
 export function commercialValues(params: CommercialParams) {
-  if (params.commercialProfile === MIXED_COMMERCIAL) {
+  const profile = commercialProfile(params);
+  if (profile === MIXED_COMMERCIAL) {
     return {
       shoppersW1: params.shoppersW1 ?? 60,
       shoppersW2: params.shoppersW2 ?? 60,
@@ -37,8 +49,7 @@ export function commercialValues(params: CommercialParams) {
       ...goodsValues(params, 750),
     };
   }
-  const profile = params.commercialProfile;
-  const defaults = profile ? COMMERCIAL_PROFILES[profile] : COMMERCIAL_DEFAULTS;
+  const defaults = COMMERCIAL_PROFILES[profile];
   if (!defaults) return undefined;
   const capacity = params.shoppers ?? defaults.shoppers;
   const low = profile === "ground-commercial-w1-v1";

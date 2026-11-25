@@ -36,6 +36,17 @@ pub(super) fn has_job_inputs(params: &serde_json::Value) -> bool {
     JOB_INPUTS.into_iter().chain(["retailMinWorkers"]).any(|field| !params[field].is_null())
 }
 
+pub(super) fn profile_name(params: &serde_json::Value) -> Result<&str, String> {
+    if !params["commercialProfile"].is_null() {
+        return params["commercialProfile"].as_str()
+            .ok_or_else(|| "COMMERCIAL_PARAMETER: commercialProfile".into());
+    }
+    if !params["shoppers"].is_null() && mixed::SHOPPER_INPUTS.iter().all(|field| params[*field].is_null()) {
+        return Ok(mall::PROFILE);
+    }
+    Ok(mixed::PROFILE)
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(super) struct Commercial {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,8 +82,9 @@ pub(super) fn select(
         return Err("COMMERCIAL_CONFLICT".into());
     }
     let params = &leaf["params"];
-    let is_mixed = params["commercialProfile"] == mixed::PROFILE;
-    let mall = is_mixed || params["commercialProfile"] == mall::PROFILE;
+    let profile_name = profile_name(params)?;
+    let is_mixed = profile_name == mixed::PROFILE;
+    let mall = is_mixed || profile_name == mall::PROFILE;
     let wealth = if mall {
         Some(RetailWealth::W2)
     } else {
@@ -168,6 +180,22 @@ impl Commercial {
         self.shoppers_by_wealth.is_some()
     }
 
+    fn mall_tiers(&self) -> [bool; 3] {
+        self.shoppers_by_wealth.map_or([false, true, false], |tiers| tiers.map(|quota| quota > 0))
+    }
+
+    fn mall_floor(&self) -> usize {
+        match self.mall_tiers() {
+            [true, false, false] => 0,
+            [false, false, true] => 2,
+            _ => 1,
+        }
+    }
+
+    pub(super) fn floor_income_input(&self) -> f32 {
+        mall::FLOOR_INCOME_INPUTS[self.mall_floor()]
+    }
+
     pub(super) fn verify_lot(
         &self,
         resources: &super::connector::Resources,
@@ -197,12 +225,19 @@ impl Commercial {
             .wealth
             .map_or_else(|| BUNDLES.to_vec(), |tier| tier.bundles().collect());
         if self.mall {
-            bundles.retain(|&id| !matches!(id, mall::BASE_SHOPPERS | mall::BASE_PROFIT_CYCLE));
-            bundles.extend(mall::BUNDLES);
-        }
-        if let Some(tiers) = self.shoppers_by_wealth {
-            bundles.retain(|id| !mixed::STREET.contains(id));
-            bundles.extend(mixed::STREET.into_iter().zip(tiers).filter_map(|(id, amount)| (amount > 0).then_some(id)));
+            bundles.retain(|id| {
+                !matches!(*id, mall::BASE_SHOPPERS | mall::BASE_PROFIT_CYCLE)
+                    && !mall::CUSTOMER_STATE.contains(id)
+                    && !mall::COMMERCIAL_CLASS.contains(id)
+            });
+            let floor = self.mall_floor();
+            bundles.extend([mall::CUSTOMER_STATE[floor], mall::COMMERCIAL_CLASS[floor]]);
+            bundles.extend(mall::BUNDLES.into_iter().filter(|&id| id != mall::STREET_SHOPPERS));
+            for (tier, enabled) in self.mall_tiers().into_iter().enumerate() {
+                if enabled {
+                    bundles.extend([mixed::STREET[tier], mall::INTERNAL[tier]]);
+                }
+            }
         }
         bundles
     }
@@ -212,22 +247,36 @@ impl Commercial {
             .wealth
             .map_or_else(|| ALTERNATE.to_vec(), |tier| tier.excluded().collect());
         if self.mall {
-            excluded.retain(|id| !mall::BUNDLES.contains(id));
-            excluded.extend([mall::BASE_SHOPPERS, mall::BASE_PROFIT_CYCLE]);
+            let active = self.bundles();
+            excluded.retain(|id| !active.contains(id));
+            for id in [mall::BASE_SHOPPERS, mall::BASE_PROFIT_CYCLE]
+                .into_iter()
+                .chain(mixed::STREET)
+                .chain(mall::INTERNAL)
+                .chain(mall::CUSTOMER_STATE)
+                .chain(mall::COMMERCIAL_CLASS)
+            {
+                if !active.contains(&id) && !excluded.contains(&id) {
+                    excluded.push(id);
+                }
+            }
         }
         if self.tourism {
             excluded.retain(|id| !super::behavior_tourism::TOURIST_BUNDLES.contains(id));
-        }
-        if self.shoppers_by_wealth.is_some() {
-            let active = self.bundles();
-            excluded.retain(|id| !mixed::STREET.contains(id));
-            excluded.extend(mixed::STREET.into_iter().filter(|id| !active.contains(id)));
         }
         excluded
     }
 
     fn category(&self) -> u32 {
-        self.wealth.map_or(CATEGORY, |tier| tier.profile().category)
+        self.configured_wealth().map_or(CATEGORY, |tier| tier.profile().category)
+    }
+
+    fn configured_wealth(&self) -> Option<RetailWealth> {
+        if self.mall {
+            Some([RetailWealth::W1, RetailWealth::W2, RetailWealth::W3][self.mall_floor()])
+        } else {
+            self.wealth
+        }
     }
 
     pub(super) fn labor(&self, previous: Option<LaborSpec>) -> Result<LaborSpec, String> {
@@ -353,13 +402,26 @@ impl Commercial {
         for (hash, value) in self.fields() {
             set_scalar(&mut unit, hash, PropType::Float, Value::Float(value));
         }
+        if self.mall {
+            set_scalar(&mut unit, mall::RETURN_INTERVAL, PropType::Vector2,
+                       Value::Vector2(mall::RETURN_INTERVAL_VALUE));
+            if !contains(&unit, &ENABLE, super::behavior_office_retail::PRODUCTION_BUNDLE) {
+                set_scalar(&mut unit, mall::SALES_MULTIPLIER, PropType::Float,
+                           Value::Float(mall::SALES_MULTIPLIERS[self.mall_floor()]));
+            }
+            for hash in [mall::RETURN_INTERVAL, mall::SALES_MULTIPLIER] {
+                if let Some(property) = unit.values.iter_mut().find(|property| property.hash == hash) {
+                    property.encoding.flags = 0x8000;
+                }
+            }
+        }
         set_scalar(
             &mut unit,
             CATEGORY_FIELD,
             PropType::Key,
             key(self.category()),
         );
-        if let Some(wealth) = self.wealth {
+        if let Some(wealth) = self.configured_wealth() {
             set_scalar(
                 &mut unit,
                 0x0D02_D846,
@@ -417,6 +479,18 @@ impl Commercial {
                 return Err(format!("COMMERCIAL_FIELD: {hash:08X}"));
             }
         }
+        if self.mall {
+            let read = |hash| unit.get(hash).and_then(|property| property.scalar());
+            if read(mall::RETURN_INTERVAL) != Some(&Value::Vector2(mall::RETURN_INTERVAL_VALUE)) {
+                return Err("COMMERCIAL_FIELD: 0ACFFA64".into());
+            }
+            let native_multiplier = Value::Float(mall::SALES_MULTIPLIERS[self.mall_floor()]);
+            if !contains(unit, &ENABLE, super::behavior_office_retail::PRODUCTION_BUNDLE)
+                && read(mall::SALES_MULTIPLIER) != Some(&native_multiplier)
+            {
+                return Err("COMMERCIAL_FIELD: 0FC6E602".into());
+            }
+        }
         if !unit
             .get(CATEGORY_FIELD)
             .is_some_and(|prop| prop.kind == Kind::Scalar(key(self.category())))
@@ -424,7 +498,7 @@ impl Commercial {
         {
             return Err("COMMERCIAL_FIELD: retail category or operation flag".into());
         }
-        if let Some(wealth) = self.wealth {
+        if let Some(wealth) = self.configured_wealth() {
             let catalog = super::behavior_conflicts::catalog()?;
             for id in self.bundles() {
                 let count =
@@ -485,7 +559,7 @@ impl Commercial {
 fn native_bundle(instance: u32) -> Value {
     Value::Key(Key {
         type_id: super::behavior::PROPERTY_TYPE,
-        group: if mall::BUNDLES.contains(&instance) || mixed::STREET.contains(&instance) {
+        group: if mall::ep1_bundle(instance) {
             0x61EF_C700
         } else {
             0x40E0_C700
@@ -498,6 +572,17 @@ fn native_bundle(instance: u32) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn omitted_profile_selects_native_mall_and_preserves_legacy_quota() {
+        let recipe = |params| select(&[json!({"type":"commercial", "params":params})], None)
+            .unwrap().unwrap();
+        assert_eq!(recipe(json!({})), recipe(json!({"commercialProfile":mixed::PROFILE})));
+        let legacy = recipe(json!({"shoppers":21, "goods":80}));
+        assert_eq!(legacy, recipe(json!({"commercialProfile":mall::PROFILE, "shoppers":21, "goods":80})));
+        assert!(legacy.bundles().contains(&mall::INTERNAL[1]));
+        assert_eq!(recipe(json!({"shoppers":21,"shoppersW1":9})).mixed_tiers(), Some([9,60,60]));
+    }
 
     #[test]
     fn mall_uses_ep1_street_economy_and_excludes_base_bankruptcy() {

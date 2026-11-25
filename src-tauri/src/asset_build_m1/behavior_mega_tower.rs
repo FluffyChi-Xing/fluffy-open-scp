@@ -42,10 +42,9 @@ impl Selection {
             .map(|behavior| {
                 let mut params = behavior.params.clone().unwrap_or_default();
                 let profile = match behavior.kind.as_str() {
-                    "commercial" => Some(("commercialProfile", "ground-mall-mixed-v1")),
                     "residence" => Some(("residenceProfile", "ground-residence-w1-v1")),
                     "tourism" => Some(("tourismProfile", "native-tourism-v1")),
-                    "education" | "office" | "park" | "hotel" => None,
+                    "commercial" | "education" | "office" | "park" | "hotel" => None,
                     _ => {
                         return Err(format!(
                             "MEGA_TOWER_CONFIG: unknown behavior {}",

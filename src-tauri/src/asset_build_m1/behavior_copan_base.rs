@@ -93,15 +93,18 @@ pub(super) fn compile_building(labor: Option<LaborSpec>, nodes: &[serde_json::Va
 // Translate older editor selections here; never silently fall back to RCI.
 fn commercial_plop_params(params: &mut serde_json::Value) -> Result<(), String> {
     use super::{behavior_commercial_mall as mall, behavior_commercial_mixed as mixed};
-    let profile=params["commercialProfile"].as_str().map(str::to_owned);
-    let tier=match profile.as_deref() {
-        None | Some("ground-commercial-w2-v1") => {
+    let profile = super::behavior_commercial::profile_name(params)?;
+    let tier=match profile {
+        "ground-commercial-w2-v1" | mall::PROFILE => {
             params["commercialProfile"]=mall::PROFILE.into();
             return Ok(());
         }
-        Some(p) if p==mall::PROFILE || p==mixed::PROFILE => return Ok(()),
-        Some("ground-commercial-w1-v1") => 0,
-        Some("ground-commercial-w3-v1") => 2,
+        mixed::PROFILE => {
+            params["commercialProfile"] = mixed::PROFILE.into();
+            return Ok(());
+        }
+        "ground-commercial-w1-v1" => 0,
+        "ground-commercial-w3-v1" => 2,
         _ => return Err("COMMERCIAL_PARAMETER: commercialProfile".into()),
     };
     let quota=params["shoppers"].clone();

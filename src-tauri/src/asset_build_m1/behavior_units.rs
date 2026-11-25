@@ -192,10 +192,10 @@ fn native_labor(nodes: &[Value]) -> Option<LaborSpec> {
     if super::behavior_commercial::has_job_inputs(&node["params"]) {
         return None;
     }
-    let (jobs, minimum) = match node["params"]["commercialProfile"].as_str() {
-        Some("ground-commercial-w1-v1") => ([5, 2, 0], 3),
-        Some("ground-commercial-w3-v1") => ([1, 2, 2], 3),
-        Some("ground-mall-mixed-v1" | "ground-megatower-mall-w2-v1") => ([120, 100, 30], 20),
+    let (jobs, minimum) = match super::behavior_commercial::profile_name(&node["params"]).ok()? {
+        "ground-commercial-w1-v1" => ([5, 2, 0], 3),
+        "ground-commercial-w3-v1" => ([1, 2, 2], 3),
+        super::behavior_commercial_mixed::PROFILE | super::behavior_commercial_mall::PROFILE => ([120, 100, 30], 20),
         _ => ([3, 2, 1], 3),
     };
     Some(LaborSpec {

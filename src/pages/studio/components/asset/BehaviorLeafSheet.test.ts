@@ -59,7 +59,7 @@ describe("BehaviorLeafSheet", () => {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
       const shoppers = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[1];
-      expect(shoppers.value).toBe("9");
+      expect(shoppers.value).toBe("60");
       expect(shoppers.closest("label")?.textContent?.trim()).toBe("中收入顾客 ($$)");
       const goods = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[3];
       expect(goods.closest("label")?.textContent?.trim()).toBe("低价值商品数量 ($)");
@@ -76,7 +76,7 @@ describe("BehaviorLeafSheet", () => {
       dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       expect(wrapper.emitted("apply")).toEqual([[{
         type: "commercial", commercialProfile: "ground-mall-mixed-v1",
-        shoppers: undefined, shoppersW1: 0, shoppersW2: 15, shoppersW3: 0, goodsW1: 123, goodsW2: 9, goodsW3: 4,
+        shoppers: undefined, shoppersW1: 60, shoppersW2: 15, shoppersW3: 60, goodsW1: 123, goodsW2: 750, goodsW3: 375,
       }]]);
     } finally {
       wrapper.unmount();

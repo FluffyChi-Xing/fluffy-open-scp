@@ -1,7 +1,7 @@
 //! Authored per-wealth inventory and build-time checkout happiness policy.
 //! Stock 2D0AB109/10A/10B specialize nearby HappinessToken output through
 //! 0E854247 (op 8, data16=1, data8=1). No rule or resident return is replaced.
-pub(super) const CHECKOUT_HAPPINESS: (u32, f32) = (0x0E85_4247, 3.0);
+pub(super) const CHECKOUT_HAPPINESS: (u32, f32) = (0x0E85_4247, 1.0);
 pub(super) const GOODS_INPUTS: [&str; 3] = ["goodsW1", "goodsW2", "goodsW3"];
 
 pub(super) fn goods(
@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn mixed_compilation_writes_each_inventory_and_requires_checkout_happiness() {
-        use super::super::{behavior_commercial_mall, behavior_units, property_edit};
+        use super::super::{behavior_commercial_mall as mall, behavior_units, property_edit};
         use sc_properties::{PropType, PropertyFile, Value};
         let program = behavior_units::compile(
             None,
@@ -105,12 +105,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(program.units.len(), 3);
-        for (scope, expected) in program.units.iter().zip([789.0, 456.0, 123.0]) {
+        for (index, (scope, expected)) in program.units.iter().zip([789.0, 456.0, 123.0]).enumerate() {
             let recipe = scope.program.commercial.as_ref().unwrap();
             let mut unit = PropertyFile::default();
             property_edit::set_scalar(
                 &mut unit,
-                behavior_commercial_mall::INCOME_CAPACITY,
+                mall::INCOME_CAPACITY,
                 PropType::Float,
                 Value::Float(0.0),
             );
@@ -124,8 +124,16 @@ mod tests {
             );
             assert_eq!(
                 written.get(CHECKOUT_HAPPINESS.0).unwrap().scalar(),
-                Some(&Value::Float(3.0))
+                Some(&Value::Float(1.0))
             );
+            assert_eq!(recipe.floor_income_input(), mall::FLOOR_INCOME_INPUTS[index]);
+            assert!(recipe.bundles().contains(&mall::INTERNAL[index]));
+            assert!(recipe.bundles().contains(&mall::CUSTOMER_STATE[index]));
+            assert!(recipe.bundles().contains(&mall::COMMERCIAL_CLASS[index]));
+            assert_eq!(written.get(mall::RETURN_INTERVAL).unwrap().scalar(),
+                       Some(&Value::Vector2(mall::RETURN_INTERVAL_VALUE)));
+            assert_eq!(written.get(mall::SALES_MULTIPLIER).unwrap().scalar(),
+                       Some(&Value::Float(mall::SALES_MULTIPLIERS[index])));
             written
                 .values
                 .retain(|property| property.hash != CHECKOUT_HAPPINESS.0);

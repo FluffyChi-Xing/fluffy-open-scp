@@ -8,7 +8,7 @@ use super::{
 };
 use sc_properties::{Key, PropType, PropertyFile, Value};
 
-const PRODUCTION_BUNDLE: u32 = 0x6A32_6F41;
+pub(super) const PRODUCTION_BUNDLE: u32 = 0x6A32_6F41;
 const RETAIL_PAYROLL: u32 = 0xD07C_5A04;
 const OFFICE_PAYROLL: u32 = 0x1E16_EDA9;
 const DAILY_INCOME: u32 = 0xDD6E_83EC;
@@ -19,9 +19,7 @@ pub(super) fn compile(
     labor: Option<LaborSpec>,
 ) -> Result<ResolvedBehavior, String> {
     let retail = &nodes[retail_index];
-    let profile = retail["params"]["commercialProfile"]
-        .as_str()
-        .unwrap_or_default();
+    let profile = super::behavior_commercial::profile_name(&retail["params"])?;
     if !matches!(
         profile,
         super::behavior_commercial_mixed::PROFILE | super::behavior_commercial_mall::PROFILE
