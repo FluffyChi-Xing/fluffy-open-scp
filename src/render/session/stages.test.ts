@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
-import type { DecalUnit, LotUnitDto } from "@/api/tauri";
+import type { DecalUnit, EffectDefinitionData, LotUnitDto } from "@/api/tauri";
 import type { UnitRenderContext } from "@/pages/packages/components/property-editor/renderers/types";
 import { kindGroup, stageDecals, stageUnits } from "./stages";
+import { buildUnitObject, EFFECT_COLOR, SPAWNER_COLOR } from "../exec/three/overlays";
 
 const unit = (kind: string, index: number, extra: Record<string, unknown> = {}) =>
   ({ kind, index, transform: null, fields: [], ...extra }) as unknown as LotUnitDto;
@@ -65,7 +66,7 @@ describe("stageUnits", () => {
       yieldToBrowser: async () => {},
     });
     expect(buildLightUnit).toHaveBeenCalledTimes(1);
-    expect(renderAssetUnit).toHaveBeenCalledTimes(4);
+    expect(renderAssetUnit).toHaveBeenCalledTimes(1);
     // spawner/effect/pathPoint 走降级；decal 不进入本阶段
     expect(buildFallback).toHaveBeenCalledTimes(3);
     expect(unitObjects.size).toBe(5);
@@ -76,6 +77,48 @@ describe("stageUnits", () => {
     expect(groupFor("paths").children).toHaveLength(1);
     expect(groupFor("decals").children).toHaveLength(0);
     expect(unitObjects.get("prop:1")?.userData.unitKind).toBe("prop");
+  });
+
+  it.each([
+    { renderMode: "default", renderEffects: true, particles: false },
+    { renderMode: "refined", renderEffects: false, particles: false },
+    { renderMode: "refined", renderEffects: true, particles: true },
+  ] as const)("assembles the correct marker and effect for %j", async ({ renderMode, renderEffects, particles }) => {
+    const effectId = { typeId: 1, group: 2, instance: 3 };
+    const definition = { emitters: [{}] } as EffectDefinitionData;
+    const unitObjects = new Map<string, THREE.Object3D>();
+    const particle = { object: new THREE.Group(), tick: vi.fn(), dispose: vi.fn() };
+    const createParticleEffect = vi.fn(() => particle);
+    const renderAssetUnit = vi.fn(async () => mesh());
+    await stageUnits({
+      THREE,
+      units: [unit("spawner", 1), unit("effect", 2, { effectId })],
+      renderMode,
+      renderEffects,
+      effectDefinitions: new Map([[effectId.instance, definition]]),
+      effectsCount: 1,
+      assetCtx: {} as UnitRenderContext,
+      particleViews: [],
+      createParticleEffect,
+      renderAssetUnit,
+      buildFallback: buildUnitObject,
+      buildLightUnit: () => mesh(),
+      groupFor: groups(),
+      unitObjects,
+      unitIdOf: (u) => `${u.kind}:${u.index}`,
+      isStale: () => false,
+      yieldToBrowser: async () => {},
+    });
+    function expectCone(id: string, color: number) {
+      const marker = unitObjects.get(id) as THREE.Mesh<THREE.CylinderGeometry, THREE.MeshStandardMaterial>;
+      expect(marker.geometry.parameters).toMatchObject({ radiusTop: 1, radiusBottom: 0.001 });
+      expect(marker.material.color.getHex()).toBe(color);
+    }
+    expect(renderAssetUnit).not.toHaveBeenCalled();
+    expectCone("spawner:1", SPAWNER_COLOR);
+    expect(createParticleEffect).toHaveBeenCalledTimes(particles ? 1 : 0);
+    if (particles) expect(unitObjects.get("effect:2")).toBe(particle.object);
+    else expectCone("effect:2", EFFECT_COLOR);
   });
 
   it("stale 时中止后续单元", async () => {

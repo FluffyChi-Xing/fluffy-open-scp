@@ -97,3 +97,15 @@ describe("ThreeViewer camera input", () => {
     expect(viewer.orbitPhi).toBeLessThan(0.05);
   });
 });
+
+it.each([false, true])("clears only retained particle frames on scene rebuild (particles: %s)", (lastFrameHadParticles) => {
+  const clear = vi.fn();
+  const viewer = Object.assign(Object.create(ThreeViewer.prototype), {
+    lastFrameHadParticles,
+    renderer: { clear },
+    deferredDisposals: { setPaused: vi.fn() },
+  });
+  viewer.setSceneAssembling(true);
+  viewer.setSceneAssembling(true);
+  expect(clear).toHaveBeenCalledTimes(lastFrameHadParticles ? 1 : 0);
+});

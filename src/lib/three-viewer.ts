@@ -152,6 +152,7 @@ export class ThreeViewer {
   /** 摄像机工作台景深(仅 cameraControlled 链路;未启用 = 直渲,零开销)。 */
   private dof: ReturnType<typeof createDepthOfFieldController>;
   private assemblingScene = false;
+  private lastFrameHadParticles = false;
   private readonly deferredDisposals = new DeferredDisposalQueue(disposeObject);
   /** 上一真实出画帧的时间戳（帧间隔 → 实测 FPS）。 */
   private lastRenderAt = 0;
@@ -159,6 +160,12 @@ export class ThreeViewer {
   setSceneAssembling(value: boolean) {
     this.assemblingScene = value;
     this.deferredDisposals.setPaused(value);
+    // The old canvas frame stays visible while assembly gates drawing.
+    // Drop stale particle pixels as soon as their objects are being replaced.
+    if (value && this.lastFrameHadParticles) {
+      this.renderer.clear();
+      this.lastFrameHadParticles = false;
+    }
     if (!value) {
       // 每轮装配收尾更新一次光源计数：快照里能看到"光源数 ↔ 帧成本"。
       let lights = 0;
@@ -386,16 +393,7 @@ export class ThreeViewer {
     this.renderer.setPixelRatio(
       Math.min(window.devicePixelRatio, options.maxPixelRatio ?? 1.5),
     );
-    try {
-      const gl = this.renderer.getContext();
-      const ext = gl.getExtension("WEBGL_debug_renderer_info");
-      const label = ext
-        ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)
-        : gl.getParameter(gl.RENDERER);
-      framePerf.setGpu(String(label ?? "unknown"));
-    } catch {
-      framePerf.setGpu("unknown");
-    }
+    framePerf.setGpuFromRenderer(this.renderer);
     container.appendChild(this.renderer.domElement);
 
     // 三灯白模布光：key 跟随滑杆，fill/rim 固定相对方向，保证无贴图也有立体感。
@@ -931,14 +929,11 @@ export class ThreeViewer {
     this.framePixelRatio.draw(this.renderer, () =>
       this.dof.render(() => this.renderer.render(this.scene, this.camera)));
     const cpuMs = performance.now() - started;
-    framePerf.recordFrame(cpuMs, interval, {
-      calls: this.renderer.info.render.calls,
-      triangles: this.renderer.info.render.triangles,
-      programs: this.renderer.info.programs?.length ?? 0,
-      textures: this.renderer.info.memory.textures,
-      geometries: this.renderer.info.memory.geometries,
-      dpr: this.renderer.getPixelRatio(),
-    });
+    const effects = this.groups.get("effects");
+    this.lastFrameHadParticles = Boolean(effects?.visible && effects.children.some(
+      (object) => object.visible && object.userData.effectParticlePreview === true,
+    ));
+    framePerf.recordRendererFrame(cpuMs, interval, this.renderer);
     if (this.interactionActive && this.options.interactionPixelRatio !== undefined) {
       const ratio = this.interactionBudget.sample(cpuMs, interval);
       if (ratio !== this.renderer.getPixelRatio()) {

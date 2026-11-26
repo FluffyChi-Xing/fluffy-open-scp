@@ -6,6 +6,7 @@
  * 用来回答"打开后一直掉帧/镜头不跟手"到底卡在哪一层。采样本身只有
  * 几次属性读取，不做 DOM、不上报、不触发响应式更新。
  */
+import type { WebGLRenderer } from "three";
 
 export interface FramePerfSample {
   /** 本帧 render 调用占用的 CPU 时间（ms）。 */
@@ -79,6 +80,32 @@ export const framePerf = {
 
   setGpu(label: string): void {
     gpu = label;
+  },
+
+  setGpuFromRenderer(renderer: Pick<WebGLRenderer, "getContext">): void {
+    try {
+      const gl = renderer.getContext();
+      const ext = gl.getExtension("WEBGL_debug_renderer_info");
+      const label = gl.getParameter(ext?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER);
+      framePerf.setGpu(String(label ?? "unknown"));
+    } catch {
+      framePerf.setGpu("unknown");
+    }
+  },
+
+  recordRendererFrame(
+    cpuMs: number,
+    intervalMs: number,
+    renderer: Pick<WebGLRenderer, "info" | "getPixelRatio">,
+  ): void {
+    framePerf.recordFrame(cpuMs, intervalMs, {
+      calls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
+      programs: renderer.info.programs?.length ?? 0,
+      textures: renderer.info.memory.textures,
+      geometries: renderer.info.memory.geometries,
+      dpr: renderer.getPixelRatio(),
+    });
   },
 
   /** 近期快照（无样本时各统计值为 0）。 */

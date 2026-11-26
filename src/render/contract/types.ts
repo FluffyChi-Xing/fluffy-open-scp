@@ -68,12 +68,7 @@ export interface TreeUnitPlan extends UnitPlanBase {
   readonly seed: number;
 }
 
-/** spawner 人群预览。 */
-export interface SpawnerUnitPlan extends UnitPlanBase {
-  readonly kind: "spawner";
-}
-
-export type UnitPlan = PropUnitPlan | TreeUnitPlan | SpawnerUnitPlan;
+export type UnitPlan = PropUnitPlan | TreeUnitPlan;
 
 /** 计划层输入：只读、与 three 无关。 */
 export interface UnitPlanContext {

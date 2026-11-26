@@ -27,26 +27,6 @@ export const PROP_COLOR = 0xc81e1e;
 export const SPAWNER_COLOR = 0x1e40c8;
 export const DECAL_BACK_COLOR = 0x33cc33;
 
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function spawnerSeed(unit: LotUnitDto): number {
-  const id = unitPlanId(unit);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < id.length; i += 1) {
-    hash ^= id.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-}
-
 /** WPF 行主序 12 floats → TRS（与旧 unitMatrix().decompose 等价）。 */
 function applyTransform(
   THREE: Three,
@@ -77,47 +57,15 @@ function standardMaterial(THREE: Three, color: number, opacity = 1): ThreeNamesp
   });
 }
 
-const SIM_SKIN_TONES = [0xe8b89a, 0xd9a077, 0xb97a50, 0x8a5a38, 0x6b4226];
-const SIM_OUTFIT_COLORS = [
-  0xc81e1e, 0x1e40c8, 0x20c050, 0xf0a000, 0x8848c8, 0x20b0b0, 0xe8e8e8,
-  0x303038, 0xc84890,
-];
-const SIM_PANTS_COLORS = [0x303040, 0x40485c, 0x242428, 0x54423a];
-
-function buildSimFigure(THREE: Three, seed: number): ThreeNamespace.Object3D {
-  const rand = mulberry32(seed);
-  const skin = SIM_SKIN_TONES[Math.floor(rand() * SIM_SKIN_TONES.length)];
-  const outfit = SIM_OUTFIT_COLORS[Math.floor(rand() * SIM_OUTFIT_COLORS.length)];
-  const pants = SIM_PANTS_COLORS[Math.floor(rand() * SIM_PANTS_COLORS.length)];
-  const jitter = 0.92 + rand() * 0.16;
-  const group = new THREE.Group();
-  const addLimb = (
-    geometry: ThreeNamespace.CylinderGeometry | ThreeNamespace.SphereGeometry,
-    color: number,
-    y: number,
-    x = 0,
-  ) => {
-    const mesh = new THREE.Mesh(geometry, standardMaterial(THREE, color));
-    mesh.position.set(x, y, 0);
-    group.add(mesh);
-  };
-  addLimb(new THREE.CylinderGeometry(0.085, 0.1, 0.78, 10), pants, 0.39, -0.11);
-  addLimb(new THREE.CylinderGeometry(0.085, 0.1, 0.78, 10), pants, 0.39, 0.11);
-  addLimb(new THREE.CylinderGeometry(0.17, 0.21, 0.62, 12), outfit, 1.09);
-  addLimb(new THREE.CylinderGeometry(0.055, 0.065, 0.58, 8), outfit, 1.06, -0.27);
-  addLimb(new THREE.CylinderGeometry(0.055, 0.065, 0.58, 8), outfit, 1.06, 0.27);
-  addLimb(new THREE.SphereGeometry(0.155, 14, 12), skin, 1.62);
-  group.scale.setScalar(jitter);
-  return group;
-}
-
 export function buildSpawnerPlaceholder(
   THREE: Three,
   unit: LotUnitDto,
 ): ThreeNamespace.Object3D {
-  const figure = buildSimFigure(THREE, spawnerSeed(unit));
-  if (unit.kind !== "pathPoint") applyTransform(THREE, figure, unit.transform);
-  return figure;
+  return buildMarkerCone(
+    THREE,
+    SPAWNER_COLOR,
+    unit.kind === "pathPoint" ? null : unit.transform,
+  );
 }
 
 /** 灯位几何兜底：length 缺失时退回外半径（此前 0.05 m 的锥体 = 看不见，
@@ -400,7 +348,7 @@ export function buildUnitObject(
       object = buildMarkerCone(THREE, PROP_COLOR, unit.transform);
       break;
     case "spawner":
-      object = buildMarkerCone(THREE, SPAWNER_COLOR, unit.transform);
+      object = buildSpawnerPlaceholder(THREE, unit);
       break;
     case "decal":
       object = buildDecal(THREE, unit);

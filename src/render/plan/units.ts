@@ -1,11 +1,11 @@
 /**
  * 单元渲染计划（纯函数）：把 DTO 语义 + 资产可用性变成可执行描述符。
  *
- * 分发语义与旧 `renderers/{tree,prop,spawner}Renderer` **逐条对齐**：
+ * 精细模式的道具与树木载荷分派：
  * 1. 仅精细模式生效（默认模式仍走标记锥兜底）；
  * 2. prop：treeIds 命中 → 树（resolved）；否则先查直挂载荷，无载荷即不适用；
  *    直挂模型且资产类别为 trees → 树（direct）；其余 → prop 真模型；
- * 3. spawner：资产（simParts）缺席时不适用。
+ * 演出位置在两种模式中都由标记锥表示。
  *
  * 返回 null = 不适用/资产缺席，调用方统一退 `buildUnitObject` 标记锥。
  */
@@ -55,23 +55,10 @@ function bakedSemantics(unit: LotUnitDto): ScaleSemantics {
  * 单元 → 渲染计划（纯函数）。`ctx` 只含只读事实，不含 three 对象。
  */
 export function planUnit(unit: LotUnitDto, ctx: UnitPlanContext): UnitPlan | null {
-  if (ctx.renderMode !== "refined") return null;
+  if (ctx.renderMode !== "refined" || unit.kind !== "prop") return null;
   const id = unitPlanId(unit);
   const unitIndex = unit.index;
   const transform = transformOf(unit);
-
-  if (unit.kind === "spawner") {
-    if (ctx.simPartsCount === 0) return null;
-    return {
-      kind: "spawner",
-      id,
-      unitIndex,
-      dtoScale: scaleOf(unit),
-      transform,
-      scale: { kind: "intrinsic" },
-    };
-  }
-  if (unit.kind !== "prop") return null;
 
   const resourceId = typeof unit.resourceId === "number" ? unit.resourceId : null;
 

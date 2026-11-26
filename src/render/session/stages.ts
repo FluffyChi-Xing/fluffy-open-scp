@@ -105,7 +105,7 @@ export async function stageUnits(input: UnitStageInput): Promise<void> {
       (input.renderMode === "refined" && unit.kind === "light"
         ? input.buildLightUnit(input.THREE, unit as LightUnit)
         : null) ??
-      (await input.renderAssetUnit(input.assetCtx, unit)) ??
+      (unit.kind === "prop" ? await input.renderAssetUnit(input.assetCtx, unit) : null) ??
       input.buildFallback(input.THREE, unit);
     if (!object) continue;
     object.userData.unitId = input.unitIdOf(unit);
