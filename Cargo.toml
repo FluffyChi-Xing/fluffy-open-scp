@@ -12,6 +12,7 @@ members = [
     "crates/sc-store",
     "crates/sc-ui",
     "crates/ui-inspect",
+    "crates/ui-preview",
     "probes",
 ]
 

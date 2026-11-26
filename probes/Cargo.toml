@@ -1185,6 +1185,10 @@ path = "ui/ui_layout_census.rs"
 name = "ui_observer_package"
 path = "ui/ui_observer_package.rs"
 
+[[example]]
+name = "updater_test_package"
+path = "ui/updater_test_package.rs"
+
 # effect —— Swarm / 特效
 [[example]]
 name = "effect_collection_dump"
