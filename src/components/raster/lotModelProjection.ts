@@ -61,5 +61,9 @@ export function drawLotProjection(
     });
   }
   context.fillStyle = "rgba(255, 143, 64, 0.42)";
+  // Bake the edge into the overlay once so moving the canvas needs no CSS filter.
+  context.shadowColor = "#ff8f40";
+  context.shadowBlur = 2;
   context.fill();
+  context.shadowBlur = 0;
 }

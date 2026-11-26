@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef } from "vue";
+import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { isTauri } from "@/api";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSheet from "@/components/ui/FSheet.vue";
+import FStartupLoading from "@/components/ui/FStartupLoading.vue";
 import RasterEditor from "@/components/raster/RasterEditor.vue";
 import RasterLotPreview from "@/components/raster/RasterLotPreview.vue";
 import {
@@ -39,7 +40,8 @@ const { t } = useI18n();
 
 const authored = shallowRef<AuthoredLot | null>(null);
 const sheetOpen = ref(false);
-const sheetKey = ref(0);
+const sheetReady = ref(false);
+const drawingSource = shallowRef<AuthoredLot | null>(null);
 const initialSchema = shallowRef<RasterSchema | undefined>(undefined);
 const editor = ref<InstanceType<typeof RasterEditor> | null>(null);
 const editorDirty = ref(false);
@@ -65,23 +67,47 @@ const preview = computed(() => {
 const canApply = computed(() => props.editEnabled && props.editMode === "draft");
 const cardSize = computed(() => preview.value?.lot.meta.size);
 
-function openSheet(schema: RasterSchema | undefined) {
-  initialSchema.value = schema;
+function openSheet(lot: AuthoredLot | null) {
+  if (sheetOpen.value) return;
+  drawingSource.value = lot;
+  initialSchema.value = undefined;
+  sheetReady.value = false;
   editorDirty.value = false;
   error.value = "";
-  sheetKey.value += 1;
   sheetOpen.value = true;
 }
 
+watch(sheetOpen, (open, _, onCleanup) => {
+  if (!open) return;
+  // Paint the sheet before decoding the mask and mounting the canvas.
+  let prepareFrame = 0;
+  const openFrame = requestAnimationFrame(() => {
+    prepareFrame = requestAnimationFrame(() => {
+      const lot = drawingSource.value;
+      try {
+        initialSchema.value = lot
+          ? prepareLotDrawing(schemaFromAuthored(lot), props.lotSize ?? lot.meta.size)
+          : undefined;
+        sheetReady.value = true;
+      } catch (cause) {
+        error.value = t("rasterEditor.ground.workbench.openFailed", { error: String(cause) });
+      }
+    });
+  });
+  onCleanup(() => {
+    cancelAnimationFrame(openFrame);
+    cancelAnimationFrame(prepareFrame);
+  });
+}, { flush: "post" });
+
 function startDrawing() {
-  if (authored.value && !window.confirm(t("rasterEditor.ground.workbench.replaceConfirm"))) return;
-  openSheet(undefined);
+  openSheet(null);
 }
 
 function editAuthored() {
   const lot = authored.value;
   if (!lot) return;
-  openSheet(prepareLotDrawing(schemaFromAuthored(lot), props.lotSize ?? lot.meta.size));
+  openSheet(lot);
 }
 
 /** 关闭或点"完成绘制"：有改动就保存；保存失败则保持 sheet 打开，避免丢稿。 */
@@ -91,6 +117,11 @@ async function finish(schema?: RasterSchema) {
     ? schema ?? editor.value?.snapshot()
     : null;
   if (value?.image) {
+    if (!drawingSource.value && authored.value &&
+        !window.confirm(t("rasterEditor.ground.workbench.replaceConfirm"))) {
+      if (!schema) sheetOpen.value = false;
+      return;
+    }
     saving.value = true;
     error.value = "";
     try {
@@ -210,9 +241,9 @@ function onStageKey(event: KeyboardEvent, action: () => void) {
             {{ saving ? t("rasterEditor.ground.workbench.saving") : t("rasterEditor.ground.workbench.close") }}
           </button>
         </header>
+        <FStartupLoading v-if="sheetOpen && !sheetReady && !error" :label="t('common.loading')" />
         <RasterEditor
-          v-if="sheetOpen"
-          :key="sheetKey"
+          v-if="sheetOpen && sheetReady"
           ref="editor"
           class="sheet-editor"
           mode="flow"

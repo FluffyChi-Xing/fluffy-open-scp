@@ -1,4 +1,4 @@
-import type { RasterDocument } from "@/lib/raster-editor/document";
+import type { RasterDocument, Rect } from "@/lib/raster-editor/document";
 import { lotRegion } from "@/lib/raster-editor/lotPaint";
 import type { LotSlots } from "@/lib/lot-ground/ground";
 
@@ -28,24 +28,26 @@ export function createLotPaintPreview(
     return tile;
   });
 
-  return (ctx: CanvasRenderingContext2D, image: RasterDocument) => {
-    const { width, height, pixels } = image;
+  return (ctx: CanvasRenderingContext2D, image: RasterDocument, region: Rect = image.fullRect()) => {
+    const { width, pixels } = image;
+    const { x: left, y: top, w, h } = region;
+    const right = left + w;
     const paths = Array.from({ length: 8 }, () => new Path2D());
-    for (let y = 0; y < height; y += 1) {
+    for (let y = top; y < top + h; y += 1) {
       let previous = -1;
-      let start = 0;
-      for (let x = 0; x < width; x += 1) {
+      let start = left;
+      for (let x = left; x < right; x += 1) {
         const at = (y * width + x) * 4;
-        const region = lotRegion(
+        const material = lotRegion(
           [pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]],
           widths,
         );
-        if (region === previous) continue;
+        if (material === previous) continue;
         if (previous >= 0) paths[previous].rect(start, y, x - start, 1);
-        previous = region;
+        previous = material;
         start = x;
       }
-      if (previous >= 0) paths[previous].rect(start, y, width - start, 1);
+      if (previous >= 0) paths[previous].rect(start, y, right - start, 1);
     }
 
     for (const [region, path] of paths.entries()) {

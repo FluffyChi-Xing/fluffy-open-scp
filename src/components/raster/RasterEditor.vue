@@ -7,7 +7,7 @@ import FSelect, { type SelectOption } from "@/components/ui/FSelect.vue";
 import { Switch } from "@/components/ui/switch";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
-import { provide } from "vue";
+import { inject, provide } from "vue";
 import EditorPackagesBar from "@/components/EditorPackagesBar.vue";
 import { EDITOR_PACKAGES, useEditorPackages } from "@/composables/useEditorPackages";
 import { RasterDocument } from "@/lib/raster-editor/document";
@@ -107,7 +107,7 @@ if (!props.initialSchema && props.initialProfile)
 if (!props.initialSchema && props.mode === "standalone" && isDecalStudioProfile(profile.value))
   decal.value = { ...decal.value, colors: [...(profile.value === "decal-sign" ? signPalette : graffitiPalette)] };
 const editorStarted = ref(!!props.initialSchema || !!props.initialProfile);
-const packages = useEditorPackages("assets");
+const packages = inject(EDITOR_PACKAGES, null) ?? useEditorPackages("assets");
 provide(EDITOR_PACKAGES, packages);
 const canvas = ref<InstanceType<typeof RasterCanvas> | null>(null);
 if (!props.initialSchema && profile.value === "lot-mask" && props.initialLotSize) {
@@ -233,6 +233,8 @@ const ground = useLotGround({
   enabled: isLot,
   lot,
   doc,
+  version,
+  packages,
   metersPerPixel: computed(() => sampling.value.metersPerPixel),
   changed,
   applyEdit: (mutate) => canvas.value?.applyEdit(mutate),

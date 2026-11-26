@@ -5,7 +5,7 @@ export const LOT_PAINT_CHANNELS = [3, 0, 1, 2] as const;
 
 /** A > B > G > R. Zero weights expose the separate base material. */
 export function lotRegion(pixel: Rgba, widths: readonly number[] = []): number {
-  for (const channel of [3, 2, 1, 0]) {
+  for (let channel = 3; channel >= 0; channel--) {
     const width = widths[channel] ?? 0;
     if (pixel[channel] / 255 > 0.5 - width) {
       return channel * 2 + (pixel[channel] / 255 <= 0.5 + width ? 1 : 0);

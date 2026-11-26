@@ -3,6 +3,7 @@ import type { Rect, RasterDocument } from "@/lib/raster-editor/document";
 import { LOT_PAINT_CHANNELS } from "@/lib/raster-editor/lotPaint";
 import type { RasterSchema } from "@/lib/raster-editor/schema";
 import type { Rgba } from "@/lib/raster-editor/tools";
+import type { EditorPackageScope } from "@/composables/useEditorPackages";
 import {
   LOT_METERS_PER_PIXEL,
   LOT_SLOT_COUNT,
@@ -26,6 +27,8 @@ export interface LotGroundOptions {
   enabled: Ref<boolean>;
   lot: Ref<RasterSchema["lot"]>;
   doc: Ref<RasterDocument | null>;
+  version: Ref<number>;
+  packages: EditorPackageScope;
   metersPerPixel: Ref<number>;
   changed: () => void;
   applyEdit: (mutate: (pixels: Uint8ClampedArray) => Rect | null) => void;
@@ -35,20 +38,23 @@ export interface LotGroundOptions {
 /** Raster 编辑器的 Lot 地面适配层：材质槽 ↔ LotColor、画布显示、底图背景。 */
 export function useLotGround(options: LotGroundOptions) {
   const { enabled, lot, doc, metersPerPixel, changed } = options;
-  const atlas = useLotAtlas();
+  const atlas = useLotAtlas(options.packages, enabled);
   const activeSlot = ref(0);
 
   const slots = computed<LotSlots>(() =>
     slotsFromLot(lot.value.colors, lot.value.slots ?? NONE_USED),
   );
+  const coverage = computed(() => {
+    void options.version.value;
+    return doc.value ? slotCoverage(doc.value.pixels, lot.value.borderWidths) : [];
+  });
 
   // 旧 schema / 读入的游戏 Lot 没有 slots：按遮罩实际覆盖推断已用材质。
   watch(
     () => [enabled.value, doc.value, lot.value.slots] as const,
     ([on, image, used]) => {
       if (!on || !image || used) return;
-      const coverage = slotCoverage(image.pixels, lot.value.borderWidths);
-      lot.value = { ...lot.value, slots: coverage.map((count) => count > 0) };
+      lot.value = { ...lot.value, slots: coverage.value.map((count) => count > 0) };
     },
     { immediate: true },
   );
@@ -173,9 +179,7 @@ export function useLotGround(options: LotGroundOptions) {
 
   /** 画布上是否已有该槽像素（换纹理时决定是改当前槽还是新开槽）。 */
   function isSlotPainted(slot: number): boolean {
-    const image = doc.value;
-    if (!image) return false;
-    return slotCoverage(image.pixels, lot.value.borderWidths)[slot] > 0;
+    return coverage.value[slot] > 0;
   }
 
   return {

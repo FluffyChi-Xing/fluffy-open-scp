@@ -1,22 +1,28 @@
-import { shallowRef } from "vue";
+import { shallowRef, watch, type Ref } from "vue";
 import { isTauri, tauriApi } from "@/api";
+import type { EditorPackageScope } from "@/composables/useEditorPackages";
 
-/** 游戏共享 Lot 地表图集（4×4 格，PNG base64）；全应用只读取一次。 */
+/** 游戏共享 Lot 地表图集（4×4 格，PNG base64）；成功读取后跨编辑器复用。 */
 const atlasPng = shallowRef<string | null>(null);
-let request: Promise<void> | null = null;
+const requests = new Map<string, Promise<void>>();
 
-export function useLotAtlas() {
-  if (!request && isTauri() && typeof tauriApi.raster.readLotPreviewAtlases === "function") {
-    request = tauriApi.raster
-      .readLotPreviewAtlases()
-      .then((value) => {
-        atlasPng.value = value?.lotSurfacePng ?? null;
-      })
-      .catch(() => {
-        atlasPng.value = null;
-        request = null;
-      });
-  }
+export function useLotAtlas(packages: EditorPackageScope, enabled: Ref<boolean>) {
+  watch(() => [
+    enabled.value,
+    packages.loading,
+    packages.opened.map(({ package: pkg }) => pkg.packageId).join(","),
+  ] as const,
+    ([active, loading, packageKey]) => {
+      if (!active || loading || atlasPng.value || requests.has(packageKey) ||
+          !isTauri() || typeof tauriApi.raster.readLotPreviewAtlases !== "function") return;
+      const request = tauriApi.raster.readLotPreviewAtlases()
+        .then((value) => {
+          if (value?.lotSurfacePng) atlasPng.value = value.lotSurfacePng;
+        })
+        .catch(() => {})
+        .finally(() => requests.delete(packageKey));
+      requests.set(packageKey, request);
+    }, { immediate: true });
   return atlasPng;
 }
 

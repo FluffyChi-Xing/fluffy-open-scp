@@ -66,7 +66,7 @@ const props = defineProps<{
   northUp?: boolean;
   lotBorderWidths?: number[];
   dataChannels?: boolean;
-  paintPreview?: ((context: CanvasRenderingContext2D, doc: RasterDocument) => void) | null;
+  paintPreview?: ((context: CanvasRenderingContext2D, doc: RasterDocument, region?: Rect) => void) | null;
   /** 画布平面背景（CSS background），透明像素处可见；缺省为棋盘格。 */
   backdrop?: string | null;
   /** 橡皮擦清空全部通道（Lot 地面：擦除 = 露出底图）。 */
@@ -105,31 +105,55 @@ const panning = ref(false);
 const historyInstance = computed(() => props.history);
 const documentInstance = computed(() => props.doc);
 
-let viewportSize: { width: number; height: number } | undefined;
+const viewportSize = ref<{ width: number; height: number }>();
 useResizeObserver(
-  () => (props.centerOnResize ? wrap.value : null),
+  wrap,
   ([{ target }]) => {
     const width = target.clientWidth;
     const height = target.clientHeight;
     if (!width || !height) return;
-    if (viewportSize) {
+    const previous = viewportSize.value;
+    if (props.centerOnResize && previous) {
       pan.value = {
-        x: pan.value.x + (width - viewportSize.width) / 2,
-        y: pan.value.y + (height - viewportSize.height) / 2,
+        x: pan.value.x + (width - previous.width) / 2,
+        y: pan.value.y + (height - previous.height) / 2,
       };
     }
-    viewportSize = { width, height };
+    viewportSize.value = { width, height };
   },
 );
 
 let ctx: CanvasRenderingContext2D | null = null;
 let spaceDown = false;
 let shapeFrame = 0;
+let paintFrame = 0;
+let pendingPaintRegion: Rect | null = null;
 let pendingShapeEnd: { x: number; y: number } | null = null;
 function cancelShapeFrame() {
   if (shapeFrame) cancelAnimationFrame(shapeFrame);
   shapeFrame = 0;
   pendingShapeEnd = null;
+}
+
+function cancelPaintFrame() {
+  if (paintFrame) cancelAnimationFrame(paintFrame);
+  paintFrame = 0;
+  pendingPaintRegion = null;
+}
+
+function queuePaintRegion(region: Rect) {
+  if (!lotPreview.value) {
+    renderRegion(region);
+    return;
+  }
+  pendingPaintRegion = unionRect(pendingPaintRegion, region);
+  if (paintFrame) return;
+  paintFrame = requestAnimationFrame(() => {
+    const damage = pendingPaintRegion;
+    paintFrame = 0;
+    pendingPaintRegion = null;
+    if (damage) renderRegion(damage);
+  });
 }
 
 /** Lot 比例尺：可选米步长，保证屏幕间距 ≥ 72px。 */
@@ -146,10 +170,9 @@ function buildTicks(vertical: boolean): { pos: number; label: string }[] {
   const step =
     METER_STEPS.find((candidate) => (candidate / mpp) * axisZoom >= 72) ??
     192;
-  const wrapElement = wrap.value;
   const viewSize = vertical
-    ? (wrapElement?.clientHeight ?? 600)
-    : (wrapElement?.clientWidth ?? 800);
+    ? (viewportSize.value?.height ?? 600)
+    : (viewportSize.value?.width ?? 800);
   const ticks: { pos: number; label: string }[] = [];
   for (let meters = 0; meters <= total + 0.001; meters += step) {
     const pos = pan.value[vertical ? "y" : "x"] + (meters / mpp) * axisZoom;
@@ -177,8 +200,10 @@ const checkerboard = computed(() => {
 const materialPreview = computed(() =>
   (props.displayChannel ?? "rgba") === "rgba" ? props.paintPreview : null,
 );
+const lotPreview = computed(() => props.northUp ? materialPreview.value : null);
 
 function render() {
+  cancelPaintFrame();
   const element = canvas.value;
   if (!element || !ctx) return;
   const before = dragBefore ?? curve?.base ?? polygonDraft?.base;
@@ -186,8 +211,11 @@ function render() {
     restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
   const { width, height } = props.doc;
   const preview = materialPreview.value;
-  // Keep the backing store bounded when zooming into large masks.
-  const scale = preview
+  // Lot regions use an integer pixel scale so partial clears have no seams.
+  // Pan and zoom can then reuse the same backing store.
+  const scale = lotPreview.value
+    ? Math.max(1, Math.min(Math.round(window.devicePixelRatio), Math.floor(4096 / Math.max(width, height))))
+    : preview
     ? Math.min(zoom.value * window.devicePixelRatio, 4096 / Math.max(width, height))
     : 1;
   const backingWidth = Math.max(1, Math.round(width * scale));
@@ -239,14 +267,25 @@ function applyEdit(mutate: (pixels: Uint8ClampedArray, before: Uint8ClampedArray
   pushEdit(mutate(props.doc.pixels, before), before);
 }
 
-function setZoom(value: number) {
-  zoom.value = Math.min(32, Math.max(0.05, value));
+function setZoom(value: number, anchor?: { x: number; y: number }) {
+  const next = Math.min(32, Math.max(0.05, value));
+  if (next === zoom.value) return;
+  if (anchor) {
+    const ratio = next / zoom.value;
+    pan.value = {
+      x: anchor.x - (anchor.x - pan.value.x) * ratio,
+      y: anchor.y - (anchor.y - pan.value.y) * ratio,
+    };
+  }
+  zoom.value = next;
   emit("zoom-change", zoom.value);
 }
 
 function fit() {
   const element = wrap.value;
   if (!element) return;
+  if (element.clientWidth && element.clientHeight)
+    viewportSize.value = { width: element.clientWidth, height: element.clientHeight };
   const available = element.clientWidth - 48;
   const availableHeight = element.clientHeight - 48;
   const ratio = Math.min(
@@ -356,7 +395,7 @@ function dragFillAt(pixel: { x: number; y: number }) {
   const dirty = fillGesture?.(pixel);
   if (!dirty) return;
   dragDirty = unionRect(dragDirty, dirty);
-  renderRegion(dirty);
+  queuePaintRegion(dirty);
 }
 
 function parkingOptions() {
@@ -367,13 +406,28 @@ function parkingOptions() {
   };
 }
 
+function restoreDraftPixels(before: Uint8ClampedArray) {
+  const { pixels, width } = props.doc;
+  if (!lotPreview.value) {
+    pixels.set(before);
+    return;
+  }
+  const rect = dragDirty && clampRect(dragDirty, props.doc);
+  if (!rect) return;
+  for (let y = rect.y; y < rect.y + rect.h; y++) {
+    const offset = (y * width + rect.x) * 4;
+    pixels.set(before.subarray(offset, offset + rect.w * 4), offset);
+  }
+}
+
 /** 形状拖拽的当前帧：先回滚到拖拽前快照再画，文档里永远只有最终形状。 */
 function drawShapeDraft(
   from: { x: number; y: number },
   to: { x: number; y: number },
 ) {
   if (!dragBefore) return;
-  props.doc.pixels.set(dragBefore);
+  const previous = dragDirty;
+  restoreDraftPixels(dragBefore);
   const plot = paintPlot(dragBefore);
   if (props.tool === "line") {
     dragDirty = strokePath(
@@ -418,18 +472,25 @@ function drawShapeDraft(
       plot,
     );
   }
-  render();
+  renderDraftChange(previous);
+}
+
+function renderDraftChange(previous: Rect | null) {
+  const damage = dragDirty ? unionRect(previous, dragDirty) : previous;
+  if (lotPreview.value && damage) renderRegion(damage);
+  else if (!lotPreview.value) render();
 }
 
 function drawMultiPointDraft(cursor?: { x: number; y: number }) {
   if (!polygonDraft) return;
-  props.doc.pixels.set(polygonDraft.base);
+  const previous = dragDirty;
+  restoreDraftPixels(polygonDraft.base);
   const vertices = cursor ? [...polygonDraft.vertices, cursor] : polygonDraft.vertices;
   const plot = paintPlot(polygonDraft.base);
   dragDirty = props.tool === "polygon" && vertices.length >= 3
     ? fillPolygon(props.doc, vertices, activeColor(), plot)
     : strokePath(props.doc, vertices, props.brushSize, activeColor(), plot);
-  render();
+  renderDraftChange(previous);
 }
 
 function commitMultiPoint() {
@@ -444,8 +505,9 @@ function commitMultiPoint() {
 function previewCurveBend(control: { x: number; y: number }) {
   const state = curve;
   if (!state) return;
-  props.doc.pixels.set(state.base);
-  strokeQuadCurve(
+  const previous = dragDirty;
+  restoreDraftPixels(state.base);
+  dragDirty = strokeQuadCurve(
     props.doc,
     state.p0,
     control,
@@ -454,7 +516,7 @@ function previewCurveBend(control: { x: number; y: number }) {
     activeColor(),
     paintPlot(state.base),
   );
-  render();
+  renderDraftChange(previous);
 }
 
 function onPointerDown(event: PointerEvent) {
@@ -462,6 +524,8 @@ function onPointerDown(event: PointerEvent) {
   if (event.button === 1 || spaceDown) {
     dragMode = "pan";
     panning.value = true;
+    cursor.value = null;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     panStart = {
       x: event.clientX,
       y: event.clientY,
@@ -557,14 +621,11 @@ function onPointerDown(event: PointerEvent) {
     paintPlot(dragBefore),
   );
   preserveErasedLotLayers(dragBefore, dragDirty);
-  render();
+  if (lotPreview.value && dragDirty) renderRegion(dragDirty);
+  else render();
 }
 
 function onPointerMove(event: PointerEvent) {
-  const pixel = toPixel(event);
-  const nextCursor = props.doc.inside(pixel.x, pixel.y) ? pixel : null;
-  if (nextCursor?.x !== cursor.value?.x || nextCursor?.y !== cursor.value?.y)
-    cursor.value = nextCursor;
   if (dragMode === "pan") {
     pan.value = {
       x: panStart.px + (event.clientX - panStart.x),
@@ -572,6 +633,10 @@ function onPointerMove(event: PointerEvent) {
     };
     return;
   }
+  const pixel = toPixel(event);
+  const nextCursor = props.doc.inside(pixel.x, pixel.y) ? pixel : null;
+  if (nextCursor?.x !== cursor.value?.x || nextCursor?.y !== cursor.value?.y)
+    cursor.value = nextCursor;
   if (dragMode === "none" && props.tool === "curve" && curve) {
     previewCurveBend(pixel);
     return;
@@ -595,7 +660,7 @@ function onPointerMove(event: PointerEvent) {
     if (dirty) {
       if (dragBefore) preserveErasedLotLayers(dragBefore, dirty);
       dragDirty = unionRect(dragDirty, dirty);
-      renderRegion(dirty);
+      queuePaintRegion(dirty);
     }
     return;
   }
@@ -642,9 +707,10 @@ function onPointerUp(event: PointerEvent) {
     dragMode = "none";
     dragStart = null;
     dragBefore = null;
+    const previous = dragDirty;
+    restoreDraftPixels(curve.base);
     dragDirty = null;
-    props.doc.pixels.set(curve.base);
-    render();
+    renderDraftChange(previous);
     return;
   }
   if (dragMode === "paint" || dragMode === "shape" || dragMode === "fill") {
@@ -662,6 +728,7 @@ function onDoubleClick() {
 function onPointerCancel(event: PointerEvent) {
   const target = event.currentTarget as HTMLElement;
   if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+  panning.value = false;
   cancelDraft();
 }
 
@@ -682,7 +749,7 @@ function commitCurve(control: { x: number; y: number }) {
   const state = curve;
   curve = null;
   if (!state) return;
-  props.doc.pixels.set(state.base);
+  restoreDraftPixels(state.base);
   const dirty = strokeQuadCurve(
     props.doc,
     state.p0,
@@ -692,11 +759,12 @@ function commitCurve(control: { x: number; y: number }) {
     activeColor(),
     paintPlot(state.base),
   );
-  pushEdit(dirty, state.base);
+  pushEdit(dirty, state.base, dragDirty);
+  dragDirty = null;
 }
 
 /** 统一提交：clamp 脏区 → 从拖拽前快照取 before 入历史栈。 */
-function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null) {
+function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null, previous: Rect | null = null) {
   const rect = dirty ? clampRect(dirty, props.doc) : null;
   let didChange = !!rect;
   if (rect && before) {
@@ -705,7 +773,10 @@ function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null) {
     didChange = !props.decalLayers || edit.after.some((value, index) => value !== edit.before[index]);
     if (didChange) historyInstance.value.push(edit);
   }
-  render();
+  if (lotPreview.value) {
+    const damage = rect ? unionRect(previous, rect) : previous;
+    if (damage) queuePaintRegion(damage);
+  } else render();
   if (didChange) emit("change");
 }
 
@@ -713,26 +784,31 @@ function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null) {
 function cancelDraft() {
   cancelShapeFrame();
   if (polygonDraft) {
-    props.doc.pixels.set(polygonDraft.base);
+    const previous = dragDirty;
+    restoreDraftPixels(polygonDraft.base);
     polygonDraft = null;
     dragDirty = null;
-    render();
+    renderDraftChange(previous);
     return;
   }
   if (curve) {
-    props.doc.pixels.set(curve.base);
+    const previous = dragDirty;
+    restoreDraftPixels(curve.base);
     curve = null;
-    render();
+    dragDirty = null;
+    renderDraftChange(previous);
     return;
   }
-  if (dragBefore) props.doc.pixels.set(dragBefore);
+  const previous = dragBefore ? dragDirty : null;
+  if (dragBefore) restoreDraftPixels(dragBefore);
   dragMode = "none";
+  panning.value = false;
   fillGesture = null;
   dragBefore = null;
   dragDirty = null;
   dragStart = null;
   points = [];
-  render();
+  renderDraftChange(previous);
 }
 
 /** 从拖拽前整幅快照截取 before，与当前文档区域 after 组成历史条目。 */
@@ -751,12 +827,20 @@ function makeEdit(rect: Rect, beforeFull: Uint8ClampedArray) {
 
 function renderRegion(region: Rect) {
   if (!ctx) return;
+  const rect = clampRect(region, props.doc);
+  if (!rect) return;
+  const preview = lotPreview.value;
+  if (preview) {
+    const before = dragBefore ?? curve?.base ?? polygonDraft?.base;
+    if (before) restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
+    ctx.clearRect(rect.x, rect.y, rect.w, rect.h);
+    preview(ctx, props.doc, rect);
+    return;
+  }
   if (materialPreview.value) {
     render();
     return;
   }
-  const rect = clampRect(region, props.doc);
-  if (!rect) return;
   const pixels = props.doc.copyRegion(rect);
   const displayChannel = props.displayChannel ?? "rgba";
   const image = displayChannel !== "rgba"
@@ -770,7 +854,8 @@ function renderRegion(region: Rect) {
 function undo() {
   const edit = historyInstance.value.undo();
   if (edit) {
-    render();
+    if (lotPreview.value) queuePaintRegion(edit.rect);
+    else render();
     emit("change");
   }
   emitHistoryState();
@@ -779,7 +864,8 @@ function undo() {
 function redo() {
   const edit = historyInstance.value.redo();
   if (edit) {
-    render();
+    if (lotPreview.value) queuePaintRegion(edit.rect);
+    else render();
     emit("change");
   }
   emitHistoryState();
@@ -793,7 +879,14 @@ function emitHistoryState() {
 
 function onWheel(event: WheelEvent) {
   event.preventDefault();
-  setZoom(event.deltaY < 0 ? zoom.value * 1.15 : zoom.value / 1.15);
+  if (!event.deltaY) return;
+  const element = props.northUp ? wrap.value : null;
+  const rect = element?.getBoundingClientRect();
+  const anchor = element && rect ? {
+    x: event.clientX - rect.left - element.clientLeft,
+    y: event.clientY - rect.top - element.clientTop,
+  } : undefined;
+  setZoom(event.deltaY < 0 ? zoom.value * 1.15 : zoom.value / 1.15, anchor);
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -818,6 +911,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   cancelShapeFrame();
+  cancelPaintFrame();
   window.removeEventListener("keydown", onKeydown);
   window.removeEventListener("keyup", onKeyup);
 });
@@ -830,7 +924,7 @@ watch(
   },
 );
 watch(
-  () => [materialPreview.value, materialPreview.value ? zoom.value : 1],
+  () => [materialPreview.value, materialPreview.value && !props.northUp ? zoom.value : 1],
   () => render(),
 );
 watch(
@@ -870,6 +964,7 @@ watch(
   >
     <div
       class="canvas-plane"
+      :class="{ 'lot-plane': northUp }"
       :style="{
         transform: northUp
           ? `translate(${pan.x}px, ${pan.y + doc.height * zoomY}px) scale(${zoom}, ${-zoomY})`
@@ -958,6 +1053,7 @@ watch(
   position: absolute;
   transform-origin: 0 0;
 }
+.lot-plane { will-change: transform; }
 .surface {
   display: block;
   image-rendering: pixelated;

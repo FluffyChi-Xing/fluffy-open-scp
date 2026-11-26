@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { shallowRef, useTemplateRef, watch, watchEffect } from "vue";
 import type { Object3D } from "three";
-import { parseLotModelObjects } from "@/lib/three-gltf";
+import { cloneCachedLotModelObjects, parseLotModelObjects } from "@/lib/three-gltf";
 import { disposeObject } from "@/lib/viewerObjectDisposal";
 import { drawLotProjection, type LotModelProjection } from "./lotModelProjection";
 
@@ -15,6 +15,11 @@ const canvas = useTemplateRef<HTMLCanvasElement>("projectionCanvas");
 const roots = shallowRef<Object3D[]>([]);
 
 watch(() => props.projection.payload, async (payload, _, onCleanup) => {
+  const cached = cloneCachedLotModelObjects(payload);
+  if (cached) {
+    roots.value = cached;
+    return;
+  }
   let stale = false;
   let loaded: Object3D[] = [];
   onCleanup(() => {
@@ -55,7 +60,6 @@ watchEffect(() => {
   inset: 0;
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 0 1px #ff8f40);
   pointer-events: none;
 }
 </style>

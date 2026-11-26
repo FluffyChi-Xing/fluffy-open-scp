@@ -214,12 +214,19 @@ export function resampleNearest(
   nextHeight: number,
 ): Uint8ClampedArray<ArrayBuffer> {
   const output = new Uint8ClampedArray(nextWidth * nextHeight * 4);
+  const columns = Uint32Array.from({ length: nextWidth }, (_, x) =>
+    Math.min(width - 1, Math.floor(((x + 0.5) * width) / nextWidth)) * 4,
+  );
   for (let y = 0; y < nextHeight; y += 1) {
     const sourceY = Math.min(height - 1, Math.floor(((y + 0.5) * height) / nextHeight));
+    const row = sourceY * width * 4;
+    let to = y * nextWidth * 4;
     for (let x = 0; x < nextWidth; x += 1) {
-      const sourceX = Math.min(width - 1, Math.floor(((x + 0.5) * width) / nextWidth));
-      const from = (sourceY * width + sourceX) * 4;
-      output.set(pixels.subarray(from, from + 4), (y * nextWidth + x) * 4);
+      const from = row + columns[x];
+      output[to++] = pixels[from];
+      output[to++] = pixels[from + 1];
+      output[to++] = pixels[from + 2];
+      output[to++] = pixels[from + 3];
     }
   }
   return output;
