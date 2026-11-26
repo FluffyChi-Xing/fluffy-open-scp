@@ -3,13 +3,20 @@
 // Preserve its lot/visibility bindings; restore authoring metadata before
 // grouping so dropped decals retain their unattached preview path.
 import { computed, shallowRef, useAttrs } from "vue";
+import { useI18n } from "vue-i18n";
+import FStartupLoading from "@/components/ui/FStartupLoading.vue";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 import { unitsFromSchema } from "@/pages/packages/components/property-editor/peSchemaDoc";
-import type { UnitGrouping } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
+import type { ModelState, UnitGrouping } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
 import { restoreDecalSources } from "./workbenchDecals";
 
 defineOptions({ inheritAttrs: false });
-const props = defineProps<{ schema?: Record<string, unknown> | null }>();
+const props = defineProps<{
+  schema?: Record<string, unknown> | null;
+  modelState?: ModelState;
+}>();
+const { t } = useI18n();
+const showModelLoading = computed(() => props.modelState === "loading");
 const attrs = useAttrs();
 type ViewProps = InstanceType<typeof PropertyEditorViewport>["$props"];
 const viewport = shallowRef<InstanceType<typeof PropertyEditorViewport> | null>(
@@ -132,7 +139,13 @@ function binding() {
       value,
     ]),
   );
-  return { ...defaults, ...normalizedAttrs, ...schemaBinding.value };
+  return {
+    ...defaults,
+    ...normalizedAttrs,
+    ...schemaBinding.value,
+    // The workbench supplies its own loading indicator for this presentation state.
+    modelState: showModelLoading.value ? "pending" : props.modelState ?? defaults.modelState,
+  };
 }
 defineExpose({
   groundPointAt: (x: number, y: number) =>
@@ -142,5 +155,32 @@ defineExpose({
 });
 </script>
 <template>
-  <PropertyEditorViewport ref="viewport" v-bind="binding()" />
+  <div class="workbench-viewport">
+    <PropertyEditorViewport
+      ref="viewport"
+      v-bind="binding()"
+      :inert="showModelLoading"
+    />
+    <FStartupLoading
+      v-if="showModelLoading"
+      class="workbench-model-loading"
+      :label="t('common.loading')"
+    />
+  </div>
 </template>
+
+<style scoped>
+.workbench-viewport {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+.workbench-model-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+}
+</style>

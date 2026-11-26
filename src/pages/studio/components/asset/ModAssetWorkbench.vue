@@ -11,7 +11,7 @@ import { saveAuthoredLot } from "./authoredLotStore";
 import { useEventListener } from "@vueuse/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
-import FSpinner from "@/components/ui/FSpinner.vue";
+import FStartupLoading from "@/components/ui/FStartupLoading.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
 import MonacoEditor from "@/components/ui/MonacoEditor.vue";
@@ -1126,7 +1126,10 @@ function templateOf(resourceId: number) {
               <p v-if="pathDrawing" class="maw-draw-hint" role="status">
                 {{ t("studio.assetWorkbench.pathDrawHint") }}
               </p>
-              <template v-if="ui">
+              <div v-if="asset.restoring.value" class="maw-empty">
+                <FStartupLoading :label="t('common.loading')" />
+              </div>
+              <template v-else-if="ui">
                 <p v-if="ui.loadError" class="maw-load-error" role="alert">
                   {{ t(ui.loadError) }}
                 </p>
@@ -1165,7 +1168,6 @@ function templateOf(resourceId: number) {
                   <button
                     type="button"
                     class="maw-btn primary"
-                    :disabled="asset.restoring.value"
                     @click="treeRef?.refresh()"
                   >
                     <FIcon name="FolderOpen" :size="13" aria-label="" />
@@ -1180,11 +1182,6 @@ function templateOf(resourceId: number) {
                     {{ t("studio.assetWorkbench.tgiParse") }}
                   </button>
                 </div>
-                <FSpinner
-                  v-if="asset.restoring.value"
-                  size="sm"
-                  :label="t('common.loading')"
-                />
               </div>
             </div>
       </template>

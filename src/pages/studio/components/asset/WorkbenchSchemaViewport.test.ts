@@ -3,6 +3,8 @@ import { defineComponent } from "vue";
 import * as THREE from "three";
 import { expect, it } from "vitest";
 import type { DecalUnit } from "@/api/tauri";
+import FStartupLoading from "@/components/ui/FStartupLoading.vue";
+import { i18n } from "@/locales";
 import { schemaUnitJson } from "@/pages/packages/components/property-editor/peSchemaDoc";
 import { createSunEnv } from "@/pages/packages/components/property-editor/refinedRender";
 import { buildDecalBody } from "@/render/exec/three/decalBody";
@@ -13,15 +15,44 @@ const Viewport = defineComponent({
   name: "PropertyEditorViewport",
   props: {
     grouping: { type: Object, required: true }, decalTextures: Array,
-    lotSize: Array, lotColors: Array, hiddenUnits: Set, groupVisibility: Object,
+    lotSize: Array, lotColors: Array, hiddenUnits: Set, groupVisibility: Object, modelState: String,
   },
   template: "<div />",
+});
+const global = { plugins: [i18n], stubs: { PropertyEditorViewport: Viewport } };
+
+it("uses the startup logo during model loading and keeps the viewport mounted", async () => {
+  const before = i18n.global.locale.value;
+  const wrapper = mount(WorkbenchSchemaViewport, {
+    props: { schema: document(), modelState: "loading" },
+    global,
+  });
+  try {
+    const viewport = wrapper.getComponent(Viewport);
+    expect(viewport.props("modelState")).toBe("pending");
+    expect(viewport.attributes("inert")).toBeDefined();
+    const loading = wrapper.getComponent(FStartupLoading);
+    expect(loading.get("img").attributes("src")).toBe("/scp-logo.png");
+    for (const locale of ["zh-CN", "en-US"] as const) {
+      i18n.global.locale.value = locale;
+      await wrapper.vm.$nextTick();
+      expect(loading.text()).toContain(i18n.global.t("common.loading"));
+    }
+    await wrapper.setProps({ modelState: "error" });
+    expect(wrapper.findComponent(FStartupLoading).exists()).toBe(false);
+    expect(wrapper.getComponent(Viewport).vm).toBe(viewport.vm);
+    expect(viewport.props("modelState")).toBe("error");
+    expect(viewport.attributes("inert")).toBeUndefined();
+  } finally {
+    wrapper.unmount();
+    i18n.global.locale.value = before;
+  }
 });
 
 it("preserves scene inputs across selection, tool and time changes", async () => {
   const wrapper = mount(WorkbenchSchemaViewport, {
     props: { schema: document() },
-    global: { stubs: { PropertyEditorViewport: Viewport } },
+    global,
   });
   try {
     const viewport = wrapper.getComponent(Viewport);
@@ -63,7 +94,7 @@ it.each([0x12345678, 0xe5390a98, 0x73684efc, 0x4491de3a])(
     };
     const wrapper = mount(WorkbenchSchemaViewport, {
       props: { schema }, attrs: { "decal-textures": [texture] },
-      global: { stubs: { PropertyEditorViewport: Viewport } },
+      global,
     });
     try {
       const viewport = wrapper.getComponent(Viewport);
@@ -98,7 +129,7 @@ it.each([0x12345678, 0xe5390a98, 0x73684efc, 0x4491de3a])(
 
 it("updates dropped metadata when the scene schema is replaced", async () => {
   const wrapper = mount(WorkbenchSchemaViewport, {
-    props: { schema: document() }, global: { stubs: { PropertyEditorViewport: Viewport } },
+    props: { schema: document() }, global,
   });
   try {
     const next = document();
