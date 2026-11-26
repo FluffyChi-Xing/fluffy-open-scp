@@ -1,4 +1,4 @@
-//! Ground W2 hotel, from the effective 6F05DD57 / 971A4B13 records.
+//! Ground hotel, from the effective medium-density templates AF6F44EC, 971A4B13 and 7014C68A.
 use super::behavior_nodes::LaborSpec;
 use super::behavior_templates::{ENABLE, EXCLUDED, array, contains, key};
 use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
@@ -58,19 +58,32 @@ const EXCLUDE: [u32; 26] = [
 ];
 const FLAGS: u32 = 0x0A88_D179;
 const ROOMS: u32 = 0x0E26_60C6;
+const INTAKES: [u32; 3] = [0x729A_6625, INTAKE, 0x729A_6627];
+const CAPACITIES: [u16; 3] = [76, 68, 60];
+const HOTEL_LEDGER: [u32; 3] = [0xC3EC_8B4E, 0xC3EC_8B4D, 0xC3EC_8B4C];
+const HOTEL_DEMAND: [u32; 3] = [0xF25B_DF56, 0x9957_A6A5, 0xCA24_5C9C];
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(super) struct Hotel {
     rooms: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wealth: Option<u8>,
 }
 
 pub(super) fn select(nodes: &[serde_json::Value]) -> Result<Option<Hotel>, String> {
     let Some(node) = nodes.iter().find(|node| node["type"] == "hotel") else {
         return Ok(None);
     };
+    let wealth = match &node["params"]["wealth"] {
+        serde_json::Value::Null => None,
+        value => {
+            let value = value.as_u64().filter(|value| (1..=3).contains(value)).ok_or("HOTEL_WEALTH")?;
+            (value != 2).then_some(value as u8)
+        }
+    };
     let rooms = &node["params"]["rooms"];
     let rooms = if rooms.is_null() {
-        Some(68)
+        Some(u64::from(CAPACITIES[usize::from(wealth.unwrap_or(2) - 1)]))
     } else {
         rooms.as_u64()
     };
@@ -79,12 +92,21 @@ pub(super) fn select(nodes: &[serde_json::Value]) -> Result<Option<Hotel>, Strin
         .map(|rooms| {
             Some(Hotel {
                 rooms: rooms as u16,
+                wealth,
             })
         })
         .ok_or_else(|| "HOTEL_ROOMS".into())
 }
 
 impl Hotel {
+    pub(super) fn needs_tiered_panel(&self) -> bool {
+        self.wealth.is_some()
+    }
+
+    fn tier(&self) -> usize {
+        usize::from(self.wealth.unwrap_or(2) - 1)
+    }
+
     pub(super) fn labor(&self, previous: Option<LaborSpec>) -> LaborSpec {
         previous.unwrap_or(LaborSpec {
             w1: 20,
@@ -97,25 +119,33 @@ impl Hotel {
     }
 
     pub(super) fn bundles(&self) -> impl Iterator<Item = u32> {
-        BUNDLES.into_iter()
+        let tier = self.tier();
+        BUNDLES.into_iter().map(move |id| match id {
+            INTAKE => INTAKES[tier],
+            0xC3EC_8B4D => HOTEL_LEDGER[tier],
+            0x9957_A6A5 => HOTEL_DEMAND[tier],
+            _ => id,
+        })
     }
 
     fn fields(&self) -> impl Iterator<Item = (u32, PropType, Value)> {
+        let tier = self.tier();
+        let native_rooms = f32::from(CAPACITIES[tier]);
         [
             (ROOMS, f32::from(self.rooms)),
-            (0x0A79_17CB, 68.0),
+            (0x0A79_17CB, native_rooms),
             (0x0C20_0553, 2.0),
-            (0x0D08_4715, 2.0),
+            (0x0D08_4715, [1.0, 2.0, 3.0][tier]),
             (0x0A7B_B621, 16.0),
             (0x0B4F_8ECC, 40.0),
             (0x0CBD_3000, 1.0),
             (0x0BE3_AD6A, 0.0),
-            (0x0D76_E8E7, 8.0),
-            (0x0A79_17C4, 120.0),
-            (0x0AB9_85AA, 34.0),
+            (0x0D76_E8E7, [12.0, 8.0, 4.0][tier]),
+            (0x0A79_17C4, [104.0, 120.0, 256.0][tier]),
+            (0x0AB9_85AA, native_rooms / 2.0),
             (0x0AB9_85AB, 1.0),
-            (0x0E54_68F3, 544.0),
-            (0x0E54_67E7, 544.0),
+            (0x0E54_68F3, native_rooms * 8.0),
+            (0x0E54_67E7, native_rooms * 8.0),
             (0x0C0F_228C, 6.0),
             (0x0C0F_2290, 144.0),
             (0x0C0F_228F, 1000.0),
@@ -126,8 +156,8 @@ impl Hotel {
         .into_iter()
         .map(|(hash, value)| (hash, PropType::Float, Value::Float(value)))
         .chain([
-            (0x0E30_E65A, PropType::Key, key(0x7136_D91D)),
-            (0x0D02_D846, PropType::Key, key(0x2E64_8431)),
+            (0x0E30_E65A, PropType::Key, key([0x7F2E_A046, 0x7136_D91D, 0x8333_23DC][tier])),
+            (0x0D02_D846, PropType::Key, key([0xCAF1_511E, 0x2E64_8431, 0x03DD_CA70][tier])),
         ])
     }
 
@@ -138,7 +168,9 @@ impl Hotel {
             let mut values = original.to_vec();
             values.retain(|value| {
                 !matches!(value, Value::Key(key)
-                if BUNDLES.contains(&key.instance) || EXCLUDE.contains(&key.instance))
+                if BUNDLES.contains(&key.instance) || EXCLUDE.contains(&key.instance)
+                || INTAKES.contains(&key.instance) || HOTEL_LEDGER.contains(&key.instance)
+                || HOTEL_DEMAND.contains(&key.instance))
             });
             if hash == ENABLE[3] {
                 values.extend(self.bundles().map(key));
@@ -190,6 +222,11 @@ impl Hotel {
                 return Err(format!("HOTEL_BUNDLE: {id:08X}"));
             }
         }
+        for id in INTAKES.into_iter().filter(|&id| id != INTAKES[self.tier()]) {
+            if contains(unit, &ENABLE, id) {
+                return Err(format!("HOTEL_BUNDLE: {id:08X}"));
+            }
+        }
         for (hash, kind, value) in self.fields() {
             if !unit
                 .get(hash)
@@ -225,6 +262,22 @@ impl Hotel {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn wealth_selects_one_native_intake_and_keeps_legacy_default() {
+        for (wealth, expected) in [(None, 68), (Some(1), 76), (Some(2), 68), (Some(3), 60)] {
+            let recipe = select(&[json!({"type":"hotel","params":{"wealth":wealth}})])
+                .unwrap().unwrap();
+            let bytes = recipe.patch(&encode(&PropertyFile::default()).unwrap()).unwrap();
+            let unit = PropertyFile::parse(&bytes).unwrap();
+            for (index, intake) in INTAKES.into_iter().enumerate() {
+                assert_eq!(contains(&unit, &ENABLE, intake), index + 1 == wealth.unwrap_or(2));
+            }
+            assert_eq!(recipe.rooms, expected);
+            assert_eq!(recipe.needs_tiered_panel(), matches!(wealth, Some(1 | 3)));
+        }
+        assert_eq!(select(&[json!({"type":"hotel","params":{"wealth":4}})]).unwrap_err(), "HOTEL_WEALTH");
+    }
 
     #[test]
     fn standalone_hotel_replaces_competing_rules_and_roundtrips_rooms() {

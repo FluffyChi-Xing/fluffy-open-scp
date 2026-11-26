@@ -6,6 +6,7 @@ pub mod behavior;
 mod behavior_conflicts;
 mod behavior_hotel;
 mod behavior_casino;
+pub(crate) mod behavior_controlnet;
 mod behavior_plop;
 mod behavior_copan_base;
 mod behavior_copan_services;
@@ -97,3 +98,4 @@ mod e2e_tests;
 mod tests;
 
 pub use package::build_from_schema_with_progress;
+pub(crate) use package::build_from_schema_for_installation;

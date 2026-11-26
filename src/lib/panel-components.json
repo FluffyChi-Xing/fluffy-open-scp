@@ -18,6 +18,8 @@
   {"id":"shoppers","native":"kShoppers","group":"commercial"},
   {"id":"hotel-guests","native":"kCasinoLodgingTitle","group":"hotel"},
   {"id":"hotel-occupancy","native":"kCasinoLodgingTitle","group":"hotel"},
+  {"id":"controlnet-workers","native":"kCasinoLodgingTitle","group":"controlnet"},
+  {"id":"controlnet-production","native":"kCasinoLodgingTitle","group":"controlnet"},
   {"id":"casino-gamblers","native":"kCasinoGamblerTitle","group":"casino"},
   {"id":"casino-revenue","native":"kCasinoRevenueTitle","group":"casino"},
   {"id":"tourism-profit","native":"kBlockLandmarkProfit","group":"tourism"},

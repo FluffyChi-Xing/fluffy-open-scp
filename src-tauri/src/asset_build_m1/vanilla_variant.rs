@@ -391,6 +391,7 @@ pub(super) fn build(
         None,
         &root,
         false,
+        None,
     )?;
     let chain = rci::inheritance(&packages, &unit)?;
     let growable = rci::is_growable(&chain, lot_id);

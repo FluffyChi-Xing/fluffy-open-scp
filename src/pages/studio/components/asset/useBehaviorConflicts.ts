@@ -19,18 +19,21 @@ export function useBehaviorConflicts() {
   const toast = useToast();
   const key = "studio.assetWorkbench.behaviorConflicts";
 
-  function additionIssue(graph: LogicGraph, type?: BehaviorLeafType): "duplicate" | "limit" | "casinoComposition" | undefined {
+  function additionIssue(graph: LogicGraph, type?: BehaviorLeafType): "duplicate" | "limit" | "casinoComposition" | "controlnetComposition" | undefined {
     const leaves = graph.nodes.filter(isLeaf);
     if (type && leaves.some(node => leafTypeOf(graph, node) === type)) return "duplicate";
     if (leaves.length >= MAX_BEHAVIOR_LEAVES) return "limit";
     const types = leaves.map(node => leafTypeOf(graph, node));
+    const canShareControlNet = (kind: BehaviorLeafType | null) => kind === "tree" || kind === "landvalue";
+    if (type && ((type === "controlnet" && types.some(kind => !canShareControlNet(kind)))
+      || (types.includes("controlnet") && !canShareControlNet(type)))) return "controlnetComposition";
     if ((type === "casino" && (types.length !== 1 || types[0] !== "tourism"))
         || (type && type !== "tourism" && types.includes("casino"))) return "casinoComposition";
   }
   function addHint(graph: LogicGraph, type: BehaviorLeafType): string {
     const issue = additionIssue(graph, type);
     if (issue === "duplicate") return t(`${key}.duplicate`, { behavior: t(leafSpec(type).labelKey) });
-    if (issue === "casinoComposition") return t(`${key}.casinoComposition`);
+    if (issue === "casinoComposition" || issue === "controlnetComposition") return t(`${key}.${issue}`);
     return issue === "limit" ? t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }) : "";
   }
   function available(graph: LogicGraph, type: BehaviorLeafType): boolean {
@@ -46,8 +49,8 @@ export function useBehaviorConflicts() {
       toast.warning(t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }));
       return false;
     }
-    if (issue === "casinoComposition") {
-      toast.warning(t(`${key}.casinoComposition`));
+    if (issue === "casinoComposition" || issue === "controlnetComposition") {
+      toast.warning(t(`${key}.${issue}`));
       return false;
     }
     if (type === "commercial") {

@@ -28,6 +28,7 @@ export function availableComponents(leaves: readonly string[], managed = false, 
       || (leaves.includes('park') && ['park-feedback', 'park-hours', 'park-visitors-title', 'park-visitors'].includes(c.id))
       || (leaves.includes('residence') && ['residence-feedback', 'residents', 'land-value-residential', 'residential-happiness-reasons', 'residential-sadness-reasons'].includes(c.id))
       || (leaves.includes('hotel') && c.id === 'hotel-occupancy')
+      || (leaves.includes('controlnet') && c.group === 'controlnet')
       || (leaves.includes('casino') && c.group === 'casino')
       || (canReadShoppers && c.id === 'shoppers') || (mall && c.id === 'mall-average-shoppers')
       || (canReadShoppers && ['commercial-happiness-reasons', 'commercial-sadness-reasons'].includes(c.id))

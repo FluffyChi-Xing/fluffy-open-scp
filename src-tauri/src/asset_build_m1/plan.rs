@@ -135,6 +135,9 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         if menu.is_none() && nodes.iter().any(|node| node["type"] == "hotel") {
             return Err("HOTEL_RESOURCE".into());
         }
+        if menu.is_none() && super::behavior_controlnet::requested(&nodes) {
+            return Err("CONTROLNET_MENU_REQUIRED".into());
+        }
         if let Some(spec) = menu.as_mut() {
             completed_plop_menu = super::behavior_plop::complete_menu(spec, &nodes);
         }
@@ -257,7 +260,9 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         // /53–55: ordinary vehicle paths use Tokyo Tower's 03106C2E entry.
         // Bump whenever game-side lowering/geometry contracts change. The
         // run cache must never replay a package built by an older interpreter.
-        processor_version: if behavior_program.as_ref().is_some_and(|p| p.casino.is_some()) {
+        processor_version: if behavior_program.as_ref().is_some_and(|p| p.controlnet.is_some()) {
+            super::behavior_controlnet::VERSION
+        } else if behavior_program.as_ref().is_some_and(|p| p.casino.is_some()) {
             super::behavior_casino::VERSION
         } else if behavior_program.as_ref().is_some_and(|p| {
             p.hotel.is_some() || p.units.iter().any(|unit| unit.program.hotel.is_some())

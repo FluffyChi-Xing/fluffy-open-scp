@@ -345,6 +345,12 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         changed.push(serde_json::json!({"resource": unit_id.to_string(), "hotel": recipe}));
     }
 
+    if let Some(recipe) = &program.controlnet {
+        let bytes = ctx.resources.get(&unit_id).ok_or("CONTROLNET_RESOURCE")?;
+        ctx.resources.insert(unit_id, recipe.patch(bytes)?);
+        changed.push(serde_json::json!({"resource": unit_id.to_string(), "controlnet": recipe}));
+    }
+
     let independent_units = match independent_seed {
         Some(seed) => super::behavior_unit_build::apply(ctx, &program, &seed)?,
         None => serde_json::Value::Null,

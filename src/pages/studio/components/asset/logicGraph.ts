@@ -25,6 +25,7 @@ export type BehaviorLeafType =
   | "office"
   | "commercial"
   | "hotel"
+  | "controlnet"
   | "casino"
   | "park"
   | "tree"
@@ -145,7 +146,8 @@ export interface LandvalueParams {
 export const LAND_TEMPLATE_VALUE = 500;
 
 export type LeafParams =
-  | { type: "hotel"; rooms?: number | null }
+  | HotelParams
+  | ControlNetParams
   | CasinoParams
   | EducationParams
   | TourismParams
@@ -274,6 +276,14 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     labelKey: "studio.assetWorkbench.logicNode.leafHotel",
     hintKey: "studio.assetWorkbench.logicNode.leafHotelHint",
     defaultParams: () => ({ type: "hotel" }),
+  },
+  {
+    kind: "behavior-leaf",
+    leafType: "controlnet",
+    labelKey: "studio.assetWorkbench.logicNode.leafControlNet",
+    hintKey: "studio.assetWorkbench.logicNode.leafControlNetHint",
+    icon: "Cpu",
+    defaultParams: () => ({ type: "controlnet" }),
   },
   {
     kind: "behavior-leaf",
@@ -684,6 +694,10 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
           break;
         case "hotel":
           if (!validHotelRooms(leaf.rooms)) issues.push({ code: "hotelRooms", nodeId: node.id });
+          if (!validHotelWealth(leaf.wealth)) issues.push({ code: "hotelWealth", nodeId: node.id });
+          break;
+        case "controlnet":
+          if (!validControlNet(leaf)) issues.push({ code: "controlnetInvalid", nodeId: node.id });
           break;
         case "casino":
           if (!validCasino(leaf)) issues.push({ code: "casinoInvalid", nodeId: node.id });
@@ -704,6 +718,31 @@ export const MAX_BEHAVIOR_LEAVES = behaviorPolicy.maxLeaves;
 
 export function validHotelRooms(rooms: unknown): boolean {
   return rooms == null || (typeof rooms === "number" && Number.isInteger(rooms) && rooms >= 1 && rooms <= 1000);
+}
+
+export const HOTEL_ROOMS_BY_WEALTH = { 1: 76, 2: 68, 3: 60 } as const;
+export type HotelWealth = keyof typeof HOTEL_ROOMS_BY_WEALTH;
+export type HotelParams = { type: "hotel"; rooms?: number | null; wealth?: HotelWealth | null };
+export function validHotelWealth(wealth: unknown): boolean {
+  return wealth == null || wealth === 1 || wealth === 2 || wealth === 3;
+}
+
+export const CONTROLNET_FIELDS = [
+  { key: "jobsW1", default: 25, max: 10000 },
+  { key: "jobsW2", default: 50, max: 10000 },
+  { key: "jobsW3", default: 100, max: 10000 },
+  { key: "weightW1", default: 1, max: 100 },
+  { key: "weightW2", default: 2, max: 100 },
+  { key: "weightW3", default: 4, max: 100 },
+] as const;
+export type ControlNetField = typeof CONTROLNET_FIELDS[number]["key"];
+export type ControlNetParams = { type: "controlnet" } & Partial<Record<ControlNetField, number | null>>;
+export function validControlNet(params: ControlNetParams): boolean {
+  const values = CONTROLNET_FIELDS.map(field => params[field.key] ?? field.default);
+  return CONTROLNET_FIELDS.every((field, index) => {
+    const value = values[index]!;
+    return Number.isInteger(value) && value >= 0 && value <= field.max;
+  }) && values.slice(0, 3).some((jobs, index) => jobs > 0 && values[index + 3]! > 0);
 }
 
 export const CASINO_DEFAULTS = {

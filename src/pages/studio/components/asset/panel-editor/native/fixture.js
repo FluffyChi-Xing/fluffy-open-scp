@@ -28,6 +28,11 @@ window.createComboData=function(panel,state,missingNames=[],sampleRci=false,samp
  }
  const props={};for(let name of ['kPropHappiness_HappinessTokensThresholdForDensityUpgrade','kPropProfit_ProfitTokensThresholdForDensityUpgrade'])props[simcity[name]]=100;
  props[0x0E2660C6]=68;
+ props[0x0D084715]=2;
+ props[0x0A7917C5]=25;props[0x0A7917C6]=50;props[0x0A7917C7]=100;props[0xAA5FE358]=5250;
+ for(let [id,amount] of [[0x97235AA7,10],[0x97235AA4,20],[0x97235AA5,40],[0xFCAB1E3F,210]]){
+  resources[id]={name:'resource:'+id,amount,capacity:100000,provenance:'ControlNet preview fixture'};
+ }
  props[simcity.kPropWork_MinimumWorkersForProduction]=5;props[simcity.kPropWork_TotalJobs]=34;
  return {resources,resolve(q,fallback){
   const kind=q.includes('bins')?'bins':q.includes('binAmount')?'amount':q.includes('flags')?'flags':null,id=q.at(-1);

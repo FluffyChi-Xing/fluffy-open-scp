@@ -448,7 +448,7 @@ fn compile_logic(
             .unwrap_or("");
         if !matches!(
             kind,
-            "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel" | "casino"
+            "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel" | "casino" | "controlnet"
         ) {
             errors.push(format!("logic leaf {leaf}: unknown behavior type {kind:?}"));
             continue;

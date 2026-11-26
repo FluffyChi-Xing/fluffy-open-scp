@@ -42,7 +42,8 @@ fn capabilities(stock:&[u8])->BTreeMap<String,u32>{
 }
 fn bindings()->BTreeSet<u32>{
     let mut names=vec!["OpenSCPPanel_headerNone".to_string(),"OpenSCPPanel_empty".into(),
-        "OpenSCPPanel_containerTourists".into(),"OpenSCPPanel_containerShoppers".into()];
+        "OpenSCPPanel_containerTourists".into(),"OpenSCPPanel_containerShoppers".into(),
+        "OpenSCPPanel_hotel-occupancy-tiered".into(),"OpenSCPPanel_component_hotel-occupancy-tiered".into()];
     for c in components() {
         if c.feedback {for suffix in ["_hide","_native"]{names.push(format!("OpenSCPPanel_{}{suffix}",c.id));}}
         else {names.push(format!("OpenSCPPanel_{}",c.id));}

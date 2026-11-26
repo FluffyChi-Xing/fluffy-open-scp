@@ -54,6 +54,15 @@ const COMMUTE: &[(u32, &[u32])] = &[
     (0x1E16_EDA9, &[0xADAF_4C17, 0x9090_F61A, 0x8133_3365]),
     (0x3A70_FAA2, &[0x1BB6_F93B, 0x863E_354E, 0xC253_84A9]),
 ];
+const CONTROLNET_COMMUTE: (u32, &[u32]) = (
+    0xA0E0_3A4E,
+    &[0xDB14_4779, 0x26F1_4EA8, 0x4AB3_780B, 0xCD23_B77D, 0x0603_9A1C, 0x0710_3093],
+);
+const HOTEL_ARRIVALS: &[(u32, &[u32])] = &[
+    (0x729A_6625, &[0x729A_6625, 0x8645_F308]),
+    (0x729A_6626, &[0x729A_6626, 0x8645_F30B]),
+    (0x729A_6627, &[0x729A_6627, 0x8645_F30A]),
+];
 const OTHER_ARRIVALS: &[(u32, &[u32])] = &[
     // Native park visitor car receivers; walking/kid/homeless sinks stay native.
     (0x265F_B8DD, &[0x0992_906D]),
@@ -122,6 +131,8 @@ fn receivers(unit: &PropertyFile) -> Result<(Vec<Value>, bool), String> {
         }
     };
     collect(&mut sinks, OTHER_ARRIVALS);
+    collect(&mut sinks, HOTEL_ARRIVALS);
+    collect(&mut sinks, &[CONTROLNET_COMMUTE]);
     // The D3 ground profile uses a vehicle intake distinct from D2 and EP1.
     if active.contains(&d3::TAXES) {
         collect(&mut sinks, &[(d3::INTAKE, &[d3::MOVE_IN_SINK])]);
@@ -133,7 +144,9 @@ fn receivers(unit: &PropertyFile) -> Result<(Vec<Value>, bool), String> {
             .iter()
             .any(|&id| matches!(id, 0x3A82_63E1..=0x3A82_63E3)
                 || super::behavior_commercial_mixed::STREET.contains(&id));
-    let open_commute = sinks.is_empty() || active.contains(&0x1E16_EDA9) || retail;
+    let hotel = HOTEL_ARRIVALS.iter().any(|(bundle, _)| active.contains(bundle));
+    let open_commute = sinks.is_empty() || active.contains(&0x1E16_EDA9) || retail || hotel
+        || active.contains(&CONTROLNET_COMMUTE.0);
     if open_commute {
         collect(&mut sinks, COMMUTE);
     }
@@ -280,6 +293,20 @@ pub(super) fn describe_commute(unit: &[u8], lot: &[u8]) -> Result<serde_json::Va
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hotels_and_controlnet_keep_their_native_car_receivers() {
+        for (provider, expected) in HOTEL_ARRIVALS.iter().copied().chain([CONTROLNET_COMMUTE]) {
+            let mut unit = PropertyFile::default();
+            let mut lot = PropertyFile::default();
+            set_array_with_flags(&mut unit, ENABLE[3], PropType::Key, vec![key(provider)], 0x809C);
+            set_array_with_flags(&mut lot, PATH_ENTRIES, PropType::Key, vec![key(PATH)], 0x809C);
+            let (unit, lot) = bind(&encode(&unit).unwrap(), &encode(&lot).unwrap()).unwrap();
+            verify(&unit, &lot).unwrap();
+            let lot = PropertyFile::parse(&lot).unwrap();
+            assert_eq!(array(&lot, SINK_IDS).unwrap(), expected.iter().copied().map(key).collect::<Vec<_>>());
+        }
+    }
 
     #[test]
     fn crown_and_legacy_tourism_preserve_identical_native_car_bindings() {

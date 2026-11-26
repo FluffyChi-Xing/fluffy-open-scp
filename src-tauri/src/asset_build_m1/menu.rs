@@ -345,8 +345,9 @@ pub fn generate(
     identity: Option<&connector::Resources>,
     root: &std::path::Path,
     author_building40: bool,
+    game_data: Option<&std::path::Path>,
 ) -> Result<MenuResources, String> {
-    let instance = alloc_menu_instance(spec, resources);
+    let instance = alloc_menu_instance(spec, resources, game_data);
     // Building40 always uses the complete parent-free property recipe. The old
     // minimal clone route dropped the panel and utility fields even though its
     // identity-link checks passed. Other geometry routes retain their bytes.
@@ -1290,7 +1291,7 @@ fn alloc_raster_instance(
 
 /// 新 instance：标题内容哈希，对已存在 property TGI 线性探测。与构建器
 /// 其它实例分配同契约（内容确定、冲突避让）。
-fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resources) -> u32 {
+fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resources, game_data: Option<&std::path::Path>) -> u32 {
     let mut instance = u32::from_be_bytes(
         Sha256::digest(spec.title.as_bytes())[..4]
             .try_into()
@@ -1299,8 +1300,9 @@ fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resou
     // 游戏原生 unit/lot 实例集（部署安全：新身份不得撞游戏既有 TGI，
     // 否则我们的内容会顶替真实游戏单位——2026-11-08 HopeTower 事故）。
     let mut vanilla: std::collections::HashSet<(u32, u32)> = Default::default();
-    if let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") {
-        for path in crate::game_assets::package_paths(std::path::Path::new(&game_data)) {
+    let configured = std::env::var_os("OPENSCP_GAME_DATA").map(std::path::PathBuf::from);
+    if let Some(game_data) = game_data.or(configured.as_deref()) {
+        for path in crate::game_assets::package_paths(game_data) {
             let Ok(package) = dbpf::Package::open(&path) else {
                 continue;
             };

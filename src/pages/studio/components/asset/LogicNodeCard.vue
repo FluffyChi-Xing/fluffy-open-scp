@@ -13,6 +13,10 @@ import { Switch } from "@/components/ui/switch";
 import {
   LOGIC_NODE_SPECS,
   CASINO_DEFAULTS,
+  CONTROLNET_FIELDS,
+  HOTEL_ROOMS_BY_WEALTH,
+  type ControlNetParams,
+  type HotelParams,
   type CasinoField,
   type CasinoParams,
   LAND_TEMPLATE_VALUE,
@@ -53,14 +57,14 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const casinoFields = Object.keys(CASINO_DEFAULTS) as CasinoField[];
 const casinoParams = computed(() => props.params as CasinoParams);
-function changeCasino(field: CasinoField, event: Event): void {
+function editOptionalNumber(field: string, event: Event): void {
   const input = event.target as HTMLInputElement;
   emit("update-params", { [field]: input.value === "" && !input.validity.badInput ? null : input.valueAsNumber });
 }
-const hotelRooms = computed(() => (props.params as { rooms?: number | null }).rooms);
-function updateHotelRooms(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  emit("update-params", { rooms: input.value === "" && !input.validity.badInput ? null : input.valueAsNumber });
+const hotelParams = computed(() => props.params as HotelParams);
+const controlNetParams = computed(() => props.params as ControlNetParams);
+function updateHotelWealth(event: Event): void {
+  emit("update-params", { wealth: Number((event.target as HTMLSelectElement).value) });
 }
 const commercialParams = computed(() => props.params as CommercialParams);
 const retailValues = computed(() => commercialValues(commercialParams.value));
@@ -410,23 +414,41 @@ const leafOptions = computed(() =>
             :disabled="disabled"
             :value="casinoParams[field] ?? ''"
             :placeholder="String(CASINO_DEFAULTS[field])"
-            @input="changeCasino(field, $event)"
+            @input="editOptionalNumber(field, $event)"
           />
         </label>
       </template>
-      <label v-else-if="leafType === 'hotel'" class="logic-field">
+      <template v-else-if="leafType === 'controlnet'">
+        <label v-for="field in CONTROLNET_FIELDS" :key="field.key" class="logic-field">
+          <span>{{ t(`studio.assetWorkbench.behaviorSheet.controlnetFields.${field.key}`) }}</span>
+          <input type="number" min="0" :max="field.max" step="1"
+            :value="controlNetParams[field.key] ?? ''" :placeholder="String(field.default)"
+            :disabled="disabled" @input="editOptionalNumber(field.key, $event)" />
+        </label>
+      </template>
+      <template v-else-if="leafType === 'hotel'">
+        <label class="logic-field">
+          <span>{{ t("studio.assetWorkbench.behaviorSheet.hotelWealth") }}</span>
+          <select :value="hotelParams.wealth ?? 2" :disabled="disabled" @change="updateHotelWealth">
+            <option v-for="tier in [1, 2, 3]" :key="tier" :value="tier">
+              {{ t(`studio.assetWorkbench.behaviorSheet.hotelWealthTier${tier}`) }}
+            </option>
+          </select>
+        </label>
+      <label class="logic-field">
         <span>{{ t("studio.assetWorkbench.behaviorSheet.hotelRoomCount") }}</span>
         <input
           type="number"
           min="1"
           max="1000"
           step="1"
-          placeholder="68"
-          :value="hotelRooms ?? ''"
+          :placeholder="String(HOTEL_ROOMS_BY_WEALTH[hotelParams.wealth ?? 2])"
+          :value="hotelParams.rooms ?? ''"
           :disabled="disabled"
-          @change="updateHotelRooms"
+          @change="editOptionalNumber('rooms', $event)"
         />
       </label>
+      </template>
 
       <p v-else-if="leafType === 'office'" class="logic-hint">{{ t("studio.assetWorkbench.behaviorSheet.sharedWorkforce") }}</p>
 

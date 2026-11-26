@@ -190,6 +190,8 @@ pub struct ResolvedBehavior {
     pub(super) hotel: Option<super::behavior_hotel::Hotel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) casino: Option<super::behavior_casino::Casino>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) controlnet: Option<super::behavior_controlnet::ControlNet>,
 }
 
 impl ResolvedBehavior {
@@ -247,7 +249,7 @@ pub fn parse_nodes(values: &[Value]) -> Result<Vec<Value>, String> {
             .ok_or_else(|| format!("behaviors node {id}: missing type"))?;
         if !matches!(
             kind,
-            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel" | "casino"
+            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel" | "casino" | "controlnet"
         ) {
             return Err(format!("behaviors node {id}: unknown type {kind:?}"));
         }
@@ -591,6 +593,8 @@ pub(super) fn compile_with_profile(
     author_tourism: bool,
 ) -> Result<ResolvedBehavior, String> {
     let casino = super::behavior_casino::select(nodes, author_tourism)?;
+    let controlnet = super::behavior_controlnet::select(nodes)?;
+    let labor = if controlnet.is_some() { None } else { labor };
     if super::behavior_units::scoped(nodes) {
         return super::behavior_units::compile(labor, nodes);
     }
@@ -598,6 +602,7 @@ pub(super) fn compile_with_profile(
     let mut resolved = ResolvedBehavior::default();
     resolved.author_tourism = author_tourism;
     resolved.casino = casino;
+    resolved.controlnet = controlnet;
     let (office, labor) = match super::behavior_office::select(nodes)? {
         Some(office) => {
             let (office, staffing) = office.with_labor(labor)?;
@@ -704,7 +709,7 @@ pub(super) fn compile_with_profile(
             }
             "residence" if templates.residence() => {}
             "residence" => compile_residence(&mut resolved, &id, &params)?,
-            "office" | "commercial" | "hotel" | "casino" => {}
+            "office" | "commercial" | "hotel" | "casino" | "controlnet" => {}
             "park" => compile_land_values(&mut resolved, &id, &params, true)?,
             "landvalue" if templates.land_value() => {}
             "landvalue" => compile_land_values(&mut resolved, &id, &params, false)?,

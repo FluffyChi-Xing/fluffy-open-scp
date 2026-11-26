@@ -7,6 +7,10 @@ use serde_json::Value;
 
 pub(super) const PROCESSOR_VERSION: &str = "openscp.property.m1/58";
 
+pub(super) fn requires_complete_tool(version: &str) -> bool {
+    matches!(version, PROCESSOR_VERSION | super::behavior_controlnet::VERSION)
+}
+
 // menu_locations.py:8 supplies the Basic Parks destination. The existing
 // workbench park route supplies the Menu2 parent and building tool class.
 const BASIC_PARKS: u32 = 0x0704_9250;
@@ -21,7 +25,7 @@ pub(super) fn complete_menu(spec: &mut MenuRegistrationSpec, nodes: &[Value]) ->
     if !nodes.iter().any(|node| {
         matches!(
             node["type"].as_str(),
-            Some("residence" | "office" | "hotel" | "commercial" | "utilities-core")
+            Some("residence" | "office" | "hotel" | "commercial" | "utilities-core" | "controlnet")
         )
     }) {
         return false;

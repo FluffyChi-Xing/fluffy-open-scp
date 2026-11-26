@@ -162,6 +162,16 @@
     if (!manager.mCachedLocaleFiles[path(code)] || (code !== 'en-us' && !manager.mCachedLocaleFiles[path('en-us')])) throw Error('PANEL_LOCALE_TABLE_UNAVAILABLE:' + locale.mTableID);
     return true;
   }
+  function localBin(unit, id) { return [simcity.kDataUnits, unit, simcity.kDataBinAmount, id]; }
+  function unitProperty(unit, id) { return [simcity.kDataUnits, unit, simcity.kDataProperties, id]; }
+  function validAmount(value) { return typeof value === 'number' && isFinite(value) && value >= 0; }
+  function panelLabels() {
+    var language = scrui.gUIManager.mLocaleManager.mLocaleCode;
+    return window.OpenSCPPanelMessages[/^zh/i.test(language) ? 'zh-CN' : 'en-US'];
+  }
+  function formatted(text, data) {
+    return text.replace(/\{(\w+)\}/g, function (_, key) { return String(data[key]); });
+  }
   function register(component, hide) {
     var original = component.towerOperations
       ? (window.OpenSCPPanelTowerBindings || {})[component.native]
@@ -177,17 +187,37 @@
     binding.allowNullResults = true;
     var commercialReasons = component.reasonList && /^commercial-/.test(component.id);
     var buildingProfit = component.id === 'profit';
-    var hotelOccupancy = component.id === 'hotel-occupancy';
+    var hotelTiered = component.id === 'hotel-occupancy-tiered';
+    var hotelOccupancy = component.id === 'hotel-occupancy' || hotelTiered;
+    var controlWorkers = component.id === 'controlnet-workers';
+    var controlProduction = component.id === 'controlnet-production';
     var casinoRevenue = component.id === 'casino-revenue';
     if (casinoRevenue) binding.updateQueries = function (unit) {
       return { revenue: [simcity.kDataUnits, unit, simcity.kDataBinAmount, 0x4E1450B0] };
     };
     if (hotelOccupancy) binding.updateQueries = function (unit) {
-      return {
+      var queries = {
         occupied: [simcity.kDataUnits, unit, simcity.kDataBinAmount, simcity.kResourceIDGuestW2],
         available: [simcity.kDataUnits, unit, simcity.kDataBinAmount, simcity.kResourceIDOpenGuestsW2],
-        capacity: [simcity.kDataUnits, unit, simcity.kDataProperties, 0x0E2660C6]
+        capacity: unitProperty(unit, 0x0E2660C6)
       };
+      if (hotelTiered) {
+        queries.occupiedW1 = localBin(unit, 0x18C38F53);
+        queries.availableW1 = localBin(unit, 0x4E35BFA6);
+        queries.occupiedW3 = localBin(unit, 0x18C38F51);
+        queries.availableW3 = localBin(unit, 0x4E35BFA4);
+        queries.wealth = unitProperty(unit, 0x0D084715);
+      }
+      return queries;
+    };
+    if (controlWorkers) binding.updateQueries = function (unit) {
+      return {
+        w1: localBin(unit, 0x97235AA7), w2: localBin(unit, 0x97235AA4), w3: localBin(unit, 0x97235AA5),
+        j1: unitProperty(unit, 0x0A7917C5), j2: unitProperty(unit, 0x0A7917C6), j3: unitProperty(unit, 0x0A7917C7)
+      };
+    };
+    if (controlProduction) binding.updateQueries = function (unit) {
+      return { generated: localBin(unit, 0xFCAB1E3F), maximum: unitProperty(unit, 0xAA5FE358) };
     };
     if (component.reasonList) binding.updateQueries = function (unit) {
       this.panelReasonQueries = original.updateQueries.call(this, unit);
@@ -234,16 +264,27 @@
     binding.update = function (info, data) {
       if (!info.panelNative) info.panelNative = copy(original);
       if (hotelOccupancy) {
-        var language = scrui.gUIManager.mLocaleManager.mLocaleCode;
-        var hotelLabels = window.OpenSCPPanelMessages[/^zh/i.test(language) ? 'zh-CN' : 'en-US'];
-        var hasRooms = [data.occupied, data.available, data.capacity].every(function (value) {
-          return typeof value === 'number' && isFinite(value) && value >= 0;
-        }) && data.capacity > 0;
+        var hotelLabels = panelLabels();
+        var suffix = data.wealth === 1 ? 'W1' : data.wealth === 3 ? 'W3' : '';
+        var rooms = { occupied: data['occupied' + suffix], available: data['available' + suffix], capacity: data.capacity };
+        var hasRooms = (!hotelTiered || data.wealth === 1 || data.wealth === 3)
+          && [rooms.occupied, rooms.available, rooms.capacity].every(validAmount) && rooms.capacity > 0;
         info.textControlTitle.SetText(hotelLabels.hotelOccupancy);
         info.textControlTitleRight.SetVisibility(true);
         info.textControlTitleRight.SetText(hasRooms
-          ? hotelLabels.hotelRoomsSummary.replace(/\{(occupied|available|capacity)\}/g, function (_, key) { return String(data[key]); })
+          ? formatted(hotelLabels.hotelRoomsSummary, rooms)
           : hotelLabels.hotelRoomsUnavailable);
+        this.minimize = false;
+        return;
+      }
+      if (controlWorkers || controlProduction) {
+        var controlLabels = panelLabels();
+        var controlValues = controlWorkers ? [data.w1, data.j1, data.w2, data.j2, data.w3, data.j3] : [data.generated, data.maximum];
+        info.textControlTitle.SetText(controlWorkers ? controlLabels.controlnetWorkers : controlLabels.controlnetProduction);
+        info.textControlTitleRight.SetVisibility(true);
+        info.textControlTitleRight.SetText(controlValues.every(validAmount)
+          ? formatted(controlWorkers ? controlLabels.controlnetWorkerSummary : controlLabels.controlnetProductionSummary, data)
+          : controlLabels.controlnetUnavailable);
         this.minimize = false;
         return;
       }
@@ -284,6 +325,9 @@
     init: function (control) { control.SetVisibility(false); },
     update: function () {}
   };
+  if (simcity.RolloverItems['OpenSCPPanel_hotel-occupancy']) {
+    register({ id: 'hotel-occupancy-tiered', native: 'kCasinoLodgingTitle' }, false);
+  }
   simcity.RolloverItems.OpenSCPPanel_empty = {
     panelSlot: true,
     layoutPath: simcity.RolloverItems.kEmptySpace10pt.layoutPath,

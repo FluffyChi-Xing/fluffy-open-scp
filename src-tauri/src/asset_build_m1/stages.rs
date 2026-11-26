@@ -22,7 +22,7 @@ use super::processor::defer_property;
 use super::scene::SceneDocument;
 use dbpf::ResourceId;
 use sc_properties::{PropertyFile, PropType, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// 责任链共享上下文:一次性构建,阶段按序消费/填充。
@@ -55,6 +55,7 @@ pub(crate) struct BuildContext {
     pub plan_bytes: Vec<u8>,
     pub lowered_units: usize,
     pub menu_instance: Option<u32>,
+    pub game_data: Option<PathBuf>,
     pub targets: Vec<ResourceId>,
     pub delta_mode: bool,
     pub written_count: usize,
@@ -100,6 +101,7 @@ impl BuildContext {
             plan_bytes: Vec::new(),
             lowered_units: 0,
             menu_instance: None,
+            game_data: None,
             targets: Vec::new(),
             delta_mode: true,
             written_count: 0,
@@ -645,7 +647,7 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         if let Some(document) = &ctx.scene_document {
             super::decal::validate_sources(document)?;
         }
-        if ctx.plan.processor_version != super::behavior_plop::PROCESSOR_VERSION {
+        if !super::behavior_plop::requires_complete_tool(ctx.plan.processor_version) {
             ctx.plan.processor_version = "openscp.property.m1/56";
         }
     }
@@ -1366,8 +1368,9 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                 ctx.identity_resources.as_ref(),
                 &ctx.root,
                 ctx.author_building40,
+                ctx.game_data.as_deref(),
             )?;
-            if ctx.plan.processor_version == super::behavior_plop::PROCESSOR_VERSION {
+            if super::behavior_plop::requires_complete_tool(ctx.plan.processor_version) {
                 super::behavior_plop::bind_tool(&mut generated)?;
             }
             if let Some(program) = &ctx.plan.behavior_program
@@ -1476,7 +1479,7 @@ fn layout_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
     let mut arrays = 0usize;
     let mut skipped_shadows = 0usize;
     let mut violations: Vec<String> = Vec::new();
-    let vanilla_shadows = vanilla_shadow_instances(&SHADOW_GROUPS);
+    let vanilla_shadows = vanilla_shadow_instances(&SHADOW_GROUPS, ctx.game_data.as_deref());
     for (id, bytes) in ctx.resources.iter() {
         if id.type_id != 0x00B1_B104 {
             continue;
@@ -1544,12 +1547,13 @@ const SHADOW_GROUPS: [u32; 7] = [
 /// vanilla-shadow-strip 与 layout-contract 共用的 shadow 组表与游戏侧
 /// instance 集（元数据枚举，不解压内容）。OPENSCP_GAME_DATA 缺省（测试
 /// 构建）= 空集（非部署构建，不跳过、不剥离）。
-fn vanilla_shadow_instances(groups: &[u32]) -> std::collections::HashSet<(u32, u32)> {
+fn vanilla_shadow_instances(groups: &[u32], game_data: Option<&Path>) -> std::collections::HashSet<(u32, u32)> {
     let mut vanilla = std::collections::HashSet::new();
-    let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") else {
+    let configured = std::env::var_os("OPENSCP_GAME_DATA").map(PathBuf::from);
+    let Some(game_data) = game_data.or(configured.as_deref()) else {
         return vanilla;
     };
-    for path in crate::game_assets::package_paths(std::path::Path::new(&game_data)) {
+    for path in crate::game_assets::package_paths(game_data) {
         let Ok(package) = dbpf::Package::open(&path) else {
             continue;
         };
@@ -1574,16 +1578,14 @@ fn vanilla_shadow_instances(groups: &[u32]) -> std::collections::HashSet<(u32, u
 /// 自行提供）的资源一律从部署包剥离；剥离后仍有残留 = 构建失败。
 /// 游戏数据路径缺省（测试构建）时记录 warning 跳过。
 fn vanilla_shadow_strip(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
-    // 游戏数据路径由应用启动时注入（lib.rs setup → OPENSCP_GAME_DATA）；
-    // 测试构建未注入 = 非部署构建，跳过影子检查。
-    if std::env::var("OPENSCP_GAME_DATA").is_err() {
+    if ctx.game_data.is_none() && std::env::var_os("OPENSCP_GAME_DATA").is_none() {
         return Ok(serde_json::json!({
             "status": "skipped",
             "reason": "OPENSCP_GAME_DATA unset (non-deployment build); shadow check skipped",
         }));
     }
     let groups = &SHADOW_GROUPS;
-    let vanilla = vanilla_shadow_instances(groups);
+    let vanilla = vanilla_shadow_instances(groups, ctx.game_data.as_deref());
     let dropped = ctx
         .resources
         .strip_vanilla_shadows(groups, &vanilla);
@@ -2408,7 +2410,18 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     if let (Some(panel), Some(program), Some(instance)) =
         (&ctx.plan.panel, &ctx.plan.behavior_program, ctx.menu_instance)
     {
-        super::panel::verify_written_hotel(&final_resources, panel, program, instance)?;
+        super::panel::verify_written_service_controls(&final_resources, panel, program, instance)?;
+    }
+    if let Some(recipe) = ctx.plan.behavior_program.as_ref().and_then(|p| p.controlnet.as_ref()) {
+        let instance = ctx.menu_instance.ok_or("CONTROLNET_RESOURCE")?;
+        let id = ResourceId { type_id: super::behavior::PROPERTY_TYPE, group: super::menu::UNIT_GROUP, instance };
+        let bytes = final_resources.get(&id).ok_or("CONTROLNET_RESOURCE")?;
+        let unit = sc_properties::PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
+        recipe.verify(&unit)?;
+        final_contract.detail["controlnet"] = serde_json::json!({
+            "unit": id.to_string(), "settings": recipe, "producer": "00B1B104:61EFC700:8936DD32",
+            "labor": "00B1B104:61EFC700:27DFB0D6", "supplySink": "00B1B104:61EFC500:26A2E32F"
+        });
     }
     if let Some(recipe) = ctx.plan.behavior_program.as_ref().and_then(|p| p.hotel.as_ref()) {
         let instance = ctx.menu_instance.ok_or("HOTEL_RESOURCE")?;
@@ -2428,7 +2441,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         final_contract.detail["independentUnits"] = serde_json::to_value(&program.units)
             .map_err(|error| error.to_string())?;
     }
-    if ctx.plan.processor_version == super::behavior_plop::PROCESSOR_VERSION
+    if super::behavior_plop::requires_complete_tool(ctx.plan.processor_version)
         && let (Some(instance), Some(menu)) = (ctx.menu_instance, ctx.plan.menu.as_ref())
     {
         super::behavior_plop::verify_written(&final_resources, instance, menu)?;

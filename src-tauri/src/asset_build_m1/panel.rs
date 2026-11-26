@@ -14,7 +14,7 @@ mod sources;
 mod spec;
 pub(crate) use processor::{apply, attach};
 pub(super) use tower_operations::verify_single_business;
-pub(super) use component_queries::verify_written_hotel;
+pub(super) use component_queries::verify_written_service_controls;
 pub(crate) use sources::GAME_JS as PANEL_GAME_JS;
 pub(crate) use spec::PanelPlan;
 pub use spec::{Component, PanelSchema, components, parse};

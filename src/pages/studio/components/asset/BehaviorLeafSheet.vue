@@ -21,6 +21,8 @@ import {
   type LogicNode,
   type TourismParams,
   validHotelRooms,
+  validHotelWealth,
+  validControlNet,
   validCasino,
 } from "./logicGraph";
 
@@ -44,6 +46,7 @@ const description = computed(() => {
   if (tourism.value) return "tourismTemplate";
   if (draft.value.type === "commercial") return "commercialTemplate";
   if (draft.value.type === "hotel") return "hotelTemplate";
+  if (draft.value.type === "controlnet") return "controlnetTemplate";
   if (draft.value.type === "casino") return "casinoTemplate";
   if (draft.value.type === "office") return "officeTemplate";
   if (draft.value.type === "park") return "parkTemplate";
@@ -62,7 +65,11 @@ const invalidTemplateValue = computed(() => {
     value => value != null && (!Number.isInteger(value) || value < 1 || value > 100_000),
   ) ? "parkInvalid" : null;
   if (current.type === "commercial") return validCommercial(current) ? null : "commercialInvalid";
-  if (current.type === "hotel") return validHotelRooms(current.rooms) ? null : "hotelRooms";
+  if (current.type === "hotel") {
+    if (!validHotelWealth(current.wealth)) return "hotelWealthInvalid";
+    return validHotelRooms(current.rooms) ? null : "hotelRooms";
+  }
+  if (current.type === "controlnet") return validControlNet(current) ? null : "controlnetInvalid";
   if (current.type === "casino") return validCasino(current) ? null : "casinoInvalid";
   if (current.type === "residence") return residenceCapacityError(current);
   if (current.type === "landvalue" && current.landValueProfile) {

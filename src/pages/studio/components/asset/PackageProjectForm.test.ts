@@ -66,6 +66,15 @@ it("lets an existing office and park add retail and housing directly from the be
     expect(updated.edges).toEqual(graph.edges);
     graph = updated;
     await wrapper.setProps({ logic: graph });
+    const leafButton = (label: string) => wrapper.findAll<HTMLButtonElement>(".ppf-add-leaves button")
+      .find(button => button.text() === label)!;
+    expect(leafButton("住宿").element.disabled).toBe(false);
+    expect(leafButton("博彩").element.disabled).toBe(true);
+    expect(leafButton("ControlNet 生产").element.disabled).toBe(true);
+    const previousUpdates = wrapper.emitted("update:logic")!.length;
+    await leafButton("博彩").trigger("click");
+    await leafButton("ControlNet 生产").trigger("click");
+    expect(wrapper.emitted("update:logic")).toHaveLength(previousUpdates);
     for (const type of ["commercial", "residence"] as const) {
       const add = wrapper.findAll(".ppf-add-leaves button").find(button => button.text() === i18n.global.t(leafSpec(type).labelKey))!;
       await add.trigger("click");
@@ -75,10 +84,34 @@ it("lets an existing office and park add retail and housing directly from the be
       expect(graph.edges).toEqual(expect.arrayContaining([expect.objectContaining({ source: leaf!.id, target: core.id })]));
       await wrapper.setProps({ logic: graph });
     }
+    expect(leafButton("住宿").element.disabled).toBe(true);
+    expect(wrapper.text()).toContain("每栋建筑最多可添加 4 个行为叶子。");
     i18n.global.locale.value = "en-US";
     await nextTick();
     expect(wrapper.text()).toContain("one switch");
+    expect(leafButton("Gambling").element.disabled).toBe(true);
+    expect(leafButton("ControlNet production").element.disabled).toBe(true);
+    expect(wrapper.text()).toContain("A building can have up to 4 behavior leaves.");
     expect(garbage.text()).toContain("Garbage generation amount");
+    const base = connectLogic(initial, core.id, "asset", "behavior").graph;
+    await wrapper.setProps({ logic: base });
+    expect(leafButton("ControlNet production").element.disabled).toBe(false);
+    await leafButton("ControlNet production").trigger("click");
+    const stationGraph = emittedGraph();
+    const station = stationGraph.nodes.find(node => leafTypeOf(stationGraph, node) === "controlnet")!;
+    expect(stationGraph.params[station.id]).toEqual({ type: "controlnet" });
+    expect(stationGraph.edges).toContainEqual(expect.objectContaining({ source: station.id, target: core.id }));
+    await wrapper.setProps({ logic: stationGraph });
+    expect(leafButton("Hotel").element.disabled).toBe(true);
+    const tourism = addLogicNode(base, leafSpec("tourism"), [0, 0]);
+    const tourismGraph = connectLogic(tourism.graph, tourism.node.id, core.id, "leaf").graph;
+    await wrapper.setProps({ logic: tourismGraph });
+    expect(leafButton("Gambling").element.disabled).toBe(false);
+    await leafButton("Gambling").trigger("click");
+    const withCasino = emittedGraph();
+    const casino = withCasino.nodes.find(node => leafTypeOf(withCasino, node) === "casino")!;
+    expect(withCasino.params[casino.id]).toEqual({ type: "casino" });
+    expect(withCasino.edges).toContainEqual(expect.objectContaining({ source: casino.id, target: core.id }));
   } finally {
     wrapper.unmount();
     i18n.global.locale.value = locale;

@@ -282,6 +282,7 @@ fn build_from_schema_inner(
     root: &Path,
     raw_schema: &str,
     progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
+    game_data: Option<&Path>,
 ) -> Result<M1BuildResult, String> {
     if let Some(request) = super::vanilla_variant::preflight(root, raw_schema)? {
         if root.join("package.json").is_file() {
@@ -291,6 +292,11 @@ fn build_from_schema_inner(
         return super::vanilla_variant::build(root, raw_schema, request, progress);
     }
     let mut plan = plan_from_schema(raw_schema)?;
+    if plan.behavior_program.as_ref().is_some_and(|program| program.controlnet.is_some()) {
+        let env_path = std::env::var_os("OPENSCP_GAME_DATA").map(std::path::PathBuf::from);
+        let game_data = game_data.or(env_path.as_deref()).ok_or("CONTROLNET_EP1: game data directory")?;
+        super::behavior_controlnet::verify_installation(game_data)?;
+    }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("project root must be a directory".into());
@@ -304,7 +310,8 @@ fn build_from_schema_inner(
     if let Some(panel) = &plan.panel {
         fingerprint = digest(format!("{fingerprint}:{}", panel.fingerprint).as_bytes());
     }
-    if let Some(entry) = plan.panel.is_none().then(|| super::build_cache::lookup_run(&root, &fingerprint)).flatten() {
+    let controlnet = plan.behavior_program.as_ref().is_some_and(|program| program.controlnet.is_some());
+    if let Some(entry) = (plan.panel.is_none() && !controlnet).then(|| super::build_cache::lookup_run(&root, &fingerprint)).flatten() {
         super::filesystem::prune_previous_builds_for_root(&root, &entry.build_hash)?;
         let reuse_detail = serde_json::json!({
             "buildHash": entry.build_hash,
@@ -343,6 +350,7 @@ fn build_from_schema_inner(
     }
     let package_relative = package_relative_name(&plan);
     let mut ctx = stages::BuildContext::new(root, plan);
+    ctx.game_data = game_data.map(Path::to_path_buf);
     ctx.progress = progress;
     stages::run_chain(&mut ctx)?;
     // 链尾补 materialize 的 finished 事件后回填,保证 Actions 页拿到全量
@@ -376,7 +384,16 @@ pub fn build_from_schema_with_progress(
     raw_schema: &str,
     progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
 ) -> Result<M1BuildResult, String> {
-    build_from_schema_inner(root, raw_schema, progress)
+    build_from_schema_inner(root, raw_schema, progress, None)
+}
+
+pub(crate) fn build_from_schema_for_installation(
+    root: &Path,
+    raw_schema: &str,
+    progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
+    game_data: Option<&Path>,
+) -> Result<M1BuildResult, String> {
+    build_from_schema_inner(root, raw_schema, progress, game_data)
 }
 
 pub(crate) fn package_relative_name(plan: &super::plan::PropertyBuildPlan) -> String {
@@ -1398,7 +1415,7 @@ pub(crate) fn protected_templates(
 
 /// 无进度包装(命令行/黄金用例入口,行为与带进度版完全一致)。
 pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult, String> {
-    build_from_schema_inner(root, raw_schema, None)
+    build_from_schema_inner(root, raw_schema, None, None)
 }
 
 #[cfg(test)]

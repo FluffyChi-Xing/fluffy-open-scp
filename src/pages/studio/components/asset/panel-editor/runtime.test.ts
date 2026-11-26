@@ -67,7 +67,8 @@ describe('panel runtime adapters', () => {
     };
     const locale = { mLocaleCode: 'en-us' };
     runInNewContext(runtime, {
-      window: { OpenSCPPanelComponents: [{ id: 'hotel-occupancy', native: 'kCasinoLodgingTitle' }],
+      window: { OpenSCPPanelComponents: ['hotel-occupancy', 'controlnet-workers', 'controlnet-production']
+        .map(id => ({ id, native: 'kCasinoLodgingTitle' })),
         OpenSCPPanelMessages: messages },
       simcity, scrui: { gUIManager: { mLocaleManager: locale } },
     });
@@ -89,6 +90,23 @@ describe('panel runtime adapters', () => {
     expect(status).toHaveBeenLastCalledWith('84/84 间已入住，0 间空房');
     binding.update!(info, { occupied: null, available: 34, capacity: 84 });
     expect(status).toHaveBeenLastCalledWith('暂无客房数据');
+
+    const tiered = simcity.RolloverItems['OpenSCPPanel_hotel-occupancy-tiered'];
+    expect(tiered.updateQueries!(42).occupiedW3).toEqual(['unit', 42, 'amount', 0x18C38F51]);
+    tiered.update!(info, { wealth: 3, occupied: 40, occupiedW3: 12, availableW3: 48, capacity: 60 });
+    expect(status).toHaveBeenLastCalledWith('12/60 间已入住，48 间空房');
+
+    const workforce = simcity.RolloverItems['OpenSCPPanel_controlnet-workers'];
+    expect(workforce.updateQueries!(42).w1).toEqual(['unit', 42, 'amount', 0x97235AA7]);
+    workforce.update!(info, { w1: 0, j1: 25, w2: 0, j2: 50, w3: 0, j3: 100 });
+    expect(status).toHaveBeenLastCalledWith('低 0/25 · 中 0/50 · 高 0/100');
+    const production = simcity.RolloverItems['OpenSCPPanel_controlnet-production'];
+    expect(production.updateQueries!(42).generated).toEqual(['unit', 42, 'amount', 0xFCAB1E3F]);
+    locale.mLocaleCode = 'en-us';
+    production.update!(info, { generated: 0, maximum: 5250 });
+    expect(status).toHaveBeenLastCalledWith('Cycle 0 · Max 5250/h');
+    production.update!(info, { generated: null, maximum: 5250 });
+    expect(status).toHaveBeenLastCalledWith('ControlNet data unavailable');
   });
 
   it('reads the selected Unit for a single business and keeps connected totals for existing containers', () => {

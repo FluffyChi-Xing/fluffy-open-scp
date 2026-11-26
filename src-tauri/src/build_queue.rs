@@ -43,6 +43,8 @@ pub enum BuildJobStatus {
 pub struct BuildJob {
     pub id: String,
     pub project_root: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    game_data: Option<PathBuf>,
     pub schema: String,
     pub status: BuildJobStatus,
     pub submitted_at_ms: u64,
@@ -82,6 +84,7 @@ impl BuildJob {
                 JOB_SEQ.fetch_add(1, Ordering::Relaxed)
             ),
             project_root: root.to_string(),
+            game_data: None,
             schema,
             status: BuildJobStatus::Queued,
             submitted_at_ms: now_ms(),
@@ -153,12 +156,14 @@ impl BuildQueueManager {
         project_root: &str,
         schema: String,
         label: Option<String>,
+        game_data: Option<PathBuf>,
     ) -> Result<String, String> {
         if self.app.get().is_none() {
             return Err("build queue worker is not running".into());
         }
         self.recover_orphaned_jobs(project_root);
-        let job = BuildJob::new(project_root.trim(), schema, label);
+        let mut job = BuildJob::new(project_root.trim(), schema, label);
+        job.game_data = game_data;
         let id = job.id.clone();
         let mut jobs = self.jobs.lock().expect("build queue jobs poisoned");
         self.persist(&job).map_err(|error| error.to_string())?;
@@ -354,7 +359,9 @@ impl BuildQueueManager {
                 } else if crate::road_asset::is_schema(&job.schema) {
                     crate::road_asset::build(root, &job.schema, Some(tx))
                 } else {
-                    crate::asset_build_m1::build_from_schema_with_progress(root, &job.schema, Some(tx))
+                    crate::asset_build_m1::build_from_schema_for_installation(
+                        root, &job.schema, Some(tx), job.game_data.as_deref(),
+                    )
                 }
             })
             .unwrap_or_else(|_| Err(INTERRUPTED_ERROR.into()))
@@ -623,11 +630,12 @@ fn stage_count(schema: &str) -> usize {
 #[tauri::command]
 pub async fn build_queue_enqueue_project(
     queue: tauri::State<'_, Arc<BuildQueueManager>>,
+    state: tauri::State<'_, crate::activity::AppState>,
     root: String,
     label: Option<String>,
 ) -> Result<Json, crate::activity::CommandError> {
     let started = now_ms();
-    let result = enqueue_project(&queue, &root, label.clone());
+    let result = enqueue_project(&queue, &state, &root, label.clone());
     if let Err(error) = &result
         && Path::new(&root).is_dir()
         && let Err(log_error) = queue.record_project_rejection(&root, label, started, error)
@@ -642,6 +650,7 @@ pub async fn build_queue_enqueue_project(
 
 fn enqueue_project(
     queue: &BuildQueueManager,
+    state: &crate::activity::AppState,
     root: &str,
     label: Option<String>,
 ) -> Result<Json, crate::activity::CommandError> {
@@ -649,21 +658,21 @@ fn enqueue_project(
     if let Some(raw) = crate::map_resources::project_schema(root_path)
         .map_err(|e| crate::activity::CommandError::new("map_resources_schema_invalid", e))?
     {
-        let job = queue.enqueue(root, raw, label)
+        let job = queue.enqueue(root, raw, label, None)
             .map_err(|e| crate::activity::CommandError::new("build_queue_enqueue_failed", e))?;
         return Ok(serde_json::json!({ "jobId": job, "schema": crate::map_resources::SCHEMA_PATH, "logic": null }));
     }
     if let Some((path, raw)) = crate::asset_build_m1::vanilla_variant_project_schema(root_path)
         .map_err(|error| crate::activity::CommandError::new("vanilla_variant_schema_invalid", error))?
     {
-        let job = queue.enqueue(root, raw, label)
+        let job = queue.enqueue(root, raw, label, None)
             .map_err(|error| crate::activity::CommandError::new("build_queue_enqueue_failed", error))?;
         return Ok(serde_json::json!({ "jobId": job, "schema": path, "logic": null }));
     }
     if let Some((path, raw)) = crate::road_asset::project_schema(root_path)
         .map_err(|error| crate::activity::CommandError::new("road_schema_invalid", error))?
     {
-        let job = queue.enqueue(root, raw, label)
+        let job = queue.enqueue(root, raw, label, None)
             .map_err(|error| crate::activity::CommandError::new("build_queue_enqueue_failed", error))?;
         return Ok(serde_json::json!({ "jobId": job, "schema": path, "logic": null }));
     }
@@ -699,8 +708,20 @@ fn enqueue_project(
     let composed = serde_json::to_string(&schema).map_err(|error| {
         crate::activity::CommandError::new("asset_schema_invalid", error.to_string())
     })?;
+    let game_data = if schema.pointer("/semantics/behaviors").and_then(Json::as_array)
+        .is_some_and(|nodes| nodes.iter().any(|node| node["type"] == "controlnet"))
+    {
+        let invalid = |error| crate::activity::CommandError::new("asset_logic_invalid", error);
+        let mut plan = crate::asset_build_m1::plan::plan_from_schema(&composed).map_err(invalid)?;
+        crate::asset_build_m1::panel::attach(root_path, &mut plan).map_err(invalid)?;
+        let path = state.store.app_settings().map_err(crate::activity::CommandError::from)?
+            .and_then(|settings| settings.game_data_path).map(PathBuf::from)
+            .ok_or_else(|| invalid("CONTROLNET_EP1: game data directory".into()))?;
+        crate::asset_build_m1::behavior_controlnet::verify_installation(&path).map_err(invalid)?;
+        Some(path)
+    } else { None };
     let job = queue
-        .enqueue(root, composed, label)
+        .enqueue(root, composed, label, game_data)
         .map_err(|e| crate::activity::CommandError::new("build_queue_enqueue_failed", e))?;
     Ok(serde_json::json!({
         "jobId": job,

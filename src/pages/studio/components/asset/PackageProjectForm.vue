@@ -17,6 +17,7 @@ import { useBehaviorConflicts } from "./useBehaviorConflicts";
 import { behaviorCombinationConflict } from "./behaviorBuildDiagnostics";
 import {
   LOGIC_NODE_SPECS,
+  MAX_BEHAVIOR_LEAVES,
   addLogicNode,
   connectLogic,
   ensureCoreNode,
@@ -732,6 +733,9 @@ const tabHint = computed(() => {
                 {{ option.label }}
               </button>
             </div>
+            <p v-if="leafNodes.length >= MAX_BEHAVIOR_LEAVES" class="ppf-note">
+              {{ t("studio.assetWorkbench.behaviorConflicts.limit", { count: MAX_BEHAVIOR_LEAVES }) }}
+            </p>
           </div>
           </template>
         </div>

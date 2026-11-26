@@ -31,6 +31,16 @@ pub(super) fn supported(item:&str,program:&ResolvedBehavior)->bool{
     role(item).and_then(|r|target(program,r)).is_some()
 }
 pub(super) fn binding(item:&str,hide:bool,program:&ResolvedBehavior)->Option<Value>{
+    if item == "hotel-occupancy" {
+        if program.hotel.as_ref().is_some_and(|hotel| hotel.needs_tiered_panel()) {
+            return Some(Value::UInt32(hash("OpenSCPPanel_hotel-occupancy-tiered")));
+        }
+        if target(program, HOTEL).and_then(|unit| unit.program.hotel.as_ref())
+            .is_some_and(|hotel| hotel.needs_tiered_panel())
+        {
+            return Some(Value::UInt32(hash("OpenSCPPanel_component_hotel-occupancy-tiered")));
+        }
+    }
     if !supported(item,program){return None;}
     let suffix=if matches!(item,"residence-feedback"|"park-feedback") {if hide {"_hide"}else{"_native"}}else{""};
     Some(Value::UInt32(hash(&format!("OpenSCPPanel_component_{item}{suffix}"))))
@@ -60,10 +70,11 @@ pub(super) fn verify(resources:&Resources,asset:&PropertyFile,config:&PanelSchem
     Ok(())
 }
 
-pub(in crate::asset_build_m1) fn verify_written_hotel(
+pub(in crate::asset_build_m1) fn verify_written_service_controls(
     resources: &Resources, panel: &super::PanelPlan, program: &ResolvedBehavior, host: u32,
 ) -> Result<(), String> {
-    if !panel.config.hover.iter().chain(&panel.config.click).any(|id| id == "hotel-occupancy") {
+    let service_control = |id: &str| matches!(id, "hotel-occupancy" | "controlnet-workers" | "controlnet-production");
+    if !panel.config.hover.iter().chain(&panel.config.click).any(|id| service_control(id)) {
         return Ok(());
     }
     let id = dbpf::ResourceId {
@@ -71,16 +82,16 @@ pub(in crate::asset_build_m1) fn verify_written_hotel(
         group: crate::asset_build_m1::menu::lot_group(),
         instance: host,
     };
-    let asset = PropertyFile::parse(resources.get(&id).ok_or("PANEL_CONTAINER_BINDING: missing hotel asset")?)
+    let asset = PropertyFile::parse(resources.get(&id).ok_or("PANEL_CONTAINER_BINDING: missing service asset")?)
         .map_err(|error| error.to_string())?;
     verify(resources, &asset, &panel.config, program, host)?;
-    let expected = binding("hotel-occupancy", false, program)
-        .unwrap_or_else(|| Value::UInt32(hash("OpenSCPPanel_hotel-occupancy")));
     for (field, items) in [(0x0CAB_B2FC, &panel.config.hover), (0x0CAF_BDC3, &panel.config.click)] {
-        if let Some(index) = items.iter().position(|item| item == "hotel-occupancy")
-            && asset.get(field).and_then(|prop| prop.array()).and_then(|rows| rows.get(index)) != Some(&expected)
-        {
-            return Err(format!("PANEL_CONTAINER_BINDING: hotel binding differs at {field:08X}"));
+        for (index, item) in items.iter().enumerate().filter(|(_, item)| service_control(item)) {
+            let expected = binding(item, false, program)
+                .unwrap_or_else(|| Value::UInt32(hash(&super::item_name(item))));
+            if asset.get(field).and_then(|prop| prop.array()).and_then(|rows| rows.get(index)) != Some(&expected) {
+                return Err(format!("PANEL_CONTAINER_BINDING: {item} differs at {field:08X}"));
+            }
         }
     }
     Ok(())
