@@ -7,6 +7,7 @@ mod behavior_conflicts;
 mod behavior_hotel;
 mod behavior_casino;
 pub(crate) mod behavior_controlnet;
+pub(crate) mod behavior_fusion;
 mod behavior_plop;
 mod behavior_copan_base;
 mod behavior_copan_services;

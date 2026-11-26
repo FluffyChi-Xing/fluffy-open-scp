@@ -27,6 +27,10 @@ window.createComboData=function(panel,state,missingNames=[],sampleRci=false,samp
   }
  }
  const props={};for(let name of ['kPropHappiness_HappinessTokensThresholdForDensityUpgrade','kPropProfit_ProfitTokensThresholdForDensityUpgrade'])props[simcity[name]]=100;
+ props[0x0AFB9881]=13334;props[0x0C09DAA0]=400000;
+ for(let [id,amount,capacity] of [[0x3EB59739,13334,13334],[0x8E8B4E10,320000,400000],[0x5737C2E4,150,1250]]){
+  resources[id]={name:'resource:'+id,amount,capacity,provenance:'fusion power preview fixture'};
+ }
  props[0x0E2660C6]=68;
  props[0x0D084715]=2;
  props[0x0A7917C5]=25;props[0x0A7917C6]=50;props[0x0A7917C7]=100;props[0xAA5FE358]=5250;

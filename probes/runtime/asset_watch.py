@@ -80,6 +80,8 @@ RESOURCES = {
     0x14984C6A: ("trees", "treeBin3"),
     0x14984C6B: ("trees", "treeBin4"),
     0x8E8B4E10: ("utilities", "power"),
+    0x3EB59739: ("utilities", "fusionGeneration"),
+    0x757068CF: ("utilities", "powerToTransmit"),
     0x9E3C3DFA: ("utilities", "water"),
     0xCD1DDC35: ("utilities", "sewage"),
     0x7CB23A4E: ("utilities", "garbage"),

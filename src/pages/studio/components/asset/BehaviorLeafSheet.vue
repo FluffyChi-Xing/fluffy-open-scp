@@ -10,6 +10,7 @@ import {
   DialogRoot,
   DialogTitle,
 } from "reka-ui";
+import { Switch } from "@/components/ui/switch";
 import FIcon from "@/components/extensions/FIcon.vue";
 import LogicNodeCard from "./LogicNodeCard.vue";
 import { validCommercial } from "./commercialBehavior";
@@ -23,6 +24,9 @@ import {
   validHotelRooms,
   validHotelWealth,
   validControlNet,
+  FUSION_FIELDS,
+  FUSION_DEFAULTS,
+  validFusionPower,
   validCasino,
 } from "./logicGraph";
 
@@ -42,8 +46,10 @@ const draft = ref<LeafParams>(cloneLogicParams(props.params));
 const tourism = computed(() =>
   draft.value.type === "tourism" ? draft.value : null,
 );
+const fusion = computed(() => draft.value.type === "fusion-power" ? draft.value : null);
 const description = computed(() => {
   if (tourism.value) return "tourismTemplate";
+  if (fusion.value) return "fusionTemplate";
   if (draft.value.type === "commercial") return "commercialTemplate";
   if (draft.value.type === "hotel") return "hotelTemplate";
   if (draft.value.type === "controlnet") return "controlnetTemplate";
@@ -69,6 +75,7 @@ const invalidTemplateValue = computed(() => {
     if (!validHotelWealth(current.wealth)) return "hotelWealthInvalid";
     return validHotelRooms(current.rooms) ? null : "hotelRooms";
   }
+  if (current.type === "fusion-power") return validFusionPower(current) ? null : "fusionInvalid";
   if (current.type === "controlnet") return validControlNet(current) ? null : "controlnetInvalid";
   if (current.type === "casino") return validCasino(current) ? null : "casinoInvalid";
   if (current.type === "residence") return residenceCapacityError(current);
@@ -97,7 +104,7 @@ function patchDraft(patch: Record<string, unknown>): void {
   draft.value = { ...draft.value, ...patch };
 }
 
-function setNumber(field: TourismField, event: Event): void {
+function setNumber(field: TourismField | (typeof FUSION_FIELDS)[number], event: Event): void {
   const input = event.target as HTMLInputElement;
   patchDraft({
     [field]:
@@ -218,6 +225,33 @@ function restoreFocus(event: Event): void {
                 </button>
               </div>
             </template>
+            <template v-else-if="fusion">
+              <div class="behavior-sheet-fields">
+                <label v-for="field in FUSION_FIELDS" :key="field" class="behavior-sheet-field">
+                  <span>{{ t(`${keys}.${field}`) }}</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10000000"
+                    step="1"
+                    :placeholder="String(FUSION_DEFAULTS[field])"
+                    :value="fusion[field] ?? ''"
+                    @input="setNumber(field, $event)"
+                  />
+                </label>
+              </div>
+              <label class="behavior-sheet-fusion-switch">
+                <span>{{ t(`${keys}.requiresControlNet`) }}</span>
+                <Switch
+                  :model-value="fusion.requiresControlNet ?? true"
+                  :aria-label="t(`${keys}.requiresControlNet`)"
+                  @update:model-value="patchDraft({ requiresControlNet: $event })"
+                />
+              </label>
+              <p class="behavior-sheet-hint">
+                {{ t(`${keys}.${(fusion.requiresControlNet ?? true) ? 'fusionNetwork' : 'fusionIndependent'}`) }}
+              </p>
+            </template>
             <LogicNodeCard
               v-else
               :node="node"
@@ -326,6 +360,14 @@ function restoreFocus(event: Event): void {
 }
 .behavior-sheet-field input {
   width: 100%;
+}
+.behavior-sheet-fusion-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-block: 18px 8px;
+  font-size: 13px;
 }
 .behavior-sheet-error {
   color: var(--destructive);

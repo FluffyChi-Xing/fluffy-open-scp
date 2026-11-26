@@ -25,6 +25,7 @@ export type BehaviorLeafType =
   | "office"
   | "commercial"
   | "hotel"
+  | "fusion-power"
   | "controlnet"
   | "casino"
   | "park"
@@ -147,6 +148,7 @@ export const LAND_TEMPLATE_VALUE = 500;
 
 export type LeafParams =
   | HotelParams
+  | FusionPowerParams
   | ControlNetParams
   | CasinoParams
   | EducationParams
@@ -276,6 +278,14 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     labelKey: "studio.assetWorkbench.logicNode.leafHotel",
     hintKey: "studio.assetWorkbench.logicNode.leafHotelHint",
     defaultParams: () => ({ type: "hotel" }),
+  },
+  {
+    kind: "behavior-leaf",
+    leafType: "fusion-power",
+    icon: "Zap",
+    labelKey: "studio.assetWorkbench.logicNode.leafFusionPower",
+    hintKey: "studio.assetWorkbench.logicNode.leafFusionPowerHint",
+    defaultParams: () => ({ type: "fusion-power", requiresControlNet: true }),
   },
   {
     kind: "behavior-leaf",
@@ -696,6 +706,9 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
           if (!validHotelRooms(leaf.rooms)) issues.push({ code: "hotelRooms", nodeId: node.id });
           if (!validHotelWealth(leaf.wealth)) issues.push({ code: "hotelWealth", nodeId: node.id });
           break;
+        case "fusion-power":
+          if (!validFusionPower(leaf)) issues.push({ code: "fusionInvalid", nodeId: node.id });
+          break;
         case "controlnet":
           if (!validControlNet(leaf)) issues.push({ code: "controlnetInvalid", nodeId: node.id });
           break;
@@ -725,6 +738,19 @@ export type HotelWealth = keyof typeof HOTEL_ROOMS_BY_WEALTH;
 export type HotelParams = { type: "hotel"; rooms?: number | null; wealth?: HotelWealth | null };
 export function validHotelWealth(wealth: unknown): boolean {
   return wealth == null || wealth === 1 || wealth === 2 || wealth === 3;
+}
+
+export const FUSION_DEFAULTS = { chargeCapacity: 400_000, generationAmount: 13_334 } as const;
+export const FUSION_FIELDS = ["chargeCapacity", "generationAmount"] as const;
+export type FusionField = (typeof FUSION_FIELDS)[number];
+export type FusionPowerParams = { type: "fusion-power"; requiresControlNet?: boolean }
+  & Partial<Record<FusionField, number | null>>;
+export function validFusionPower(params: FusionPowerParams): boolean {
+  return (params.requiresControlNet == null || typeof params.requiresControlNet === "boolean")
+    && FUSION_FIELDS.every(field => {
+      const value = params[field] ?? FUSION_DEFAULTS[field];
+      return Number.isInteger(value) && value >= 1 && value <= 10_000_000;
+    });
 }
 
 export const CONTROLNET_FIELDS = [

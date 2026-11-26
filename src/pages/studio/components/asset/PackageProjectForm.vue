@@ -682,7 +682,10 @@ const tabHint = computed(() => {
             </p>
             <template v-else>
               <p class="ppf-note">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
-              <UtilityConsumerFields kind="power" :value="coreUtilities?.power" :disabled="saving" @update:value="updateUtility('power', $event)" />
+              <p v-if="leafNodes.some(leaf => leaf.type === 'fusion-power')" class="ppf-note">
+                {{ t('studio.assetWorkbench.behaviorSheet.fusionManagesPower') }}
+              </p>
+              <UtilityConsumerFields v-else kind="power" :value="coreUtilities?.power" :disabled="saving" @update:value="updateUtility('power', $event)" />
               <UtilityConsumerFields kind="water" :value="coreUtilities?.water" :disabled="saving" @update:value="updateUtility('water', $event)" />
               <GarbageBehaviorFields :garbage="coreUtilities?.garbage" :disabled="saving" @update:garbage="updateUtility('garbage', $event)" />
             </template>

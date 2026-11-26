@@ -1,4 +1,4 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { DOMWrapper, flushPromises, mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import { expect, it, vi } from "vitest";
 import { i18n } from "@/locales";
@@ -24,6 +24,7 @@ it("lets an existing office and park add retail and housing directly from the be
   const locale = i18n.global.locale.value;
   i18n.global.locale.value = "zh-CN";
   const wrapper = mount(PackageProjectForm, {
+    attachTo: document.body,
     props: {
       project: "test-project", menu: emptyMenuBinding(), logic: graph, savedDirty: false,
       saveDocument: vi.fn().mockResolvedValue(true), documentPath: "asset.lot.json",
@@ -103,6 +104,31 @@ it("lets an existing office and park add retail and housing directly from the be
     expect(stationGraph.edges).toContainEqual(expect.objectContaining({ source: station.id, target: core.id }));
     await wrapper.setProps({ logic: stationGraph });
     expect(leafButton("Hotel").element.disabled).toBe(true);
+    await wrapper.setProps({ logic: base });
+    await leafButton("Fusion power").trigger("click");
+    const fusionGraph = emittedGraph();
+    const fusion = fusionGraph.nodes.find(node => leafTypeOf(fusionGraph, node) === "fusion-power")!;
+    await wrapper.setProps({ logic: fusionGraph });
+    expect(leafButton("Hotel").element.disabled).toBe(true);
+    await wrapper.get('button[aria-haspopup="dialog"]').trigger("click");
+    await flushPromises();
+    const sheet = new DOMWrapper(document.body).get(".behavior-sheet");
+    const toggle = sheet.get('[role="switch"]');
+    expect(toggle.attributes("aria-checked")).toBe("true");
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-checked")).toBe("false");
+    expect(sheet.text()).toContain("local readiness");
+    await sheet.get("input").setValue("0");
+    expect(sheet.get("button[type=submit]").attributes("disabled")).toBeDefined();
+    await sheet.get("input").setValue("432100");
+    i18n.global.locale.value = "zh-CN";
+    await nextTick();
+    expect(toggle.attributes("aria-label")).toBe("需要外部 ControlNet");
+    await sheet.get("form").trigger("submit");
+    expect(emittedGraph().params[fusion.id]).toEqual({
+      type: "fusion-power", requiresControlNet: false, chargeCapacity: 432100,
+    });
+    i18n.global.locale.value = "en-US";
     const tourism = addLogicNode(base, leafSpec("tourism"), [0, 0]);
     const tourismGraph = connectLogic(tourism.graph, tourism.node.id, core.id, "leaf").graph;
     await wrapper.setProps({ logic: tourismGraph });

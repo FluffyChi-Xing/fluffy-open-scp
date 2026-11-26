@@ -73,7 +73,7 @@ pub(super) fn verify(resources:&Resources,asset:&PropertyFile,config:&PanelSchem
 pub(in crate::asset_build_m1) fn verify_written_service_controls(
     resources: &Resources, panel: &super::PanelPlan, program: &ResolvedBehavior, host: u32,
 ) -> Result<(), String> {
-    let service_control = |id: &str| matches!(id, "hotel-occupancy" | "controlnet-workers" | "controlnet-production");
+    let service_control = |id: &str| matches!(id, "hotel-occupancy" | "controlnet-workers" | "controlnet-production" | "fusion-charge" | "fusion-generation" | "fusion-controlnet");
     if !panel.config.hover.iter().chain(&panel.config.click).any(|id| service_control(id)) {
         return Ok(());
     }

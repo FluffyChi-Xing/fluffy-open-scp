@@ -19,11 +19,14 @@ export function useBehaviorConflicts() {
   const toast = useToast();
   const key = "studio.assetWorkbench.behaviorConflicts";
 
-  function additionIssue(graph: LogicGraph, type?: BehaviorLeafType): "duplicate" | "limit" | "casinoComposition" | "controlnetComposition" | undefined {
+  function additionIssue(graph: LogicGraph, type?: BehaviorLeafType): "duplicate" | "limit" | "casinoComposition" | "controlnetComposition" | "fusionComposition" | undefined {
     const leaves = graph.nodes.filter(isLeaf);
     if (type && leaves.some(node => leafTypeOf(graph, node) === type)) return "duplicate";
     if (leaves.length >= MAX_BEHAVIOR_LEAVES) return "limit";
     const types = leaves.map(node => leafTypeOf(graph, node));
+    if (type && ((type === "fusion-power" && types.length > 0) || types.includes("fusion-power"))) {
+      return "fusionComposition";
+    }
     const canShareControlNet = (kind: BehaviorLeafType | null) => kind === "tree" || kind === "landvalue";
     if (type && ((type === "controlnet" && types.some(kind => !canShareControlNet(kind)))
       || (types.includes("controlnet") && !canShareControlNet(type)))) return "controlnetComposition";
@@ -33,7 +36,7 @@ export function useBehaviorConflicts() {
   function addHint(graph: LogicGraph, type: BehaviorLeafType): string {
     const issue = additionIssue(graph, type);
     if (issue === "duplicate") return t(`${key}.duplicate`, { behavior: t(leafSpec(type).labelKey) });
-    if (issue === "casinoComposition" || issue === "controlnetComposition") return t(`${key}.${issue}`);
+    if (issue === "casinoComposition" || issue === "controlnetComposition" || issue === "fusionComposition") return t(`${key}.${issue}`);
     return issue === "limit" ? t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }) : "";
   }
   function available(graph: LogicGraph, type: BehaviorLeafType): boolean {
@@ -49,7 +52,7 @@ export function useBehaviorConflicts() {
       toast.warning(t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }));
       return false;
     }
-    if (issue === "casinoComposition" || issue === "controlnetComposition") {
+    if (issue === "casinoComposition" || issue === "controlnetComposition" || issue === "fusionComposition") {
       toast.warning(t(`${key}.${issue}`));
       return false;
     }

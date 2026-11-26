@@ -67,7 +67,7 @@ describe('panel runtime adapters', () => {
     };
     const locale = { mLocaleCode: 'en-us' };
     runInNewContext(runtime, {
-      window: { OpenSCPPanelComponents: ['hotel-occupancy', 'controlnet-workers', 'controlnet-production']
+      window: { OpenSCPPanelComponents: ['hotel-occupancy', 'controlnet-workers', 'controlnet-production', 'fusion-generation', 'fusion-charge', 'fusion-controlnet']
         .map(id => ({ id, native: 'kCasinoLodgingTitle' })),
         OpenSCPPanelMessages: messages },
       simcity, scrui: { gUIManager: { mLocaleManager: locale } },
@@ -107,6 +107,22 @@ describe('panel runtime adapters', () => {
     expect(status).toHaveBeenLastCalledWith('Cycle 0 · Max 5250/h');
     production.update!(info, { generated: null, maximum: 5250 });
     expect(status).toHaveBeenLastCalledWith('ControlNet data unavailable');
+
+    const generation = simcity.RolloverItems['OpenSCPPanel_fusion-generation'];
+    expect(generation.updateQueries!(42)).toEqual({
+      amount: ['unit', 42, 'amount', 0x3EB59739], limit: ['unit', 42, 'properties', 0x0AFB9881],
+    });
+    generation.update!(info, { amount: 0, limit: 15555 });
+    expect(status).toHaveBeenLastCalledWith('Cycle 0 · Limit 15555');
+    const charge = simcity.RolloverItems['OpenSCPPanel_fusion-charge'];
+    expect(charge.updateQueries!(42).amount).toEqual(['unit', 42, 'amount', 0x8E8B4E10]);
+    const stock = simcity.RolloverItems['OpenSCPPanel_fusion-controlnet'];
+    expect(stock.updateQueries!(42).amount).toEqual(['unit', 42, 'amount', 0x5737C2E4]);
+    stock.update!(info, { amount: null });
+    expect(stock).toHaveProperty('minimize', true);
+    stock.update!(info, { amount: 0 });
+    expect(stock).toHaveProperty('minimize', false);
+    expect(status).toHaveBeenLastCalledWith('0');
   });
 
   it('reads the selected Unit for a single business and keeps connected totals for existing containers', () => {

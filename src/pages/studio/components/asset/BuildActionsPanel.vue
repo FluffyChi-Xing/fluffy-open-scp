@@ -222,7 +222,7 @@ function buildError(message: string): string {
   if (roadDiagnostic?.[1] === "base_invalid") return t("roadAsset.draft.chooseBase");
   const pair = message.match(/\bBEHAVIOR_LEAF_CONFLICT:\s*([\w-]+)\/([\w-]+)/);
   if (pair) return describeBehaviorConflict(pair[1], pair[2], t);
-  const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|WEALTH|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|CONTROLNET_(?:COMPOSITION|PARAMETER|EP1|MENU_REQUIRED|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT)|BEHAVIOR_COPAN_(?:BASE|SERVICES|RESIDENCE))\b/);
+  const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|WEALTH|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|FUSION_(?:COMPOSITION|PARAMETER|EP1|MENU_REQUIRED|RESOURCE|BUNDLE|FIELD)|CONTROLNET_(?:COMPOSITION|PARAMETER|EP1|MENU_REQUIRED|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT)|BEHAVIOR_COPAN_(?:BASE|SERVICES|RESIDENCE))\b/);
   if (behaviorDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${behaviorDiagnostic[1]}`);
   const missingTowerLayout = message.match(/\bPANEL_TOWER_LAYOUT_MISSING:([\w-]+):([\w:]+)/);
   if (missingTowerLayout) {

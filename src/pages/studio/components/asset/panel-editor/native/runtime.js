@@ -172,6 +172,11 @@
   function formatted(text, data) {
     return text.replace(/\{(\w+)\}/g, function (_, key) { return String(data[key]); });
   }
+  var fusionMetrics = {
+    'fusion-generation': [0x3EB59739, 0x0AFB9881, 'fusionGeneration'],
+    'fusion-charge': [0x8E8B4E10, 0x0C09DAA0, 'fusionCharge'],
+    'fusion-controlnet': [0x5737C2E4, 0, 'fusionControlNet']
+  };
   function register(component, hide) {
     var original = component.towerOperations
       ? (window.OpenSCPPanelTowerBindings || {})[component.native]
@@ -191,6 +196,12 @@
     var hotelOccupancy = component.id === 'hotel-occupancy' || hotelTiered;
     var controlWorkers = component.id === 'controlnet-workers';
     var controlProduction = component.id === 'controlnet-production';
+    var fusionMetric = fusionMetrics[component.id];
+    if (fusionMetric) binding.updateQueries = function (unit) {
+      var queries = { amount: localBin(unit, fusionMetric[0]) };
+      if (fusionMetric[1]) queries.limit = unitProperty(unit, fusionMetric[1]);
+      return queries;
+    };
     var casinoRevenue = component.id === 'casino-revenue';
     if (casinoRevenue) binding.updateQueries = function (unit) {
       return { revenue: [simcity.kDataUnits, unit, simcity.kDataBinAmount, 0x4E1450B0] };
@@ -274,6 +285,20 @@
         info.textControlTitleRight.SetText(hasRooms
           ? formatted(hotelLabels.hotelRoomsSummary, rooms)
           : hotelLabels.hotelRoomsUnavailable);
+        this.minimize = false;
+        return;
+      }
+      if (fusionMetric) {
+        var labels = panelLabels(), name = fusionMetric[2];
+        if (component.id === 'fusion-controlnet' && !validAmount(data.amount)) {
+          this.minimize = true;
+          return;
+        }
+        var present = validAmount(data.amount) && (!fusionMetric[1] || validAmount(data.limit));
+        info.textControlTitle.SetText(labels[name]);
+        info.textControlTitleRight.SetVisibility(true);
+        info.textControlTitleRight.SetText(present
+          ? formatted(labels[name + 'Summary'], data) : labels.fusionUnavailable);
         this.minimize = false;
         return;
       }

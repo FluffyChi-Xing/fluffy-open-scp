@@ -1731,6 +1731,9 @@ fn golden_shape(ctx: &BuildContext) -> Result<serde_json::Value, String> {
         Some(program) => super::behavior_unit_build::owned_resources(ctx.resources.all(), instance, program)?,
         None => Default::default(),
     };
+    let fusion_readiness = ctx.plan.behavior_program.as_ref().and_then(|program| program.fusion.as_ref())
+        .filter(|recipe| !recipe.requires_control_net)
+        .map(|_| super::behavior_fusion::readiness_id(instance));
     let construction_bundle = ctx.plan.behavior_program.as_ref()
         .filter(|program| program.author_tourism)
         .map(|_| super::author_tourism::construction_id(ctx.resources.all(), instance))
@@ -1760,7 +1763,7 @@ fn golden_shape(ctx: &BuildContext) -> Result<serde_json::Value, String> {
             let declared_path_entry =
                 (id.group & 0xFFFF) == 0xC400 && declared_path_entries.contains(&id.instance);
             if id.instance != instance && !declared_path_entry && construction_bundle != Some(*id)
-                && !independent_resources.contains(id) {
+                && fusion_readiness != Some(*id) && !independent_resources.contains(id) {
                 violations.push(format!(
                     "foreign property {:08X}:{:08X}:{:08X} (identity is {instance:08X})",
                     id.type_id, id.group, id.instance
@@ -2411,6 +2414,15 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         (&ctx.plan.panel, &ctx.plan.behavior_program, ctx.menu_instance)
     {
         super::panel::verify_written_service_controls(&final_resources, panel, program, instance)?;
+    }
+    if let Some(recipe) = ctx.plan.behavior_program.as_ref().and_then(|p| p.fusion.as_ref()) {
+        let instance = ctx.menu_instance.ok_or("FUSION_RESOURCE")?;
+        let id = ResourceId { type_id: super::behavior::PROPERTY_TYPE, group: super::menu::UNIT_GROUP, instance };
+        recipe.verify(&final_resources, id)?;
+        final_contract.detail["fusionPower"] = serde_json::json!({
+            "unit": id.to_string(), "settings": recipe, "producer": "00B1B104:61EFC700:6D26CFD5",
+            "transmit": "00B1B104:40E0C700:4106B159"
+        });
     }
     if let Some(recipe) = ctx.plan.behavior_program.as_ref().and_then(|p| p.controlnet.as_ref()) {
         let instance = ctx.menu_instance.ok_or("CONTROLNET_RESOURCE")?;

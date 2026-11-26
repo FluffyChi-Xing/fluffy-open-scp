@@ -579,7 +579,8 @@ fn validate_complete_building(
         matches!(&property.kind, Kind::Array(values) if values.iter()
             .any(|value| matches!(value, Value::Key(key) if key.instance == 0x4893_9D96)))
     });
-    if !(power_bundle || native_school) || power_excluded {
+    let native_fusion = super::behavior_fusion::has_power_provider(unit);
+    if !native_fusion && (!(power_bundle || native_school) || power_excluded) {
         return Err(format!(
             "Building40 unit {instance:08X}: power bundle 48939D96 is absent from A2/A3/A4/A5; refusing an unpowered building"
         ));
@@ -588,7 +589,8 @@ fn validate_complete_building(
         format!("Building40 panelFields={}", menu.values.len()),
         format!("Building40 unitFields={}", unit.values.len()),
         format!("Building40 statisticRows={}", texts.len()),
-        if power_bundle { "Building40 powerBundle=48939D96" }
+        if native_fusion { "Building40 powerBundle=61EFC700:6D26CFD5" }
+        else if power_bundle { "Building40 powerBundle=48939D96" }
         else { "Building40 powerBundle=48939D96 (native school template)" }.into(),
     ])
 }

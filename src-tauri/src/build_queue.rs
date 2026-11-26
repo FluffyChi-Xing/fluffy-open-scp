@@ -708,16 +708,26 @@ fn enqueue_project(
     let composed = serde_json::to_string(&schema).map_err(|error| {
         crate::activity::CommandError::new("asset_schema_invalid", error.to_string())
     })?;
-    let game_data = if schema.pointer("/semantics/behaviors").and_then(Json::as_array)
-        .is_some_and(|nodes| nodes.iter().any(|node| node["type"] == "controlnet"))
-    {
+    let nodes = schema.pointer("/semantics/behaviors").and_then(Json::as_array)
+        .map(Vec::as_slice).unwrap_or_default();
+    let fusion = nodes.iter().find(|node| node["type"] == "fusion-power");
+    let station = nodes.iter().any(|node| node["type"] == "controlnet");
+    let game_data = if station || fusion.is_some() {
         let invalid = |error| crate::activity::CommandError::new("asset_logic_invalid", error);
         let mut plan = crate::asset_build_m1::plan::plan_from_schema(&composed).map_err(invalid)?;
         crate::asset_build_m1::panel::attach(root_path, &mut plan).map_err(invalid)?;
         let path = state.store.app_settings().map_err(crate::activity::CommandError::from)?
             .and_then(|settings| settings.game_data_path).map(PathBuf::from)
-            .ok_or_else(|| invalid("CONTROLNET_EP1: game data directory".into()))?;
-        crate::asset_build_m1::behavior_controlnet::verify_installation(&path).map_err(invalid)?;
+            .ok_or_else(|| invalid(if fusion.is_some() {
+                "FUSION_EP1: game data directory".into()
+            } else { "CONTROLNET_EP1: game data directory".into() }))?;
+        if let Some(node) = fusion {
+            let network = node["params"]["requiresControlNet"].as_bool().unwrap_or(true);
+            crate::asset_build_m1::behavior_fusion::verify_installation(&path, network).map_err(invalid)?;
+        }
+        if station {
+            crate::asset_build_m1::behavior_controlnet::verify_installation(&path).map_err(invalid)?;
+        }
         Some(path)
     } else { None };
     let job = queue

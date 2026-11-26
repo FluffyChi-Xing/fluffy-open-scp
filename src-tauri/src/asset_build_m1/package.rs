@@ -297,6 +297,13 @@ fn build_from_schema_inner(
         let game_data = game_data.or(env_path.as_deref()).ok_or("CONTROLNET_EP1: game data directory")?;
         super::behavior_controlnet::verify_installation(game_data)?;
     }
+    let fusion = plan.behavior_program.as_ref().and_then(|program| program.fusion.as_ref())
+        .map(|recipe| recipe.requires_control_net);
+    if let Some(requires_control_net) = fusion {
+        let env_path = std::env::var_os("OPENSCP_GAME_DATA").map(std::path::PathBuf::from);
+        let game_data = game_data.or(env_path.as_deref()).ok_or("FUSION_EP1: game data directory")?;
+        super::behavior_fusion::verify_installation(game_data, requires_control_net)?;
+    }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("project root must be a directory".into());
@@ -311,7 +318,7 @@ fn build_from_schema_inner(
         fingerprint = digest(format!("{fingerprint}:{}", panel.fingerprint).as_bytes());
     }
     let controlnet = plan.behavior_program.as_ref().is_some_and(|program| program.controlnet.is_some());
-    if let Some(entry) = (plan.panel.is_none() && !controlnet).then(|| super::build_cache::lookup_run(&root, &fingerprint)).flatten() {
+    if let Some(entry) = (plan.panel.is_none() && !controlnet && fusion.is_none()).then(|| super::build_cache::lookup_run(&root, &fingerprint)).flatten() {
         super::filesystem::prune_previous_builds_for_root(&root, &entry.build_hash)?;
         let reuse_detail = serde_json::json!({
             "buildHash": entry.build_hash,

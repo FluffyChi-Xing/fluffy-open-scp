@@ -345,6 +345,12 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         changed.push(serde_json::json!({"resource": unit_id.to_string(), "hotel": recipe}));
     }
 
+    if let Some(recipe) = &program.fusion {
+        recipe.patch(unit_id, &mut ctx.resources)?;
+        recipe.verify(&ctx.resources, unit_id)?;
+        changed.push(serde_json::json!({"resource": unit_id.to_string(), "fusionPower": recipe}));
+    }
+
     if let Some(recipe) = &program.controlnet {
         let bytes = ctx.resources.get(&unit_id).ok_or("CONTROLNET_RESOURCE")?;
         ctx.resources.insert(unit_id, recipe.patch(bytes)?);

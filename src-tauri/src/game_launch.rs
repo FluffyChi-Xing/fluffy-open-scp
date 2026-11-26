@@ -149,6 +149,7 @@ pub async fn deploy_game_mod(
         }
         panel_preflight::verify(&artifact, &game_data)?;
         crate::asset_build_m1::behavior_controlnet::verify_target(&artifact, &game_data)?;
+        crate::asset_build_m1::behavior_fusion::verify_target(&artifact, &game_data)?;
         let packages = game_data
             .parent()
             .unwrap_or(&game_data)

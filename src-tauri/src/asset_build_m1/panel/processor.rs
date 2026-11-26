@@ -31,7 +31,14 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
     }
     let raw =
         fs::read_to_string(project_file(root, &dependency.schema)?).map_err(|e| e.to_string())?;
-    let config = parse(&raw)?;
+    let mut config = parse(&raw)?;
+    if plan.behavior_program.as_ref().and_then(|program| program.fusion.as_ref())
+        .is_some_and(|recipe| !recipe.requires_control_net)
+    {
+        for slots in [&mut config.hover, &mut config.click] {
+            slots.retain(|id| id != "fusion-controlnet");
+        }
+    }
     if config.hover.iter().chain(&config.click).any(|item| item == "hotel-occupancy")
         && plan.behavior_program.as_ref().is_none_or(|program| {
             program.hotel.is_none() && !super::component_queries::supported("hotel-occupancy", program)
