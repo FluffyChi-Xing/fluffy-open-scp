@@ -70,6 +70,9 @@ pub(super) fn compile_building(
     nodes: &[serde_json::Value],
     author_tourism: bool,
 ) -> Result<ResolvedBehavior, String> {
+    if super::behavior_casino::requested(nodes) {
+        return behavior_nodes::compile_with_profile(labor, nodes, author_tourism);
+    }
     if super::behavior_units::scoped(nodes) {
         return behavior_nodes::compile_with_profile(labor, nodes, author_tourism);
     }

@@ -177,6 +177,18 @@
     binding.allowNullResults = true;
     var commercialReasons = component.reasonList && /^commercial-/.test(component.id);
     var buildingProfit = component.id === 'profit';
+    var hotelOccupancy = component.id === 'hotel-occupancy';
+    var casinoRevenue = component.id === 'casino-revenue';
+    if (casinoRevenue) binding.updateQueries = function (unit) {
+      return { revenue: [simcity.kDataUnits, unit, simcity.kDataBinAmount, 0x4E1450B0] };
+    };
+    if (hotelOccupancy) binding.updateQueries = function (unit) {
+      return {
+        occupied: [simcity.kDataUnits, unit, simcity.kDataBinAmount, simcity.kResourceIDGuestW2],
+        available: [simcity.kDataUnits, unit, simcity.kDataBinAmount, simcity.kResourceIDOpenGuestsW2],
+        capacity: [simcity.kDataUnits, unit, simcity.kDataProperties, 0x0E2660C6]
+      };
+    };
     if (component.reasonList) binding.updateQueries = function (unit) {
       this.panelReasonQueries = original.updateQueries.call(this, unit);
       if (!commercialReasons) return this.panelReasonQueries;
@@ -221,11 +233,31 @@
     };
     binding.update = function (info, data) {
       if (!info.panelNative) info.panelNative = copy(original);
+      if (hotelOccupancy) {
+        var language = scrui.gUIManager.mLocaleManager.mLocaleCode;
+        var hotelLabels = window.OpenSCPPanelMessages[/^zh/i.test(language) ? 'zh-CN' : 'en-US'];
+        var hasRooms = [data.occupied, data.available, data.capacity].every(function (value) {
+          return typeof value === 'number' && isFinite(value) && value >= 0;
+        }) && data.capacity > 0;
+        info.textControlTitle.SetText(hotelLabels.hotelOccupancy);
+        info.textControlTitleRight.SetVisibility(true);
+        info.textControlTitleRight.SetText(hasRooms
+          ? hotelLabels.hotelRoomsSummary.replace(/\{(occupied|available|capacity)\}/g, function (_, key) { return String(data[key]); })
+          : hotelLabels.hotelRoomsUnavailable);
+        this.minimize = false;
+        return;
+      }
       if (buildingProfit || commercialReasons) data = readContainerCounters(data, buildingProfit);
       if (component.reasonList) data = reasonData(this, data);
       info.panelMissingQueries = original.missingQueries ? original.missingQueries(data) : missingData(data);
       if (info.panelMissingQueries.length) { this.minimize = true; return; }
-      if (component.metric) {
+      if (casinoRevenue) {
+        var casinoLanguage = scrui.gUIManager.mLocaleManager.mLocaleCode;
+        var casinoLabels = window.OpenSCPPanelMessages[/^zh/i.test(casinoLanguage) ? 'zh-CN' : 'en-US'];
+        info.textControlTitle.SetText(casinoLabels.casinoRevenue);
+        info.textControlTitleRight.SetVisibility(true);
+        info.textControlTitleRight.SetText(casinoLabels.casinoIncomeRate.replace('{amount}', String(data.revenue)));
+      } else if (component.metric) {
         var code = scrui.gUIManager.mLocaleManager.mLocaleCode;
         var labels = window.OpenSCPPanelMessages[/^zh/i.test(code) ? 'zh-CN' : 'en-US'];
         info.textControlTitle.SetText(labels.profitIndex);

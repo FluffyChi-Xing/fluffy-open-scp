@@ -310,6 +310,17 @@ watch(
               >{{ formatCodeSize(release.size) }} ·
               {{ dateFormatter.format(new Date(release.modifiedMs)) }}</small
             >
+            <template v-if="release.panelRuntime">
+              <button
+                class="release-package"
+                type="button"
+                :title="t('studio.repo.revealRelease', { name: release.panelRuntime.name })"
+                @click="revealRelease(release.panelRuntime.relativePath)"
+              >
+                {{ release.panelRuntime.name }}
+              </button>
+              <small>{{ t("studio.repo.releasePanelRuntime") }} · {{ formatCodeSize(release.panelRuntime.size) }}</small>
+            </template>
             <code>{{ release.buildHash.slice(0, 8) }}</code>
           </li>
         </ul>

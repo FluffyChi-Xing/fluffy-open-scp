@@ -9,6 +9,7 @@ window.createComboData=function(panel,state,missingNames=[],sampleRci=false,samp
  set('HappinessToken',60,100);set('HappinessTokenLast',58,100);set('ProfitToken',60,100);set('ProfitTokenLast',58,100);
  set('CasinoSpecialtyCurrentMonthIncome',2400,100000);set('CasinoSpecialtyCurrentMonthExpenses',450,100000);
  set('CasinoSpecialtyLastMonthIncome',2100,100000);set('CasinoSpecialtyLastMonthExpenses',450,100000);
+ resources[0x4E1450B0]={name:'IncomeFromCasinos',amount:168,capacity:100000,provenance:'explicit synthetic composition fixture'};
  set('ParkVisitorsW1ThisPeriod',7,100);set('ParkVisitorsW1PerPeriod',13,100);
  set('ParkGlobals_LocalsDisplay',9,100);set('ParkGlobals_KidsDisplay',3,100);set('HomelessDisplay',1,100);
  set('CanAfford',1,1);set('ShiftLength',8,8);set('Student',50,250);set('SpotsForKids',200,250);
@@ -26,6 +27,7 @@ window.createComboData=function(panel,state,missingNames=[],sampleRci=false,samp
   }
  }
  const props={};for(let name of ['kPropHappiness_HappinessTokensThresholdForDensityUpgrade','kPropProfit_ProfitTokensThresholdForDensityUpgrade'])props[simcity[name]]=100;
+ props[0x0E2660C6]=68;
  props[simcity.kPropWork_MinimumWorkersForProduction]=5;props[simcity.kPropWork_TotalJobs]=34;
  return {resources,resolve(q,fallback){
   const kind=q.includes('bins')?'bins':q.includes('binAmount')?'amount':q.includes('flags')?'flags':null,id=q.at(-1);

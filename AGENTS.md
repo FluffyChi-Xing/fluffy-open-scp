@@ -218,3 +218,10 @@ This is the cheap acceptance test that avoids save pollution entirely.
 上述实际组合；本轮未单独验证夜景、整栋开关循环、游民到访及全部任意组合。
 详见 `docs/re/park-mall-office-core-boundary-20261125.md` 和
 `tmp/park-business-core-20261125/runtime-acceptance.json`。确认时不改变游戏包集合。
+
+## 观光与博彩配方冻结（2026-11-26）
+
+用户确认外滩中国银行的观光＋博彩组合、共享 Uni Panel 和夜间显示正常。
+保留 `openscp.property.m1/tourism-casino-1` 的宿主拓扑、原生观光入口、博彩规则挂接、
+写盘回读闸门与每个安装只加载一份共享 Uni Panel 的部署约束。其它配方通过单独的
+构建路径增加。实装哈希与验收范围见 `docs/re/tourism-casino-baseline-20261126.md`。

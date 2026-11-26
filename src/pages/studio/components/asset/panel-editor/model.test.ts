@@ -26,7 +26,7 @@ describe('independent panel document',()=>{
   expect(availableComponents(['tourism','commercial'], true).map(c=>c.id)).toEqual([
    'maintenance','feedback','profit','shoppers','tourists','commercial-happiness-reasons','commercial-sadness-reasons',
   ]);
-  expect(availableComponents(['tourism','hotel'], true).map(c=>c.id)).toEqual(['maintenance','feedback','profit']);
+  expect(availableComponents(['tourism','hotel'], true).map(c=>c.id)).toEqual(['maintenance','feedback','profit','hotel-occupancy']);
   expect(availableComponents(['office','commercial'], true, true).map(c=>c.id)).toEqual([
    'maintenance','feedback','profit','shoppers','commercial-happiness-reasons','commercial-sadness-reasons',
    'workers-by-wealth','mall-average-shoppers','tower-business-profit',

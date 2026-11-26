@@ -13,7 +13,8 @@
     'residential-sadness-reasons': 0xA00FE310,
     'tourism-revenue': 0xA00FE311,
     'park-feedback': 0xA00FE312, 'park-hours': 0xA00FE312,
-    'park-visitors-title': 0xA00FE312, 'park-visitors': 0xA00FE312
+    'park-visitors-title': 0xA00FE312, 'park-visitors': 0xA00FE312,
+    'hotel-occupancy': 0xA00FE313
   };
   function copy(value) {
     var result = {}, key;

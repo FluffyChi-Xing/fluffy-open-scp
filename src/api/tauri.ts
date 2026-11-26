@@ -1264,13 +1264,14 @@ export interface ModProjectStats {
   statusCounts: ModStatusCount[];
   recentActivity: ModDailyCount[];
 }
-/** 项目详情页 Releases：构建目录及其 packages 子目录中的资源包。 */
+/** 项目详情页 Releases：资产包和同一次构建发布的可选 Panel 运行库。 */
 export interface ModProjectRelease {
   name: string;
   relativePath: string;
   buildHash: string;
   size: number;
   modifiedMs: number;
+  panelRuntime?: { name: string; relativePath: string; size: number };
 }
 /** 项目源文件扩展名占比（已跳过 .build 等产物目录）。 */
 export interface ModProjectLanguageStat {

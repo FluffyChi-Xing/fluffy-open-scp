@@ -74,6 +74,14 @@ fn shared_retail_shopper_bin(first: u32, second: u32, bin: u32) -> bool {
 
 pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
     let nodes = parse_nodes(nodes)?;
+    if super::behavior_casino::requested(&nodes)
+        && nodes.iter().any(|node| node["id"] == added_id)
+        && nodes.iter().all(|node| matches!(node["type"].as_str(), Some("tourism" | "casino")))
+    {
+        // These leaves form one native visitor recipe with shared bins.
+        super::behavior_casino::select(&nodes, super::author_tourism::selected(&nodes))?;
+        return Ok(Report::default());
+    }
     if super::behavior_units::scoped(&nodes) {
         super::behavior_units::compile(None, &nodes)?;
     }

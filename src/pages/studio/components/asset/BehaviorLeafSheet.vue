@@ -21,6 +21,7 @@ import {
   type LogicNode,
   type TourismParams,
   validHotelRooms,
+  validCasino,
 } from "./logicGraph";
 
 const props = defineProps<{
@@ -43,6 +44,7 @@ const description = computed(() => {
   if (tourism.value) return "tourismTemplate";
   if (draft.value.type === "commercial") return "commercialTemplate";
   if (draft.value.type === "hotel") return "hotelTemplate";
+  if (draft.value.type === "casino") return "casinoTemplate";
   if (draft.value.type === "office") return "officeTemplate";
   if (draft.value.type === "park") return "parkTemplate";
   if (draft.value.type === "residence") {
@@ -61,6 +63,7 @@ const invalidTemplateValue = computed(() => {
   ) ? "parkInvalid" : null;
   if (current.type === "commercial") return validCommercial(current) ? null : "commercialInvalid";
   if (current.type === "hotel") return validHotelRooms(current.rooms) ? null : "hotelRooms";
+  if (current.type === "casino") return validCasino(current) ? null : "casinoInvalid";
   if (current.type === "residence") return residenceCapacityError(current);
   if (current.type === "landvalue" && current.landValueProfile) {
     return [current.value, current.value2].some(

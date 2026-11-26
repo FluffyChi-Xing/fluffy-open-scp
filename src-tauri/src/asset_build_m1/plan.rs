@@ -257,7 +257,13 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         // /53–55: ordinary vehicle paths use Tokyo Tower's 03106C2E entry.
         // Bump whenever game-side lowering/geometry contracts change. The
         // run cache must never replay a package built by an older interpreter.
-        processor_version: if behavior_program.as_ref().is_some_and(|p| p.copan_plop_base) {
+        processor_version: if behavior_program.as_ref().is_some_and(|p| p.casino.is_some()) {
+            super::behavior_casino::VERSION
+        } else if behavior_program.as_ref().is_some_and(|p| {
+            p.hotel.is_some() || p.units.iter().any(|unit| unit.program.hotel.is_some())
+        }) {
+            super::behavior_hotel::PROCESSOR_VERSION
+        } else if behavior_program.as_ref().is_some_and(|p| p.copan_plop_base) {
             super::behavior_copan_base::VERSION
         } else if mega_tower.is_some() {
             "openscp.property.m1/ground-behavior-selection-1"
@@ -342,7 +348,7 @@ mod tests {
                 assert_eq!(spec.building_category_instance, Some(0xC710_B6E9));
                 assert_eq!(spec.unit_donor.as_deref(), Some("generic-park"));
                 assert_eq!(plan.processor_version, if kind=="hotel" {
-                    super::super::behavior_plop::PROCESSOR_VERSION
+                    super::super::behavior_hotel::PROCESSOR_VERSION
                 } else {super::super::behavior_copan_base::VERSION});
             }
         }

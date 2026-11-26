@@ -27,7 +27,7 @@ fn base() -> crate::asset_build_m1::plan::PropertyBuildPlan {
     plan_from_schema(&json!({"$schema":"openscp.asset","schema_version":2,"id":"panel","kind":"building-asset","reference":{"package":"source.package"},"scene":{"document":"asset.lot.json","authoredGround":true},"semantics":{"menu":{"title":"Panel"}},"outputs":{"package":"000_panel.package","mode":"full"}}).to_string()).unwrap()
 }
 #[test]
-fn opt_in_output_retains_runtime_and_layout_without_changing_other_resources() {
+fn opt_in_build_retains_only_the_asset_layout_and_exports_the_runtime_separately() {
     let root = root();
     let layout = ResourceId {
         type_id: 0x67771F5C,
@@ -88,10 +88,14 @@ fn opt_in_output_retains_runtime_and_layout_without_changing_other_resources() {
     let mut pool = connector::Resources::new();
     pool.insert(asset, original.clone());
     pool.insert(unit, original.clone());
+    let source = dbpf::Package::open(root.join("ui.package")).unwrap();
+    pool.insert(sources::GAME_JS, source.read(source.entry(sources::GAME_JS).unwrap()).unwrap());
+    drop(source);
     ctx.resources = BuildResources::from_source(pool);
     let detail = apply(&mut ctx).unwrap();
     assert_eq!(detail["runtime"]["version"], manifest::RUNTIME_VERSION);
     assert_eq!(ctx.resources.get(&unit), Some(&original));
+    assert!(!ctx.resources.contains_key(&sources::GAME_JS));
     assert_eq!(fs::read(root.join("ui.package")).unwrap(), bytes);
     let output = PropertyFile::parse(ctx.resources.get(&asset).unwrap()).unwrap();
     assert_eq!(
@@ -107,7 +111,15 @@ fn opt_in_output_retains_runtime_and_layout_without_changing_other_resources() {
             .count(),
         1
     );
-    let runtime = std::str::from_utf8(ctx.panel_runtime.as_ref().unwrap()).unwrap();
+    let game_dir = root.join("game/SimCityData");
+    let export_dir = root.join("export");
+    fs::create_dir_all(&game_dir).unwrap();
+    fs::create_dir_all(&export_dir).unwrap();
+    fs::write(game_dir.join("SimCity_Game.package"), &bytes).unwrap();
+    assert!(export_shared_runtime(&game_dir, &game_dir).is_err());
+    let runtime_path = export_shared_runtime(&game_dir, &export_dir).unwrap();
+    assert_eq!(export_shared_runtime(&game_dir, &export_dir).unwrap(), runtime_path);
+    let runtime = String::from_utf8(runtime_bundle::read_package(&runtime_path).unwrap()).unwrap();
     let catalog = runtime
         .split_once("window.OpenSCPPanelComponents=")
         .unwrap()
@@ -119,11 +131,6 @@ fn opt_in_output_retains_runtime_and_layout_without_changing_other_resources() {
     let reasons = catalog.iter().find(|c| c.id == "commercial-happiness-reasons").unwrap();
     assert_eq!(reasons.native, "kBlockCommercialHappiness3");
     assert!(reasons.single_unit && reasons.reason_list);
-    let mut staging =
-        crate::asset_build_m1::filesystem::Staging::create(&root, "panel-test").unwrap();
-    publish_runtime(&mut staging, ctx.panel_runtime.as_ref().unwrap()).unwrap();
-    assert!(staging.path.join(RUNTIME_OUTPUT).is_file());
-    drop(staging);
     let current = manifest::read(&root).unwrap();
     let request = json!({"schema":schema,"dependency":dependency,"manifestRevision":current["manifestRevision"],"schemaRevision":current["schemaRevision"]});
     let saved = manifest::save(&root, &request).unwrap();

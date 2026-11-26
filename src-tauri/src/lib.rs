@@ -195,6 +195,7 @@ pub fn run() {
             asset_build_m1::panel::commands::panel_project_read,
             asset_build_m1::panel::commands::panel_project_save,
             asset_build_m1::panel::commands::panel_library,
+            asset_build_m1::panel::commands::panel_export_shared_runtime,
             build_queue::build_queue_enqueue_project,
             asset_build_m1::vanilla_variant::selection::vanilla_variant_lookup,
             asset_build_m1::vanilla_variant::workbench::vanilla_variant_register,

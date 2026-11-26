@@ -51,6 +51,13 @@ function discover(binding: Binding, info: Info, host = '1,7', x = 10, ref = '11,
 }
 
 describe('native component panel queries', () => {
+  it('routes occupancy to the hotel component at the selected placement', () => {
+    const { binding, info } = setup('hotel-occupancy');
+    expect(binding.updateQueries('1,7')._panelTarget).toEqual(['units', '1,7', 'nonSimProperties', 0xA00FE313]);
+    discover(binding, info);
+    expect(binding.updateQueries('1,7').residents).toEqual(['units', '11,9', 'amount', 123]);
+  });
+
   it.each(['park-visitors', 'park-hours', 'park-visitors-title', 'park-feedback_hide', 'park-feedback_native'])(
     'routes %s to the stamped park component without mixing residential or retail data', item => {
       const { binding, info, update } = setup(item);

@@ -6,7 +6,10 @@ use sc_properties::{PropType, PropertyFile, Value};
 use serde::Serialize;
 
 pub(super) const INTAKE: u32 = 0x729A_6626;
-const BUNDLES: [u32; 18] = [
+pub(super) const PROCESSOR_VERSION: &str = "openscp.property.m1/plop-hotel-1";
+// The daily RCI profit cycle can write Abandoned after the profit check fails.
+const RCI_PROFIT_CYCLE: u32 = 0x6827_D126;
+const BUNDLES: [u32; 17] = [
     0x5C74_D18B,
     0xF90C_8A94,
     0x3748_6456,
@@ -17,7 +20,6 @@ const BUNDLES: [u32; 18] = [
     0x3620_87BD,
     0x9448_0760,
     0xE62E_CB66,
-    0x6827_D126,
     0xC3EC_8B4D,
     0x9957_A6A5,
     0x7424_049C,
@@ -26,7 +28,7 @@ const BUNDLES: [u32; 18] = [
     INTAKE,
     0x8748_B5A5,
 ];
-const EXCLUDE: [u32; 25] = [
+const EXCLUDE: [u32; 26] = [
     0xBC76_13A3,
     0x3064_5625,
     0xBE47_F5A2,
@@ -43,6 +45,7 @@ const EXCLUDE: [u32; 25] = [
     0x3A82_63E2,
     0x3A82_63E3,
     0x6827_D125,
+    RCI_PROFIT_CYCLE,
     0x6827_D127,
     0x6EA8_E701,
     0x265F_B8DD,
@@ -238,13 +241,16 @@ mod tests {
             &mut unit,
             ENABLE[0],
             PropType::Key,
-            vec![key(INTAKE), key(0x75D2_2FD1), key(0x3A82_63E2)],
+            vec![key(INTAKE), key(0x75D2_2FD1), key(0x3A82_63E2), key(RCI_PROFIT_CYCLE)],
         );
         let bytes = recipe.patch(&encode(&unit).unwrap()).unwrap();
         let unit = PropertyFile::parse(&bytes).unwrap();
         assert_eq!(unit.get(ROOMS).unwrap().scalar(), Some(&Value::Float(84.0)));
         assert!(contains(&unit, &[EXCLUDED], 0x75D2_2FD1));
         assert!(contains(&unit, &[EXCLUDED], 0x3A82_63E2));
+        assert!(contains(&unit, &[EXCLUDED], RCI_PROFIT_CYCLE));
+        assert!(!contains(&unit, &ENABLE, RCI_PROFIT_CYCLE));
+        assert!(contains(&unit, &ENABLE, INTAKE));
         assert_eq!(recipe.patch(&bytes).unwrap(), bytes);
         assert!(select(&[json!({"type":"hotel","params":{"rooms":1001}})]).is_err());
     }

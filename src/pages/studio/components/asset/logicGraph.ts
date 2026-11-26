@@ -25,6 +25,7 @@ export type BehaviorLeafType =
   | "office"
   | "commercial"
   | "hotel"
+  | "casino"
   | "park"
   | "tree"
   | "landvalue";
@@ -145,6 +146,7 @@ export const LAND_TEMPLATE_VALUE = 500;
 
 export type LeafParams =
   | { type: "hotel"; rooms?: number | null }
+  | CasinoParams
   | EducationParams
   | TourismParams
   | ResidenceParams
@@ -256,6 +258,14 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     labelKey: "studio.assetWorkbench.logicNode.leafCommercial",
     hintKey: "studio.assetWorkbench.logicNode.leafCommercialHint",
     defaultParams: () => ({ type: "commercial", commercialProfile: MIXED_COMMERCIAL }),
+  },
+  {
+    kind: "behavior-leaf",
+    leafType: "casino",
+    icon: "Coins",
+    labelKey: "studio.assetWorkbench.logicNode.leafCasino",
+    hintKey: "studio.assetWorkbench.logicNode.leafCasinoHint",
+    defaultParams: () => ({ type: "casino" }),
   },
   {
     kind: "behavior-leaf",
@@ -675,6 +685,9 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
         case "hotel":
           if (!validHotelRooms(leaf.rooms)) issues.push({ code: "hotelRooms", nodeId: node.id });
           break;
+        case "casino":
+          if (!validCasino(leaf)) issues.push({ code: "casinoInvalid", nodeId: node.id });
+          break;
         case "office":
           break;
         case "tree":
@@ -691,6 +704,22 @@ export const MAX_BEHAVIOR_LEAVES = behaviorPolicy.maxLeaves;
 
 export function validHotelRooms(rooms: unknown): boolean {
   return rooms == null || (typeof rooms === "number" && Number.isInteger(rooms) && rooms >= 1 && rooms <= 1000);
+}
+
+export const CASINO_DEFAULTS = {
+  capacityW1: 0, capacityW2: 100, capacityW3: 300,
+  incomeW1: 14, incomeW2: 28, incomeW3: 56,
+};
+export type CasinoField = keyof typeof CASINO_DEFAULTS;
+export type CasinoParams = { type: "casino" } & Partial<Record<CasinoField, number | null>>;
+export function validCasino(params: CasinoParams): boolean {
+  const fields = Object.keys(CASINO_DEFAULTS) as CasinoField[];
+  return fields.every(field => {
+    const value = params[field] ?? CASINO_DEFAULTS[field];
+    return Number.isInteger(value) && value >= 0 && value <= 10000;
+  }) && (params.capacityW1 ?? CASINO_DEFAULTS.capacityW1)
+    + (params.capacityW2 ?? CASINO_DEFAULTS.capacityW2)
+    + (params.capacityW3 ?? CASINO_DEFAULTS.capacityW3) > 0;
 }
 
 // ---- 文档迁移（旧文档没有 logic 块 → 空图） ----

@@ -466,7 +466,7 @@ async function enqueueProject() {
                 <br />{{ t("mapResources.output") }} <code class="break-all">{{ job.result.path }}</code>
               </template>
             </p>
-            <PanelRuntimeNotice v-if="job.result" :path="job.result.panelRuntime" />
+            <PanelRuntimeNotice v-if="job.result" :legacy-path="job.result.panelRuntime" :required="job.result.requiresPanelRuntime === true" />
           </div>
         </li>
       </ul>

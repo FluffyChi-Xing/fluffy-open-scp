@@ -49,7 +49,8 @@ fn bindings()->BTreeSet<u32>{
     }
     for id in ["residence-feedback_hide","residence-feedback_native","residents","land-value-residential",
         "residential-happiness-reasons","residential-sadness-reasons","tourism-revenue",
-        "park-feedback_hide","park-feedback_native","park-hours","park-visitors-title","park-visitors"] {
+        "park-feedback_hide","park-feedback_native","park-hours","park-visitors-title","park-visitors",
+        "hotel-occupancy"] {
         names.push(format!("OpenSCPPanel_component_{id}"));
     }
     names.iter().map(|n|super::hash(n)).collect()
@@ -81,6 +82,25 @@ pub fn required_source_matches(stock:&[u8],required:&[u8])->bool{
     required.len()>stock.len() && (required.starts_with(stock)
         || (LEGACY.contains(&sources::digest(required).as_str())
             && LEGACY_BASES.contains(&sources::digest(stock).as_str())))
+}
+
+pub(crate) fn verify_source(stock: &[u8], runtime: &[u8]) -> Result<Receipt, String> {
+    let receipt = inspect(runtime)?;
+    if !runtime.starts_with(stock) || receipt.base_len != stock.len()
+        || receipt.base_sha256 != sources::digest(stock)
+        || receipt.abi != super::manifest::RUNTIME_VERSION
+    {
+        return Err("PANEL_RUNTIME_SOURCE".into());
+    }
+    Ok(receipt)
+}
+
+pub(crate) fn verify_bindings(stock: &[u8], runtime: &[u8], required: &BTreeSet<u32>) -> Result<(), String> {
+    let receipt = verify_source(stock, runtime)?;
+    if !required.is_subset(&receipt.bindings) {
+        return Err("PANEL_RUNTIME_CAPABILITY".into());
+    }
+    Ok(())
 }
 pub fn compose(stock:&[u8])->Result<Vec<u8>,String>{
     let mut body=stock.to_vec();let mut records=vec![];

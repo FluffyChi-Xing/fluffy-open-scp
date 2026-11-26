@@ -27,7 +27,6 @@ use std::time::Instant;
 
 /// 责任链共享上下文:一次性构建,阶段按序消费/填充。
 pub(crate) struct BuildContext {
-    pub panel_runtime: Option<Vec<u8>>,
     /// 可选进度通道(P2 构建队列):run_chain 在每个阶段边界把事件克隆
     /// 发出,Actions 页实时行消费;None 时零开销。
     pub progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
@@ -83,7 +82,6 @@ impl BuildContext {
         let material_change_declared = plan.intermediate.semantics.material_change;
         let lot_change_declared = plan.intermediate.semantics.lot_change;
         Self {
-            panel_runtime: None,
             root,
             plan,
             resources: BuildResources::empty(),
@@ -2194,9 +2192,6 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     }).transpose()?;
     ctx.delta_mode = ctx.plan.intermediate.output.mode != crate::asset_build_m0::OutputMode::Full;
     let mut staging = Staging::create(&ctx.root, &ctx.build_hash)?;
-    if let Some(runtime) = &ctx.panel_runtime {
-        super::panel::publish_runtime(&mut staging, runtime)?;
-    }
     staging.write("plan/plan.json", &ctx.plan_bytes)?;
     staging.write(
         "plan/im.json",
@@ -2410,6 +2405,11 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         recipe.verify_lot(&final_resources, &ResourceId { group: super::menu::lot_group(), ..id })?;
         final_contract.detail["commercial"] = serde_json::to_value(recipe).map_err(|error| error.to_string())?;
     }
+    if let (Some(panel), Some(program), Some(instance)) =
+        (&ctx.plan.panel, &ctx.plan.behavior_program, ctx.menu_instance)
+    {
+        super::panel::verify_written_hotel(&final_resources, panel, program, instance)?;
+    }
     if let Some(recipe) = ctx.plan.behavior_program.as_ref().and_then(|p| p.hotel.as_ref()) {
         let instance = ctx.menu_instance.ok_or("HOTEL_RESOURCE")?;
         let id = ResourceId { type_id: super::behavior::PROPERTY_TYPE, group: super::menu::UNIT_GROUP, instance };
@@ -2440,7 +2440,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     ctx.lowered_units = final_contract.lowered_units;
     ctx.written_count = final_resources.len();
     let result = M1BuildResult {
-        panel_runtime: ctx.panel_runtime.as_ref().map(|_| staging.destination.join(super::panel::RUNTIME_OUTPUT)),
+        requires_panel_runtime: ctx.plan.panel.is_some(),
         path: staging
             .destination
             .join(&super::package::package_relative_name(&ctx.plan)),

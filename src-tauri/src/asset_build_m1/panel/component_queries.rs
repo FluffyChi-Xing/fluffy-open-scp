@@ -7,18 +7,22 @@ pub(super) const RUNTIME:&str=include_str!("../../../../src/pages/studio/compone
 const RESIDENCE:u32=0xA00F_E310;
 const TOURISM:u32=0xA00F_E311;
 const PARK:u32=0xA00F_E312;
+const HOTEL: u32 = 0xA00F_E313;
 fn role(item:&str)->Option<u32>{
     match item {
         "residence-feedback"|"residents"|"land-value-residential"|"residential-happiness-reasons"|"residential-sadness-reasons"=>Some(RESIDENCE),
         "tourism-revenue"=>Some(TOURISM),
+        "hotel-occupancy" => Some(HOTEL),
         "park-feedback"|"park-hours"|"park-visitors-title"|"park-visitors"=>Some(PARK),_=>None,
     }
 }
 fn target(program:&ResolvedBehavior,role:u32)->Option<&UnitBehavior>{
-    if !program.copan_plop_base{return None;}
+    if role == HOTEL {
+        if program.hotel.is_some() || program.office_and_retail { return None; }
+    } else if !program.copan_plop_base { return None; }
     let mut matches=program.units.iter().filter(|u|match role {
         RESIDENCE=>u.program.templates.residence(),TOURISM=>u.program.native_tourism.is_some(),
-        PARK=>u.program.copan_park_core,_=>false,
+        PARK=>u.program.copan_park_core, HOTEL => u.program.hotel.is_some(), _=>false,
     });
     let unit=matches.next()?;
     (matches.next().is_none()&&unit.shares_building_site).then_some(unit)
@@ -31,11 +35,13 @@ pub(super) fn binding(item:&str,hide:bool,program:&ResolvedBehavior)->Option<Val
     let suffix=if matches!(item,"residence-feedback"|"park-feedback") {if hide {"_hide"}else{"_native"}}else{""};
     Some(Value::UInt32(hash(&format!("OpenSCPPanel_component_{item}{suffix}"))))
 }
-fn selected(config:&PanelSchema)->std::collections::BTreeSet<u32>{
-    config.hover.iter().chain(&config.click).filter_map(|s|role(s)).collect()
+fn selected(config: &PanelSchema, program: &ResolvedBehavior) -> std::collections::BTreeSet<u32> {
+    config.hover.iter().chain(&config.click).filter_map(|s| role(s)).filter(|&role| {
+        if role == HOTEL { program.hotel.is_none() } else { program.copan_plop_base }
+    }).collect()
 }
 pub(super) fn write(asset:&mut PropertyFile,config:&PanelSchema,program:&ResolvedBehavior,host:u32)->Result<(),String>{
-    for field in selected(config){
+    for field in selected(config, program){
         let unit=target(program,field).ok_or("PANEL_CONTAINER_BINDING: ambiguous component query")?;
         if asset.get(field).is_some(){return Err("PANEL_CONTAINER_BINDING: component selector collision".into());}
         set_scalar(asset,field,PropType::UInt32,Value::UInt32(instance(host,&unit.id)));
@@ -43,12 +49,38 @@ pub(super) fn write(asset:&mut PropertyFile,config:&PanelSchema,program:&Resolve
     Ok(())
 }
 pub(super) fn verify(resources:&Resources,asset:&PropertyFile,config:&PanelSchema,program:&ResolvedBehavior,host:u32)->Result<(),String>{
-    for field in selected(config){
+    for field in selected(config, program){
         let unit=target(program,field).ok_or("PANEL_CONTAINER_BINDING: ambiguous component query")?;
         let child=instance(host,&unit.id);
         if asset.get(field).and_then(|p|p.scalar())!=Some(&Value::UInt32(child))
             || !resources.contains_key(&dbpf::ResourceId{type_id:0x00B1_B104,group:0x40E0_C000,instance:child}){
             return Err("PANEL_CONTAINER_BINDING: missing or stale component selector".into());
+        }
+    }
+    Ok(())
+}
+
+pub(in crate::asset_build_m1) fn verify_written_hotel(
+    resources: &Resources, panel: &super::PanelPlan, program: &ResolvedBehavior, host: u32,
+) -> Result<(), String> {
+    if !panel.config.hover.iter().chain(&panel.config.click).any(|id| id == "hotel-occupancy") {
+        return Ok(());
+    }
+    let id = dbpf::ResourceId {
+        type_id: 0x00B1_B104,
+        group: crate::asset_build_m1::menu::lot_group(),
+        instance: host,
+    };
+    let asset = PropertyFile::parse(resources.get(&id).ok_or("PANEL_CONTAINER_BINDING: missing hotel asset")?)
+        .map_err(|error| error.to_string())?;
+    verify(resources, &asset, &panel.config, program, host)?;
+    let expected = binding("hotel-occupancy", false, program)
+        .unwrap_or_else(|| Value::UInt32(hash("OpenSCPPanel_hotel-occupancy")));
+    for (field, items) in [(0x0CAB_B2FC, &panel.config.hover), (0x0CAF_BDC3, &panel.config.click)] {
+        if let Some(index) = items.iter().position(|item| item == "hotel-occupancy")
+            && asset.get(field).and_then(|prop| prop.array()).and_then(|rows| rows.get(index)) != Some(&expected)
+        {
+            return Err(format!("PANEL_CONTAINER_BINDING: hotel binding differs at {field:08X}"));
         }
     }
     Ok(())

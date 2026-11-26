@@ -501,7 +501,7 @@ fn result_summary(result: &crate::asset_build_m1::M1BuildResult) -> Json {
         "finishedAtMs": result.finished_at_ms,
         "durationMs": result.duration_ms,
     });
-    if let Some(path) = &result.panel_runtime { summary["panelRuntime"] = serde_json::json!(path); }
+    if result.requires_panel_runtime { summary["requiresPanelRuntime"] = serde_json::json!(true); }
     summary
 }
 

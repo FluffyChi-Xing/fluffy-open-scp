@@ -12,6 +12,9 @@ import { COMMERCIAL_FIELDS, COMMERCIAL_SHOPPER_FIELDS, MIXED_COMMERCIAL, commerc
 import { Switch } from "@/components/ui/switch";
 import {
   LOGIC_NODE_SPECS,
+  CASINO_DEFAULTS,
+  type CasinoField,
+  type CasinoParams,
   LAND_TEMPLATE_VALUE,
   leafSpec,
   type BehaviorCoreParams,
@@ -48,6 +51,12 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const casinoFields = Object.keys(CASINO_DEFAULTS) as CasinoField[];
+const casinoParams = computed(() => props.params as CasinoParams);
+function changeCasino(field: CasinoField, event: Event): void {
+  const input = event.target as HTMLInputElement;
+  emit("update-params", { [field]: input.value === "" && !input.validity.badInput ? null : input.valueAsNumber });
+}
 const hotelRooms = computed(() => (props.params as { rooms?: number | null }).rooms);
 function updateHotelRooms(event: Event): void {
   const input = event.target as HTMLInputElement;
@@ -390,6 +399,21 @@ const leafOptions = computed(() =>
         <p class="logic-field">{{ t("studio.assetWorkbench.behaviorSheet.commercialTotal", { count: retailTotal }) }}</p>
       </template>
 
+      <template v-else-if="leafType === 'casino'">
+        <label v-for="field in casinoFields" :key="field" class="logic-field">
+          <span>{{ t(`studio.assetWorkbench.behaviorSheet.casinoFields.${field}`) }}</span>
+          <input
+            type="number"
+            min="0"
+            max="10000"
+            step="1"
+            :disabled="disabled"
+            :value="casinoParams[field] ?? ''"
+            :placeholder="String(CASINO_DEFAULTS[field])"
+            @input="changeCasino(field, $event)"
+          />
+        </label>
+      </template>
       <label v-else-if="leafType === 'hotel'" class="logic-field">
         <span>{{ t("studio.assetWorkbench.behaviorSheet.hotelRoomCount") }}</span>
         <input

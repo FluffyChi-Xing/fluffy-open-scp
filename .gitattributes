@@ -1,0 +1,7 @@
+# The build embeds these inputs verbatim in the shared Uni Panel runtime.
+src/lib/panel-messages.json text eol=lf
+src/pages/studio/components/asset/panel-editor/native/runtime.js text eol=lf
+src/pages/studio/components/asset/panel-editor/native/tower-operations.js text eol=lf
+src/pages/studio/components/asset/panel-editor/native/container-tourists.js text eol=lf
+src/pages/studio/components/asset/panel-editor/native/container-shoppers.js text eol=lf
+src/pages/studio/components/asset/panel-editor/native/component-queries.js text eol=lf

@@ -13,6 +13,17 @@ use std::{
 use tauri::State;
 
 #[tauri::command]
+pub async fn panel_export_shared_runtime(game_data: String, output: String) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        super::export_shared_runtime(Path::new(&game_data), Path::new(&output))
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(|error| CommandError::new("panel_runtime_export_failed", error))
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[tauri::command]
 pub async fn panel_project_read(
     state: State<'_, AppState>,
     project: String,
@@ -400,11 +411,7 @@ mod installed_tests {
         super::super::apply(&mut ctx).unwrap();
         let unit = sc_properties::PropertyFile::parse(ctx.resources.get(&unit_id).unwrap()).unwrap();
         assert!(format!("{:?}", unit.get(0x0A0209A4)).contains(&super::super::ledger::PROVIDER.to_string()));
-        assert!(ctx.panel_runtime.is_some());
-        let mut staging =
-            crate::asset_build_m1::filesystem::Staging::create(&project, "installed").unwrap();
-        super::super::publish_runtime(&mut staging, ctx.panel_runtime.as_ref().unwrap()).unwrap();
-        drop(staging);
+        assert!(!ctx.resources.contains_key(&sources::GAME_JS));
         assert!(
             project.starts_with(
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))

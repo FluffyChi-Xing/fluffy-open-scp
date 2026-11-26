@@ -19,14 +19,18 @@ export function useBehaviorConflicts() {
   const toast = useToast();
   const key = "studio.assetWorkbench.behaviorConflicts";
 
-  function additionIssue(graph: LogicGraph, type?: BehaviorLeafType): "duplicate" | "limit" | undefined {
+  function additionIssue(graph: LogicGraph, type?: BehaviorLeafType): "duplicate" | "limit" | "casinoComposition" | undefined {
     const leaves = graph.nodes.filter(isLeaf);
     if (type && leaves.some(node => leafTypeOf(graph, node) === type)) return "duplicate";
     if (leaves.length >= MAX_BEHAVIOR_LEAVES) return "limit";
+    const types = leaves.map(node => leafTypeOf(graph, node));
+    if ((type === "casino" && (types.length !== 1 || types[0] !== "tourism"))
+        || (type && type !== "tourism" && types.includes("casino"))) return "casinoComposition";
   }
   function addHint(graph: LogicGraph, type: BehaviorLeafType): string {
     const issue = additionIssue(graph, type);
     if (issue === "duplicate") return t(`${key}.duplicate`, { behavior: t(leafSpec(type).labelKey) });
+    if (issue === "casinoComposition") return t(`${key}.casinoComposition`);
     return issue === "limit" ? t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }) : "";
   }
   function available(graph: LogicGraph, type: BehaviorLeafType): boolean {
@@ -40,6 +44,10 @@ export function useBehaviorConflicts() {
     }
     if (issue === "limit") {
       toast.warning(t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }));
+      return false;
+    }
+    if (issue === "casinoComposition") {
+      toast.warning(t(`${key}.casinoComposition`));
       return false;
     }
     if (type === "commercial") {

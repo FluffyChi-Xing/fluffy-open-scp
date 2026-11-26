@@ -188,6 +188,8 @@ pub struct ResolvedBehavior {
     pub(super) commercial: Option<super::behavior_commercial::Commercial>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) hotel: Option<super::behavior_hotel::Hotel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) casino: Option<super::behavior_casino::Casino>,
 }
 
 impl ResolvedBehavior {
@@ -245,7 +247,7 @@ pub fn parse_nodes(values: &[Value]) -> Result<Vec<Value>, String> {
             .ok_or_else(|| format!("behaviors node {id}: missing type"))?;
         if !matches!(
             kind,
-            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel"
+            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel" | "casino"
         ) {
             return Err(format!("behaviors node {id}: unknown type {kind:?}"));
         }
@@ -588,12 +590,14 @@ pub(super) fn compile_with_profile(
     nodes: &[Value],
     author_tourism: bool,
 ) -> Result<ResolvedBehavior, String> {
+    let casino = super::behavior_casino::select(nodes, author_tourism)?;
     if super::behavior_units::scoped(nodes) {
         return super::behavior_units::compile(labor, nodes);
     }
     super::behavior_policy::validate(nodes)?;
     let mut resolved = ResolvedBehavior::default();
     resolved.author_tourism = author_tourism;
+    resolved.casino = casino;
     let (office, labor) = match super::behavior_office::select(nodes)? {
         Some(office) => {
             let (office, staffing) = office.with_labor(labor)?;
@@ -700,7 +704,7 @@ pub(super) fn compile_with_profile(
             }
             "residence" if templates.residence() => {}
             "residence" => compile_residence(&mut resolved, &id, &params)?,
-            "office" | "commercial" | "hotel" => {}
+            "office" | "commercial" | "hotel" | "casino" => {}
             "park" => compile_land_values(&mut resolved, &id, &params, true)?,
             "landvalue" if templates.land_value() => {}
             "landvalue" => compile_land_values(&mut resolved, &id, &params, false)?,

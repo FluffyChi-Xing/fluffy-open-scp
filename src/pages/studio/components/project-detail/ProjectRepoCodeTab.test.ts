@@ -16,7 +16,7 @@ vi.mock("@/api", () => ({
   },
 }));
 
-it("refreshes road releases and reveals the exact package from its filename", async () => {
+it("refreshes releases and reveals the asset and its optional Panel runtime independently", async () => {
   const empty = {
     author: "",
     version: "",
@@ -28,11 +28,18 @@ it("refreshes road releases and reveals the exact package from its filename", as
     totalSourceBytes: 0,
   };
   const relativePath = ".build/abc123/road.package";
+  const assetPath = ".build/def456/packages/building.package";
+  const runtimeName = "openscp-panel-runtime-v1.package";
+  const runtimePath = `.build/def456/dependencies/${runtimeName}`;
   vi.mocked(tauriApi.studio.projects.repoSummary)
     .mockResolvedValueOnce(empty)
     .mockResolvedValueOnce({
       ...empty,
-      releases: [{ name: "road.package", relativePath, buildHash: "abc123", size: 42, modifiedMs: 0 }],
+      releases: [
+        { name: "road.package", relativePath, buildHash: "abc123", size: 42, modifiedMs: 0 },
+        { name: "building.package", relativePath: assetPath, buildHash: "def456", size: 100,
+          modifiedMs: 0, panelRuntime: { name: runtimeName, relativePath: runtimePath, size: 42 } },
+      ],
     });
   const locale = i18n.global.locale.value;
   i18n.global.locale.value = "en-US";
@@ -53,9 +60,20 @@ it("refreshes road releases and reveals the exact package from its filename", as
     expect(release.attributes("title")).toBe("Show road.package in the file manager");
     await release.trigger("click");
     expect(tauriApi.workspace.codeOpenInExplorer).toHaveBeenCalledWith("road-test", relativePath);
+    const rows = wrapper.findAll(".release-list li");
+    expect(rows[0]!.findAll("button.release-package")).toHaveLength(1);
+    const [asset, runtime] = rows[1]!.findAll("button.release-package");
+    expect(asset!.text()).toBe("building.package");
+    expect(runtime!.text()).toBe(runtimeName);
+    expect(rows[1]!.text()).toContain("Uni Panel from an older build");
+    await asset!.trigger("click");
+    expect(tauriApi.workspace.codeOpenInExplorer).toHaveBeenLastCalledWith("road-test", assetPath);
+    await runtime!.trigger("click");
+    expect(tauriApi.workspace.codeOpenInExplorer).toHaveBeenLastCalledWith("road-test", runtimePath);
     i18n.global.locale.value = "zh-CN";
     await wrapper.vm.$nextTick();
     expect(release.attributes("title")).toBe("在文件管理器中定位 road.package");
+    expect(rows[1]!.text()).toContain("旧构建附带的 Uni Panel");
   } finally {
     wrapper.unmount();
     i18n.global.locale.value = locale;

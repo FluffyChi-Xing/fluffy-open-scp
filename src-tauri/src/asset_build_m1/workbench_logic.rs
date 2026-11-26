@@ -448,7 +448,7 @@ fn compile_logic(
             .unwrap_or("");
         if !matches!(
             kind,
-            "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel"
+            "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel" | "casino"
         ) {
             errors.push(format!("logic leaf {leaf}: unknown behavior type {kind:?}"));
             continue;
@@ -472,7 +472,11 @@ fn compile_logic(
     if errors.is_empty() {
         match crate::asset_build_m1::behavior_nodes::parse_labor(labor.as_ref()).and_then(|labor| {
             crate::asset_build_m1::behavior_nodes::parse_nodes(&behaviors)
-                .and_then(|nodes| super::behavior_mega_tower::compile_building(labor, &nodes, false))
+                .and_then(|nodes| {
+                    let authored_casino = super::behavior_casino::requested(&nodes)
+                        && super::author_tourism::selected(&nodes);
+                    super::behavior_mega_tower::compile_building(labor, &nodes, authored_casino)
+                })
         }) {
             Ok(resolved) => warnings.extend(resolved.notes),
             Err(error) => errors.push(error),

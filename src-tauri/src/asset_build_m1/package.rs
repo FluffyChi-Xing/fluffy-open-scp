@@ -26,8 +26,8 @@ pub(crate) type LodModelIds = [ResourceId; 4];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct M1BuildResult {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub panel_runtime: Option<PathBuf>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub requires_panel_runtime: bool,
     pub path: PathBuf,
     pub schema_hash: String,
     pub build_hash: String,
@@ -78,6 +78,11 @@ impl std::ops::Deref for BuildResources {
 }
 
 impl BuildResources {
+    pub(crate) fn remove(&mut self, id: &ResourceId) {
+        self.all.remove(id);
+        self.touched.remove(id);
+    }
+
     /// 空集(stages.rs 的 BuildContext 初始化用;真实内容在 load_inputs 装载)。
     pub(crate) fn empty() -> Self {
         Self {
@@ -314,7 +319,7 @@ fn build_from_schema_inner(
             ));
         }
         return Ok(M1BuildResult {
-            panel_runtime: None,
+            requires_panel_runtime: false,
             path: root
                 .join(".build")
                 .join(&entry.build_hash)

@@ -517,7 +517,7 @@ pub fn build(
         emit(events::failed(stage, e, finished.saturating_sub(started)));
     })?;
     Ok(M1BuildResult {
-        panel_runtime: None,
+        requires_panel_runtime: false,
         path,
         source_hash,
         schema_hash: digest(raw.as_bytes()),

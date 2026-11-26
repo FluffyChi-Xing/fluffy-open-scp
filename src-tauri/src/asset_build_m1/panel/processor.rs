@@ -32,6 +32,13 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
     let raw =
         fs::read_to_string(project_file(root, &dependency.schema)?).map_err(|e| e.to_string())?;
     let config = parse(&raw)?;
+    if config.hover.iter().chain(&config.click).any(|item| item == "hotel-occupancy")
+        && plan.behavior_program.as_ref().is_none_or(|program| {
+            program.hotel.is_none() && !super::component_queries::supported("hotel-occupancy", program)
+        })
+    {
+        return Err("PANEL_BEHAVIOR_REQUIRED:hotel-occupancy:hotel".into());
+    }
     if let Some(program) = plan.behavior_program.as_ref()
         .filter(|program| !program.units.is_empty() && !program.office_and_retail)
     {
@@ -79,6 +86,7 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
     fingerprint_bytes.extend_from_slice(super::tower_operations::RUNTIME.as_bytes());
     fingerprint_bytes.extend_from_slice(super::component_queries::RUNTIME.as_bytes());
     fingerprint_bytes.extend_from_slice(super::runtime_bundle::COMPILER_VERSION.as_bytes());
+    fingerprint_bytes.extend_from_slice(b"shared-runtime-export-v1");
     let fingerprint = sources::digest(&fingerprint_bytes);
     plan.panel = Some(PanelPlan {
         path: dependency.schema.clone(),
@@ -143,26 +151,16 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         return Err("PANEL_LAYOUT_ID_COLLISION".into());
     }
     let source_game = sources::read(&packages, sources::GAME_JS)?;
-    let source_game = std::str::from_utf8(&source_game).map_err(|e| e.to_string())?;
-    if source_game.contains("OpenSCPPanelRuntimeVersion") {
-        return Err("PANEL_RUNTIME_SOURCE_ALREADY_PATCHED".into());
-    }
-    for c in components().into_iter().filter(|component| !component.tower_operations) {
-        if !source_game.contains(&format!("simcity.RolloverItems.{}", c.native)) {
-            return Err(format!("PANEL_NATIVE_BINDING:{}", c.native));
-        }
-    }
+    super::validate_stock_bindings(&source_game)?;
     let tower_operations = super::tower_operations::selected(&panel.config);
-    let runtime = super::runtime_bundle::compose(source_game.as_bytes())?;
-    // Shared, deterministic runtime bytes across every panel from this source/version.
-    // No installed file is edited. The UI overlay is an explicit output dependency.
     if ctx
         .resources
         .get(&sources::GAME_JS)
-        .is_some_and(|old| old.as_slice() != source_game.as_bytes() && old != &runtime)
+        .is_some_and(|old| old != &source_game)
     {
         return Err("PANEL_RUNTIME_OVERLAY_CONFLICT".into());
     }
+    ctx.resources.remove(&sources::GAME_JS);
     let asset_id = ResourceId {
         type_id: 0x00B1_B104,
         group: 0x40E1_C000,
@@ -187,7 +185,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     if let Some(program) = scoped_shoppers {
         super::container_shoppers::write(&ctx.resources, instance, &mut asset, program)?;
     }
-    if let Some(program)=ctx.plan.behavior_program.as_ref().filter(|p|p.copan_plop_base) {
+    if let Some(program) = ctx.plan.behavior_program.as_ref() {
         super::component_queries::write(&mut asset,&panel.config,program,instance)?;
     }
     let hide = panel.config.missing_feedback == MissingFeedback::Hide;
@@ -306,13 +304,12 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
             return Err(format!("PANEL_PROPERTY_READBACK:{h:08X}"));
         }
     }
-    let detail = json!({"schema":panel.path,"fingerprint":panel.fingerprint,"hover":panel.config.hover,"click":panel.config.click,"ledger":ledger,"runtime":{"version":manifest::RUNTIME_VERSION,"tgi":sources::GAME_JS.to_string(),"sha256":sources::digest(&runtime),"output":super::RUNTIME_OUTPUT,"required":true},"layout":layout.to_string()});
+    let detail = json!({"schema":panel.path,"fingerprint":panel.fingerprint,"hover":panel.config.hover,"click":panel.config.click,"ledger":ledger,"runtime":{"version":manifest::RUNTIME_VERSION,"tgi":sources::GAME_JS.to_string(),"shared":true,"required":true},"layout":layout.to_string()});
     ctx.resources.insert(asset_id, asset_bytes);
     ctx.resources.insert(
         layout,
         serde_json::to_vec(&shell).map_err(|e| e.to_string())?,
     );
-    ctx.panel_runtime = Some(runtime);
     Ok(detail)
 }
 fn has_control(v: &serde_json::Value, id: u32) -> bool {

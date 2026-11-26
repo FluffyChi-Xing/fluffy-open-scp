@@ -5,6 +5,8 @@ export const panelRuntimeErrorsZh = {
   PANEL_RUNTIME_CONTRACT: '共享面板运行时的兼容清单或内容校验失败。',
   PANEL_RUNTIME_CAPABILITY: '已安装的共享面板运行时缺少此建筑需要的兼容能力。',
   PANEL_RUNTIME_SOURCE: '共享面板运行时与本机原版脚本不匹配。',
+  PANEL_EXPORT_OUTSIDE_GAME: '请选择游戏安装目录之外的文件夹。',
+  PANEL_RUNTIME_EXPORT_CONFLICT: '导出文件名已被其他文件占用。请选择另一个文件夹。',
 };
 export const panelRuntimeErrorsEn = {
   PANEL_RUNTIME_PATCH_IDENTITY: 'The panel patch name, owner, or generation is invalid.',
@@ -13,4 +15,6 @@ export const panelRuntimeErrorsEn = {
   PANEL_RUNTIME_CONTRACT: 'The shared panel runtime manifest or content verification failed.',
   PANEL_RUNTIME_CAPABILITY: 'The installed shared panel runtime lacks a capability required by this building.',
   PANEL_RUNTIME_SOURCE: 'The shared panel runtime does not match the local stock game script.',
+  PANEL_EXPORT_OUTSIDE_GAME: 'Choose a folder outside the game installation.',
+  PANEL_RUNTIME_EXPORT_CONFLICT: 'The export filename is already in use. Choose another folder.',
 };

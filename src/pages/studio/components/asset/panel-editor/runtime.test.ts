@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
+import messages from '@/lib/panel-messages.json';
 
 const runtime = readFileSync(resolve('src/pages/studio/components/asset/panel-editor/native/runtime.js'), 'utf8');
 
@@ -54,6 +55,42 @@ function setup() {
 }
 
 describe('panel runtime adapters', () => {
+  it('reports local hotel occupancy in the active language and preserves real zero values', () => {
+    const simcity = {
+      RolloverItems: { kCasinoLodgingTitle: {}, kEmptySpace10pt: {} } as Record<string, {
+        updateQueries?: (unit: number) => Record<string, unknown[]>;
+        update?: (info: unknown, data: Record<string, unknown>) => void;
+      }>,
+      cRolloverUI: { prototype: {} },
+      kDataUnits: 'unit', kDataBinAmount: 'amount', kDataProperties: 'properties',
+      kResourceIDGuestW2: 0x18C38F50, kResourceIDOpenGuestsW2: 0x4E35BFA5,
+    };
+    const locale = { mLocaleCode: 'en-us' };
+    runInNewContext(runtime, {
+      window: { OpenSCPPanelComponents: [{ id: 'hotel-occupancy', native: 'kCasinoLodgingTitle' }],
+        OpenSCPPanelMessages: messages },
+      simcity, scrui: { gUIManager: { mLocaleManager: locale } },
+    });
+    const binding = simcity.RolloverItems['OpenSCPPanel_hotel-occupancy'];
+    expect(binding.updateQueries!(42)).toEqual({
+      occupied: ['unit', 42, 'amount', 0x18C38F50],
+      available: ['unit', 42, 'amount', 0x4E35BFA5],
+      capacity: ['unit', 42, 'properties', 0x0E2660C6],
+    });
+    const title = vi.fn(), status = vi.fn();
+    const info = { textControlTitle: { SetText: title },
+      textControlTitleRight: { SetText: status, SetVisibility: vi.fn() } };
+    binding.update!(info, { occupied: 0, available: 84, capacity: 84 });
+    expect(title).toHaveBeenLastCalledWith('Room occupancy');
+    expect(status).toHaveBeenLastCalledWith('0/84 occupied, 84 available');
+    locale.mLocaleCode = 'zh-tw';
+    binding.update!(info, { occupied: 84, available: 0, capacity: 84 });
+    expect(title).toHaveBeenLastCalledWith('客房入住');
+    expect(status).toHaveBeenLastCalledWith('84/84 间已入住，0 间空房');
+    binding.update!(info, { occupied: null, available: 34, capacity: 84 });
+    expect(status).toHaveBeenLastCalledWith('暂无客房数据');
+  });
+
   it('reads the selected Unit for a single business and keeps connected totals for existing containers', () => {
     const adapters = readFileSync(resolve('src/pages/studio/components/asset/panel-editor/native/tower-operations.js'), 'utf8');
     const window: { OpenSCPPanelTowerBindings?: Record<string, {

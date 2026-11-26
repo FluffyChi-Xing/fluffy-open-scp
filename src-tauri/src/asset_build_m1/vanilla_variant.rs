@@ -572,7 +572,7 @@ pub(super) fn build(
         ),
     );
     Ok(M1BuildResult {
-        panel_runtime: None,
+        requires_panel_runtime: false,
         path: staged.destination.join(relative),
         schema_hash,
         build_hash,

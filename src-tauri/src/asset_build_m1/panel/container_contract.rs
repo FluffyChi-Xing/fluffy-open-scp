@@ -142,6 +142,7 @@ pub(super) fn verify_queries(
                 "commercial-happiness-reasons" | "commercial-sadness-reasons" if retail && !hotel && !tourism_shares_retail => {}
                 "tourists" if has_tourism && !hotel && !tourism_shares_retail => {}
                 "shoppers" if retail && !hotel && !tourism_shares_retail => {}
+                "hotel-occupancy" if program.hotel.is_some() => {}
                 _ if super::component_queries::supported(item,program) => {}
                 _ if super::tower_operations::supported(item, program) => {}
                 _ => unsupported.push(format!("{view}:{item}")),
@@ -163,7 +164,7 @@ pub(in crate::asset_build_m1) fn verify(
     program: &ResolvedBehavior,
 ) -> Result<(), String> {
     verify_queries(&panel.config, program)?;
-    if program.copan_plop_base {super::component_queries::verify(resources,asset,&panel.config,program,host)?;}
+    super::component_queries::verify(resources, asset, &panel.config, program, host)?;
     let layout = dbpf::ResourceId {
         instance: hash(&format!("OpenSCPPanelShell_{host:08X}")),
         ..parse_tgi(&panel.config.shell)?

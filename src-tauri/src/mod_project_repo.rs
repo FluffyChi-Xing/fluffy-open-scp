@@ -1,7 +1,7 @@
 //! 项目详情页（GitHub-repo 形态）只读摘要：Releases / Languages / package.json 元数据。
 //!
 //! 与 `code_tree` 解耦：语言统计跳过 `.build` 等产物目录，避免构建产物淹没占比；
-//! Releases 读取构建目录及其 packages 子目录中的包。
+//! Releases 读取构建目录中的资产包及同次构建的 Panel 运行库。
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -29,6 +29,16 @@ pub struct ModProjectRelease {
     pub build_hash: String,
     pub size: u64,
     pub modified_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub panel_runtime: Option<ModProjectReleaseDependency>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModProjectReleaseDependency {
+    pub name: String,
+    pub relative_path: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -154,6 +164,21 @@ fn scan_languages(
     }
 }
 
+fn panel_runtime(build_dir: &Path, build_hash: &str) -> Option<ModProjectReleaseDependency> {
+    let relative = Path::new(crate::asset_build_m1::panel::RUNTIME_OUTPUT);
+    let name = relative.file_name()?.to_string_lossy().into_owned();
+    let dir = fs::symlink_metadata(build_dir.join(relative.parent()?)).ok()?;
+    if !dir.is_dir() {
+        return None;
+    }
+    let package = fs::symlink_metadata(build_dir.join(relative)).ok()?;
+    package.is_file().then(|| ModProjectReleaseDependency {
+        name,
+        relative_path: format!(".build/{build_hash}/{}", relative.display()),
+        size: package.len(),
+    })
+}
+
 fn scan_releases(root: &Path) -> Vec<ModProjectRelease> {
     let build_root = root.join(".build");
     if !fs::symlink_metadata(&build_root).is_ok_and(|meta| meta.is_dir()) {
@@ -180,6 +205,7 @@ fn scan_releases(root: &Path) -> Vec<ModProjectRelease> {
             continue;
         }
         let build_dir = hash_entry.path();
+        let panel_runtime = panel_runtime(&build_dir, &build_hash);
         let packages_dir = build_dir.join("packages");
         for (dir, prefix) in [
             (build_dir, format!(".build/{build_hash}")),
@@ -209,6 +235,7 @@ fn scan_releases(root: &Path) -> Vec<ModProjectRelease> {
                     build_hash: build_hash.clone(),
                     size: package_meta.len(),
                     modified_ms: modified_ms(&path),
+                    panel_runtime: panel_runtime.clone(),
                 });
             }
         }
@@ -320,6 +347,9 @@ mod tests {
         );
         write_file(&root.join(".build/abc123/packages/demo.package"), b"pkg!!");
         write_file(&root.join(".build/def456/road.package"), b"road");
+        let panel_output = crate::asset_build_m1::panel::RUNTIME_OUTPUT;
+        write_file(&root.join(".build/abc123").join(panel_output), b"panel-runtime");
+        write_file(&root.join(".build/orphan").join(panel_output), b"orphaned");
         write_file(&root.join(".build/queue/ignored.package"), b"queue");
         // 产物不应进入语言统计
         write_file(&root.join(".build/noise.bin"), b"xxxxxxxx");
@@ -329,11 +359,15 @@ mod tests {
         assert_eq!(summary.version, "1.2.3");
         assert_eq!(summary.mod_type, "assets");
         assert_eq!(summary.releases.len(), 2);
+        let asset = summary.releases.iter()
+            .find(|r| r.relative_path == ".build/abc123/packages/demo.package").unwrap();
+        assert_eq!(asset.size, 5);
+        let panel = asset.panel_runtime.as_ref().unwrap();
+        assert_eq!(panel.name, "openscp-panel-runtime-v1.package");
+        assert_eq!(panel.relative_path, format!(".build/abc123/{panel_output}"));
+        assert_eq!(panel.size, 13);
         assert!(summary.releases.iter().any(|r| {
-            r.relative_path == ".build/abc123/packages/demo.package" && r.size == 5
-        }));
-        assert!(summary.releases.iter().any(|r| {
-            r.relative_path == ".build/def456/road.package" && r.size == 4
+            r.relative_path == ".build/def456/road.package" && r.size == 4 && r.panel_runtime.is_none()
         }));
         assert!(summary
             .languages

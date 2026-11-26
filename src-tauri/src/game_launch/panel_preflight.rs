@@ -2,6 +2,7 @@
 use crate::{activity::CommandError, asset_build_m1::panel::{hash, PANEL_GAME_JS, RUNTIME_OUTPUT}};
 use dbpf::{Package, ResourceId};
 use sc_properties::{PropertyFile, Value};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 fn read_resource(path: &Path, id: ResourceId) -> Result<Option<Vec<u8>>, String> {
@@ -9,17 +10,32 @@ fn read_resource(path: &Path, id: ResourceId) -> Result<Option<Vec<u8>>, String>
     package.entry(id).map(|entry| package.read(entry).map_err(|error| error.to_string())).transpose()
 }
 
-fn has_authored_panel(artifact: &Path) -> Result<bool, CommandError> {
+fn authored_bindings(artifact: &Path) -> Result<BTreeSet<u32>, CommandError> {
     let error = |message: String| CommandError::new("deploy_invalid_artifact", message);
     let package = Package::open(artifact).map_err(|reason| error(reason.to_string()))?;
+    if let Some(entry) = package.entry(PANEL_GAME_JS)
+        && package.read(entry).is_ok_and(|raw| raw.windows(b"OpenSCPPanelRuntimeVersion".len()).any(|w| w == b"OpenSCPPanelRuntimeVersion"))
+    {
+        return Err(CommandError::new("deploy_panel_runtime_separate", artifact.display().to_string()));
+    }
+    let mut bindings = BTreeSet::new();
     for entry in package.entries().iter().filter(|entry| entry.id.type_id == 0x00B1_B104 && entry.id.group == 0x40E1_C000) {
         let raw = package.read(entry).map_err(|reason| error(reason.to_string()))?;
         let Ok(asset) = PropertyFile::parse(&raw) else { continue; };
-        if asset.get(0x0D7E_ADAC).and_then(|property| property.scalar()) == Some(&Value::UInt32(hash("OpenSCPPanel_headerNone"))) {
-            return Ok(true);
+        let header = hash("OpenSCPPanel_headerNone");
+        if asset.get(0x0D7E_ADAC).and_then(|property| property.scalar()) == Some(&Value::UInt32(header)) {
+            bindings.insert(header);
+            for field in [0x0CAB_B2FC, 0x0CAF_BDC3] {
+                for binding in asset.get(field).and_then(|p| p.array()).unwrap_or_default() {
+                    let Value::UInt32(binding) = binding else {
+                        return Err(error(format!("Invalid authored panel binding {field:08X}")));
+                    };
+                    bindings.insert(*binding);
+                }
+            }
         }
     }
-    Ok(false)
+    Ok(bindings)
 }
 
 fn dependency_path(artifact: &Path) -> Option<PathBuf> {
@@ -30,33 +46,47 @@ fn dependency_path(artifact: &Path) -> Option<PathBuf> {
 }
 
 pub(super) fn verify(artifact: &Path, game_data: &Path) -> Result<(), CommandError> {
-    if !has_authored_panel(artifact)? { return Ok(()); }
+    let bindings = authored_bindings(artifact)?;
+    if bindings.is_empty() { return Ok(()); }
     let bad_runtime = |path: &Path| CommandError::new("deploy_panel_runtime_source", path.display().to_string());
-    let required_path = dependency_path(artifact)
-        .ok_or_else(|| CommandError::new("deploy_panel_runtime_missing", artifact.display().to_string()))?;
-    let required = read_resource(&required_path, PANEL_GAME_JS).ok().flatten()
-        .ok_or_else(|| bad_runtime(&required_path))?;
     let base_path = game_data.join("SimCity_Game.package");
     let stock = read_resource(&base_path, PANEL_GAME_JS).ok().flatten()
         .ok_or_else(|| bad_runtime(&base_path))?;
-    if !crate::asset_build_m1::panel::runtime_bundle::required_source_matches(&stock,&required) {
-        return Err(bad_runtime(&base_path));
-    }
-    let mut installed = false;
-    let mut conflicts = Vec::new();
+    let legacy = if let Some(path) = dependency_path(artifact) {
+        let required = read_resource(&path, PANEL_GAME_JS).ok().flatten()
+            .ok_or_else(|| bad_runtime(&path))?;
+        if !crate::asset_build_m1::panel::runtime_bundle::required_source_matches(&stock, &required) {
+            return Err(bad_runtime(&base_path));
+        }
+        Some(required)
+    } else {
+        None
+    };
+    let mut providers = Vec::new();
     for path in crate::game_assets::package_paths(game_data) {
-        if path == base_path { continue; }
-        if let Ok(Some(script)) = read_resource(&path, PANEL_GAME_JS) {
-            if crate::asset_build_m1::panel::runtime_bundle::compatible(&stock,&required,&script).is_ok() { installed = true; }
-            else { conflicts.push(path.display().to_string()); }
+        if path != base_path && let Ok(Some(script)) = read_resource(&path, PANEL_GAME_JS) {
+            providers.push((path, script));
         }
     }
-    if !conflicts.is_empty() {
-        conflicts.sort();
-        return Err(CommandError::new("deploy_panel_runtime_conflict", conflicts.join("\n")));
+    if providers.len() > 1 {
+        providers.sort_by(|a, b| a.0.cmp(&b.0));
+        let paths = providers.iter().map(|(path, _)| path.display().to_string()).collect::<Vec<_>>();
+        return Err(CommandError::new("deploy_panel_runtime_conflict", paths.join("\n")));
     }
-    if !installed {
-        return Err(CommandError::new("deploy_panel_runtime_missing", required_path.display().to_string()));
+    let (path, script) = providers.pop().ok_or_else(|| {
+        CommandError::new("deploy_panel_runtime_missing", game_data.display().to_string())
+    })?;
+    use crate::asset_build_m1::panel::runtime_bundle;
+    if let Some(required) = legacy {
+        runtime_bundle::compatible(&stock, &required, &script)
+            .map_err(|_| CommandError::new("deploy_panel_runtime_conflict", path.display().to_string()))?;
+    } else {
+        runtime_bundle::verify_bindings(&stock, &script, &bindings).map_err(|e| {
+            CommandError::new(
+                if e == "PANEL_RUNTIME_CAPABILITY" { "deploy_panel_runtime_capability" } else { "deploy_panel_runtime_source" },
+                path.display().to_string(),
+            )
+        })?;
     }
     Ok(())
 }
@@ -107,10 +137,19 @@ mod tests {
         write(&companion,PANEL_GAME_JS,&composed);
         write(&installed,PANEL_GAME_JS,&compatible);
         write(&conflict,PANEL_GAME_JS,&composed);
-        verify(&artifact,&game).unwrap();
+        assert_eq!(verify(&artifact,&game).unwrap_err().code,"deploy_panel_runtime_conflict");
+        write(&conflict, PANEL_GAME_JS, &compatible);
+        assert_eq!(verify(&artifact, &game).unwrap_err().code, "deploy_panel_runtime_conflict");
         write(&conflict,PANEL_GAME_JS,b"stock opaque unrelated overlay");
         assert_eq!(verify(&artifact,&game).unwrap_err().code,"deploy_panel_runtime_conflict");
-        for file in [artifact, stock, companion, installed, conflict] { fs::remove_file(file).unwrap(); }
+        fs::remove_file(&conflict).unwrap();
+        fs::remove_file(&companion).unwrap();
+        verify(&artifact, &game).unwrap();
+        crate::asset_build_m1::property_edit::set_array(&mut asset, 0x0CAB_B2FC, PropType::UInt32, vec![Value::UInt32(42)]);
+        write(&artifact, lot, &asset.encode_canonical().unwrap());
+        assert_eq!(verify(&artifact, &game).unwrap_err().code, "deploy_panel_runtime_capability");
+        assert_eq!(verify(&installed, &game).unwrap_err().code, "deploy_panel_runtime_separate");
+        for file in [artifact, stock, installed] { fs::remove_file(file).unwrap(); }
         for dir in [output, game, root] { fs::remove_dir(dir).unwrap(); }
     }
 }

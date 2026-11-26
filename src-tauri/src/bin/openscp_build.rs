@@ -14,6 +14,19 @@ use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "--panel-runtime-export") {
+        let [_, game_data, output] = args.as_slice() else {
+            eprintln!("usage: openscp-build --panel-runtime-export <SimCityData> <output-directory>");
+            std::process::exit(2);
+        };
+        match fluffy_open_scp_lib::asset_build_m1::panel::export_shared_runtime(
+            std::path::Path::new(game_data), std::path::Path::new(output),
+        ) {
+            Ok(path) => println!("{}", path.display()),
+            Err(error) => { eprintln!("{error}"); std::process::exit(1); }
+        }
+        return;
+    }
     if args.first().is_some_and(|arg|arg=="--panel-runtime-check") {
         match panel_runtime_check(&args[1..]) {
             Ok(report)=>println!("{}",serde_json::to_string_pretty(&report).unwrap()),

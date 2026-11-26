@@ -5,6 +5,7 @@ pub mod author_materials;
 pub mod behavior;
 mod behavior_conflicts;
 mod behavior_hotel;
+mod behavior_casino;
 mod behavior_plop;
 mod behavior_copan_base;
 mod behavior_copan_services;
