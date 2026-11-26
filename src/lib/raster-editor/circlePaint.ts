@@ -13,7 +13,7 @@ export function drawCircle(
 ): Rect | null {
   const { x: centerX, y: centerY } = center;
   const outerRadius2 = radius ** 2;
-  const innerRadius2 = filled ? 0 : Math.max(0, radius - Math.max(1, strokeWidth)) ** 2;
+  const innerRadius2 = filled ? 0 : Math.max(1, radius - Math.max(1, strokeWidth)) ** 2;
   let minX = doc.width;
   let minY = doc.height;
   let maxX = -1;

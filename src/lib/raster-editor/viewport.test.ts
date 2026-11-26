@@ -26,6 +26,12 @@ describe("viewportToPixel", () => {
     ).toEqual({ x: 2, y: 3 });
   });
 
+  it("uses the visible depth scale when editing a rectangular lot", () => {
+    expect(viewportToPixel(
+      { x: 60, y: 220 }, { left: 10, top: 20 }, { x: 0, y: 0 }, 1, 2.5,
+    )).toEqual({ x: 50, y: 80 });
+  });
+
   it("maps the canvas upper-left to the rendered Lot's upper-left", () => {
     const width = 4, height = 3;
     const camera = new PerspectiveCamera(45, 1, 0.1, 100);

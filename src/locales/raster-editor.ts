@@ -63,7 +63,7 @@ export const rasterZh = {
   circle: "圆形",
   circleRadius: "半径（像素）",
   circleHint: "单击按设定半径绘制。按住拖动，从圆心拉出半径。",
-  filledCircle: "填充圆形",
+  filledCircle: "实心圆形",
   polyline: "多段线",
   polygon: "多边形填充",
   selectLayer: "点选图层",
@@ -156,6 +156,7 @@ export const rasterZh = {
     depth: "深",
     applySize: "应用",
     sizeDerived: "画布 {w} × {h} 像素，每像素 {mpp} 米",
+    modelProjection: "建筑俯视投影",
     resizeConfirm: "调整尺寸会把当前布局按比例缩放到新尺寸，并清空撤销记录。继续吗？",
     createHint: "在右侧输入地块尺寸（米）并点“应用”即可新建 Lot 地面，也可以从下方读取游戏里已有的 Lot。",
     workbench: {
@@ -543,6 +544,7 @@ export const rasterEn = {
     depth: "Depth",
     applySize: "Apply",
     sizeDerived: "Canvas {w} × {h} px, {mpp} m per pixel",
+    modelProjection: "Building projection",
     resizeConfirm: "Resizing scales the current layout to the new size and clears undo history. Continue?",
     createHint: "Enter a lot size in meters on the right and click “Apply” to start a new Lot ground, or load an existing in-game Lot below.",
     workbench: {

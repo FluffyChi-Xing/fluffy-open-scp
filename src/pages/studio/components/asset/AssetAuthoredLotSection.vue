@@ -14,6 +14,8 @@ import {
   type AuthoredLot,
 } from "@/lib/lot-ground/authored";
 import type { RasterSchema } from "@/lib/raster-editor/schema";
+import { prepareLotDrawing } from "@/lib/lot-ground/lotDrawing";
+import type { LotModelProjection } from "@/components/raster/lotModelProjection";
 import { loadAuthoredLot, saveAuthoredLot } from "./authoredLotStore";
 
 /**
@@ -26,6 +28,8 @@ const props = defineProps<{
   editEnabled: boolean;
   editMode: "native" | "draft";
   bound: boolean;
+  lotSize?: [number, number] | null;
+  projection?: LotModelProjection | null;
 }>();
 const emit = defineEmits<{
   apply: [lot: AuthoredLot];
@@ -49,14 +53,17 @@ onMounted(async () => {
 const preview = computed(() => {
   const lot = authored.value;
   if (!lot) return null;
+  const size = (props.bound ? props.lotSize : null) ?? lot.meta.size;
+  const current = size === lot.meta.size ? lot : { ...lot, meta: { ...lot.meta, size } };
   return {
-    lot,
+    lot: current,
     png: maskPngDataUrl(lot),
     albedo: authoredAlbedoDataUrl(lot),
-    material: schemaFromAuthored(lot).lot,
+    material: schemaFromAuthored(current).lot,
   };
 });
 const canApply = computed(() => props.editEnabled && props.editMode === "draft");
+const cardSize = computed(() => preview.value?.lot.meta.size);
 
 function openSheet(schema: RasterSchema | undefined) {
   initialSchema.value = schema;
@@ -72,13 +79,17 @@ function startDrawing() {
 }
 
 function editAuthored() {
-  if (authored.value) openSheet(schemaFromAuthored(authored.value));
+  const lot = authored.value;
+  if (!lot) return;
+  openSheet(prepareLotDrawing(schemaFromAuthored(lot), props.lotSize ?? lot.meta.size));
 }
 
 /** 关闭或点"完成绘制"：有改动就保存；保存失败则保持 sheet 打开，避免丢稿。 */
 async function finish(schema?: RasterSchema) {
   if (saving.value) return;
-  const value = schema ?? (editorDirty.value ? editor.value?.snapshot() : null);
+  const value = editorDirty.value || (schema && !initialSchema.value)
+    ? schema ?? editor.value?.snapshot()
+    : null;
   if (value?.image) {
     saving.value = true;
     error.value = "";
@@ -161,8 +172,8 @@ function onStageKey(event: KeyboardEvent, action: () => void) {
         </div>
         <div class="lot-card-meta">
           <span class="lot-card-name">{{ t("rasterEditor.ground.workbench.authoredName") }}</span>
-          <span class="lot-card-size">
-            {{ preview.lot.meta.size[0].toFixed(1) }} × {{ preview.lot.meta.size[1].toFixed(1) }} m
+          <span v-if="cardSize" class="lot-card-size">
+            {{ Number(cardSize[0].toFixed(2)) }} × {{ Number(cardSize[1].toFixed(2)) }} m
           </span>
           <button
             type="button"
@@ -208,6 +219,8 @@ function onStageKey(event: KeyboardEvent, action: () => void) {
           initial-profile="lot-mask"
           locked-profile
           :initial-schema="initialSchema"
+          :initial-lot-size="lotSize"
+          :lot-projection="projection"
           :apply-label="t('rasterEditor.ground.workbench.finish')"
           :busy="saving"
           @dirty="editorDirty = $event"

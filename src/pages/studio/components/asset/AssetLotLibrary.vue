@@ -9,6 +9,7 @@ import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import AssetLotDiagram from "./AssetLotDiagram.vue";
 import AssetAuthoredLotSection from "./AssetAuthoredLotSection.vue";
 import type { AuthoredLot } from "@/lib/lot-ground/authored";
+import type { LotModelProjection } from "@/components/raster/lotModelProjection";
 
 /** 应用载荷：Lot 资源位置（会话层据此读取并套用尺寸/四色分层）。 */
 export interface LotPresetRef {
@@ -30,6 +31,8 @@ const props = defineProps<{
   /** 当前地块绑定的是自绘地面。 */
   authoredBound: boolean;
   allowNativeGround?: boolean;
+  lotSize?: [number, number] | null;
+  projection?: LotModelProjection | null;
 }>();
 const emit = defineEmits<{
   apply: [preset: LotPresetRef];
@@ -161,6 +164,8 @@ watch(
       :edit-enabled="editEnabled"
       :edit-mode="allowNativeGround ? 'draft' : editMode"
       :bound="authoredBound"
+      :lot-size="lotSize"
+      :projection="projection"
       @apply="emit('applyAuthored', $event)"
       @saved="emit('authoredSaved', $event)"
     />

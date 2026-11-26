@@ -10,12 +10,14 @@ import RasterDecalPreview from "./RasterDecalPreview.vue";
 import GraffitiProjectionPreview from "./sign/GraffitiProjectionPreview.vue";
 import RasterToolbar from "./RasterToolbar.vue";
 import RasterCanvas from "./RasterCanvas.vue";
+import LotProjectionOverlay from "./LotProjectionOverlay.vue";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
 import LotEdgeControls from "./LotEdgeControls.vue";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 import { catalogKey } from "@/lib/raster-editor/catalog";
 import FSelect from "@/components/ui/FSelect.vue";
+import { Switch } from "@/components/ui/switch";
 import RasterMaterialPanel from "./RasterMaterialPanel.vue";
 import { useRasterSession } from "./useRasterSession";
 
@@ -49,6 +51,93 @@ afterEach(() => {
 });
 
 describe("Raster editor regressions", () => {
+  it("paints hollow and filled Lot circles using the radius in the right inspector", async () => {
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const panel = shallowMount(RasterEditor, {
+      props: { initialProfile: "lot-mask", initialLotSize: [18, 18] },
+      global: {
+        ...global,
+        stubs: {
+          RasterCanvas: false,
+          RasterToolbar: false,
+          FTooltip: { props: ["text"], template: '<slot name="trigger" />' },
+        },
+      },
+    });
+    try {
+      const canvas = panel.getComponent(RasterCanvas);
+      const surface = canvas.get("canvas.surface");
+      Object.defineProperties(canvas.element, {
+        clientWidth: { value: 72 },
+        clientHeight: { value: 72 },
+        setPointerCapture: { value: () => {} },
+        hasPointerCapture: { value: () => false },
+      });
+      canvas.vm.fit();
+      await nextTick();
+      const controls = panel.get(".inspector .editor-controls");
+      expect(panel.get(".inspector").element.firstElementChild).toBe(controls.element);
+      const toolbar = panel.getComponent(RasterToolbar);
+      expect(controls.text()).not.toContain("半径");
+      await toolbar.get('button[aria-label="圆形"]').trigger("click");
+      expect(controls.text()).toContain("半径（像素）");
+      await controls.get<HTMLInputElement>("input").setValue("3");
+      const pointer = { clientX: 36, clientY: 36, button: 0, pointerId: 1 };
+      await surface.trigger("pointerdown", pointer);
+      await surface.trigger("pointerup", pointer);
+      const doc = canvas.props("doc");
+      expect(doc.getPixel(12, 11)).toEqual([0, 0, 0, 0]);
+      expect(doc.getPixel(15, 11)).toEqual(canvas.props("color"));
+      expect(doc.getPixel(16, 11)).toEqual([0, 0, 0, 0]);
+
+      i18n.global.locale.value = "en-US";
+      await nextTick();
+      await toolbar.get('button[aria-label="Filled circle"]').trigger("click");
+      expect(controls.text()).toContain("Radius (px)");
+      expect(controls.findAll("input")).toHaveLength(1);
+      await controls.get<HTMLInputElement>("input").setValue("5");
+      await surface.trigger("pointerdown", pointer);
+      await surface.trigger("pointerup", pointer);
+      expect(doc.getPixel(12, 11)).toEqual(canvas.props("color"));
+      expect(doc.getPixel(17, 11)).toEqual(canvas.props("color"));
+      expect(doc.getPixel(18, 11)).toEqual([0, 0, 0, 0]);
+      await toolbar.get('button[aria-label="Undo"]').trigger("click");
+      expect(doc.getPixel(12, 11)).toEqual([0, 0, 0, 0]);
+      expect(doc.getPixel(15, 11)).toEqual(canvas.props("color"));
+    } finally {
+      panel.unmount();
+      getContext.mockRestore();
+    }
+  });
+
+  it("starts a rectangular lot at workbench size with a localized model guide", async () => {
+    const projection = {
+      payload: { glbs: [], materials: [], meshMaterialIndices: [], meshUvKinds: [], diagnostics: "" },
+      origin: null,
+      transform: null,
+      center: null,
+    };
+    const wrapper = shallowMount(RasterEditor, {
+      props: { initialProfile: "lot-mask", initialLotSize: [90, 203], lotProjection: projection },
+      global: { ...global, renderStubDefaultSlot: true },
+    });
+    const canvas = wrapper.getComponent(RasterCanvas);
+    expect(canvas.props("doc")).toMatchObject({ width: 120, height: 271 });
+    expect(wrapper.vm.snapshot()?.lot.size).toEqual([90, 203]);
+    const before = wrapper.vm.snapshot();
+    const guide = wrapper.getComponent(LotProjectionOverlay);
+    expect(guide.props("size")).toEqual([90, 203]);
+    expect(wrapper.get(".lot-projection-toggle").text()).toContain("建筑俯视投影");
+    wrapper.getComponent(Switch).vm.$emit("update:modelValue", false);
+    i18n.global.locale.value = "en-US";
+    await nextTick();
+    expect(wrapper.getComponent(Switch).props("modelValue")).toBe(false);
+    expect(guide.attributes("style")).toContain("display: none");
+    expect(wrapper.get(".lot-projection-toggle").text()).toContain("Building projection");
+    expect(wrapper.vm.snapshot()).toEqual(before);
+    wrapper.unmount();
+  });
+
   it("edits the selected curb channel and relabels it when the locale changes", async () => {
     const { lot } = useRasterSession();
     const wrapper = mount(LotEdgeControls, {
@@ -376,7 +465,7 @@ describe("Raster editor regressions", () => {
       global,
     });
     expect(toolbar.find('button[aria-label="圆形"]').exists()).toBe(true);
-    expect(toolbar.find('button[aria-label="填充圆形"]').exists()).toBe(true);
+    expect(toolbar.find('button[aria-label="实心圆形"]').exists()).toBe(true);
     i18n.global.locale.value = "en-US";
     await nextTick();
     expect(toolbar.findAll("button[aria-label]").map(b => b.attributes("aria-label"))).toContain("Brush");

@@ -58,6 +58,7 @@ const props = defineProps<{
   quantized?: boolean;
   /** 米/像素比例（Lot raster 惯例 0.75）；为 null 时不显示米标尺。 */
   metersPerPixel?: number | null;
+  lotSize?: readonly [number, number] | null;
   channel?: Channel;
   /** Display channel is independent from the channel being painted. */
   displayChannel?: Channel;
@@ -85,6 +86,18 @@ const { t } = useI18n();
 const canvas = ref<HTMLCanvasElement | null>(null);
 const wrap = ref<HTMLDivElement | null>(null);
 const zoom = ref(1);
+const depthScale = computed(() => {
+  if (!props.lotSize) return 1;
+  const [width, depth] = props.lotSize;
+  return (depth / props.doc.height) / (width / props.doc.width);
+});
+const zoomY = computed(() => zoom.value * depthScale.value);
+const metersX = computed(() => props.lotSize
+  ? props.lotSize[0] / props.doc.width
+  : props.metersPerPixel);
+const metersY = computed(() => props.lotSize
+  ? props.lotSize[1] / props.doc.height
+  : props.metersPerPixel);
 const pan = ref({ x: 0, y: 0 });
 const cursor = ref<{ x: number; y: number } | null>(null);
 const panning = ref(false);
@@ -126,11 +139,12 @@ const xTicks = computed(() => buildTicks(false));
 const yTicks = computed(() => buildTicks(true));
 
 function buildTicks(vertical: boolean): { pos: number; label: string }[] {
-  const mpp = props.metersPerPixel;
+  const mpp = vertical ? metersY.value : metersX.value;
   if (!mpp) return [];
+  const axisZoom = vertical ? zoomY.value : zoom.value;
   const total = (vertical ? props.doc.height : props.doc.width) * mpp;
   const step =
-    METER_STEPS.find((candidate) => (candidate / mpp) * zoom.value >= 72) ??
+    METER_STEPS.find((candidate) => (candidate / mpp) * axisZoom >= 72) ??
     192;
   const wrapElement = wrap.value;
   const viewSize = vertical
@@ -138,7 +152,7 @@ function buildTicks(vertical: boolean): { pos: number; label: string }[] {
     : (wrapElement?.clientWidth ?? 800);
   const ticks: { pos: number; label: string }[] = [];
   for (let meters = 0; meters <= total + 0.001; meters += step) {
-    const pos = pan.value[vertical ? "y" : "x"] + (meters / mpp) * zoom.value;
+    const pos = pan.value[vertical ? "y" : "x"] + (meters / mpp) * axisZoom;
     if (pos < -48 || pos > viewSize + 48) continue;
     ticks.push({ pos, label: `${Number(meters.toFixed(2))}m` });
   }
@@ -237,13 +251,13 @@ function fit() {
   const availableHeight = element.clientHeight - 48;
   const ratio = Math.min(
     available / props.doc.width,
-    availableHeight / props.doc.height,
+    availableHeight / (props.doc.height * depthScale.value),
     16,
   );
   setZoom(Math.max(0.05, ratio));
   pan.value = {
     x: (element.clientWidth - props.doc.width * zoom.value) / 2,
-    y: (element.clientHeight - props.doc.height * zoom.value) / 2,
+    y: (element.clientHeight - props.doc.height * zoomY.value) / 2,
   };
 }
 
@@ -292,6 +306,7 @@ function toPixel(event: PointerEvent): { x: number; y: number } {
     { left: rect.left + element.clientLeft, top: rect.top + element.clientTop },
     pan.value,
     zoom.value,
+    zoomY.value,
   );
   if (props.northUp) pixel.y = oppositeMaskRow(pixel.y, props.doc.height);
   return pixel;
@@ -317,9 +332,9 @@ const cursorText = computed(() => {
   if (!cursor.value) return "";
   const row = props.northUp ? oppositeMaskRow(cursor.value.y, props.doc.height) : cursor.value.y;
   const pixel = `${cursor.value.x}, ${row}`;
-  if (!props.metersPerPixel) return pixel;
-  const mx = ((cursor.value.x + 0.5) * props.metersPerPixel).toFixed(1);
-  const my = ((row + 0.5) * props.metersPerPixel).toFixed(1);
+  if (!metersX.value || !metersY.value) return pixel;
+  const mx = ((cursor.value.x + 0.5) * metersX.value).toFixed(1);
+  const my = ((row + 0.5) * metersY.value).toFixed(1);
   return `${pixel} px · ${mx}, ${my} m`;
 });
 
@@ -857,8 +872,8 @@ watch(
       class="canvas-plane"
       :style="{
         transform: northUp
-          ? `translate(${pan.x}px, ${pan.y + doc.height * zoom}px) scale(${zoom}, ${-zoom})`
-          : `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          ? `translate(${pan.x}px, ${pan.y + doc.height * zoomY}px) scale(${zoom}, ${-zoomY})`
+          : `translate(${pan.x}px, ${pan.y}px) scale(${zoom}, ${zoomY})`,
         background: backdrop || checkerboard,
       }"
     >
@@ -868,6 +883,7 @@ watch(
         :class="{ 'material-preview': materialPreview }"
         :style="{ width: `${doc.width}px`, height: `${doc.height}px` }"
       />
+      <slot />
     </div>
     <div v-if="metersPerPixel" class="ruler ruler-x" aria-hidden="true">
       <span
@@ -888,7 +904,7 @@ watch(
       >
     </div>
     <span v-if="metersPerPixel" class="scale-badge">
-      1 px = {{ props.metersPerPixel }} m
+      1 px ≈ {{ Number(metersX?.toPrecision(4)) }} m
     </span>
     <div class="hud" :class="{ 'with-ruler': metersPerPixel }">
       <span v-if="cursor" class="hud-item">

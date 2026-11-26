@@ -2,6 +2,7 @@ import { computed, nextTick, reactive, ref, shallowRef, watch } from "vue";
 import type { LotModelPayload, LotUnitDto, PropUnit, Tgi } from "@/api/tauri";
 import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
+import { importedLotSize } from "@/lib/lot-ground/lotDrawing";
 import {
   inspectGlb,
   normalizeLotModelScene,
@@ -1907,7 +1908,13 @@ export function useWorkbenchAsset(
           });
         }
         streetFacingDegrees.value = restoredStreetFacing;
-        if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+        // Older imported grounds saved their unrounded world bounds.
+        const hasImportedGround = workbench.lotStyle?.authored &&
+          (parsed.lot as { overlayBoxOffset?: unknown } | undefined)?.overlayBoxOffset != null;
+        const restoredLotSize = workbench.lotSize && hasImportedGround
+          ? importedLotSize(workbench.lotSize)
+          : workbench.lotSize;
+        if (restoredLotSize) draftLotSize.value = restoredLotSize;
         draftModelTransform.value =
           workbench.modelTransform && workbench.modelTransform.length === 12
             ? [...workbench.modelTransform]
@@ -1959,7 +1966,7 @@ export function useWorkbenchAsset(
                 await applyAuthoredLot(authored);
                 groundSnapshotDirty.value = false;
               }
-              if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+              if (restoredLotSize) draftLotSize.value = restoredLotSize;
             } catch (cause) {
               console.warn("[workbench] authored lot restore skipped:", cause);
             }

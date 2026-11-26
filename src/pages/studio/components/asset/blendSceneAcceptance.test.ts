@@ -7,14 +7,39 @@ import {
 } from "@/pages/packages/components/property-editor/peSchemaDoc";
 import {
   maskMatchesMeta,
+  authoredFromSchema,
   parseAuthoredLotMeta,
   schemaFromAuthored,
 } from "@/lib/lot-ground/authored";
+import { importedLotSize, prepareLotDrawing } from "@/lib/lot-ground/lotDrawing";
 import {
   writeSceneLightControls,
   restoreSceneLightControls,
 } from "./blendSceneProjection";
 import { i18n } from "@/locales";
+
+it.skipIf(!process.env.OPENSCP_TEST_RECTANGULAR_SCENE)(
+  "opens the imported bank's square mask at the authored lot proportions",
+  () => {
+    const scene = JSON.parse(
+      readFileSync(process.env.OPENSCP_TEST_RECTANGULAR_SCENE!, "utf8"),
+    ) as BlendSceneDocument;
+    expect(scene.errors).toEqual([]);
+    const imported = scene.lot!;
+    expect(imported.meta).toMatchObject({ width: 1024, height: 1024 });
+    const size = importedLotSize(imported.meta.size);
+    expect(size).toEqual([90, 203]);
+    const drawing = prepareLotDrawing(schemaFromAuthored(imported), size);
+    const saved = authoredFromSchema(drawing);
+    expect(saved.meta.size).toEqual(size);
+    const { width, height, metersPerPixel } = saved.meta;
+    expect(Math.abs(width * metersPerPixel - size[0])).toBeLessThanOrEqual(metersPerPixel / 2);
+    expect(Math.abs(height * metersPerPixel - size[1])).toBeLessThanOrEqual(metersPerPixel / 2);
+    expect(maskMatchesMeta(saved.meta, saved.mask)).toBe(true);
+    expect(saved.meta.colors).toEqual(imported.meta.colors);
+    expect(saved.meta.borderWidths).toEqual(imported.meta.borderWidths);
+  },
+);
 
 it("updates scene failure messages when switching languages", () => {
   const before = i18n.global.locale.value;

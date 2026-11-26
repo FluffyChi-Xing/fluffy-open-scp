@@ -23,6 +23,8 @@ import {
 import type { Rgba } from "@/lib/raster-editor/tools";
 import type { DecalEntryMeta, PropertyDocumentSummary } from "@/api/tauri";
 import RasterCanvas from "./RasterCanvas.vue";
+import LotProjectionOverlay from "./LotProjectionOverlay.vue";
+import type { LotModelProjection } from "./lotModelProjection";
 import RasterToolbar from "./RasterToolbar.vue";
 import RasterParameterTable from "./RasterParameterTable.vue";
 import RasterSourcePanel from "./RasterSourcePanel.vue";
@@ -67,6 +69,8 @@ const props = withDefaults(
   defineProps<{
     mode?: "standalone" | "flow";
     initialSchema?: RasterSchema;
+    initialLotSize?: [number, number] | null;
+    lotProjection?: LotModelProjection | null;
     initialProfile?: RasterProfile;
     lockedProfile?: boolean;
     busy?: boolean;
@@ -106,6 +110,13 @@ const editorStarted = ref(!!props.initialSchema || !!props.initialProfile);
 const packages = useEditorPackages("assets");
 provide(EDITOR_PACKAGES, packages);
 const canvas = ref<InstanceType<typeof RasterCanvas> | null>(null);
+if (!props.initialSchema && profile.value === "lot-mask" && props.initialLotSize) {
+  const { width, height } = maskSizeForLot(props.initialLotSize, sampling.value.metersPerPixel);
+  session.create(width, height);
+  lot.value = { ...lot.value, size: props.initialLotSize };
+  dirty.value = false;
+}
+const showLotProjection = shallowRef(true);
 const tool = ref<RasterTool>("brush"),
   size = ref(4),
   color = ref("#ffffff"),
@@ -114,6 +125,11 @@ const tool = ref<RasterTool>("brush"),
   layer = ref(0),
   tolerance = ref(0);
 const circleRadius = ref(16);
+const effectiveCircleRadius = computed(() =>
+  Number.isFinite(circleRadius.value)
+    ? Math.max(1, Math.min(4096, Math.round(circleRadius.value)))
+    : 16,
+);
 const fillThroughLocked = ref(false);
 const isCircleTool = computed(() => tool.value === "circle" || tool.value === "circle-fill");
 const parkingLength = ref(13),
@@ -724,7 +740,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
               :tool="tool"
               :color="brushColor"
               :brush-size="Math.max(1, Math.min(256, size || 1))"
-              :circle-radius="Math.max(1, Math.min(4096, Math.round(circleRadius || 16)))"
+              :circle-radius="effectiveCircleRadius"
               :parking-length="Math.max(1, Math.min(256, parkingLength || 1))"
               :parking-spacing="Math.max(1, Math.min(256, parkingSpacing || 1))"
               :fill-tolerance="Math.max(0, Math.min(510, tolerance || 0))"
@@ -737,6 +753,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
               :lot-border-widths="lot.borderWidths"
               :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
               :meters-per-pixel="isLot ? sampling.metersPerPixel : null"
+              :lot-size="isLot ? lot.size : null"
               :paint-preview="isDecalStudio ? signPreview : ground.paintPreview.value"
               :backdrop="ground.backdrop.value"
               :erase-all-channels="isLot || isDecalStudio"
@@ -746,7 +763,16 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
               @change="onCanvasChange"
               @pick-color="pick"
               @pick-layer="onPickLayer"
-            />
+            >
+              <LotProjectionOverlay
+                v-if="isLot && lotProjection && lot.size"
+                v-show="showLotProjection"
+                :projection="lotProjection"
+                :size="lot.size"
+                :width="doc.width"
+                :height="doc.height"
+              />
+            </RasterCanvas>
           </div>
           <div class="editor-guidance">
             <p v-if="profile === 'lot-mask'">{{ t("rasterEditor.lotGuide") }}</p>
@@ -868,6 +894,37 @@ v-if="isDecalStudio" :layer="layer" :settings="signSettings" :colors="decal.colo
           :graffiti="isGraffiti" v-model:strength="sprayStrength"
           :disabled="locked" :can-letter="!!doc" @update:layer="onPickLayer" @settings="setSignSettings"
           @color="setSignColor" @lettering="addSignLettering" @layer-state="updateDecalLayer" />
+        <section class="editor-controls">
+          <h2>{{ t("rasterEditor.text171") }}</h2>
+          <label v-if="isCircleTool">
+            {{ t("rasterEditor.circleRadius") }}
+            <input
+              v-model.number="circleRadius"
+              type="number"
+              min="1"
+              max="4096"
+              step="1"
+              :disabled="locked"
+              @change="circleRadius = effectiveCircleRadius"
+            />
+          </label>
+          <label v-if="tool !== 'circle-fill'">{{ t("rasterEditor.text113") }}<input v-model.number="size" type="number" min="1" max="256" /></label>
+          <label v-if="tool === 'fill'">{{ t("rasterEditor.text114") }}<input v-model.number="tolerance" type="number" min="0" max="510" /></label>
+          <label v-if="isDecalStudio && tool === 'fill'">
+            {{ t("rasterEditor.decalLayers.fillThroughLocked") }}
+            <Switch v-model="fillThroughLocked" :aria-label="t('rasterEditor.decalLayers.fillThroughLocked')" :disabled="locked" />
+          </label>
+          <template v-if="tool === 'parking'">
+            <label>{{ t("rasterEditor.text115") }}<input v-model.number="parkingLength" type="number" min="1" max="256" /></label>
+            <label>{{ t("rasterEditor.text116") }}<input v-model.number="parkingSpacing" type="number" min="1" max="256" /></label>
+          </template>
+          <template v-if="!isLot && !isDecalStudio">
+            <label v-if="!mask && channel === 'rgba'">RGB <input v-model="color" type="color" /></label>
+            <label v-if="channel === 'rgba' && (!mask || profile === 'decal-graffiti')">{{ t("rasterEditor.channelStrength") }}<input v-model.number="alpha" type="number" min="0" max="255" /></label>
+            <label v-if="channel !== 'rgba'">{{ t("rasterEditor.channelValue", { channel: channel.toUpperCase() }) }}<input v-model.number="channelValue" type="number" min="0" max="255" /></label>
+            <label>{{ t("rasterEditor.text122") }}<FSelect :model-value="channel" :options="['rgba','r','g','b','a'].map((value) => ({ value, label: value.toUpperCase() }))" @update:model-value="channel = $event as Channel" /></label>
+          </template>
+        </section>
         <section v-if="isLot" class="ground-inspector">
           <LotGroundSize
             :size="ground.size.value"
@@ -875,6 +932,10 @@ v-if="isDecalStudio" :layer="layer" :settings="signSettings" :colors="decal.colo
             :disabled="locked || !!lot.target"
             @apply="applyLotSize"
           />
+          <label v-if="lotProjection && doc" class="lot-projection-toggle">
+            <Switch v-model="showLotProjection" :aria-label="t('rasterEditor.ground.modelProjection')" />
+            {{ t("rasterEditor.ground.modelProjection") }}
+          </label>
           <LotMaterialPalette
             v-model:active="groundActive"
             :slots="groundSlots"
@@ -894,29 +955,6 @@ v-if="isDecalStudio" :layer="layer" :settings="signSettings" :colors="decal.colo
             :disabled="locked"
             @change="changed"
           />
-        </section>
-        <section class="editor-controls">
-          <h2>{{ t("rasterEditor.text171") }}</h2>
-          <label v-if="isCircleTool">
-            {{ t("rasterEditor.circleRadius") }}
-            <input v-model.number="circleRadius" type="number" min="1" max="4096" step="1" />
-          </label>
-          <label v-if="tool !== 'circle-fill'">{{ t("rasterEditor.text113") }}<input v-model.number="size" type="number" min="1" max="256" /></label>
-          <label v-if="tool === 'fill'">{{ t("rasterEditor.text114") }}<input v-model.number="tolerance" type="number" min="0" max="510" /></label>
-          <label v-if="isDecalStudio && tool === 'fill'">
-            {{ t("rasterEditor.decalLayers.fillThroughLocked") }}
-            <Switch v-model="fillThroughLocked" :aria-label="t('rasterEditor.decalLayers.fillThroughLocked')" :disabled="locked" />
-          </label>
-          <template v-if="tool === 'parking'">
-            <label>{{ t("rasterEditor.text115") }}<input v-model.number="parkingLength" type="number" min="1" max="256" /></label>
-            <label>{{ t("rasterEditor.text116") }}<input v-model.number="parkingSpacing" type="number" min="1" max="256" /></label>
-          </template>
-          <template v-if="!isLot && !isDecalStudio">
-            <label v-if="!mask && channel === 'rgba'">RGB <input v-model="color" type="color" /></label>
-            <label v-if="channel === 'rgba' && (!mask || profile === 'decal-graffiti')">{{ t("rasterEditor.channelStrength") }}<input v-model.number="alpha" type="number" min="0" max="255" /></label>
-            <label v-if="channel !== 'rgba'">{{ t("rasterEditor.channelValue", { channel: channel.toUpperCase() }) }}<input v-model.number="channelValue" type="number" min="0" max="255" /></label>
-            <label>{{ t("rasterEditor.text122") }}<FSelect :model-value="channel" :options="['rgba','r','g','b','a'].map((value) => ({ value, label: value.toUpperCase() }))" @update:model-value="channel = $event as Channel" /></label>
-          </template>
         </section>
         <section v-if="isDecalStudio && signInspectorOpen && previewDoc" class="sign-live">
           <h2>{{ t(isGraffiti ? "rasterEditor.graffiti.preview" : "rasterEditor.sign.preview") }}</h2>
@@ -1090,6 +1128,13 @@ button:disabled {
 .sign-properties-toggle[aria-expanded="true"] { background: var(--accent); }
 .sign-properties-toggle:hover,
 .sign-disclosure:hover { background: var(--surface-hover); }
+.lot-projection-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block: 8px;
+}
+
 .sign-document-settings,
 .sign-canvas-settings,
 .sign-inspector :deep(.sign-controls),

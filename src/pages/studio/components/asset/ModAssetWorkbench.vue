@@ -5,6 +5,8 @@ import { EDITOR_PACKAGES, useEditorPackages } from "@/composables/useEditorPacka
 import { useI18n } from "vue-i18n";
 import { initializeBlendScene } from "./blendSceneInitialization";
 import type { NativeBlendImport } from "./blendSceneTypes";
+import { importedLotSize } from "@/lib/lot-ground/lotDrawing";
+import type { LotModelProjection } from "@/components/raster/lotModelProjection";
 import { saveAuthoredLot } from "./authoredLotStore";
 import { useEventListener } from "@vueuse/core";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -421,6 +423,16 @@ async function onBindMaterialSlots(binding: MaterialSlotBinding) {
     toast.error(String(cause));
   }
 }
+const lotModelProjection = computed<LotModelProjection | null>(() => {
+  const current = ui.value;
+  if (current?.editMode !== "draft" || !current.modelPayload) return null;
+  return {
+    payload: current.modelPayload,
+    origin: current.modelOrigin,
+    transform: current.modelTransform,
+    center: current.lotOverlayBoxOffset,
+  };
+});
 const importedSceneRevision = ref(0);
 async function onBlendImported(result: NativeBlendImport) {
   const lotm = result.asset;
@@ -447,8 +459,13 @@ async function onBlendImported(result: NativeBlendImport) {
       {
         id: "authored-lot",
         run: async () => {
-          const lot = result.scene?.document.lot;
-          if (!lot) return;
+          const imported = result.scene?.document.lot;
+          if (!imported) return;
+          const size = importedLotSize(imported.meta.size);
+          const lot = {
+            ...imported,
+            meta: { ...imported.meta, size, metersPerPixel: size[0] / imported.meta.width },
+          };
           await saveAuthoredLot(props.project, lot);
           await asset.applyAuthoredLot(lot);
           asset.setImportedLotOffset(lot.offset);
@@ -1264,6 +1281,8 @@ function templateOf(resourceId: number) {
                     :edit-enabled="editEnabled"
                     :edit-mode="ui.editMode"
                     :authored-bound="asset.appliedAuthoredLot.value"
+                    :lot-size="ui.lotSize"
+                    :projection="lotModelProjection"
                     :allow-native-ground="variantProject"
                     @apply="onApplyLotPreset"
                     @apply-authored="onApplyAuthoredLot"
