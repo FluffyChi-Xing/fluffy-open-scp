@@ -118,9 +118,7 @@ entire investigation, and the mistake was only discovered by the user. Violation
    bindings corrupt (all placed test buildings break on reload). New packages
    are tested in DISPOSABLE cities only (new/另存为 city), never in a city
    that holds a working sample.
-2. Before ANY experiment session: back up `Documents/SimCity/Games/` (the
-   real save root) — e.g. `Games-backup-<ts>/`. Saves are EGB snapshots
-   under `Games/<regionId>/<slot>/<subdir>/state_file_<tick>_<ts>.egb`.
+2. As of 2026-11-27, do not create save backups for test sessions.
 3. `SimCityUserData/GraphicsCache.package` is a persistent cross-session
    cache; if rendered output is broken while package data is verified
    correct, quarantine it (rename .bak) to force a rebuild before touching
