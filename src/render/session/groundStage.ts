@@ -55,8 +55,7 @@ export async function stageGround(
   input: GroundStageInput,
 ): Promise<ThreeNamespace.Object3D | null> {
   if (!input.lotSize) return null;
-  // Start workers during white model parsing, before the first refined click.
-  prepareGroundComposer();
+  if (input.renderMode === "refined") prepareGroundComposer();
   const span = renderTelemetry.begin("lot_render", {
     refined: input.renderMode === "refined",
   });
@@ -141,19 +140,6 @@ export async function stageGround(
       isStale: input.isStale,
     };
     await applyGroundTextures(textureInput);
-    if (input.renderMode === "default" && input.lotMaskPng) {
-      // CPU cache only; never change the displayed white material.
-      setTimeout(() => {
-        if (input.isStale()) return;
-        void loadRefinedInputs().then((pixels) => {
-          if (input.isStale()) return;
-          return applyGroundTextures({
-            ...textureInput, ...pixels,
-            refined: true, prewarmOnly: true,
-          });
-        }).catch(() => { /* optional prewarming must never interrupt white rendering */ });
-      }, 0);
-    }
   }
   span.end({ masked: Boolean(input.lotMaskPng || input.lotAlbedoPng) });
 

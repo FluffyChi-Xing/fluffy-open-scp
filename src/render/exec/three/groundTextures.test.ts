@@ -13,7 +13,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   mock.compose.mockReset();
 });
-it("shares in-flight white-mode prewarming with refined rendering without changing the white material", async () => {
+it("shares an in-flight refined composition across rebuilds", async () => {
   vi.spyOn(THREE.TextureLoader.prototype, "loadAsync").mockResolvedValue(
     new THREE.Texture({ width: 1, height: 1 } as HTMLImageElement),
   );
@@ -40,13 +40,15 @@ it("shares in-flight white-mode prewarming with refined rendering without changi
     baseTileIndex: 1,
     isStale: () => false,
   };
-  const warm = applyGroundTextures({ ...options, prewarmOnly: true });
+  let stale = false;
+  const first = applyGroundTextures({ ...options, isStale: () => stale });
   await vi.waitFor(() => expect(mock.compose).toHaveBeenCalledOnce());
   expect(fill.material).toBe(material);
+  stale = true;
   const render = applyGroundTextures(options);
   await Promise.resolve();
   expect(mock.compose).toHaveBeenCalledOnce();
   finish({ albedo: new THREE.Texture(), normal: new THREE.Texture() });
-  await Promise.all([warm, render]);
+  await Promise.all([first, render]);
   expect(fill.material).toBeInstanceOf(THREE.MeshPhongMaterial);
 });

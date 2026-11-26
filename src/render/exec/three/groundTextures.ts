@@ -110,7 +110,6 @@ export async function applyGroundTextures(options: {
   lotSize?: [number, number] | null;
   tilePeriod?: [number, number] | null;
   refined: boolean;
-  prewarmOnly?: boolean;
   lotColors: [number, number, number, number][];
   surface?: ImageData | null;
   baseTileIndex: number;
@@ -225,10 +224,6 @@ export async function applyGroundTextures(options: {
         }
         result = (await pending) ?? undefined;
       }
-      if (options.prewarmOnly) {
-        span.end({ cacheHit, prewarm: true });
-        return;
-      }
       if (isStale()) {
         span.end({ stale: true });
         return;
@@ -251,10 +246,6 @@ export async function applyGroundTextures(options: {
       fill.material = lit;
       span.end({ cacheHit });
     } catch {
-      if (options.prewarmOnly) {
-        span.end({ failed: true, prewarm: true });
-        return;
-      }
       await applyFlat();
       span.end({ failed: true });
     }

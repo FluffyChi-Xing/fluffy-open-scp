@@ -18,8 +18,9 @@ it("presents white ground without awaiting refined-only atlas decoding", async (
     lotColors: [], lotBorderPatternIndices: [], lotBorderWidths: [], lotBaseTile: 8,
   } as unknown as GroundStageInput;
   expect(await stageGround(input)).toBeInstanceOf(THREE.Group);
+  await vi.runAllTimersAsync();
   expect(atlas).not.toHaveBeenCalled();
   expect(raw).not.toHaveBeenCalled();
   expect(mocks.textures).toHaveBeenCalledWith(expect.objectContaining({ refined: false, rawMask: null }));
-  vi.clearAllTimers();
+  expect(mocks.textures).toHaveBeenCalledTimes(1);
 });

@@ -349,6 +349,7 @@ export function useWorkbenchAsset(
    */
   async function composeSlotMaterials(binding: MaterialSlotBinding) {
     if (sourceKind.value !== "glb" && sourceKind.value !== "lotm") return;
+    const epoch = loadEpoch;
     const composing = ++slotComposeEpoch;
     slotMaterialsComposing.value = true;
     try {
@@ -468,7 +469,7 @@ export function useWorkbenchAsset(
           );
         }
       }
-      if (composing !== slotComposeEpoch) return;
+      if (epoch !== loadEpoch || composing !== slotComposeEpoch) return;
       // 新 payload 身份驱动视口缓存重建（GLB buffer 原样复用）
       draftPayload.value = {
         ...base,
@@ -580,11 +581,13 @@ export function useWorkbenchAsset(
     ),
   );
   const draftProps = shallowRef(emptyDraftPropModels());
+  let draftPropLoad: Promise<void> | undefined;
   watch(
     () => draftSceneOpen.value
       ? `${sceneEpoch.value}:${draftPropResourceIds(draftEffectiveUnits.value).join(",")}`
       : "",
-    async (key, _previous, onCleanup) => {
+    (key, _previous, onCleanup) => {
+      draftPropLoad = undefined;
       if (!key) {
         draftProps.value = emptyDraftPropModels();
         return;
@@ -597,14 +600,13 @@ export function useWorkbenchAsset(
         draftProps.value = emptyDraftPropModels();
         return;
       }
-      try {
-        const models = await loadDraftPropModels(placementSource, ids);
+      draftPropLoad = loadDraftPropModels(placementSource, ids).then((models) => {
         if (!stale && epoch === loadEpoch) draftProps.value = models;
-      } catch (error) {
+      }).catch((error) => {
         if (!stale && epoch === loadEpoch && import.meta.env.DEV) {
           console.warn("[workbench] prop resource lookup failed:", error);
         }
-      }
+      });
     },
   );
 
@@ -1481,6 +1483,7 @@ export function useWorkbenchAsset(
     if (!draftSceneOpen.value) {
       throw new Error("lot_apply_native");
     }
+    const epoch = loadEpoch;
     let packageId = preset.packageId;
     let session;
     try {
@@ -1491,7 +1494,7 @@ export function useWorkbenchAsset(
     } catch (cause) {
       // PackageManager 每次启动重新编号——持久化的 packageId 在冷启动后必
       // miss。带路径时按路径重开重试；无路径（旧文档）原样抛给调用方。
-      if (!preset.packagePath) throw cause;
+      if (epoch !== loadEpoch || !preset.packagePath) throw cause;
       packageId = (await gamePackages.openFile(preset.packagePath)).package
         .packageId;
       session = await tauriApi.packages.readLotEditorSession(
@@ -1499,6 +1502,7 @@ export function useWorkbenchAsset(
         preset.tgi,
       );
     }
+    if (epoch !== loadEpoch) return null;
     if (session.lotSize) {
       draftLotSize.value = [session.lotSize[0], session.lotSize[1]];
     }
@@ -1564,7 +1568,9 @@ export function useWorkbenchAsset(
       throw new Error("lot_apply_native");
     }
     const { lotSize, ...style } = authoredLotStyle(lot);
+    const epoch = loadEpoch;
     const atlas = await tauriApi.raster.readLotPreviewAtlases().catch(() => null);
+    if (epoch !== loadEpoch) return lotSize;
     const dataUrl = (value?: string | null) => (value ? `data:image/png;base64,${value}` : null);
     if (!native) draftLotSize.value = lotSize;
     Object.assign(draftStyle, style, {
@@ -1704,6 +1710,7 @@ export function useWorkbenchAsset(
     for (const unit of units) {
       if (unit.kind === "prop" && unit.modelTgi) placed.set(directModelKey(unit), unit);
     }
+    if (!placed.size) return;
     const packages = new Map<string, ReturnType<typeof gamePackages.openFile>>();
     const source = {
       readLotModelMeshes: placementSource.readLotModelMeshes,
@@ -1853,11 +1860,15 @@ export function useWorkbenchAsset(
   /** 打开工作台时恢复上次会话（文档存在则按来源块重放）。 */
   async function restoreFromProject(): Promise<boolean> {
     restoring.value = true;
+    let epoch = loadEpoch;
+    let hasSavedDocument = false;
     try {
       const document = await tauriApi.workspace.codeReadText(
         project,
         DOCUMENT_PATH,
       );
+      if (epoch !== loadEpoch) return true;
+      hasSavedDocument = true;
       documentRevision.value = document.revision;
       const parsed = JSON.parse(document.content) as Record<string, unknown>;
       const workbench = (parsed.editor as Record<string, unknown> | undefined)
@@ -1880,15 +1891,19 @@ export function useWorkbenchAsset(
         workbench.packagePath &&
         workbench.tgi
       ) {
-        await openNative(workbench.packagePath, workbench.tgi);
+        const opening = openNative(workbench.packagePath, workbench.tgi);
+        epoch = loadEpoch;
+        await opening;
+        if (epoch !== loadEpoch) return true;
         streetFacingDegrees.value = restoredStreetFacing;
         await restoreUnits(parsed);
+        if (epoch !== loadEpoch) return true;
         if (nativeGroundEditable && workbench.lotStyle?.authored) {
           const { loadAuthoredLot } = await import("./authoredLotStore");
           const authored = await loadAuthoredLot(project);
-          if (authored) await applyAuthoredLot(authored);
+          if (authored && epoch === loadEpoch) await applyAuthoredLot(authored);
         }
-        void restorePlacedPropModels(parsed);
+        if (epoch === loadEpoch) await restorePlacedPropModels(parsed);
         return true;
       }
       if (
@@ -1902,10 +1917,13 @@ export function useWorkbenchAsset(
           const meta = parsed.meta as { name?: unknown } | undefined;
           sourceLabel.value = typeof meta?.name === "string" ? meta.name : "";
         } else if (workbench.assetPath) {
-          await openDraftAsset(workbench.assetPath, {
+          const opening = openDraftAsset(workbench.assetPath, {
             nativeBlender: workbench.nativeBlender === true,
             nativeLotm: workbench.nativeLotm,
           });
+          epoch = loadEpoch;
+          await opening;
+          if (epoch !== loadEpoch) return true;
         }
         streetFacingDegrees.value = restoredStreetFacing;
         // Older imported grounds saved their unrounded world bounds.
@@ -1920,88 +1938,107 @@ export function useWorkbenchAsset(
             ? [...workbench.modelTransform]
             : null;
         const slots = workbench.materialSlots;
+        let materials: Promise<void> | undefined;
         if (slots && (slots.params || slots.slot1)) {
           draftMaterialSlots.value = { ...slots };
-          void composeSlotMaterials({ ...slots });
+          materials = composeSlotMaterials({ ...slots }).catch((cause) => {
+            console.warn("[workbench] material slots restore skipped:", cause);
+          });
         }
-        const style = workbench.lotStyle;
-        if (style) {
-          draftStyle.colors = style.colors.map(
-            (color) => [...color] as [number, number, number, number],
-          );
-          draftStyle.colorsAuthored = [...style.colorsAuthored];
-          draftStyle.borderColors = style.borderColors.map(
-            (color) => [...color] as [number, number, number],
-          );
-          draftStyle.borderWidths = [...style.borderWidths];
-          draftStyle.borderPatternIndices = [...style.borderPatternIndices];
-          draftStyle.baseTile = style.baseTile;
-          draftStyle.tilePeriod = style.tilePeriod
-            ? ([...style.tilePeriod] as [number, number])
-            : null;
-          // 来源 Lot 引用 → 重新拉取会话取回 mask/albedo/surface 等贴图
-          // （贴图 base64 不入文档，见 lotStyle 持久化口径）
-          // 【2026-11-04 修复】地面贴图离线优先：项目内 assets/lot/* 的
-          // 持久化副本先恢复地面渲染（否则冷启动首开地面消失——
-          // applyLotPreset 依赖的 sourceLot.packageId 跨运行失效）；成功
-          // 后仍尝试 preset 刷新为权威版本（fail-soft）。
-          const projectTextures = await loadProjectGroundTextures();
-          if (projectTextures.maskPng) {
-            draftStyle.maskPng = projectTextures.maskPng;
-            draftStyle.maskRawRgba = projectTextures.maskRawRgba ?? null;
-            draftStyle.albedoPng = projectTextures.albedoPng ?? null;
-            draftStyle.surfacePng = projectTextures.surfacePng ?? null;
-            draftStyle.normalAtlasPng = projectTextures.normalAtlasPng ?? null;
-            // 项目文件 = 已持久化状态,恢复不置脏
-            groundSnapshotDirty.value = false;
-          }
-          if (style.authored) {
-            // donor 引用与 authored 标记并存（2026-11-11）：文档里保留了
-            // sourceLot 就一并恢复，否则构建管线拿不到 donor tgi。
-            if (style.sourceLot) appliedLot.value = { ...style.sourceLot };
-            appliedAuthoredLot.value = true;
-            try {
-              const authored = await loadAuthoredLot(project);
-              if (authored) {
-                await applyAuthoredLot(authored);
-                groundSnapshotDirty.value = false;
-              }
-              if (restoredLotSize) draftLotSize.value = restoredLotSize;
-            } catch (cause) {
-              console.warn("[workbench] authored lot restore skipped:", cause);
-            }
-          } else if (style.sourceLot) {
-            appliedLot.value = { ...style.sourceLot };
-            // 【2026-11-03 修复】sourceLot.packageId 跨运行失效曾让
-            // applyLotPreset 抛错，被外层 catch 吞掉后 restoreUnits 直接被
-            // 跳过——首开只剩模型，lot/props/灯/生成器/路径全部丢失，
-            // 关闭项目重开（包管理器已被其它流程焐热）才恢复。贴图拉取是
-            // 装饰性步骤：失败仅丢 mask/albedo，绝不阻断单元重放。
-            try {
-              await applyLotPreset({ ...style.sourceLot });
-              // 手动调过的尺寸以文档为准
-              if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
-            } catch (cause) {
-              console.warn(
-                "[workbench] lot preset textures skipped (stale packageId?):",
-                cause,
-              );
-            }
-          }
-        }
-        await restoreUnits(parsed);
-        void restorePlacedPropModels(parsed);
+        const units = restoreUnits(parsed).then(async () => {
+          await nextTick();
+          if (epoch !== loadEpoch) return;
+          await Promise.all([draftPropLoad, restorePlacedPropModels(parsed)]);
+        });
+        // Publish one viewport input after the independent restore branches settle.
+        const ground = restoreDraftGround({ ...workbench, lotSize: restoredLotSize }, epoch).catch((cause) => {
+          console.warn("[workbench] ground restore skipped:", cause);
+        });
+        const [unitResult] = await Promise.allSettled([
+          units, materials, ground,
+        ]);
+        if (unitResult.status === "rejected") throw unitResult.reason;
         return true;
       }
       return false;
-    } catch {
+    } catch (cause) {
+      if (epoch !== loadEpoch) return true;
+      if (hasSavedDocument) console.warn("[workbench] scene restore failed:", cause);
       return false;
     } finally {
       restoring.value = false;
       void nextTick().then(() => {
+        if (epoch !== loadEpoch) return;
         savedBaseline.value = workbenchContentKey(schemaDocument.value);
         savedDirty.value = false;
       });
+    }
+  }
+
+  async function restoreDraftGround(workbench: WorkbenchSourceBlock, epoch: number) {
+    const style = workbench.lotStyle;
+    if (!style) return;
+    draftStyle.colors = style.colors.map(
+      (color) => [...color] as [number, number, number, number],
+    );
+    draftStyle.colorsAuthored = [...style.colorsAuthored];
+    draftStyle.borderColors = style.borderColors.map(
+      (color) => [...color] as [number, number, number],
+    );
+    draftStyle.borderWidths = [...style.borderWidths];
+    draftStyle.borderPatternIndices = [...style.borderPatternIndices];
+    draftStyle.baseTile = style.baseTile;
+    draftStyle.tilePeriod = style.tilePeriod
+      ? ([...style.tilePeriod] as [number, number])
+      : null;
+    // 来源 Lot 引用 → 重新拉取会话取回 mask/albedo/surface 等贴图
+    // （贴图 base64 不入文档，见 lotStyle 持久化口径）
+    // 【2026-11-04 修复】地面贴图离线优先：项目内 assets/lot/* 的
+    // 持久化副本先恢复地面渲染（否则冷启动首开地面消失——
+    // applyLotPreset 依赖的 sourceLot.packageId 跨运行失效）；成功
+    // 后仍尝试 preset 刷新为权威版本（fail-soft）。
+    const projectTextures = await loadProjectGroundTextures();
+    if (epoch !== loadEpoch) return;
+    if (projectTextures.maskPng) {
+      draftStyle.maskPng = projectTextures.maskPng;
+      draftStyle.maskRawRgba = projectTextures.maskRawRgba ?? null;
+      draftStyle.albedoPng = projectTextures.albedoPng ?? null;
+      draftStyle.surfacePng = projectTextures.surfacePng ?? null;
+      draftStyle.normalAtlasPng = projectTextures.normalAtlasPng ?? null;
+      // 项目文件 = 已持久化状态,恢复不置脏
+      groundSnapshotDirty.value = false;
+    }
+    if (style.authored) {
+      // donor 引用与 authored 标记并存（2026-11-11）：文档里保留了
+      // sourceLot 就一并恢复，否则构建管线拿不到 donor tgi。
+      if (style.sourceLot) appliedLot.value = { ...style.sourceLot };
+      appliedAuthoredLot.value = true;
+      try {
+        const authored = await loadAuthoredLot(project);
+        if (epoch !== loadEpoch) return;
+        if (authored) {
+          await applyAuthoredLot(authored);
+          if (epoch !== loadEpoch) return;
+          groundSnapshotDirty.value = false;
+        }
+        if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+      } catch (cause) {
+        console.warn("[workbench] authored lot restore skipped:", cause);
+      }
+    } else if (style.sourceLot) {
+      appliedLot.value = { ...style.sourceLot };
+      // Stale package handles must leave the saved ground snapshot usable.
+      try {
+        await applyLotPreset({ ...style.sourceLot });
+        if (epoch !== loadEpoch) return;
+        // 手动调过的尺寸以文档为准
+        if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+      } catch (cause) {
+        console.warn(
+          "[workbench] lot preset textures skipped (stale packageId?):",
+          cause,
+        );
+      }
     }
   }
 
@@ -2117,7 +2154,7 @@ export function useWorkbenchAsset(
     sourceAssetPath,
     sourcePackagePath,
     nativePackageId,
-    ui,
+    ui: computed(() => restoring.value ? null : ui.value),
     schemaDocument,
     schemaJson,
     menu,
