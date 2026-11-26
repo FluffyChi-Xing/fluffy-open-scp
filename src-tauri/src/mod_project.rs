@@ -382,6 +382,19 @@ fn clean_new_road_project(folder: &Path) {
     let _ = fs::remove_dir(folder);
 }
 
+fn clean_new_asset_project(folder: &Path, nodes: &[crate::mod_flow::Node]) {
+    for node in nodes {
+        let _ = fs::remove_file(folder.join(&node.schema));
+    }
+    for path in [
+        "schemas/assets", "schemas", "assets/audio", "assets/materials",
+        "assets/models", "assets/textures", "assets", "build",
+    ] {
+        let _ = fs::remove_dir(folder.join(path));
+    }
+    let _ = fs::remove_dir(folder);
+}
+
 fn clean_new_vanilla_variant_project(folder: &Path) {
     let _ = fs::remove_file(folder.join(crate::asset_build_m1::vanilla_variant::PENDING_PROJECT));
     let _ = fs::remove_file(folder.join("package.json"));
@@ -462,15 +475,30 @@ pub async fn mod_project_create(
         } else {
             "package.json"
         };
-        if let Err(error) = crate::atomic_fs::write_atomic(&folder.join(metadata_path), &manifest_bytes, false) {
+        let asset_workflow = if mod_type == "assets" {
+            match crate::mod_flow::initialize_new_asset_project(
+                &folder,
+                &name,
+                request.author.as_deref().unwrap_or(""),
+                request.description.as_deref().unwrap_or(""),
+            ) {
+                Ok(state) => Some(state),
+                Err(error) => {
+                    clean_new_asset_project(&folder, &[]);
+                    return Err(ModProjectError::Io(io::Error::other(error)));
+                }
+            }
+        } else if let Err(error) = crate::atomic_fs::write_atomic(&folder.join(metadata_path), &manifest_bytes, false) {
             if mod_type == "road" {
                 clean_new_road_project(&folder);
             } else {
                 let _ = fs::remove_dir(&folder);
             }
             return Err(error.into());
-        }
-        if mod_type != "road" && mod_type != "vanilla_variant" {
+        } else {
+            None
+        };
+        if mod_type != "road" && mod_type != "vanilla_variant" && asset_workflow.is_none() {
             crate::mod_flow::ensure_project_layout(&folder,mod_type)
                 .map_err(|e|ModProjectError::Io(io::Error::other(e)))?;
         }
@@ -490,6 +518,8 @@ pub async fn mod_project_create(
                     clean_new_road_project(&folder);
                 } else if mod_type == "vanilla_variant" {
                     clean_new_vanilla_variant_project(&folder);
+                } else if let Some(state) = &asset_workflow {
+                    clean_new_asset_project(&folder, &state.nodes);
                 } else {
                     let _ = fs::remove_dir(&folder);
                 }
