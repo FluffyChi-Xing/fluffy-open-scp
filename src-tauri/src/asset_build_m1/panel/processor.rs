@@ -68,6 +68,7 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
         }
     }
     let packages = sources::open(root, &dependency.sources)?;
+    super::native_services::verify_sources(&config, &packages)?;
     let tower_operations = super::tower_operations::selected(&config);
     if tower_operations {
         if plan.behavior_program.as_ref().is_none_or(|program| {
@@ -92,6 +93,7 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
     fingerprint_bytes.extend_from_slice(super::container_shoppers::RUNTIME.as_bytes());
     fingerprint_bytes.extend_from_slice(super::tower_operations::RUNTIME.as_bytes());
     fingerprint_bytes.extend_from_slice(super::component_queries::RUNTIME.as_bytes());
+    fingerprint_bytes.extend_from_slice(super::native_services::RECIPES.as_bytes());
     fingerprint_bytes.extend_from_slice(super::runtime_bundle::COMPILER_VERSION.as_bytes());
     fingerprint_bytes.extend_from_slice(b"shared-runtime-export-v1");
     let fingerprint = sources::digest(&fingerprint_bytes);
@@ -104,15 +106,26 @@ pub(crate) fn attach(root: &Path, plan: &mut PropertyBuildPlan) -> Result<(), St
     Ok(())
 }
 
-pub(super) fn ids(items: &[String], hide: bool) -> Vec<Value> {
+pub(super) fn slot_names(items: &[String], hide: bool) -> Vec<(&str, String)> {
     if items.is_empty() {
-        return vec![Value::UInt32(hash("OpenSCPPanel_empty"))];
+        return vec![("", "OpenSCPPanel_empty".into())];
     }
     let catalog = components();
-    items
-        .iter()
-        .map(|id| {
-            let c = catalog.iter().find(|c| &c.id == id).unwrap();
+    let recipes = super::native_services::recipes();
+    let service = super::native_services::feedback(items);
+    let fusion = super::native_services::fusion_view(items);
+    let mut rows = Vec::new();
+    if let Some((owner, binding)) = service {
+        rows.push((owner, binding.into()));
+    }
+    for id in items.iter().map(String::as_str) {
+        if service.is_some() && id == "feedback" { continue; }
+        if fusion && id == "maintenance" {
+            rows.push((id, "kMaintenance_Unconnected".into()));
+        } else if let Some(bindings) = recipes.get(id) {
+            rows.extend(bindings.iter().cloned().map(|name| (id, name)));
+        } else {
+            let c = catalog.iter().find(|c| c.id == id).unwrap();
             let name = if c.feedback {
                 format!(
                     "{}{}",
@@ -122,9 +135,15 @@ pub(super) fn ids(items: &[String], hide: bool) -> Vec<Value> {
             } else {
                 item_name(id)
             };
-            Value::UInt32(hash(&name))
-        })
-        .collect()
+            rows.push((id, name));
+        }
+    }
+    rows
+}
+
+pub(super) fn ids(items: &[String], hide: bool) -> Vec<Value> {
+    slot_names(items, hide).into_iter()
+        .map(|(_, binding)| Value::UInt32(hash(&binding))).collect()
 }
 
 pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {

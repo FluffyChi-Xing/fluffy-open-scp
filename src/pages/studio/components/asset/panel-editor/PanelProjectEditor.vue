@@ -20,6 +20,11 @@ const mall=computed(()=>props.logic.edges.some(edge=>{
   const capability=props.logic.params[edge.source];
   return capability && 'type' in capability && capability.type==='commercial' && usesMallProfile(capability);
 }));
+const requiresControlNet=computed(()=>!props.logic.edges.some(edge=>{
+  if(!props.logic.nodes.some(node=>node.id===edge.target&&node.kind==='behavior-core'))return false;
+  const params=props.logic.params[edge.source];
+  return params && 'type' in params && params.type==='fusion-power' && params.requiresControlNet===false;
+}));
 const managed=computed(()=>usesCopanComponents(leaves.value)||Boolean(behaviorCombinationConflict(leaves.value)));
 const available=computed(()=>availableComponents(leaves.value,managed.value,mall.value));
 const invalid=computed(()=>{
@@ -49,7 +54,7 @@ defineExpose({save:state.save});
     <p v-if="schema" class="file-hint">{{t('panelEditor.fileHint',{path:saved?.schemaPath??'schemas/panel/'})}}</p>
     <p v-if="invalid.length" class="error" role="alert">{{t('panelEditor.unsupportedControls',{items:invalidLabels})}}</p>
     <div v-if="schema&&library" class="panel-workspace" :inert="busy">
-      <PanelCanvas v-if="active" :schema="schema" :library="library" :mode="mode" :closed="closed" :title="title" :selected="selected" @insert="insert" @remove="remove" @error="previewError=$event" @select="selected=$event" />
+      <PanelCanvas v-if="active" :schema="schema" :library="library" :mode="mode" :closed="closed" :title="title" :selected="selected" :requires-control-net="requiresControlNet" @insert="insert" @remove="remove" @error="previewError=$event" @select="selected=$event" />
       <PanelLibrary :leaves="leaves" :items="schema[mode]" :power="schema.power" :managed="managed" :mall="mall" :selected="selected" @add="insert" @select="selected=$event" @remove="remove" @move="insert" />
     </div>
     <p v-if="schema" class="preview-hint">{{t('panelEditor.previewHint')}}</p>

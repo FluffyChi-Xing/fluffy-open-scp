@@ -1,5 +1,5 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { extractBindings } from './extractBindings';
+import { extractBindings, extractServiceBindings } from './extractBindings';
 import type { PanelLibrary } from './model';
 import runtime from './native/runtime.js?raw';
 import towerOperations from './native/tower-operations.js?raw';
@@ -39,5 +39,7 @@ export function previewDocument(library:PanelLibrary):string {
    parent.postMessage({type:'panel-report',revision:d.revision,report:r},'*');
   });
   parent.postMessage({type:'panel-ready'},'*');`;
-  return `<!doctype html><html><head><meta charset="utf-8"><style>${css.replace(/<\/style/gi,'<\\/style')}</style><style>:root{color-scheme:dark}html,body{margin:0;background:transparent;overflow:hidden}#host{position:absolute;left:24px;top:24px;width:600px;height:1800px}#caption,#notes{display:none}#host img[data-panel-original-source$="/rlvr-Zot_Header.png"]{display:none}</style></head><body><div id="caption"></div><div id="host"></div><pre id="notes"></pre>${script(transport)}${script(library.scruiScript)}${script(extractBindings(library.gameScript))}${script(`window.OpenSCPPanelComponents=${JSON.stringify(library.components)};window.OpenSCPPanelMessages=${JSON.stringify(messages)};`)}${script(towerOperations)}${script(runtime)}${script(fixture)}${script(preview)}${script('scrui.PostGameCommand=function(){};')}${script(receive)}</body></html>`;
+  const services = library.serviceScript && library.serviceConstants
+    ? script(extractServiceBindings(library.serviceScript, library.serviceConstants)) : '';
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${css.replace(/<\/style/gi,'<\\/style')}</style><style>:root{color-scheme:dark}html,body{margin:0;background:transparent;overflow:hidden}#host{position:absolute;left:24px;top:24px;width:600px;height:1800px}#caption,#notes{display:none}#host img[data-panel-original-source$="/rlvr-Zot_Header.png"]{display:none}</style></head><body><div id="caption"></div><div id="host"></div><pre id="notes"></pre>${script(transport)}${script(library.scruiScript)}${script(extractBindings(library.gameScript))}${services}${script(`window.OpenSCPPanelComponents=${JSON.stringify(library.components)};window.OpenSCPPanelMessages=${JSON.stringify(messages)};`)}${script(towerOperations)}${script(runtime)}${script(fixture)}${script(preview)}${script('scrui.PostGameCommand=function(){};')}${script(receive)}</body></html>`;
 }

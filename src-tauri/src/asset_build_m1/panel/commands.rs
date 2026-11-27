@@ -309,7 +309,7 @@ pub(crate) fn prepare(
         }
     }
     Ok(
-        json!({"schema":fallback,"dependency":dependency,"resources":rows,"gameScript":script,"scruiScript":text(scrui_id)?,"css":css,"components":super::components(),"contexts":contexts,"nativeLocales":native_locales}),
+        json!({"schema":fallback,"dependency":dependency,"resources":rows,"gameScript":script,"scruiScript":text(scrui_id)?,"serviceScript":text(super::native_services::SCRIPT).ok(),"serviceConstants":text(super::native_services::CONSTANTS).ok(),"css":css,"components":super::components(),"contexts":contexts,"nativeLocales":native_locales}),
     )
 }
 fn flatten(

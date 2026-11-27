@@ -1,4 +1,5 @@
 import catalog from '@/lib/panel-components.json';
+import nativeServiceRecipes from '@/lib/panel-native-service-items.json';
 export type PanelMode = 'hover' | 'click';
 export interface PanelSchema {
   $schema: 'openscp.panel'; schema_version: 1; shell: string;
@@ -8,7 +9,7 @@ export interface PanelDependency { schema: string; sources: Array<{path: string;
 export interface PanelProject { schema: PanelSchema | null; schemaPath: string; dependency?: PanelDependency; manifestRevision: string; schemaRevision: string | null }
 export interface PanelComponent { id: string; native: string; group: string; feedback?: boolean; counter?: boolean; singleUnit?: boolean; reasonList?: boolean; towerOperations?: boolean; metric?: {current: string; previous: string} }
 export interface PanelResource { type: number; group: number; instance: number; locale: string; path: string }
-export interface PanelLibrary { schema: PanelSchema; dependency: PanelDependency; resources: PanelResource[]; gameScript: string; scruiScript: string; css: string; components: PanelComponent[]; contexts: Record<string, Record<string, unknown>>; nativeLocales?: Record<string,string> }
+export interface PanelLibrary { schema: PanelSchema; dependency: PanelDependency; resources: PanelResource[]; gameScript: string; scruiScript: string; serviceScript?: string | null; serviceConstants?: string | null; css: string; components: PanelComponent[]; contexts: Record<string, Record<string, unknown>>; nativeLocales?: Record<string,string> }
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface PreviewReport { dimensions: [number, number]; contentBounds: Rect; items: Array<{id: number; name: string; visible: boolean; rect: Rect; error?: string}>; text: string; error?: string; powerRect?: Rect }
 export const panelComponents: readonly PanelComponent[] = catalog;
@@ -43,6 +44,21 @@ export function availableComponents(leaves: readonly string[], managed = false, 
 }
 export function itemName(c: PanelComponent, hide: boolean): string {
   return `OpenSCPPanel_${c.id}${c.feedback ? hide ? '_hide' : '_native' : ''}`;
+}
+export function resolvePanelItems(items: readonly string[], all: readonly PanelComponent[], hide: boolean) {
+  const fusion = items.find(id => id.startsWith('fusion-'));
+  const station = items.find(id => id.startsWith('controlnet-'));
+  const owner = items.includes('feedback') ? 'feedback' : fusion ?? station!;
+  const status = fusion ? 'kFusionReactorFeedback' : station ? 'kARFTextFeedback' : null;
+  const rows = items.flatMap(id => {
+    const c = all.find(component => component.id === id);
+    if (!c) throw Error('PANEL_COMPONENT_UNKNOWN:' + id);
+    if (status && id === 'feedback') return [];
+    const native = (nativeServiceRecipes as Record<string, string[]>)[id];
+    const names = fusion && id === 'maintenance' ? ['kMaintenance_Unconnected'] : native ?? [itemName(c, hide)];
+    return names.map(name => ({ id, name }));
+  });
+  return status ? [{ id: owner, name: status }, ...rows] : rows;
 }
 export function nameHash(name: string): number { let h=2166136261; for(const c of name.toLowerCase())h=(Math.imul(h,16777619)^c.charCodeAt(0))>>>0; return h; }
 export function insertComponent(schema: PanelSchema, mode: PanelMode, id: string, index: number): PanelSchema {

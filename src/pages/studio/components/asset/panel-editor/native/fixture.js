@@ -28,13 +28,24 @@ window.createComboData=function(panel,state,missingNames=[],sampleRci=false,samp
  }
  const props={};for(let name of ['kPropHappiness_HappinessTokensThresholdForDensityUpgrade','kPropProfit_ProfitTokensThresholdForDensityUpgrade'])props[simcity[name]]=100;
  props[0x0AFB9881]=13334;props[0x0C09DAA0]=400000;
+ props[simcity.kPropPowerProducer_Rate]=2;
+ if(state.indexOf('fusion-')===0){
+  set('Power',state==='fusion-charging'?220000:state==='fusion-running'?400000:0,400000);
+  set('FusionReactorCharging',state==='fusion-charging'?1:0,1);
+  set('FusionPower',state==='fusion-running'?1:0,1);
+  set('PowerToTransmit',state==='fusion-running'?13334:0,13334);
+  set('AcademySkilled',1,1);set('AcademySkillNeeded',1250,1250);
+ }
  for(let [id,amount,capacity] of [[0x3EB59739,13334,13334],[0x8E8B4E10,320000,400000],[0x5737C2E4,150,1250]]){
+  if(resources[id])continue;
   resources[id]={name:'resource:'+id,amount,capacity,provenance:'fusion power preview fixture'};
  }
  props[0x0E2660C6]=68;
  props[0x0D084715]=2;
  props[0x0A7917C5]=25;props[0x0A7917C6]=50;props[0x0A7917C7]=100;props[0xAA5FE358]=5250;
- for(let [id,amount] of [[0x97235AA7,10],[0x97235AA4,20],[0x97235AA5,40],[0xFCAB1E3F,210]]){
+ props[0x0FD16BE4]=6;props[0x0FF564C9]=1;props[0x0FF564CB]=2;props[0x0FF564CD]=4;
+ if(!sampleTower){set('JobsW1',25);set('JobsW2',50);set('JobsW3',100);}
+ for(let [id,amount] of [[0x97235AA7,25],[0x97235AA4,39],[0x97235AA5,75],[0xFCAB1E3F,403]]){
   resources[id]={name:'resource:'+id,amount,capacity:100000,provenance:'ControlNet preview fixture'};
  }
  props[simcity.kPropWork_MinimumWorkersForProduction]=5;props[simcity.kPropWork_TotalJobs]=34;
@@ -45,7 +56,11 @@ window.createComboData=function(panel,state,missingNames=[],sampleRci=false,samp
    let bin=resources[id];if(!bin){bin={name:'resource:'+id,amount:0,capacity:100,provenance:'explicit zero-valued synthetic supporting resource'};resources[id]=bin;}
    return kind==='bins'?{amount:bin.amount,capacity:bin.capacity}:bin.amount;
   }
-  if(kind==='flags'){if(id===simcity.kUnitFlagOpenForBusiness)return state!=='closed';return [simcity.kUnitFlagNormal,simcity.kUnitFlagActiveBuilding,44].includes(id);}
+  if(kind==='flags'){
+   if(id===simcity.kUnitFlagForcePowerShutDown)return state==='fusion-ready';
+   if(id===simcity.kUnitFlagOpenForBusiness)return state!=='closed';
+   return [simcity.kUnitFlagNormal,simcity.kUnitFlagActiveBuilding,44].includes(id);
+  }
   if(q.includes('properties')&&props[id]!==undefined)return props[id];
   return fallback;
  }};

@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {availableComponents,clipSlot,insertComponent,panelComponents,itemName,nameHash,type PanelSchema} from './model';
+import {availableComponents,clipSlot,insertComponent,panelComponents,itemName,nameHash,resolvePanelItems,type PanelSchema} from './model';
 import {panelEditorZh,panelEditorEn} from '@/locales/panel-editor';
 import schema from '@/lib/panel-schema.json';
 import { unsupportedPanelItems } from './panelBuildDiagnostic';
@@ -13,6 +13,17 @@ describe('independent panel document',()=>{
   const feedback=panelComponents.find(c=>c.id==='residence-feedback')!;expect(nameHash(itemName(feedback,true))).not.toBe(nameHash(itemName(feedback,false)));
  });
  it('bounds selection by the visible content area rather than native authored width',()=>{expect(clipSlot({x:0,y:37,width:317,height:28},{x:7,y:40,width:265,height:206})).toEqual({x:7,y:40,width:265,height:25});});
+ it('resolves saved service slots to the retail controls and emits feedback once', () => {
+  const names = (items: string[]) => resolvePanelItems(items,panelComponents,true).map(row=>row.name);
+  expect(names(['maintenance','fusion-generation','fusion-charge','fusion-controlnet','feedback'])).toEqual([
+   'kFusionReactorFeedback','kMaintenance_Unconnected','kPowerProduction_Unconnected','kFusionReactorPowerStored',
+   'kFusionReactorPowerUp','kPowerForLocalUseToggle','kAcademyConsumerCondensed',
+  ]);
+  expect(names(['maintenance','controlnet-workers','controlnet-production'])).toEqual([
+   'kARFTextFeedback','OpenSCPPanel_maintenance','kAcademyWorkers','kAcademySkillGenerated','kAcademySkillForLocalUseToggle',
+  ]);
+  expect(names(['maintenance','feedback'])).toEqual(['OpenSCPPanel_maintenance','OpenSCPPanel_feedback_hide']);
+ });
  it('has labels in both languages for every registered component',()=>{for(const c of panelComponents){expect(panelEditorZh.components).toHaveProperty(c.id);expect(panelEditorEn.components).toHaveProperty(c.id);}});
  it('accepts RCI controls in the schema and omits them from the managed container library', () => {
   const controls = ['land-value-residential', 'land-value-commercial', 'industrial-tech-level', 'density-happiness', 'density-profit',

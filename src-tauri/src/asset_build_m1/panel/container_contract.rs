@@ -1,5 +1,5 @@
 //! Authored panel contract for a host whose business data lives on modules.
-use super::{PanelPlan, PanelSchema, hash, processor::ids, spec::MissingFeedback};
+use super::{PanelPlan, PanelSchema, hash, processor::slot_names, spec::MissingFeedback};
 use crate::asset_build_m1::{
     behavior_nodes::ResolvedBehavior, connector::Resources, patch::parse_tgi,
 };
@@ -24,18 +24,16 @@ pub(super) fn uses_tourist_capacity(config: &PanelSchema, program: &ResolvedBeha
 }
 
 pub(super) fn bindings(items: &[String], hide: bool, scoped_tourists: bool, scoped_shoppers: bool, program:Option<&ResolvedBehavior>) -> Vec<Value> {
-    let mut result = ids(items, hide);
-    for (item, binding) in items.iter().zip(&mut result) {
+    slot_names(items, hide).into_iter().map(|(item, binding)| {
         if let Some(value)=program.and_then(|p|super::component_queries::binding(item,hide,p)) {
-            *binding=value;continue;
+            return value;
         }
-        match item.as_str() {
-            "tourists" if scoped_tourists => *binding = Value::UInt32(hash("OpenSCPPanel_containerTourists")),
-            "shoppers" if scoped_shoppers => *binding = Value::UInt32(hash(super::container_shoppers::BINDING)),
-            _ => {}
-        }
-    }
-    result
+        Value::UInt32(match item {
+            "tourists" if scoped_tourists => hash("OpenSCPPanel_containerTourists"),
+            "shoppers" if scoped_shoppers => hash(super::container_shoppers::BINDING),
+            _ => hash(&binding),
+        })
+    }).collect()
 }
 
 fn tourist_capacity(

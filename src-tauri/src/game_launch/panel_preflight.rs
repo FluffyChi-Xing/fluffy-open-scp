@@ -46,12 +46,14 @@ fn dependency_path(artifact: &Path) -> Option<PathBuf> {
 }
 
 pub(super) fn verify(artifact: &Path, game_data: &Path) -> Result<(), CommandError> {
-    let bindings = authored_bindings(artifact)?;
+    let mut bindings = authored_bindings(artifact)?;
     if bindings.is_empty() { return Ok(()); }
     let bad_runtime = |path: &Path| CommandError::new("deploy_panel_runtime_source", path.display().to_string());
     let base_path = game_data.join("SimCity_Game.package");
     let stock = read_resource(&base_path, PANEL_GAME_JS).ok().flatten()
         .ok_or_else(|| bad_runtime(&base_path))?;
+    crate::asset_build_m1::panel::resolve_installed_bindings(game_data, &stock, &mut bindings)
+        .map_err(|error| CommandError::new("deploy_panel_runtime_source", error))?;
     let legacy = if let Some(path) = dependency_path(artifact) {
         let required = read_resource(&path, PANEL_GAME_JS).ok().flatten()
             .ok_or_else(|| bad_runtime(&path))?;

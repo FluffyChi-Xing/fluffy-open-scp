@@ -86,12 +86,13 @@ pub(in crate::asset_build_m1) fn verify_written_service_controls(
         .map_err(|error| error.to_string())?;
     verify(resources, &asset, &panel.config, program, host)?;
     for (field, items) in [(0x0CAB_B2FC, &panel.config.hover), (0x0CAF_BDC3, &panel.config.click)] {
-        for (index, item) in items.iter().enumerate().filter(|(_, item)| service_control(item)) {
-            let expected = binding(item, false, program)
-                .unwrap_or_else(|| Value::UInt32(hash(&super::item_name(item))));
-            if asset.get(field).and_then(|prop| prop.array()).and_then(|rows| rows.get(index)) != Some(&expected) {
-                return Err(format!("PANEL_CONTAINER_BINDING: {item} differs at {field:08X}"));
-            }
+        let expected = super::container_contract::bindings(
+            items, panel.config.missing_feedback == super::spec::MissingFeedback::Hide,
+            super::container_contract::uses_tourist_capacity(&panel.config, program),
+            super::container_shoppers::enabled(&panel.config, program), Some(program),
+        );
+        if asset.get(field).and_then(|prop| prop.array()) != Some(expected.as_slice()) {
+            return Err(format!("PANEL_CONTAINER_BINDING: service panel differs at {field:08X}"));
         }
     }
     Ok(())
