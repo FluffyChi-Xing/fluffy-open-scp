@@ -8,6 +8,7 @@ import FStartupLoading from "@/components/ui/FStartupLoading.vue";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 import { unitsFromSchema } from "@/pages/packages/components/property-editor/peSchemaDoc";
 import type { ModelState, UnitGrouping } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
+import type { PathPointLike } from "@/render/plan/path";
 import { restoreDecalSources } from "./workbenchDecals";
 
 defineOptions({ inheritAttrs: false });
@@ -69,6 +70,22 @@ const schemaBinding = computed(() => {
   if (!props.schema) return {};
   const units = unitsFromSchema(props.schema);
   restoreDecalSources(props.schema, units);
+  const editor = props.schema.editor as {
+    groups?: Record<string, boolean>;
+    unitVisibility?: Record<string, boolean>;
+    workbench?: { source?: string; paths?: { id: string; pointIds: string[] }[] };
+  };
+  const paths = editor?.workbench?.paths;
+  const authoredPaths = paths && (paths.length > 0 || editor.workbench?.source !== "native");
+  type Memberships = NonNullable<PathPointLike["previewPathMemberships"]>;
+  const membershipByPoint = new Map<string, Memberships[number][]>();
+  for (const path of paths ?? []) {
+    for (const [order, pointId] of path.pointIds.entries()) {
+      let memberships = membershipByPoint.get(pointId);
+      if (!memberships) membershipByPoint.set(pointId, (memberships = []));
+      memberships.push({ id: path.id, order });
+    }
+  }
   const grouping: UnitGrouping = {
     lights: [],
     decals: [],
@@ -95,15 +112,19 @@ const schemaBinding = computed(() => {
         grouping.spawners.push(unit);
         break;
       case "pathPoint":
-        grouping.pathPoints.push(unit);
+        if (authoredPaths) {
+          const point = {
+            ...unit,
+            previewPathMemberships: membershipByPoint.get(`pathPoint:${unit.index}`) ?? [],
+          };
+          grouping.pathPoints.push(point);
+        } else {
+          grouping.pathPoints.push(unit);
+        }
         break;
     }
   }
   const lot = props.schema.lot as Record<string, unknown>;
-  const editor = props.schema.editor as {
-    groups?: Record<string, boolean>;
-    unitVisibility?: Record<string, boolean>;
-  };
   return {
     grouping,
     lotSize: lot.size,

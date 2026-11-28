@@ -2,12 +2,13 @@ import { mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
 import * as THREE from "three";
 import { expect, it } from "vitest";
-import type { DecalUnit } from "@/api/tauri";
+import type { DecalUnit, PathPointUnit } from "@/api/tauri";
 import FStartupLoading from "@/components/ui/FStartupLoading.vue";
 import { i18n } from "@/locales";
 import { schemaUnitJson } from "@/pages/packages/components/property-editor/peSchemaDoc";
 import { createSunEnv } from "@/pages/packages/components/property-editor/refinedRender";
 import { buildDecalBody } from "@/render/exec/three/decalBody";
+import { groupPathPointPolylines } from "@/render/plan/path";
 import { createPlacedDecal, writeDecalSources } from "./workbenchDecals";
 import WorkbenchSchemaViewport from "./WorkbenchSchemaViewport.vue";
 
@@ -83,6 +84,43 @@ function document() {
   writeDecalSources(schema, [unit]);
   return JSON.parse(JSON.stringify(schema));
 }
+
+it("keeps completed and newly drawn paths separate, with their authored point order", async () => {
+  const points: Pick<PathPointUnit, "index" | "point" | "pointIndex">[] = [
+    { index: 0, point: [0, 0, 0], pointIndex: 0 },
+    { index: 1, point: [0, 20, 0], pointIndex: 0 },
+    { index: 2, point: [20, 0, 0], pointIndex: 1 },
+    { index: 4, point: [20, 20, 0], pointIndex: 1 },
+  ];
+  const makeSchema = (withSecondPoint: boolean) => ({
+    ...document(),
+    units: points.filter((point) => withSecondPoint || point.index !== 4).map((point) =>
+      schemaUnitJson({ kind: "pathPoint", tangent: null, fields: [], ...point }),
+    ),
+    editor: {
+      workbench: {
+        paths: [
+          { id: "path:1", pointIds: ["pathPoint:0", "pathPoint:2"] },
+          { id: "path:2", pointIds: withSecondPoint
+            ? ["pathPoint:1", "pathPoint:4"] : ["pathPoint:1"] },
+        ],
+      },
+    },
+  });
+  const wrapper = mount(WorkbenchSchemaViewport, {
+    props: { schema: makeSchema(false) }, global,
+  });
+  try {
+    const viewport = wrapper.getComponent(Viewport);
+    const polylines = () => groupPathPointPolylines(viewport.props("grouping").pathPoints)
+      .map((path) => path.map((point) => point.point));
+    expect(polylines()).toEqual([[[0, 0, 0], [20, 0, 0]]]);
+    await wrapper.setProps({ schema: makeSchema(true) });
+    expect(polylines()).toEqual([[[0, 0, 0], [20, 0, 0]], [[0, 20, 0], [20, 20, 0]]]);
+  } finally {
+    wrapper.unmount();
+  }
+});
 
 it.each([0x12345678, 0xe5390a98, 0x73684efc, 0x4491de3a])(
   "keeps dropped family %s renderable through the actual schema viewport boundary", async (materialInstance) => {

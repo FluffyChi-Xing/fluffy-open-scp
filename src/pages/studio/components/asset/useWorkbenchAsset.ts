@@ -30,6 +30,7 @@ import {
   nextPathId,
   normalizeWorkbenchPath,
   pathAutoTangent,
+  pathPointIdIndex,
   recomputePathTangents,
   type Vec3,
   type WorkbenchPath,
@@ -815,7 +816,7 @@ export function useWorkbenchAsset(
       // 路径实体（2026-11-07 类型化）：几何在 pathPoint 单元，这里存
       // type/entry/scope/roadConnect 与有序点引用；entry 由构建器按 type
       // 换算，作者不接触。恢复见 restoreUnits。
-      paths: draftPaths.value.map((path) => ({ ...path })),
+      paths: livePaths.value,
       megaTower: draftMegaTower.value,
       // 编辑族声明（delta 写回 + delta-audit 的意图来源）。
       writes: [...draftWrites.value].sort(),
@@ -852,6 +853,8 @@ export function useWorkbenchAsset(
     releaseLotModelCache();
     decalPreviews.reset();
     draftEdit.reset();
+    activePathId.value = null;
+    focusedPathId.value = null;
     draftWrites.value = new Set();
     draftLogic.value = emptyLogicGraph();
     draftMegaTower.value = undefined;
@@ -1077,6 +1080,14 @@ export function useWorkbenchAsset(
 
   // ---- 路径规划（2026-10-27）：路径为一等实体，几何挂在 pathPoint 单元 ----
   const draftPaths = ref<WorkbenchPath[]>([]);
+  const livePaths = computed(() => {
+    const points = new Set((ui.value?.flatUnits ?? [])
+      .filter((unit) => unit.kind === "pathPoint").map(unitId));
+    return draftPaths.value.map((path) => ({
+      ...path,
+      pointIds: path.pointIds.filter((id) => points.has(id)),
+    }));
+  });
   const draftMegaTower = shallowRef<unknown>();
   function setMegaTower(value: unknown): void {
     draftMegaTower.value = value;
@@ -1151,11 +1162,12 @@ export function useWorkbenchAsset(
   function syncPathTails(path: WorkbenchPath): void {
     const edit = ui.value?.edit;
     if (!edit) return;
-    const positions = path.pointIds.map((id) => unitPosition(id));
+    const pointIds = livePaths.value.find((candidate) => candidate.id === path.id)?.pointIds ?? [];
+    const positions = pointIds.map((id) => unitPosition(id));
     const tangents = recomputePathTangents(positions);
-    const touched = path.pointIds.slice(-2);
+    const touched = pointIds.slice(-2);
     touched.forEach((id, offset) => {
-      const index = path.pointIds.length - touched.length + offset;
+      const index = pointIds.length - touched.length + offset;
       const unit = edit.addedUnits.find(
         (candidate) => unitId(candidate) === id,
       );
@@ -1193,25 +1205,30 @@ export function useWorkbenchAsset(
     return id;
   }
 
-  /** Draw 模式点击落点：把点追加进当前路径（无激活路径则先建一条）。 */
+  /** Draw 模式点击落点：把点追加进当前路径。 */
   function addPathPoint(position: [number, number, number]): string | null {
     const edit = ui.value?.edit;
     if (!edit) return null;
-    let path = activePathId.value ? pathById(activePathId.value) : null;
-    if (!path) {
-      const id = createPath();
-      path = pathById(id);
-    }
+    const path = activePathId.value ? pathById(activePathId.value) : null;
     if (!path) return null;
-    const prev = path.pointIds.length
-      ? unitPosition(path.pointIds[path.pointIds.length - 1])
-      : null;
+    const livePointIds = livePaths.value.find((candidate) => candidate.id === path.id)?.pointIds ?? [];
+    const tailId = livePointIds.at(-1);
+    const prev = tailId ? unitPosition(tailId) : null;
+    // Undo can temporarily remove a unit while its authored path still holds
+    // the ID for redo. A new point must never claim that reference.
+    let index = nextIndexOf("pathPoint");
+    for (const existing of draftPaths.value) {
+      for (const id of existing.pointIds) {
+        const reserved = pathPointIdIndex(id);
+        if (reserved !== null) index = Math.max(index, reserved + 1);
+      }
+    }
     const unit: LotUnitDto = {
       kind: "pathPoint",
-      index: nextIndexOf("pathPoint"),
+      index,
       point: position,
       tangent: pathAutoTangent(prev, position, null),
-      pointIndex: path.pointIds.length,
+      pointIndex: livePointIds.length,
       fields: [],
     } as unknown as LotUnitDto;
     edit.addUnit(unit);
@@ -1226,8 +1243,10 @@ export function useWorkbenchAsset(
   function removeLastPathPoint(): void {
     const path = activePathId.value ? pathById(activePathId.value) : null;
     const edit = ui.value?.edit;
-    if (!path || !edit || !path.pointIds.length) return;
-    const id = path.pointIds.pop()!;
+    if (!path || !edit) return;
+    const id = livePaths.value.find((candidate) => candidate.id === path.id)?.pointIds.at(-1);
+    if (!id) return;
+    path.pointIds = path.pointIds.filter((pointId) => pointId !== id);
     edit.removeUnit(id);
     syncPathTails(path);
     markWrite("paths");
@@ -2183,7 +2202,7 @@ export function useWorkbenchAsset(
     placeDecal,
     deleteUnit,
     selectUnit,
-    draftPaths,
+    draftPaths: livePaths,
     activePathId,
     focusedPathId,
     createPath,

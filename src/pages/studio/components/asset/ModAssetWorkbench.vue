@@ -71,6 +71,7 @@ const dependencies = useEditorPackages("assets");
 provide(EDITOR_PACKAGES, dependencies);
 const asset = useWorkbenchAsset(props.project, Boolean(props.variantSchemaPath), dependencies);
 const ui = asset.ui;
+const pathDrawing = computed(() => asset.activePathId.value !== null);
 const variantPickerOpen = ref(false);
 const variantProject = computed(() => Boolean(props.variantSchemaPath));
 
@@ -184,6 +185,7 @@ function commitTransform(id: string, matrix: number[]) {
 function toggleEdit() {
   editEnabled.value = !editEnabled.value;
   if (editEnabled.value) renderMode.value = "default";
+  else if (pathDrawing.value) finishPathDraw();
 }
 function commitFields(id: string, patch: Record<string, unknown>) {
   ui.value?.edit.setUnitFields(id, patch);
@@ -221,8 +223,8 @@ const viewportBindings = computed(() => {
     decalTextures: current.decalTextures,
     decalLight: current.decalLight,
     selectedId: current.selectedId.value,
-    tool: tool.value,
-    editEnabled: editEnabled.value,
+    tool: pathDrawing.value ? "select" : tool.value,
+    editEnabled: editEnabled.value && !pathDrawing.value,
     modelSelectable:
       editEnabled.value && current.editMode === "draft" && !current.loading && !!current.modelPayload,
     modelTransform: current.modelTransform,
@@ -284,23 +286,17 @@ useEventListener(window, "pointerup", async (event: PointerEvent) => {
 });
 
 // ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----
-const pathDrawing = ref(false);
-let viewportDownAt: { x: number; y: number } | null = null;
+let viewportDownAt: { x: number; y: number; pointerId: number; pathId: string } | null = null;
 
 function startPathDraw(type: PathTypeId): void {
-  if (!editEnabled.value) return;
-  if (!asset.activePathId.value) {
-    asset.createPath({ type });
-  } else {
-    // 已有激活路径：切换类型 = 换语义配方（entry/scope/connect 由构建器换算）
-    asset.updatePath(asset.activePathId.value, { type });
-  }
-  pathDrawing.value = true;
+  if (!editEnabled.value || pathDrawing.value) return;
+  viewportDownAt = null;
+  asset.createPath({ type });
 }
 
 function finishPathDraw(): void {
   asset.finishPath();
-  pathDrawing.value = false;
+  viewportDownAt = null;
   // 结束绘制时丢弃尚未落点的路径拖放载荷，避免完成后 pointerup
   // 通过通用放置管线再创建一个孤立 pathPoint。
   if (placementPayload.value?.kind === "pathPoint") {
@@ -311,22 +307,30 @@ function finishPathDraw(): void {
 
 /** Draw 模式视口点击加点：按下/抬起位移 <6px 才算点击（相机轨道拖拽排除）。 */
 function onViewportPointerDown(event: PointerEvent): void {
-  if (!pathDrawing.value || event.button !== 0) return;
-  viewportDownAt = { x: event.clientX, y: event.clientY };
+  const pathId = asset.activePathId.value;
+  if (!editEnabled.value || !pathId || event.button !== 0 ||
+      !(event.target instanceof HTMLCanvasElement)) return;
+  viewportDownAt = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, pathId };
 }
 function onViewportPointerUp(event: PointerEvent): void {
-  if (!pathDrawing.value || event.button !== 0 || !viewportDownAt) return;
-  const moved = Math.hypot(
-    event.clientX - viewportDownAt.x,
-    event.clientY - viewportDownAt.y,
-  );
+  const start = viewportDownAt;
+  if (!start || event.pointerId !== start.pointerId) return;
   viewportDownAt = null;
+  if (!editEnabled.value || event.button !== 0 || asset.activePathId.value !== start.pathId) return;
+  const moved = Math.hypot(
+    event.clientX - start.x,
+    event.clientY - start.y,
+  );
   if (moved > 6) return;
   const position = viewportRef.value?.groundPointAt(
     event.clientX,
     event.clientY,
   );
   if (position) asset.addPathPoint(position);
+}
+
+function onViewportPointerCancel(event: PointerEvent): void {
+  if (viewportDownAt?.pointerId === event.pointerId) viewportDownAt = null;
 }
 
 // ---- 单元剪贴板（逻辑层见 clipboard/；组件只做热键与 toast 映射）----
@@ -348,6 +352,7 @@ const unitClipboard = useUnitClipboard({
 useEditorHotkeys(
   computed(() => ui.value !== null),
   () => [
+    ...(pathDrawing.value ? [{ combo: "enter", handler: finishPathDraw }] : []),
     { combo: "g", handler: () => (tool.value = "translate") },
     { combo: "r", handler: () => (tool.value = "rotate") },
     { combo: "s", handler: () => (tool.value = "scale") },
@@ -1122,6 +1127,7 @@ function templateOf(resourceId: number) {
               class="maw-viewport"
               @pointerdown="onViewportPointerDown"
               @pointerup="onViewportPointerUp"
+              @pointercancel="onViewportPointerCancel"
             >
               <p v-if="pathDrawing" class="maw-draw-hint" role="status">
                 {{ t("studio.assetWorkbench.pathDrawHint") }}
