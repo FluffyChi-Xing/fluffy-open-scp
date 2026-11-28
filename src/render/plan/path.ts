@@ -13,6 +13,8 @@ export type PathPointLike = {
   index: number;
   point: [number, number, number] | null;
   pointIndex?: number | null;
+  /** Workbench-only path membership, resolved from the ordered authored IDs. */
+  previewPathMemberships?: readonly { id: string; order: number }[];
 };
 
 /** 把 pathPairs 解析为若干闭区间；非法/奇数尾丢弃。 */
@@ -41,7 +43,7 @@ export function parsePathPairRanges(
 
 /**
  * 按 pathPairs 分组 pathPoint；仅同组内点构成折线。
- * pairs 缺失或无法产出 ≥2 点的组时，回退为按 pointIndex/index 排序的单折线。
+ * 已声明分组时跳过少于两点的组；没有分组时沿用旧数据的单折线。
  */
 export function groupPathPointPolylines<T extends PathPointLike>(
   points: readonly T[],
@@ -49,6 +51,20 @@ export function groupPathPointPolylines<T extends PathPointLike>(
 ): T[][] {
   const withPoint = points.filter((point) => point.point != null);
   if (withPoint.length === 0) return [];
+
+  if (withPoint.some((point) => point.previewPathMemberships !== undefined)) {
+    const groups = new Map<string, { point: T; order: number }[]>();
+    for (const point of withPoint) {
+      for (const { id, order } of point.previewPathMemberships ?? []) {
+        let group = groups.get(id);
+        if (!group) groups.set(id, (group = []));
+        group.push({ point, order });
+      }
+    }
+    return [...groups.values()].filter((group) => group.length >= 2).map((group) =>
+      group.sort((a, b) => a.order - b.order).map(({ point }) => point),
+    );
+  }
 
   const ranges = parsePathPairRanges(pathPairs);
   if (ranges.length > 0) {
@@ -65,7 +81,7 @@ export function groupPathPointPolylines<T extends PathPointLike>(
       }
       if (group.length >= 2) groups.push(group);
     }
-    if (groups.length > 0) return groups;
+    return groups;
   }
 
   return [

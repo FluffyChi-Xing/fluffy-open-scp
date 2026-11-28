@@ -22,6 +22,7 @@ import { nativeTreeAssets } from "./map-native-assets";
 import { createNativeRoads, hasNativeRoadNetwork } from "./map-native-roads";
 import { createMapWater } from "./map-water";
 import { createMapSceneRoot, mapToScene, sceneToMap } from "./map-coordinates";
+import { createWindArrows } from "./wind-arrows";
 
 const props = defineProps<{
   data: Region3DData | null;
@@ -36,9 +37,15 @@ const props = defineProps<{
   terrainEditing?: boolean;
   brushRadius?: number;
   editedHeight?: string | null;
+  resourceData?: Region3DData;
+  resourceBrushDrag?: boolean;
 }>();
 const { t, locale } = useI18n();
-const emit = defineEmits<{ selectPlot: [uid: string]; terrainPoint: [x: number, y: number] }>();
+const emit = defineEmits<{
+  selectPlot: [uid: string];
+  terrainPoint: [x: number, y: number];
+  resourceStroke: [points: [number, number][]];
+}>();
 const localizedLabels: Array<{ sprite: THREE.Sprite; text: () => string; color: string; fontPx: number }> = [];
 
 function localizedSprite(text: () => string, color: string, fontPx = 42): THREE.Sprite {
@@ -72,7 +79,9 @@ let plotGroup: THREE.Group | null = null;
 let vegetationGroup: THREE.Group | null = null;
 let roadGroup: THREE.Group | null = null;
 let waterMesh: THREE.Mesh | null = null;
-let setResource: ((kind: string | null, opacity: number) => void) | null = null;
+let setResource: ((kind: string | null, opacity: number, edited?: Region3DData) => void) | null = null;
+let updateWindArrows: ReturnType<typeof createWindArrows>["update"] | null = null;
+const scalarLayer = () => props.activeResource === "wind" ? null : props.activeResource ?? null;
 let buildGeneration = 0;
 let raf = 0;
 let observer: ResizeObserver | null = null;
@@ -418,6 +427,7 @@ async function build(data: Region3DData, preserveView = false) {
   // 中键自动滚屏 / 右键菜单 / 滚轮页面滚动：就地拦截，不冒泡到页面
   const el = renderer.domElement;
   let pointerStart: [number, number] | null = null;
+  let resourceStroke: [number, number][] | null = null;
   let hover: [number, number] | null = null;
   let hoverDirty = false;
   const ray = new THREE.Raycaster();
@@ -434,17 +444,42 @@ async function build(data: Region3DData, preserveView = false) {
   function terrainHit() {
     return ray.intersectObjects(terrain.group.children, false).find(hit => hit.object.userData.terrainSurface);
   }
+  function sampleResourceStroke(event: PointerEvent) {
+    if (!resourceStroke || !aimAt(event.clientX, event.clientY)) return;
+    const hit = terrainHit();
+    if (!hit) return;
+    const point = sceneToMap(hit.point);
+    const last = resourceStroke.at(-1);
+    if (!last) {
+      resourceStroke.push([point.x, point.y]);
+      return;
+    }
+    const count = Math.min(512 - resourceStroke.length,
+      Math.floor(Math.hypot(point.x - last[0], point.y - last[1]) / Math.max(4, (props.brushRadius ?? 48) / 2)));
+    for (let i = 1; i <= count; i++) {
+      resourceStroke.push([last[0] + (point.x - last[0]) * i / count,
+        last[1] + (point.y - last[1]) * i / count]);
+    }
+  }
   el.addEventListener("pointerdown", (e) => {
     if (e.button === 0) pointerStart = [e.clientX, e.clientY];
     if (e.button === 1 || e.button === 2) e.preventDefault();
-    if (e.button === 0 && props.terrainEditing) e.stopImmediatePropagation();
+    if (e.button === 0 && props.terrainEditing) {
+      e.stopImmediatePropagation();
+      if (props.resourceBrushDrag) {
+        resourceStroke = [];
+        sampleResourceStroke(e);
+      }
+    }
   });
   el.addEventListener("pointermove", (e) => {
     hover = [e.clientX, e.clientY];
     hoverDirty = true;
+    sampleResourceStroke(e);
   });
   function clearBrushPointer() {
     pointerStart = null;
+    resourceStroke = null;
     hover = null;
     hoverDirty = true;
   }
@@ -454,6 +489,13 @@ async function build(data: Region3DData, preserveView = false) {
     if (e.button !== 0) return;
     const start = pointerStart;
     pointerStart = null;
+    if (resourceStroke) {
+      sampleResourceStroke(e);
+      const points = resourceStroke;
+      resourceStroke = null;
+      if (points.length && props.terrainEditing) emit("resourceStroke", points);
+      return;
+    }
     if (!start || Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 5) return;
     if (!aimAt(e.clientX, e.clientY)) return;
     if (props.terrainEditing) {
@@ -541,7 +583,11 @@ async function build(data: Region3DData, preserveView = false) {
     if (wasVisible || ring.visible) needsRenderFlag = true;
   }
   setResource = terrain.setResource;
-  setResource(props.activeResource ?? null, props.resourceOpacity ?? 0.75);
+  setResource(scalarLayer(), props.resourceOpacity ?? 0.75, props.resourceData);
+  const wind = createWindArrows(data.plots.length, terrain.heightWorld, data.waterZ);
+  root.add(wind.layer);
+  updateWindArrows = wind.update;
+  wind.update(props.resourceData?.windArrows, props.activeResource === "wind");
   const roadMask = roadPreviewMask(groundPx.data, S);
 
   terrain.updateLods();
@@ -552,7 +598,7 @@ async function build(data: Region3DData, preserveView = false) {
   waterMesh = water.mesh;
   const hasWater = raw.some((value) => value / data.heightDiv + data.heightBias < data.waterZ);
   waterMesh.userData.hasWater = hasWater;
-  waterMesh.visible = hasWater && props.showWater !== false && !props.activeResource;
+  waterMesh.visible = hasWater && props.showWater !== false && !scalarLayer();
   root.add(waterMesh);
 
   // ── 地面网格（图2式底格，水下）──
@@ -579,7 +625,7 @@ async function build(data: Region3DData, preserveView = false) {
   root.add(roads);
   vegetationGroup = createVegetation(data, groundPx, roadMask, terrain.heightWorld,
     nativeTreeAssets(data.forestModels ?? [], treePixels, renderer));
-  vegetationGroup.visible = props.showVegetation !== false && !props.activeResource;
+  vegetationGroup.visible = props.showVegetation !== false && !scalarLayer();
   root.add(vegetationGroup);
 
   // ── 地块框 + 伟工标记 + 名字标签 ──
@@ -749,6 +795,7 @@ async function build(data: Region3DData, preserveView = false) {
     }
     if (moved || needsRenderFlag) {
       needsRenderFlag = false;
+      if (wind.layer.visible) wind.sizeForView(camera, wrap.value?.clientHeight ?? 0);
       renderer.render(scene, camera);
     }
   };
@@ -777,6 +824,7 @@ function disposeScene() {
   renderer?.domElement.remove();
   renderer = null;
   setResource = null;
+  updateWindArrows = null;
   waterMesh = null;
   roadGroup = null;
   vegetationGroup = null;
@@ -843,12 +891,13 @@ watch(
     needsRenderFlag = true;
   },
 );
-watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activeResource, props.resourceOpacity], () => {
-  const resourceView = Boolean(props.activeResource);
+watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activeResource, props.resourceOpacity, props.resourceData], () => {
+  const resourceView = Boolean(scalarLayer());
   if (vegetationGroup) vegetationGroup.visible = props.showVegetation !== false && !resourceView;
   if (roadGroup) roadGroup.visible = props.showRoads !== false;
   if (waterMesh) waterMesh.visible = waterMesh.userData.hasWater && props.showWater !== false && !resourceView;
-  setResource?.(props.activeResource ?? null, props.resourceOpacity ?? 0.75);
+  setResource?.(scalarLayer(), props.resourceOpacity ?? 0.75, props.resourceData);
+  updateWindArrows?.(props.resourceData?.windArrows, props.activeResource === "wind");
   needsRenderFlag = true;
 });
 </script>

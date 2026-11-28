@@ -4,31 +4,70 @@ import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import RoadAppearancePreview from "@/pages/packages/components/preview/RoadAppearancePreview.vue";
 import type { RoadAppearance } from "@/pages/packages/components/preview/roadAppearanceScene";
-import type { RecipeId, Streetlights } from "./roadSchema";
+import {
+  pavedRecipes,
+  type PavedRecipe,
+  type RecipeId,
+  type Streetlights,
+} from "./roadSchema";
+import type { RoadComposition } from "./roadComposition";
+import type { RoadStrip } from "./roadDraft";
+import { composeRoadDraftAppearance } from "./roadDraftAppearance";
 
 const props = defineProps<{
   project: string;
   gamePackage: string;
   recipe: RecipeId;
   streetlights: Streetlights;
+  composition?: RoadComposition;
+  draft?: readonly RoadStrip[];
 }>();
 const { t } = useI18n();
 const future = shallowRef(false);
 const supportsFuture = computed(() => props.recipe !== "dirt");
+const isDraft = computed(() => props.draft !== undefined);
 watch(supportsFuture, (supported) => {
   if (!supported) future.value = false;
 });
 
-const loadRecipe = computed(() => {
+const nativeLoader = computed(() => {
   const request = {
     project: props.project,
     gamePackage: props.gamePackage,
     recipe: props.recipe,
     future: supportsFuture.value && future.value,
     streetlights: props.streetlights,
+    composition: props.composition,
+    draftAssets: isDraft.value,
   };
+  let pending: Promise<[number, RoadAppearance]> | undefined;
   return () =>
-    command<[number, RoadAppearance]>("read_road_recipe_appearance", request);
+    (pending ??= command<[number, RoadAppearance]>(
+      "read_road_recipe_appearance",
+      request,
+    ).catch((error) => {
+      pending = undefined;
+      throw error;
+    }));
+});
+
+const loadRecipe = computed(() => {
+  const load = nativeLoader.value;
+  const draft = props.draft;
+  const recipe = props.recipe;
+  if (!draft || !pavedRecipes.includes(recipe as PavedRecipe)) return load;
+  return async (): Promise<[number, RoadAppearance]> => {
+    const [instance, assets] = await load();
+    return [
+      instance,
+      composeRoadDraftAppearance(
+        instance,
+        assets,
+        recipe as PavedRecipe,
+        draft,
+      ),
+    ];
+  };
 });
 </script>
 

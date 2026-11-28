@@ -30,6 +30,8 @@ export interface AuthoredLotMeta {
   slots: boolean[];
   borderColors: Rgb3[];
   borderWidths: number[];
+  colorHeights?: number[];
+  borderHeights?: number[];
   borderPatternIndices: number[];
 }
 
@@ -82,6 +84,8 @@ export function parseAuthoredLotMeta(text: string): AuthoredLotMeta | null {
       Array.isArray(value.borderColors) && value.borderColors.length === LOT_SLOT_COUNT
         ? value.borderColors
         : Array.from({ length: LOT_SLOT_COUNT }, () => [...DEFAULT_BORDER] as Rgb3),
+    colorHeights: finiteArray(value.colorHeights, 4) ? value.colorHeights : undefined,
+    borderHeights: finiteArray(value.borderHeights, 4) ? value.borderHeights : undefined,
     borderWidths: finiteArray(value.borderWidths, 4) ? value.borderWidths : [0, 0, 0, 0],
     borderPatternIndices: finiteArray(value.borderPatternIndices, 4)
       ? value.borderPatternIndices
@@ -117,6 +121,8 @@ export function authoredFromSchema(schema: RasterSchema): AuthoredLot {
       borderColors: (lot.borderColors ?? []).length === LOT_SLOT_COUNT
         ? lot.borderColors!.map((color) => [...color] as Rgb3)
         : Array.from({ length: LOT_SLOT_COUNT }, () => [...DEFAULT_BORDER] as Rgb3),
+      colorHeights: lot.colorHeights?.slice(),
+      borderHeights: lot.borderHeights?.slice(),
       borderWidths: lot.borderWidths ? [...lot.borderWidths] : [0, 0, 0, 0],
       borderPatternIndices: lot.borderPatternIndices
         ? [...lot.borderPatternIndices]
@@ -145,6 +151,8 @@ export function schemaFromAuthored(lot: AuthoredLot): RasterSchema {
       size: [...meta.size] as [number, number],
       borderColors: meta.borderColors.map((color) => [...color] as Rgb3),
       borderPatternIndices: [...meta.borderPatternIndices],
+      colorHeights: meta.colorHeights?.slice(),
+      borderHeights: meta.borderHeights?.slice(),
       borderWidths: [...meta.borderWidths],
       slots: [...meta.slots],
       target: null,
@@ -196,6 +204,8 @@ export function authoredLotStyle(lot: AuthoredLot) {
     colors: meta.colors.map((color) => [...color] as Rgba4),
     colorsAuthored: meta.colors.map(() => true),
     borderColors: meta.borderColors.map((color) => [...color] as Rgb3),
+    colorHeights: meta.colorHeights?.slice(),
+    borderHeights: meta.borderHeights?.slice(),
     borderWidths: [...meta.borderWidths],
     borderPatternIndices: [...meta.borderPatternIndices],
     baseTile: meta.baseTile,

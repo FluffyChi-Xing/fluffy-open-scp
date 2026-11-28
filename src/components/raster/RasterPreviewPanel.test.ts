@@ -5,6 +5,7 @@ import { RasterDocument } from "@/lib/raster-editor/document";
 import RasterPreviewPanel from "./RasterPreviewPanel.vue";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterDecalPreview from "./RasterDecalPreview.vue";
+import GraffitiProjectionPreview from "./sign/GraffitiProjectionPreview.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
 
 it("places the live Decal material card after raw RGBA and updates its inputs", async () => {
@@ -28,7 +29,7 @@ it("places the live Decal material card after raw RGBA and updates its inputs", 
     i18n.global.t("rasterEditor.dataAlpha"),
     i18n.global.t("rasterEditor.previewTitle.decal-graffiti"),
   ]);
-  const preview = wrapper.getComponent(RasterDecalPreview);
+  const preview = wrapper.getComponent(GraffitiProjectionPreview);
   expect(preview.props("aspectRatio")).toBe(2);
   await wrapper.setProps({
     version: 1,
@@ -38,12 +39,15 @@ it("places the live Decal material card after raw RGBA and updates its inputs", 
   expect(preview.props("version")).toBe(1);
   expect(preview.props("aspectRatio")).toBe(3);
   expect(preview.props("colors")[0]).toBe("#000000");
+  await wrapper.setProps({ profile: "decal-sign" });
+  expect(wrapper.findComponent(GraffitiProjectionPreview).exists()).toBe(false);
+  expect(wrapper.findComponent(RasterDecalPreview).exists()).toBe(true);
   await wrapper.setProps({ profile: "rgba" });
   expect(wrapper.findComponent(RasterDecalPreview).exists()).toBe(false);
   wrapper.unmount();
 });
 
-it("creates a frozen Lot preview only on refresh and translates the prompt", async () => {
+it("creates a frozen Lot preview on first expansion or refresh and translates the prompt", async () => {
   const doc = new RasterDocument(1, 1);
   doc.pixels.set([255, 0, 0, 0]);
   const wrapper = shallowMount(RasterPreviewPanel, {
@@ -58,9 +62,10 @@ it("creates a frozen Lot preview only on refresh and translates the prompt", asy
   expect(wrapper.text()).toContain(i18n.global.t("rasterEditor.refreshPreviewHint"));
   const lotCard = wrapper.findAllComponents(RasterPreviewCard).at(-1)!;
   expect(lotCard.props("refreshable")).toBe(true);
-  lotCard.vm.$emit("refresh");
+  lotCard.vm.$emit("expand");
   await wrapper.vm.$nextTick();
   const preview = wrapper.findAllComponents(RasterLotPreview).find(p => p.props("renderMode") === "refined")!;
+  expect(preview.props("eager")).toBe(true);
   const originalRaw = preview.props("raw");
   doc.pixels.set([0, 255, 0, 0]);
   await wrapper.setProps({ version: 1 });

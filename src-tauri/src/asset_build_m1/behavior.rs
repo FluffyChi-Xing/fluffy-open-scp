@@ -219,6 +219,18 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         instance,
     };
 
+    let independent_seed = if program.units.is_empty() { None } else {
+        let seed=ctx.resources.get(&unit_id).ok_or("BEHAVIOR_UNIT_RESOURCE: host seed")?;
+        Some(if program.copan_plop_base { super::behavior_copan_base::patch(seed)? } else {seed.clone()})
+    };
+    if program.unit_scope.as_deref() == Some(super::behavior_container::SCOPE) {
+        let host = if program.copan_plop_base {
+            super::behavior_copan_base::patch(ctx.resources.get(&unit_id).unwrap())?
+        } else {
+            super::behavior_container::patch(ctx.resources.get(&unit_id).unwrap())?
+        };
+        ctx.resources.insert(unit_id,host);
+    }
     // Menu-layer freeze baseline: capture the bytes the output must preserve.
     let frozen = freeze_baseline(ctx.resources.all(), &menu_id, instance)?;
 
@@ -282,9 +294,6 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     if !program.author_tourism {
         ensure_behavior_invariants(ctx, &unit_id, &program)?;
     }
-    if let Some(recipe) = &program.native_tourism {
-        recipe.verify(ctx, &unit_id, &lot_id)?;
-    }
     if let Some(office) = &program.office {
         let bytes = ctx.resources.get(&unit_id).ok_or("OFFICE_RESOURCE: Unit")?;
         let unit = office.patch(bytes)?;
@@ -298,9 +307,34 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     if let Some(recipe) = &program.commercial {
         recipe.verify_lot(ctx.resources.all(), &lot_id)?;
         let bytes = ctx.resources.get(&unit_id).ok_or("COMMERCIAL_RESOURCE: Unit")?;
-        let unit = recipe.patch(bytes)?;
+        let unit = if program.office_and_retail {
+            recipe.patch(&super::behavior_office_retail::patch(bytes)?)?
+        } else {
+            recipe.patch(bytes)?
+        };
+        let unit = if let Some((unit, id, bundle)) = recipe.bind_mixed_capacity(&unit, unit_id)? {
+            if ctx.resources.get(&id).is_some() {
+                return Err("COMMERCIAL_BUNDLE: mixed-capacity resource collision".into());
+            }
+            ctx.resources.insert(id, bundle);
+            unit
+        } else {
+            unit
+        };
         ctx.resources.insert(unit_id, unit);
         changed.push(serde_json::json!({"resource": unit_id.to_string(), "commercial": recipe}));
+    }
+    if let Some(recipe) = &program.native_tourism {
+        let bytes = ctx.resources.get(&unit_id).ok_or("TOURISM_RESOURCE: Unit")?;
+        let unit = super::behavior_tourism_lifetime::patch(bytes)?;
+        if &unit != bytes {
+            ctx.resources.insert(unit_id, unit);
+            changed.push(serde_json::json!({
+                "resource": unit_id.to_string(), "field": "0D9114D4",
+                "source": "40E0C000:084DB48F", "value": [120.0, 120.0],
+            }));
+        }
+        recipe.verify(ctx, &unit_id, &lot_id)?;
     }
 
     if let Some(recipe) = &program.hotel {
@@ -311,7 +345,27 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         changed.push(serde_json::json!({"resource": unit_id.to_string(), "hotel": recipe}));
     }
 
-    Ok(serde_json::json!({
+    if let Some(recipe) = &program.fusion {
+        recipe.patch(unit_id, &mut ctx.resources)?;
+        recipe.verify(&ctx.resources, unit_id)?;
+        changed.push(serde_json::json!({"resource": unit_id.to_string(), "fusionPower": recipe}));
+    }
+
+    if let Some(recipe) = &program.controlnet {
+        let bytes = ctx.resources.get(&unit_id).ok_or("CONTROLNET_RESOURCE")?;
+        ctx.resources.insert(unit_id, recipe.patch(bytes)?);
+        changed.push(serde_json::json!({"resource": unit_id.to_string(), "controlnet": recipe}));
+    }
+
+    let independent_units = match independent_seed {
+        Some(seed) => super::behavior_unit_build::apply(ctx, &program, &seed)?,
+        None => serde_json::Value::Null,
+    };
+    if program.unit_scope.as_deref() == Some(super::behavior_container::SCOPE) {
+        super::behavior_container_ui::patch(&mut ctx.resources, instance, &program)?;
+        super::behavior_container_bars::apply(&mut ctx.resources, instance, &program)?;
+    }
+    let mut result = serde_json::json!({
         "instance": format!("{instance:08X}"),
         "menuIdentity": ctx.menu_instance.is_some(),
         "changed": changed,
@@ -323,7 +377,9 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
             .collect::<Vec<_>>(),
         "education": program.education,
         "notes": program.notes,
-    }))
+    });
+    if !independent_units.is_null() { result["independentUnits"] = independent_units; }
+    Ok(result)
 }
 
 /// The menu-layer bytes whose equality the stage guarantees.

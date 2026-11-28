@@ -5,7 +5,8 @@ import { useI18n } from "vue-i18n";
 
 import type { FlowSchema } from "./contracts";
 import MapSourceTool from "./MapSourceTool.vue";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackages } from "@/composables/useEditorPackages";
+import EditorPackagesBar from "@/components/EditorPackagesBar.vue";
 const props = defineProps<{ schema: FlowSchema | null; busy: boolean }>();
 const emit = defineEmits<{
   save: [schema: FlowSchema];
@@ -14,7 +15,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const gamePackages = useGamePackagesStore();
+const gamePackages = useEditorPackages("terrain");
 const config = ref<Record<string, string | number>>({});
 watch(
   () => JSON.stringify(props.schema?.config),
@@ -48,7 +49,6 @@ const preserveOnly = computed(() =>
 );
 const openedPackageOptions = computed(() =>
   [...gamePackages.opened]
-    .sort((a, b) => Number(b.package.packageId === gamePackages.activePackageId) - Number(a.package.packageId === gamePackages.activePackageId))
     .map((entry) => ({
       value: entry.package.path,
       label: entry.package.path.split(/[\\/]/).pop() || entry.package.path,
@@ -82,6 +82,7 @@ function save() {
     class="node-config nodrag nowheel nopan"
     @submit.prevent="save"
   >
+    <EditorPackagesBar :scope="gamePackages" />
     <p v-if="preserveOnly">{{ t("flow.preserveHint") }}</p>
     <p v-if="schema.kind === 'coordinate-alignment'">
       {{ t("flow.alignmentHint") }}

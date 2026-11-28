@@ -43,6 +43,8 @@ pub enum BuildJobStatus {
 pub struct BuildJob {
     pub id: String,
     pub project_root: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    game_data: Option<PathBuf>,
     pub schema: String,
     pub status: BuildJobStatus,
     pub submitted_at_ms: u64,
@@ -82,6 +84,7 @@ impl BuildJob {
                 JOB_SEQ.fetch_add(1, Ordering::Relaxed)
             ),
             project_root: root.to_string(),
+            game_data: None,
             schema,
             status: BuildJobStatus::Queued,
             submitted_at_ms: now_ms(),
@@ -153,12 +156,14 @@ impl BuildQueueManager {
         project_root: &str,
         schema: String,
         label: Option<String>,
+        game_data: Option<PathBuf>,
     ) -> Result<String, String> {
         if self.app.get().is_none() {
             return Err("build queue worker is not running".into());
         }
         self.recover_orphaned_jobs(project_root);
-        let job = BuildJob::new(project_root.trim(), schema, label);
+        let mut job = BuildJob::new(project_root.trim(), schema, label);
+        job.game_data = game_data;
         let id = job.id.clone();
         let mut jobs = self.jobs.lock().expect("build queue jobs poisoned");
         self.persist(&job).map_err(|error| error.to_string())?;
@@ -170,6 +175,30 @@ impl BuildQueueManager {
             .push_back(id.clone());
         self.ready.notify_one();
         Ok(id)
+    }
+
+    fn record_project_rejection(
+        &self,
+        project_root: &str,
+        label: Option<String>,
+        started: u64,
+        error: &crate::activity::CommandError,
+    ) -> std::io::Result<()> {
+        let mut job = BuildJob::new(project_root.trim(), String::new(), label);
+        let finished = now_ms();
+        job.submitted_at_ms = started;
+        job.started_at_ms = Some(started);
+        let mut event = crate::asset_build_m1::events::failed(
+            "project-preflight",
+            &error.message,
+            finished.saturating_sub(started),
+        );
+        event.detail = serde_json::json!({ "code": error.code, "message": error.message });
+        job.events.push(event);
+        fail_job(&mut job, finished, &error.message);
+        self.persist(&job)?;
+        self.emit_status(&job);
+        Ok(())
     }
 
     /// 某项目的运行列表(内存态 + 已持久化历史)。
@@ -315,7 +344,7 @@ impl BuildQueueManager {
                         let payload = serde_json::json!({
                             "jobId": job_id,
                             "label": job.label,
-                            "totalStages": if crate::road_asset::is_schema(&job.schema) { 1 } else { crate::asset_build_m1::stages::CHAIN.len() },
+                            "totalStages": stage_count(&job.schema),
                             "event": event,
                         });
                         let _ = app.emit(BUILD_QUEUE_EVENT, payload);
@@ -325,10 +354,14 @@ impl BuildQueueManager {
             });
             let root = Path::new(&job.project_root);
             std::panic::catch_unwind(|| {
-                if crate::road_asset::is_schema(&job.schema) {
+                if crate::map_resources::is_schema(&job.schema) {
+                    crate::map_resources::build(root, &job.schema, tx)
+                } else if crate::road_asset::is_schema(&job.schema) {
                     crate::road_asset::build(root, &job.schema, Some(tx))
                 } else {
-                    crate::asset_build_m1::build_from_schema_with_progress(root, &job.schema, Some(tx))
+                    crate::asset_build_m1::build_from_schema_for_installation(
+                        root, &job.schema, Some(tx), job.game_data.as_deref(),
+                    )
                 }
             })
             .unwrap_or_else(|_| Err(INTERRUPTED_ERROR.into()))
@@ -392,7 +425,7 @@ impl BuildQueueManager {
                 "startedAtMs": job.started_at_ms,
                 "finishedAtMs": job.finished_at_ms,
                 "durationMs": job.duration_ms,
-                "totalStages": if crate::road_asset::is_schema(&job.schema) { 1 } else { crate::asset_build_m1::stages::CHAIN.len() },
+                "totalStages": stage_count(&job.schema),
             });
             let _ = app.emit(BUILD_QUEUE_EVENT, payload);
         }
@@ -462,18 +495,21 @@ fn persisted_job_path(project_root: &str, job_id: &str) -> Option<PathBuf> {
 
 /// M1BuildResult → Actions 页摘要(去重字段,避免整包序列化)。
 fn result_summary(result: &crate::asset_build_m1::M1BuildResult) -> Json {
-    serde_json::json!({
+    let mut summary = serde_json::json!({
         "path": result.path,
         "sha256": result.sha256,
         "buildHash": result.build_hash,
         "resourceCount": result.resource_count,
+        "scope": result.scope,
         "deltaMode": result.delta_mode,
         "menuInstance": result.menu_instance,
         "scene": result.scene,
         "startedAtMs": result.started_at_ms,
         "finishedAtMs": result.finished_at_ms,
         "durationMs": result.duration_ms,
-    })
+    });
+    if result.requires_panel_runtime { summary["requiresPanelRuntime"] = serde_json::json!(true); }
+    summary
 }
 
 #[cfg(test)]
@@ -544,6 +580,24 @@ mod tests {
     }
 
     #[test]
+    fn a_project_rejection_has_a_persisted_actions_record() {
+        let project = TestProject::new();
+        let manager = BuildQueueManager::new();
+        let error = crate::activity::CommandError::new(
+            "asset_logic_invalid",
+            "asset.lot.json: BEHAVIOR_LEAF_CONFLICT: office/commercial (office, retail)",
+        );
+        manager.record_project_rejection(project.root(), None, now_ms(), &error).unwrap();
+        let jobs = BuildQueueManager::new().list(project.root());
+        let job = &jobs[0];
+        assert_eq!(job.status, BuildJobStatus::Failed);
+        assert_eq!(job.error.as_deref(), Some(error.message.as_str()));
+        assert_eq!(job.events[0].stage, "project-preflight");
+        assert_eq!(job.events[0].detail["code"], "asset_logic_invalid");
+        assert!(job.result.is_none());
+    }
+
+    #[test]
     fn reloading_old_queue_history_persists_the_timeout() {
         let project = TestProject::new();
         let mut old = BuildJob::new(project.root(), String::new(), None);
@@ -560,32 +614,65 @@ mod tests {
     }
 }
 
-// ---- tauri 命令层(前端 Actions 页/api 的唯一入口) ----
-
-#[tauri::command]
-pub async fn build_queue_enqueue(
-    queue: tauri::State<'_, Arc<BuildQueueManager>>,
-    root: String,
-    schema: String,
-    label: Option<String>,
-) -> Result<String, crate::activity::CommandError> {
-    queue
-        .enqueue(&root, schema, label)
-        .map_err(|e| crate::activity::CommandError::new("build_queue_enqueue_failed", e))
+fn stage_count(schema: &str) -> usize {
+    if crate::map_resources::is_schema(schema) {
+        crate::map_resources::STAGES
+    } else if crate::road_asset::is_schema(schema) {
+        1
+    } else {
+        crate::asset_build_m1::stages::CHAIN.len()
+    }
 }
+
+// ---- tauri 命令层(前端 Actions 页/api 的唯一入口) ----
 
 /// 一键构建：从项目内唯一的 `openscp.asset` schema 自动入队（不再粘贴）。
 #[tauri::command]
 pub async fn build_queue_enqueue_project(
     queue: tauri::State<'_, Arc<BuildQueueManager>>,
+    state: tauri::State<'_, crate::activity::AppState>,
     root: String,
     label: Option<String>,
 ) -> Result<Json, crate::activity::CommandError> {
-    let root_path = Path::new(&root);
+    let started = now_ms();
+    let result = enqueue_project(&queue, &state, &root, label.clone());
+    if let Err(error) = &result
+        && Path::new(&root).is_dir()
+        && let Err(log_error) = queue.record_project_rejection(&root, label, started, error)
+    {
+        return Err(crate::activity::CommandError::new(
+            &error.code,
+            format!("{}\nBUILD_QUEUE_LOG_WRITE_FAILED: {log_error}", error.message),
+        ));
+    }
+    result
+}
+
+fn enqueue_project(
+    queue: &BuildQueueManager,
+    state: &crate::activity::AppState,
+    root: &str,
+    label: Option<String>,
+) -> Result<Json, crate::activity::CommandError> {
+    let root_path = Path::new(root);
+    if let Some(raw) = crate::map_resources::project_schema(root_path)
+        .map_err(|e| crate::activity::CommandError::new("map_resources_schema_invalid", e))?
+    {
+        let job = queue.enqueue(root, raw, label, None)
+            .map_err(|e| crate::activity::CommandError::new("build_queue_enqueue_failed", e))?;
+        return Ok(serde_json::json!({ "jobId": job, "schema": crate::map_resources::SCHEMA_PATH, "logic": null }));
+    }
+    if let Some((path, raw)) = crate::asset_build_m1::vanilla_variant_project_schema(root_path)
+        .map_err(|error| crate::activity::CommandError::new("vanilla_variant_schema_invalid", error))?
+    {
+        let job = queue.enqueue(root, raw, label, None)
+            .map_err(|error| crate::activity::CommandError::new("build_queue_enqueue_failed", error))?;
+        return Ok(serde_json::json!({ "jobId": job, "schema": path, "logic": null }));
+    }
     if let Some((path, raw)) = crate::road_asset::project_schema(root_path)
         .map_err(|error| crate::activity::CommandError::new("road_schema_invalid", error))?
     {
-        let job = queue.enqueue(&root, raw, label)
+        let job = queue.enqueue(root, raw, label, None)
             .map_err(|error| crate::activity::CommandError::new("build_queue_enqueue_failed", error))?;
         return Ok(serde_json::json!({ "jobId": job, "schema": path, "logic": null }));
     }
@@ -621,8 +708,30 @@ pub async fn build_queue_enqueue_project(
     let composed = serde_json::to_string(&schema).map_err(|error| {
         crate::activity::CommandError::new("asset_schema_invalid", error.to_string())
     })?;
+    let nodes = schema.pointer("/semantics/behaviors").and_then(Json::as_array)
+        .map(Vec::as_slice).unwrap_or_default();
+    let fusion = nodes.iter().find(|node| node["type"] == "fusion-power");
+    let station = nodes.iter().any(|node| node["type"] == "controlnet");
+    let game_data = if station || fusion.is_some() {
+        let invalid = |error| crate::activity::CommandError::new("asset_logic_invalid", error);
+        let mut plan = crate::asset_build_m1::plan::plan_from_schema(&composed).map_err(invalid)?;
+        crate::asset_build_m1::panel::attach(root_path, &mut plan).map_err(invalid)?;
+        let path = state.store.app_settings().map_err(crate::activity::CommandError::from)?
+            .and_then(|settings| settings.game_data_path).map(PathBuf::from)
+            .ok_or_else(|| invalid(if fusion.is_some() {
+                "FUSION_EP1: game data directory".into()
+            } else { "CONTROLNET_EP1: game data directory".into() }))?;
+        if let Some(node) = fusion {
+            let network = node["params"]["requiresControlNet"].as_bool().unwrap_or(true);
+            crate::asset_build_m1::behavior_fusion::verify_installation(&path, network).map_err(invalid)?;
+        }
+        if station {
+            crate::asset_build_m1::behavior_controlnet::verify_installation(&path).map_err(invalid)?;
+        }
+        Some(path)
+    } else { None };
     let job = queue
-        .enqueue(&root, composed, label)
+        .enqueue(root, composed, label, game_data)
         .map_err(|e| crate::activity::CommandError::new("build_queue_enqueue_failed", e))?;
     Ok(serde_json::json!({
         "jobId": job,

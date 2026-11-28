@@ -64,6 +64,10 @@ describe("groupPathPointPolylines", () => {
     expect(groups.map((g) => g.map((p) => p.index))).toEqual([[2, 3]]);
   });
 
+  it("does not join singletons from different paths when neither can draw a line", () => {
+    expect(groupPathPointPolylines([pt(2), pt(5)], [0, 2, 5, 5])).toEqual([]);
+  });
+
   it("falls back to one polyline sorted by pointIndex when pairs empty", () => {
     const points = [pt(2, [2, 0, 0], 20), pt(0, [0, 0, 0], 0), pt(1, [1, 0, 0], 10)];
     const groups = groupPathPointPolylines(points, []);

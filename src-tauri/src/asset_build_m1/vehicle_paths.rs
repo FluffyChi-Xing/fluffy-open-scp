@@ -2,6 +2,8 @@
 //! Sink rows come from the native Unit bundles. The paired Lot columns are
 //! read by cTransportTraffic::AddSinkPositionsFromDataPaths.
 
+use super::behavior_commercial_mall as mall;
+use super::behavior_residence_d3 as d3;
 use super::behavior_templates::{ENABLE, EXCLUDED, array, key};
 use super::property_edit::{encode, set_array_with_flags, set_scalar};
 use super::scene::SceneDocument;
@@ -17,7 +19,7 @@ const INITIAL_FLAGS: u32 = 0x0A88_D179;
 const CAR_RESTRICTION: Value = Value::Int32(49);
 const PARKING_PERCENT_FILL: u32 = 0x0C12_EF60;
 
-fn has_parking(lot: &PropertyFile) -> Result<bool, String> {
+pub(super) fn has_parking(lot: &PropertyFile) -> Result<bool, String> {
     Ok(array(lot, sc_properties::lot_unit::PROP_ID_BASE)?
         .iter()
         .filter_map(instance)
@@ -52,7 +54,20 @@ const COMMUTE: &[(u32, &[u32])] = &[
     (0x1E16_EDA9, &[0xADAF_4C17, 0x9090_F61A, 0x8133_3365]),
     (0x3A70_FAA2, &[0x1BB6_F93B, 0x863E_354E, 0xC253_84A9]),
 ];
+const CONTROLNET_COMMUTE: (u32, &[u32]) = (
+    0xA0E0_3A4E,
+    &[0xDB14_4779, 0x26F1_4EA8, 0x4AB3_780B, 0xCD23_B77D, 0x0603_9A1C, 0x0710_3093],
+);
+const HOTEL_ARRIVALS: &[(u32, &[u32])] = &[
+    (0x729A_6625, &[0x729A_6625, 0x8645_F308]),
+    (0x729A_6626, &[0x729A_6626, 0x8645_F30B]),
+    (0x729A_6627, &[0x729A_6627, 0x8645_F30A]),
+];
 const OTHER_ARRIVALS: &[(u32, &[u32])] = &[
+    // Native park visitor car receivers; walking/kid/homeless sinks stay native.
+    (0x265F_B8DD, &[0x0992_906D]),
+    (0x265F_B8DE, &[0x0992_906E]),
+    (0x265F_B8DF, &[0x0992_906F]),
     (
         0xAB9A_0A3E,
         &[
@@ -64,11 +79,21 @@ const OTHER_ARRIVALS: &[(u32, &[u32])] = &[
             0x5B18_518D,
         ],
     ),
+    // The RCI resident bundles use the native 54325F67 ground return sinks.
+    // Keep them on the residence Unit and leave student and service sinks alone.
+    (0xD4C3_0C02, &[0x487E_1CC6, 0x9B6F_B379, 0xF880_AFAB, 0xE0BC_C3B7]),
+    (0xA8CB_9DE1, &[0xD7CD_9DB9, 0x8735_A8BC, 0xD127_EE76, 0xFCF5_B82A]),
+    (0xAC8B_8A48, &[0x3820_A50C, 0x3FE8_AEDB, 0xA434_E805, 0xF6E8_2C41]),
     (0x75D2_2FD0, &[0x75D2_2FD0]),
     (0x75D2_2FD1, &[0x75D2_2FD1]),
     (0x75D2_2FD2, &[0x75D2_2FD2]),
+    // Native 61EFC700:02E94AD8 combines the same three tourist car sinks.
+    (0x02E9_4AD8, &[0x75D2_2FD0, 0x75D2_2FD1, 0x75D2_2FD2]),
     (0x6C04_2366, &[0xD10F_7B4E, 0x6688_3F3B, 0x8365_DE58]),
     (0x3A82_63E2, &[0x8A97_E8AF, 0xAD48_46DB]),
+    (0x1C1F_5978, &[0x6CCF_B5D2, 0x14A0_C36E]),
+    (mall::STREET_SHOPPERS, mall::STREET_CARS),
+    (0x1C1F_597A, &[0x0633_8F6C, 0x9AB9_A878]),
 ];
 
 pub(super) fn authored(document: Option<&SceneDocument>) -> bool {
@@ -106,7 +131,22 @@ fn receivers(unit: &PropertyFile) -> Result<(Vec<Value>, bool), String> {
         }
     };
     collect(&mut sinks, OTHER_ARRIVALS);
-    let open_commute = sinks.is_empty() || active.contains(&0x1E16_EDA9);
+    collect(&mut sinks, HOTEL_ARRIVALS);
+    collect(&mut sinks, &[CONTROLNET_COMMUTE]);
+    // The D3 ground profile uses a vehicle intake distinct from D2 and EP1.
+    if active.contains(&d3::TAXES) {
+        collect(&mut sinks, &[(d3::INTAKE, &[d3::MOVE_IN_SINK])]);
+    }
+    // Ground retail installs the same labor provider alongside its shoppers.
+    // Customer arrivals must not suppress its independent commute sinks.
+    let retail = active.contains(&0xD07C_5A04)
+        && active
+            .iter()
+            .any(|&id| matches!(id, 0x3A82_63E1..=0x3A82_63E3)
+                || super::behavior_commercial_mixed::STREET.contains(&id));
+    let hotel = HOTEL_ARRIVALS.iter().any(|(bundle, _)| active.contains(bundle));
+    let open_commute = sinks.is_empty() || active.contains(&0x1E16_EDA9) || retail || hotel
+        || active.contains(&CONTROLNET_COMMUTE.0);
     if open_commute {
         collect(&mut sinks, COMMUTE);
     }
@@ -187,6 +227,18 @@ pub(super) fn bind(unit_bytes: &[u8], lot_bytes: &[u8]) -> Result<(Vec<u8>, Vec<
     Ok((encode(&unit)?, encode(&lot)?))
 }
 
+/// Read-only capability query for independently compiled units. A pedestrian
+/// recipe must not receive another unit's commute/car sinks just because its
+/// host owns a driveway. Existing single-Unit bind behavior is unchanged.
+pub(super) fn has_supported_arrivals(unit_bytes: &[u8]) -> Result<bool, String> {
+    let unit=PropertyFile::parse(unit_bytes).map_err(|error|error.to_string())?;
+    match receivers(&unit) {
+        Ok(_) => Ok(true),
+        Err(error) if error.starts_with("VEHICLE_PATH_RECEIVER:") => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 pub(super) fn verify(unit: &[u8], lot: &[u8]) -> Result<(), String> {
     let unit = PropertyFile::parse(unit).map_err(|error| error.to_string())?;
     let lot = PropertyFile::parse(lot).map_err(|error| error.to_string())?;
@@ -217,9 +269,117 @@ pub(super) fn verify(unit: &[u8], lot: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+pub(super) fn describe_commute(unit: &[u8], lot: &[u8]) -> Result<serde_json::Value, String> {
+    let unit = PropertyFile::parse(unit).map_err(|error| error.to_string())?;
+    let lot = PropertyFile::parse(lot).map_err(|error| error.to_string())?;
+    let (sinks, open_commute) = receivers(&unit)?;
+    let jobs = |hash| match unit.get(hash).and_then(|property| property.scalar()) {
+        Some(Value::Float(value)) => Some(*value),
+        _ => None,
+    };
+    Ok(serde_json::json!({
+        "jobsByWealth": [jobs(0x0A79_17C5), jobs(0x0A79_17C6), jobs(0x0A79_17C7)],
+        "minimumWorkers": jobs(0x0A79_17C8),
+        "workerSlotsByWealth": [jobs(0x0E3F_65A9), jobs(0x0E3F_65B3), jobs(0x0E3F_65B4)],
+        "vehiclePath": format!("{PATH:08X}"),
+        "arrivalSinks": sinks.iter().filter_map(instance).map(|id| format!("{id:08X}")).collect::<Vec<_>>(),
+        "openCommute": open_commute,
+        "parkingSlots": array(&lot, 0x0C12_EF40)?.len(),
+        "parkingUsesVehicleCount": lot.get(PARKING_PERCENT_FILL).and_then(|prop| prop.scalar()) == Some(&Value::Bool(false)),
+        "runtimeVerified": false,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hotels_and_controlnet_keep_their_native_car_receivers() {
+        for (provider, expected) in HOTEL_ARRIVALS.iter().copied().chain([CONTROLNET_COMMUTE]) {
+            let mut unit = PropertyFile::default();
+            let mut lot = PropertyFile::default();
+            set_array_with_flags(&mut unit, ENABLE[3], PropType::Key, vec![key(provider)], 0x809C);
+            set_array_with_flags(&mut lot, PATH_ENTRIES, PropType::Key, vec![key(PATH)], 0x809C);
+            let (unit, lot) = bind(&encode(&unit).unwrap(), &encode(&lot).unwrap()).unwrap();
+            verify(&unit, &lot).unwrap();
+            let lot = PropertyFile::parse(&lot).unwrap();
+            assert_eq!(array(&lot, SINK_IDS).unwrap(), expected.iter().copied().map(key).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn crown_and_legacy_tourism_preserve_identical_native_car_bindings() {
+        let build=|bundles:&[u32]| {
+            let mut unit=PropertyFile::default();
+            let mut lot=PropertyFile::default();
+            set_array_with_flags(&mut unit,ENABLE[3],PropType::Key,bundles.iter().copied().map(key).collect(),0x809C);
+            set_array_with_flags(&mut lot,PATH_ENTRIES,PropType::Key,vec![key(PATH)],0x809C);
+            let unit_bytes=encode(&unit).unwrap();
+            assert!(has_supported_arrivals(&unit_bytes).unwrap());
+            let (unit,lot)=bind(&unit_bytes,&encode(&lot).unwrap()).unwrap();
+            verify(&unit,&lot).unwrap();
+            lot
+        };
+        assert_eq!(build(&[0x02E9_4AD8]),build(&[0x75D2_2FD0,0x75D2_2FD1,0x75D2_2FD2]));
+    }
+
+    #[test]
+    fn high_density_ground_residence_routes_move_in_vehicles() {
+        let mut unit = PropertyFile::default();
+        let mut lot = PropertyFile::default();
+        set_array_with_flags(
+            &mut unit,
+            ENABLE[3],
+            PropType::Key,
+            [0xD4C3_0C02, d3::INTAKE, d3::TAXES].map(key).to_vec(),
+            0x809C,
+        );
+        set_array_with_flags(&mut lot, PATH_ENTRIES, PropType::Key, vec![key(PATH)], 0x809C);
+        let (unit, lot) = bind(&encode(&unit).unwrap(), &encode(&lot).unwrap()).unwrap();
+        let properties = PropertyFile::parse(&lot).unwrap();
+        let sinks = array(&properties, SINK_IDS).unwrap();
+        assert!(sinks.contains(&key(d3::MOVE_IN_SINK)));
+        assert!(verify(&unit, &lot).is_ok());
+    }
+
+    #[test]
+    fn ground_residence_routes_only_native_returns_for_its_active_wealth() {
+        for (bundle, expected) in [
+            (0xD4C3_0C02, [0x487E_1CC6, 0x9B6F_B379, 0xF880_AFAB, 0xE0BC_C3B7]),
+            (0xA8CB_9DE1, [0xD7CD_9DB9, 0x8735_A8BC, 0xD127_EE76, 0xFCF5_B82A]),
+            (0xAC8B_8A48, [0x3820_A50C, 0x3FE8_AEDB, 0xA434_E805, 0xF6E8_2C41]),
+        ] {
+            let mut unit = PropertyFile::default();
+            let mut lot = PropertyFile::default();
+            set_array_with_flags(&mut unit, ENABLE[3], PropType::Key, vec![key(bundle)], 0x809C);
+            set_array_with_flags(&mut lot, PATH_ENTRIES, PropType::Key, vec![key(PATH)], 0x809C);
+            let unit_bytes = encode(&unit).unwrap();
+            let original_lot = encode(&lot).unwrap();
+            assert!(verify(&unit_bytes, &original_lot).is_err());
+            let (bound_unit, bound_lot) = bind(&unit_bytes, &original_lot).unwrap();
+            assert_eq!(bound_unit, unit_bytes);
+            let bound_lot_properties = PropertyFile::parse(&bound_lot).unwrap();
+            assert_eq!(array(&bound_lot_properties, SINK_IDS).unwrap(), expected.map(key));
+            assert!(verify(&bound_unit, &bound_lot).is_ok());
+        }
+    }
+
+    #[test]
+    fn retail_vehicle_receivers_include_customers_and_commuters() {
+        let mut unit = PropertyFile::default();
+        set_array_with_flags(
+            &mut unit,
+            ENABLE[3],
+            PropType::Key,
+            vec![key(0x3A82_63E2), key(0xD07C_5A04)],
+            0x809C,
+        );
+        let (sinks, open_commute) = receivers(&unit).unwrap();
+        assert!(open_commute);
+        assert!(sinks.contains(&key(0x8A97_E8AF)));
+        assert!(sinks.contains(&key(0xADAF_4C17)));
+    }
 
     #[test]
     fn office_entrance_requires_active_receivers_and_clears_only_flag_49() {

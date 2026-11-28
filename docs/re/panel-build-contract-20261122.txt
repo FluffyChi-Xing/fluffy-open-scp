@@ -1,0 +1,72 @@
+建筑 Panel 独立配置与构建契约 — 2026-11-22
+
+入口与配置所有权
+资产工作流的 package.json 配置页新增“建筑面板”。界面由独立 panel-editor/ 组件实现，
+不导入流程画布。悬停、点击分别编排，使用本机游戏包解析的布局和绑定预览，统计为模拟值。
+配置不保存到 asset.lot.json / editor.workbench；由单独的 openscp.panel JSON 文件保存。
+package.json 的 dependencies.panel 是配置的唯一构建入口。
+
+配置示例（shell 的 TGI 来自本机原始继承链，不应按截图填写）
+{
+  "$schema": "openscp.panel",
+  "schema_version": 1,
+  "shell": "67771F5C:0B074E5A:2BDC8BDD",
+  "hover": ["park-feedback"],
+  "click": ["maintenance", "residents", "park-hours", "park-visitors-title", "park-visitors"],
+  "power": true,
+  "missingFeedback": "hide"
+}
+协议定义见 src/lib/panel-schema.json；组件能力表见 src/lib/panel-components.json。
+组件表只定义自有语义 ID、原生符号引用和行为归属；不包含提取的游戏脚本或布局。
+
+依赖示例
+"dependencies": {
+  "panel": {
+    "schema": "schemas/panel/<配置内容的SHA256>.json",
+    "runtime": "openscp.panel-runtime/1",
+    "sources": [{"path": "<本机游戏包路径>", "sha256": "<文件SHA256>"}]
+  }
+}
+来源包含本机 Game/App/Graphics、可用 locale 及脚本包，由解析器发现并计算指纹。
+源文件指纹漂移会报错，不能用旧面板配置默默构建新来源。
+
+可选配置与保存
+缺少 dependencies.panel：不执行 panel-bind，不读取面板 schema/游戏 UI 来源，保持继承配方。
+配置文件单独存在但没有依赖登记：不参与构建。
+存在依赖但缺文件、格式损坏、未知组件、行为缺失或来源改变：明确失败，不回退为继承。
+选择“继承建筑配方”并保存：移除 panel 依赖；保留旧配置文件，不自动删除用户文件。
+空 hover/click 数组是显式空内容，与“不配置”不同；编译为零高度隐藏哨兵，避免原生非空候选
+选择器从父配方重新找回默认列表。
+保存时校验 manifest/schema 两个 revision；先写不可变内容地址 schema，再以原子替换提交
+manifest 引用。最后再检查 manifest revision；失败最多留下未引用配置，不让旧依赖读到半次保存。
+
+构建链与运行时
+panel::attach 在缓存查询之前读取依赖、校验行为能力和来源；配置指纹进入 plan/build hash，
+configured 构建使用独立缓存指纹，并暂不复用整链缓存。无 panel 时旧缓存键保持原算法。
+独立 panel-bind 位于 behavior-bind 后、layout-contract 前，只修改新菜单身份的 Asset UI 字段：
+外壳 0BC5051B、hover 0CABB2FC、click 0CAFBDC3、动作 0CD4E49C、人口头槽 0D7EADAC。
+必须是新菜单身份，不对参照建筑做同 TGI 覆盖。
+新外壳使用新资源身份；原生控件引用既有游戏资源。居民/员工内容槽和缺词条隐藏使用自有适配器。
+原生更新逻辑继续决定统计与动作的显示条件；设施开关继续使用原生权限和命令语义。
+
+运行时单独输出到 .build/<buildHash>/dependencies/openscp-panel-runtime-v1.package，
+构建结果的 panel_runtime 及 Actions 摘要的 panelRuntime 提供该路径。
+建筑 package 不含完整游戏 UI 脚本；运行时依赖由本机原始 Game.js + 自有适配器生成，
+单独进行 DBPF 字节读回验证。相同来源/运行时版本的内容在不同面板之间保持一致。
+运行时包包含共享 Game.js 的 TGI 覆盖（67771F5C:40464200:7CCC548C），因此实际加载时需要
+一并加载这个依赖，并与其他 UI 脚本修改核对。它不是仅建筑身份范围的修改。
+原版提取物不进入本项目源码；本机生成的运行时包不应作为开源实现文件提交。
+本轮没有安装该依赖、部署建筑或启动游戏，不宣称通过游戏菜单冷启动/运行时验收。
+
+范围
+当前接入资产工作流 M1；vanilla_variant 独立工作流尚未接入，页签隐藏且构建端拒绝误配。
+树木与地价增益当前无专属 UI 组件；组件删除不改变行为配置。失效行为依赖保留并报错。
+原生纵向插槽支持排序；画布平移缩放只影响编辑器视图。
+
+验证
+Rust：schema/依赖校验、显式空内容、属性写回、独立运行时 DBPF 读回、布局资源闭包、
+保存/取消依赖往返、并发 revision、来源变化拒绝、无配置 plan 序列化不变。
+另以显式环境参数执行本机原包解析测试；黄金整链和两次独立构建确定性测试保持通过。
+前端：类型检查、相关文件 ESLint、配置模型测试；正式 Vue 组件浏览器验证原生预览、关闭
+反馈隐藏、删除/保存/取消依赖、两套视图、空内容哨兵和中英切换。
+浏览器的文件保存/取消依赖使用临时命令适配器；真实文件事务由 Rust 测试验证。

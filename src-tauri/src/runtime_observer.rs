@@ -179,6 +179,8 @@ pub async fn observer_start(
     profile: Option<String>,
     observation: Option<String>,
     unit_entry: Option<u32>,
+    component_entries: Option<Vec<u32>>,
+    project_capture: Option<bool>,
 ) -> Result<ObserverStatus, CommandError> {
     let manager = state.observer.clone();
     let stopping = manager.stopping.lock().unwrap();
@@ -210,6 +212,8 @@ pub async fn observer_start(
     std::fs::create_dir_all(dir.parent().unwrap())
         .map_err(|e| CommandError::internal(e.to_string()))?;
     let observation = observation.unwrap_or_else(|| "ui:all".into());
+    let land_value_scope = observation == "map:land-value" && unit_entry.is_none();
+    let map_scope = (observation == "map:resources" && unit_entry.is_none()) || land_value_scope;
     let city_unit = observation
         .strip_prefix("city:")
         .map(|id| {
@@ -219,7 +223,9 @@ pub async fn observer_start(
                 .ok_or_else(|| CommandError::new("invalid_observation", "Invalid city unit ID"))
         })
         .transpose()?;
-    let script = root.join(if unit_entry.is_some() || city_unit.is_some() {
+    let script = root.join(if map_scope {
+        "probes/runtime/map_resource_watch.py"
+    } else if unit_entry.is_some() || city_unit.is_some() {
         "probes/runtime/asset_watch.py"
     } else {
         "tools/dynamic/ui-observer/native_trace.py"
@@ -242,7 +248,17 @@ pub async fn observer_start(
         if city_unit.is_some() {
             command.arg("--city-metrics");
         }
-    } else {
+        if let Some(entries) = component_entries {
+            if entries.len() > 64 || entries.contains(&0) {
+                return Err(CommandError::new("asset_capture_member_limit", "Invalid observable component IDs"));
+            }
+            for entry in entries.into_iter().filter(|&entry| entry != unit_entry) {
+                command.args(["--component-entry", &entry.to_string()]);
+            }
+        }
+    } else if land_value_scope {
+        command.arg("--land-value");
+    } else if !map_scope {
         command.args(["--profile", &profile, "--observation", &observation]);
     }
     let child = command
@@ -255,7 +271,7 @@ pub async fn observer_start(
     *manager.directory.lock().unwrap() = Some(dir);
     *manager.cursor.lock().unwrap() = 0;
     *manager.synced.lock().unwrap() = 0;
-    *manager.asset_scope.lock().unwrap() = unit_entry.is_some();
+    *manager.asset_scope.lock().unwrap() = unit_entry.is_some() || (map_scope && project_capture == Some(true));
     Ok(ObserverStatus {
         running: true,
         pid: Some(pid),
@@ -493,22 +509,24 @@ pub async fn observer_sync(state: State<'_, AppState>) -> Result<usize, CommandE
         let payload: Value = serde_json::from_str(line).unwrap_or(Value::String(line.into()));
         let is_event =
             payload.get("name").and_then(Value::as_str) == Some("ReceiveGameEventFromClient");
-        if !is_event {
+        let (topic, message) = if payload.get("channel").and_then(Value::as_str) == Some("map.resource") {
+            let map = payload.get("name").and_then(Value::as_str).unwrap_or("unknown");
+            ("runtime.map_resource", format!("EcoMap change: {map}"))
+        } else if is_event {
+            let event_id = payload.get("eventID").and_then(Value::as_i64)
+                .map(|id| id.to_string()).unwrap_or_else(|| "unknown".into());
+            ("runtime.key_event", format!("Game event {event_id}"))
+        } else {
             *cursor += 1;
             continue;
-        }
-        let event_id = payload
-            .get("eventID")
-            .and_then(Value::as_i64)
-            .map(|id| id.to_string())
-            .unwrap_or_else(|| "unknown".into());
+        };
         state
             .store
             .append_event(&sc_store::EventInput {
                 operation_id: None,
                 level: "info".into(),
-                topic: "runtime.key_event".into(),
-                message: format!("Game event {event_id}"),
+                topic: topic.into(),
+                message,
                 payload: Some(payload),
             })
             .map_err(CommandError::from)?;
@@ -525,11 +543,9 @@ pub async fn observer_sync(state: State<'_, AppState>) -> Result<usize, CommandE
 pub async fn observer_frame(pid: u32) -> Result<GameFrame, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         use base64::Engine;
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        let output = root.join("tmp").join(format!(
+        let root = std::env::temp_dir().join("openscp-window-frames");
+        fs::create_dir_all(&root).map_err(|e| CommandError::new("frame_capture_failed", e.to_string()))?;
+        let output = root.join(format!(
             "openscp-frame-{}-{}.png",
             pid,
             SystemTime::now()
@@ -537,7 +553,9 @@ pub async fn observer_frame(pid: u32) -> Result<GameFrame, CommandError> {
                 .unwrap()
                 .as_nanos()
         ));
-        let script = root.join("tools/runtime_capture/window_frame.py");
+        let script = root.join("window_frame.py");
+        fs::write(&script, include_str!("../../tools/runtime_capture/window_frame.py"))
+            .map_err(|e| CommandError::new("frame_capture_failed", e.to_string()))?;
         let result = observer_python_command()
             .args([
                 script.to_string_lossy().as_ref(),

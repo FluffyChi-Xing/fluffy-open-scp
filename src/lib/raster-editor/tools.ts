@@ -180,22 +180,29 @@ export function floodFill(
   plot: PlotFn,
   tolerance = 0,
   regionKey?: (pixel: Rgba) => number,
+  workspace?: {
+    visited: Uint8Array;
+    pixelAt: (x: number, y: number) => Rgba;
+    sameRegion?: (pixel: Rgba, seed: Rgba) => boolean;
+  },
 ): Rect | null {
   if (!doc.inside(x, y)) return null;
-  const source = doc.pixels.slice();
-  const pixelAt = (px: number, py: number): Rgba => {
+  if (workspace?.visited[y * doc.width + x]) return null;
+  const source = workspace ? doc.pixels : doc.pixels.slice();
+  const pixelAt = workspace?.pixelAt ?? ((px: number, py: number): Rgba => {
     const at = (py * doc.width + px) * 4;
     return [source[at], source[at + 1], source[at + 2], source[at + 3]];
-  };
+  });
   const target = pixelAt(x, y);
   const region = regionKey?.(target);
   const limit = tolerance * tolerance;
-  const visited = new Uint8Array(doc.width * doc.height);
+  const visited = workspace?.visited ?? new Uint8Array(doc.width * doc.height);
   const matches = (px: number, py: number) => {
     if (px < 0 || py < 0 || px >= doc.width || py >= doc.height || visited[py * doc.width + px]) return false;
     const pixel = pixelAt(px, py);
     return regionKey ? regionKey(pixel) === region
-      : pixel.reduce((sum, value, i) => sum + (value - target[i]) ** 2, 0) <= limit;
+      : (workspace?.sameRegion?.(pixel, target) ?? true) &&
+        pixel.reduce((sum, value, i) => sum + (value - target[i]) ** 2, 0) <= limit;
   };
   const stack: [number, number][] = [[x, y]];
   let dirty: Rect | null = null;
@@ -231,6 +238,8 @@ export interface ParkingRowOptions {
   length: number;
   /** 相邻停车线沿拖拽方向的间距（px）。 */
   spacing: number;
+  /** A north-up Lot canvas reflects the stored Y axis. */
+  mirroredY?: boolean;
 }
 
 /**
@@ -254,8 +263,9 @@ export function strokeParkingRow(
   // 拖拽方向单位向量与右侧法线（屏幕 y 向下）
   const ux = dx / span;
   const uy = dy / span;
-  const nx = -uy;
-  const ny = ux;
+  const side = options.mirroredY ? -1 : 1;
+  const nx = -uy * side;
+  const ny = ux * side;
   let dirty: Rect | null = null;
   for (let t = 0; t <= span; t += options.spacing) {
     const cx = from.x + ux * t;

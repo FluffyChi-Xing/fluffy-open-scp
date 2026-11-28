@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
@@ -15,15 +15,30 @@ import type { ModProjectView } from "@/api/tauri";
 /**
  * 开发工作台 = 项目管理面板：统计仪表盘 + 项目列表。
  * 「详情」进入 GitHub-repo 形态项目页（Code / Develop / Actions / Settings）；
- * 原多工具卡片页在 /studio/overview（头部"面板总览"进入）。
  */
-const { t } = useI18n();
+const { t, n } = useI18n();
 const toast = useToast();
 const store = useModProjectsStore();
 
 const formOpen = ref(false);
 const editingProject = ref<ModProjectView | null>(null);
 const groupsOpen = ref(false);
+
+const PROJECTS_PER_PAGE = 10;
+const projectPage = shallowRef(1);
+const projectCount = computed(() => store.filteredProjects.length);
+const projectPageCount = computed(() =>
+  Math.max(1, Math.ceil(projectCount.value / PROJECTS_PER_PAGE)),
+);
+const projectPageStart = computed(() => (projectPage.value - 1) * PROJECTS_PER_PAGE);
+const projectPageRows = computed(() =>
+  store.filteredProjects.slice(projectPageStart.value, projectPageStart.value + PROJECTS_PER_PAGE),
+);
+
+watch(() => store.groupFilter, () => { projectPage.value = 1; });
+watch(projectPageCount, (count) => {
+  projectPage.value = Math.min(projectPage.value, count);
+});
 
 onMounted(() => {
   if (isTauri()) void store.loadAll();
@@ -94,12 +109,6 @@ function statusLabel(status: string): string {
           $t("studio.projects.description")
         }}</FTypography>
       </div>
-      <nav class="heading-links">
-        <RouterLink class="overview-link" to="/studio/overview">
-          <FIcon name="LayoutDashboard" :size="13" aria-label="" />
-          {{ $t("studio.projects.overviewLink") }}
-        </RouterLink>
-      </nav>
     </header>
 
     <template v-if="isTauri()">
@@ -155,7 +164,7 @@ function statusLabel(status: string): string {
 
       <BuildActionsCard />
 
-      <div v-if="store.devRoot" class="project-pane">
+      <div v-if="store.devRoot || store.projects.length" class="project-pane ui-glass-card">
         <div class="pane-head">
           <div
             class="group-tabs"
@@ -230,7 +239,7 @@ function statusLabel(status: string): string {
             }}</span>
           </div>
           <div
-            v-for="project in store.filteredProjects"
+            v-for="project in projectPageRows"
             :key="project.id"
             class="row"
             role="row"
@@ -272,6 +281,31 @@ function statusLabel(status: string): string {
             </span>
           </div>
         </div>
+        <nav
+          v-if="!store.loading && projectCount"
+          class="project-pagination"
+          :aria-label="$t('studio.projects.paginationLabel')"
+        >
+          <span class="pagination-summary" role="status">
+            {{ $t("studio.projects.paginationSummary", {
+              start: n(projectPageStart + 1),
+              end: n(projectPageStart + projectPageRows.length),
+              total: n(projectCount),
+              page: n(projectPage),
+              pages: n(projectPageCount),
+            }) }}
+          </span>
+          <div v-if="projectPageCount > 1" class="pagination-actions">
+            <button class="toolbar-button" type="button" :disabled="projectPage === 1" @click="projectPage--">
+              <FIcon name="ChevronLeft" :size="14" aria-label="" />
+              {{ $t("table.previous") }}
+            </button>
+            <button class="toolbar-button" type="button" :disabled="projectPage === projectPageCount" @click="projectPage++">
+              {{ $t("table.next") }}
+              <FIcon name="ChevronRight" :size="14" aria-label="" />
+            </button>
+          </div>
+        </nav>
       </div>
 
       <ProjectFormSheet
@@ -312,25 +346,6 @@ function statusLabel(status: string): string {
   font-weight: 750;
   letter-spacing: 0.08em;
   margin: 0 0 10px;
-}
-.heading-links {
-  padding-top: 26px;
-}
-.overview-link {
-  align-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  display: inline-flex;
-  font-size: 12px;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0 12px;
-  text-decoration: none;
-}
-.overview-link:hover {
-  background: var(--surface-hover);
-  color: var(--foreground);
 }
 .root-bar {
   align-items: center;
@@ -404,6 +419,28 @@ function statusLabel(status: string): string {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+}
+.project-pagination {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+.pagination-summary {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pagination-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pagination-actions .toolbar-button {
+  min-height: 32px;
 }
 .pane-head {
   border-bottom: 1px solid var(--border);

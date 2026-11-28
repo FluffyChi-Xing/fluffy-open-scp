@@ -10,10 +10,10 @@ import {
   DialogRoot,
   DialogTitle,
 } from "reka-ui";
+import { Switch } from "@/components/ui/switch";
 import FIcon from "@/components/extensions/FIcon.vue";
 import LogicNodeCard from "./LogicNodeCard.vue";
 import { validCommercial } from "./commercialBehavior";
-import { validOffice } from "./officeBehavior";
 import { groundResidence, residenceCapacityError } from "./residenceBehavior";
 import {
   cloneLogicParams,
@@ -22,6 +22,12 @@ import {
   type LogicNode,
   type TourismParams,
   validHotelRooms,
+  validHotelWealth,
+  validControlNet,
+  FUSION_FIELDS,
+  FUSION_DEFAULTS,
+  validFusionPower,
+  validCasino,
 } from "./logicGraph";
 
 const props = defineProps<{
@@ -40,11 +46,16 @@ const draft = ref<LeafParams>(cloneLogicParams(props.params));
 const tourism = computed(() =>
   draft.value.type === "tourism" ? draft.value : null,
 );
+const fusion = computed(() => draft.value.type === "fusion-power" ? draft.value : null);
 const description = computed(() => {
   if (tourism.value) return "tourismTemplate";
+  if (fusion.value) return "fusionTemplate";
   if (draft.value.type === "commercial") return "commercialTemplate";
   if (draft.value.type === "hotel") return "hotelTemplate";
+  if (draft.value.type === "controlnet") return "controlnetTemplate";
+  if (draft.value.type === "casino") return "casinoTemplate";
   if (draft.value.type === "office") return "officeTemplate";
+  if (draft.value.type === "park") return "parkTemplate";
   if (draft.value.type === "residence") {
     if (groundResidence(draft.value)) return "residenceGroundTemplate";
     return draft.value.residenceProfile === "megatower-residence-v1"
@@ -56,9 +67,17 @@ const description = computed(() => {
 });
 const invalidTemplateValue = computed(() => {
   const current = draft.value;
+  if (current.type === "park") return [current.residentCapacity, current.childrenCapacity, current.visitBudget].some(
+    value => value != null && (!Number.isInteger(value) || value < 1 || value > 100_000),
+  ) ? "parkInvalid" : null;
   if (current.type === "commercial") return validCommercial(current) ? null : "commercialInvalid";
-  if (current.type === "hotel") return validHotelRooms(current.rooms) ? null : "hotelRooms";
-  if (current.type === "office") return validOffice(current) ? null : "officeInvalid";
+  if (current.type === "hotel") {
+    if (!validHotelWealth(current.wealth)) return "hotelWealthInvalid";
+    return validHotelRooms(current.rooms) ? null : "hotelRooms";
+  }
+  if (current.type === "fusion-power") return validFusionPower(current) ? null : "fusionInvalid";
+  if (current.type === "controlnet") return validControlNet(current) ? null : "controlnetInvalid";
+  if (current.type === "casino") return validCasino(current) ? null : "casinoInvalid";
   if (current.type === "residence") return residenceCapacityError(current);
   if (current.type === "landvalue" && current.landValueProfile) {
     return [current.value, current.value2].some(
@@ -73,15 +92,19 @@ const fields = [
   "quotaW1",
   "quotaW2",
   "quotaW3",
+  "incomeW1",
+  "incomeW2",
+  "incomeW3",
 ] as const;
 const quotas = ["quotaW1", "quotaW2", "quotaW3"] as const;
 type TourismField = (typeof fields)[number];
+const wholeNumber = (field: TourismField) => field === "shoppers" || field.startsWith("quota");
 
 function patchDraft(patch: Record<string, unknown>): void {
   draft.value = { ...draft.value, ...patch };
 }
 
-function setNumber(field: TourismField, event: Event): void {
+function setNumber(field: TourismField | (typeof FUSION_FIELDS)[number], event: Event): void {
   const input = event.target as HTMLInputElement;
   patchDraft({
     [field]:
@@ -101,7 +124,7 @@ const invalidField = computed(() => {
       (!Number.isFinite(value) ||
         value < (field === "shoppers" ? 1 : 0) ||
         value > 100_000 ||
-        (field !== "attraction" && !Number.isInteger(value)))
+        (wholeNumber(field) && !Number.isInteger(value)))
     );
   });
 });
@@ -170,7 +193,7 @@ function restoreFocus(event: Event): void {
                     type="number"
                     :min="field === 'shoppers' ? 1 : 0"
                     max="100000"
-                    :step="field === 'attraction' ? 'any' : '1'"
+                    :step="wholeNumber(field) ? '1' : 'any'"
                     :placeholder="String(TOURISM_TEMPLATE_DEFAULTS[field])"
                     :value="tourism[field] ?? ''"
                     :aria-invalid="
@@ -201,6 +224,33 @@ function restoreFocus(event: Event): void {
                   {{ t(`${keys}.removeLegacyLodging`) }}
                 </button>
               </div>
+            </template>
+            <template v-else-if="fusion">
+              <div class="behavior-sheet-fields">
+                <label v-for="field in FUSION_FIELDS" :key="field" class="behavior-sheet-field">
+                  <span>{{ t(`${keys}.${field}`) }}</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10000000"
+                    step="1"
+                    :placeholder="String(FUSION_DEFAULTS[field])"
+                    :value="fusion[field] ?? ''"
+                    @input="setNumber(field, $event)"
+                  />
+                </label>
+              </div>
+              <label class="behavior-sheet-fusion-switch">
+                <span>{{ t(`${keys}.requiresControlNet`) }}</span>
+                <Switch
+                  :model-value="fusion.requiresControlNet ?? true"
+                  :aria-label="t(`${keys}.requiresControlNet`)"
+                  @update:model-value="patchDraft({ requiresControlNet: $event })"
+                />
+              </label>
+              <p class="behavior-sheet-hint">
+                {{ t(`${keys}.${(fusion.requiresControlNet ?? true) ? 'fusionNetwork' : 'fusionIndependent'}`) }}
+              </p>
             </template>
             <LogicNodeCard
               v-else
@@ -310,6 +360,14 @@ function restoreFocus(event: Event): void {
 }
 .behavior-sheet-field input {
   width: 100%;
+}
+.behavior-sheet-fusion-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-block: 18px 8px;
+  font-size: 13px;
 }
 .behavior-sheet-error {
   color: var(--destructive);

@@ -139,10 +139,6 @@ export const tauriApi = {
   },
   studio: {
     setupStatus: () => command<SetupStatusResponse>("setup_status"),
-    setModRoot: (path: string) =>
-      command<StudioConfigStatus>("studio_set_mod_root", {
-        request: { path },
-      }),
     legacyStatus: () => command<LegacySyncStatus>("studio_legacy_status"),
     syncLegacy: () => command<LegacySyncOutcome>("studio_sync_legacy"),
     completeOnboarding: () =>
@@ -192,8 +188,6 @@ export const tauriApi = {
   },
   // ── P2 构建队列(OpenSCP Actions 页) ──
   buildQueue: {
-    enqueue: (project: string, schema: string, label?: string) =>
-      command<string>("build_queue_enqueue", { root: project, schema, label }),
     /** 一键构建：自动发现 schema，并把工作台逻辑图编译进 semantics 后入队。 */
     enqueueProject: (project: string, label?: string) =>
       command<{
@@ -265,6 +259,23 @@ export const tauriApi = {
     // ── Code 工作台（模组项目文件夹的通用文件） ──
     codeTree: (project: string) =>
       command<CodeTreeResponse>("code_tree", { request: { project } }),
+    vanillaVariantLookup: (request: { gameData: string; scripts: string; menu?: string; tgi?: string }) =>
+      command<Array<{ name: string; unit: string; lot: string; primary: boolean; matched: boolean }>>(
+        "vanilla_variant_lookup", { request },
+      ),
+    vanillaVariantRegister: (request: {
+      project: string; gameData: string; scripts: string; unit: string; lot: string;
+    }) => command<{ gameData: string; scripts: string; packagePath: string; unit: string; lot: string }>(
+      "vanilla_variant_register", { request },
+    ),
+    vanillaVariantUtilityFields: (project: string) =>
+      command<Record<string, { hash: string; original: number; value: number; consumerBound: boolean }>>(
+        "vanilla_variant_utility_fields", { project },
+      ),
+    vanillaVariantPowerFields: (project: string) =>
+      command<Record<string, Record<string, { hash: string; original: number; value: number }>> | null>(
+        "vanilla_variant_power_fields", { project },
+      ),
     codeReadText: (project: string, relativePath: string) =>
       command<CodeTextDocument>("code_read_text", {
         request: { project, relativePath },
@@ -278,9 +289,9 @@ export const tauriApi = {
       command<CodeTextDocument>("code_write_text", {
         request: { project, relativePath, content, expectedRevision },
       }),
-    /** 在系统资源管理器中打开项目根目录。 */
-    codeOpenInExplorer: (project: string) =>
-      command<void>("code_open_in_explorer", { request: { project } }),
+    /** 在系统资源管理器中打开项目目录或定位项目文件。 */
+    codeOpenInExplorer: (project: string, relativePath?: string) =>
+      command<void>("code_open_in_explorer", { request: { project, relativePath } }),
     codeDeleteFile: (project: string, relativePath: string) =>
       command<void>("code_delete_file", {
         request: { project, relativePath },
@@ -378,6 +389,7 @@ export const tauriApi = {
       entryId: Tgi;
       aspectRatio: number;
       colors: [number, number, number, number][];
+      expectedMaterialInstance?: number;
       baseTile?: number;
       borderColors?: [number, number, number][];
       borderPatternIndices?: number[];
@@ -404,6 +416,8 @@ export const tauriApi = {
       borderPatternIndices?: number[];
       /** 边框带半宽。 */
       borderWidths?: number[];
+      colorHeights?: number[];
+      borderHeights?: number[];
       outputPath: string;
     }) => command<CreateLotOverlayResult>("create_lot_overlay", { request }),
   },

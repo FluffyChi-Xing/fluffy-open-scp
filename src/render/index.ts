@@ -12,7 +12,6 @@ export type {
   AssetRef,
   PropUnitPlan,
   ScaleSemantics,
-  SpawnerUnitPlan,
   TransformSpec,
   TreeUnitPlan,
   UnitPlan,

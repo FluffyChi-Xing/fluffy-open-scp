@@ -1,3 +1,4 @@
+import type { SceneInfo, TransportDetails } from "./property-semantics";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -343,6 +344,7 @@ export type SemanticCard =
       models: SemanticKeyRef[];
       lightCount: number | null;
       lightNames: string[];
+      details: TransportDetails;
     }
   | {
       kind: "road";
@@ -369,6 +371,7 @@ export type SemanticCard =
       kind: "resource-entry";
       parent: SemanticKeyRef | null;
       slots: ResourceSlotInfo[];
+      scene: SceneInfo;
       floatA: number | null;
       floatB: number | null;
       enabled: boolean | null;
@@ -653,6 +656,8 @@ export interface PathPointUnit {
   fields: UnitFieldDto[];
 }
 export interface SpawnerUnit {
+  /** Optional explicit vignette recipes; absent retains legacy automatic selection. */
+  performancePresets?: string[];
   kind: "spawner";
   index: number;
   transform: UnitTransformDto | null;
@@ -782,6 +787,7 @@ export interface PropBinCatalogEntry {
   /** 首选 RW4 模型（最高细节）。 */
   model: Tgi;
   modelPackageId: number;
+  modelPackagePath?: string;
   source: string;
 }
 /** 路径条目摘要（list_path_entries；工作台 entry 选择器数据源）。 */
@@ -1258,13 +1264,14 @@ export interface ModProjectStats {
   statusCounts: ModStatusCount[];
   recentActivity: ModDailyCount[];
 }
-/** 项目详情页 Releases：`.build/<hash>/packages/*.package`。 */
+/** 项目详情页 Releases：资产包和同一次构建发布的可选 Panel 运行库。 */
 export interface ModProjectRelease {
   name: string;
   relativePath: string;
   buildHash: string;
   size: number;
   modifiedMs: number;
+  panelRuntime?: { name: string; relativePath: string; size: number };
 }
 /** 项目源文件扩展名占比（已跳过 .build 等产物目录）。 */
 export interface ModProjectLanguageStat {

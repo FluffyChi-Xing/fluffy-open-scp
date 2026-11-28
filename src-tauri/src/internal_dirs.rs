@@ -1,7 +1,6 @@
 //! 内部工作目录（2026-10-29 目录治理）：文档工作区与模组工作台的
-//! `docs/`、`mods/` 不再由用户手动指定——启动时自动落在可执行文件
-//! 目录下（绿色免安装版的"安装目录"），不可写（如 Program Files）
-//! 时退回应用数据目录。两处消费方：lib.rs 启动初始化、历史数据同步命令。
+//! 文档目录沿用应用管理逻辑；mod 项目唯一权威为 D:/openscp/mods，
+//! 数据库唯一权威为 D:/openscp/openscp.db。开发构建不得另建项目数据源。
 
 use std::fs;
 use std::io;
@@ -12,6 +11,21 @@ use tauri::{AppHandle, Manager, Runtime};
 
 pub const DOCS_DIR_NAME: &str = "docs";
 pub const MODS_DIR_NAME: &str = "mods";
+/// User-mandated authority shared by development and installed builds.
+pub const MANAGED_APP_ROOT: &str = r"D:\openscp";
+
+fn managed_mods_path() -> PathBuf {
+    PathBuf::from(MANAGED_APP_ROOT).join(MODS_DIR_NAME)
+}
+
+fn normalize_mod_root(store: &Store) -> Result<(), sc_store::StoreError> {
+    let studio = store.studio_config()?;
+    let root = managed_mods_path();
+    if studio.mod_root.as_deref() != Some(root.to_string_lossy().as_ref()) {
+        store.set_studio_config(Some(&root.to_string_lossy()), studio.onboarding_completed)?;
+    }
+    Ok(())
+}
 const WRITE_PROBE_NAME: &str = ".openscp-write-probe";
 
 fn dir_is_writable(dir: &Path) -> bool {
@@ -43,12 +57,12 @@ fn internal_base<R: Runtime>(app: &AppHandle<R>) -> io::Result<PathBuf> {
     Ok(data_dir)
 }
 
-/// Persistent application root. Prefer the directory beside the executable so
-/// portable/installed copies keep their database and workspaces together.
-/// Fall back to Tauri's app-data directory only when the executable directory
-/// is not writable (for example, an installation under Program Files).
-pub fn persistent_root<R: Runtime>(app: &AppHandle<R>) -> io::Result<PathBuf> {
-    internal_base(app)
+/// All builds use the installed database; executable-relative debug databases
+/// are not authoritative and must never provide the project list.
+pub fn persistent_root<R: Runtime>(_app: &AppHandle<R>) -> io::Result<PathBuf> {
+    let root = PathBuf::from(MANAGED_APP_ROOT);
+    fs::create_dir_all(&root)?;
+    Ok(root)
 }
 
 fn ensure_subdir<R: Runtime>(app: &AppHandle<R>, name: &str) -> io::Result<PathBuf> {
@@ -87,23 +101,23 @@ pub fn docs_dir(app: &AppHandle) -> io::Result<PathBuf> {
     ensure_subdir(app, DOCS_DIR_NAME)
 }
 
-/// 内部模组项目目录（不存在则创建）。
+/// 唯一模组项目目录（不随可执行文件位置或历史配置改变）。
 pub fn mods_dir(app: &AppHandle) -> io::Result<PathBuf> {
-    ensure_subdir(app, MODS_DIR_NAME)
+    let _ = app;
+    let root = managed_mods_path();
+    fs::create_dir_all(&root)?;
+    Ok(root)
 }
 
-/// 启动初始化：确保两个内部目录存在；尚未配置的工作区/模组根自动落到
-/// 内部目录。历史用户已配置的路径保持不动（由页面上的同步按钮迁移），
-/// 这样迁移前数据不会"看起来消失"。
+/// 初始化文档目录，并强制纠正历史 mod 配置到唯一受管目录。
 pub fn ensure_internal_roots(app: &AppHandle, store: &Store) -> Result<(), sc_store::StoreError> {
     let docs = docs_dir(app)?;
-    let mods = mods_dir(app)?;
+    mods_dir(app)?;
     let legacy_root = app
         .path()
         .app_data_dir()
         .map_err(|error| io::Error::other(error.to_string()))?;
     let legacy_docs = legacy_root.join(DOCS_DIR_NAME);
-    let legacy_mods = legacy_root.join(MODS_DIR_NAME);
     if store.workspace_config()?.is_none() {
         store.set_workspace_config(&docs.to_string_lossy())?;
     } else if store
@@ -113,19 +127,31 @@ pub fn ensure_internal_roots(app: &AppHandle, store: &Store) -> Result<(), sc_st
         copy_directory_contents(&legacy_docs, &docs)?;
         store.set_workspace_config(&docs.to_string_lossy())?;
     }
-    let studio = store.studio_config()?;
-    if studio.mod_root.is_none() {
-        store.set_studio_config(Some(&mods.to_string_lossy()), studio.onboarding_completed)?;
-    } else if studio.mod_root.as_deref() == Some(legacy_mods.to_string_lossy().as_ref()) {
-        copy_directory_contents(&legacy_mods, &mods)?;
-        store.set_studio_config(Some(&mods.to_string_lossy()), studio.onboarding_completed)?;
-    }
+    // Repair stale roots without merging non-authoritative project folders.
+    normalize_mod_root(store)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn managed_mod_root_repairs_debug_and_legacy_configuration_without_resetting_onboarding() {
+        for wrong in [
+            r"D:\rust\packages\fluffy-open-scp\target\debug\mods",
+            r"C:\legacy\mods",
+        ] {
+            let store = Store::open(":memory:").unwrap();
+            store.set_studio_config(Some(wrong), true).unwrap();
+            normalize_mod_root(&store).unwrap();
+            let config = store.studio_config().unwrap();
+            assert_eq!(config.mod_root.as_deref(), Some(r"D:\openscp\mods"));
+            assert!(config.onboarding_completed);
+            normalize_mod_root(&store).unwrap();
+            assert_eq!(store.studio_config().unwrap().mod_root, config.mod_root);
+        }
+    }
 
     #[test]
     fn write_probe_detects_writable_dir() {

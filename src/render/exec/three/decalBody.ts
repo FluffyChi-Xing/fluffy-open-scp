@@ -14,6 +14,9 @@ import type { EngineFamily } from "@/lib/decalEngineMaterials";
 import { decalFramePlan, decalRoutePlan } from "../../plan/decal";
 import { decalFrameObject } from "./decal";
 import { rowMajor12ToTrs } from "../../resolve/transform";
+import { configureHoleDecal } from "./holeDecal";
+
+import type { createDecalReceiverIndex } from "./decalReceiverIndex";
 
 export const HOLE_LIGHT_MAX = 8;
 const DECAL_MATERIAL_VARIANTS: Record<number, "sign" | "graffiti"> = {
@@ -35,6 +38,7 @@ export interface DecalBodyState {
 }
 
 export interface DecalBodyInput {
+  receiverIndex?: ReturnType<typeof createDecalReceiverIndex>;
   readonly THREE: typeof ThreeNamespace;
   readonly unit: DecalUnit;
   readonly texture: DecalUnitTexture;
@@ -121,11 +125,19 @@ export function buildDecalFallbackMaterial(
 export async function buildDecalBody(
   input: DecalBodyInput,
 ): Promise<ThreeNamespace.Object3D | null> {
-  const { THREE, unit, texture, decoded, proxies, env, state } = input;
+  const { texture } = input;
   if (!texture.png) {
     console.warn("[decal] DTO 无 png：", texture.idInstance, texture.error ?? "unknown");
     return null;
   }
+  return buildDecodedDecalBody(input);
+}
+
+/** Preview sources with a live data texture use the same assembly without a PNG transfer. */
+export async function buildDecodedDecalBody(
+  input: DecalBodyInput,
+): Promise<ThreeNamespace.Object3D | null> {
+  const { THREE, unit, texture, decoded, proxies, env, state } = input;
   const aspect = texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
   const framePlan = decalFramePlan(unit.transform?.matrix, unit.scale, unit.depth, aspect);
   const frame = framePlan ? decalFrameObject(THREE, framePlan) : null;
@@ -167,7 +179,7 @@ export async function buildDecalBody(
   const family: EngineFamily = route.family;
   if (family === "sdf") state.neonAnimated = true;
 
-  const addFloatQuad = () => {
+  const addFloatQuad = (authoredFallback = false) => {
     const floatMaterial = input.engineMaterials
       ? createEngineDecalMaterial(THREE, family, {
           map: decoded,
@@ -198,11 +210,22 @@ export async function buildDecalBody(
     for (let i = 0; i < quadUv.count; i += 1) quadUv.setX(i, 1 - quadUv.getX(i));
     quadUv.needsUpdate = true;
     const quad = new THREE.Mesh(quadGeometry, floatMaterial);
-    quad.position.z = (dataDepth ?? 0) / 2;
+    // A dropped authoring preview must remain above the drop surface, rather
+    // than at the far end of a donor's (possibly downward-facing) volume.
+    quad.position.z = authoredFallback ? (frame.axisZ.z < 0 ? -0.02 : 0.02) : (dataDepth ?? 0) / 2;
+    if (authoredFallback && family === "hole" && input.engineMaterials) {
+      // The preview quad is in decal-local space, unlike receiver geometry.
+      // Give it its own box instead of the legacy VS's constant z=-1, which
+      // the legacy fragment shader discards in its entirety.
+      configureHoleDecal(THREE, floatMaterial as ThreeNamespace.ShaderMaterial, {
+        ...frame,
+        matrix: new THREE.Matrix4(),
+      }, dataDepth ?? halfScale * 2.5);
+    }
     group.add(quad);
     state.fallback += 1;
   };
-  if (route.surface === "plane") addFloatQuad();
+  if (route.surface === "plane") addFloatQuad(!!unit.decalSource);
 
   const depthZ = dataDepth ?? halfScale * 2.5;
   const projector = {
@@ -210,33 +233,12 @@ export async function buildDecalBody(
     orientation: new THREE.Euler().setFromRotationMatrix(frame.matrix),
     size: new THREE.Vector3(frame.sizeX, frame.sizeY, depthZ),
   };
-  const boxRadius = Math.hypot(projector.size.x, projector.size.y, projector.size.z) / 2;
   const geometries: ThreeNamespace.BufferGeometry[] = [];
   for (const proxy of proxies) {
-    const position = proxy.geometry.getAttribute("position");
-    if (!position || !Number.isFinite(position.count) || position.count === 0) continue;
-    let validPosition = true;
-    for (let i = 0; i < position.count && validPosition; i += 1) {
-      validPosition =
-        Number.isFinite(position.getX(i)) &&
-        Number.isFinite(position.getY(i)) &&
-        Number.isFinite(position.getZ(i));
-    }
-    if (!validPosition) continue;
-    if (!proxy.geometry.boundingSphere) proxy.geometry.computeBoundingSphere();
-    const sphere = proxy.geometry.boundingSphere;
-    if (
-      sphere &&
-      sphere.center.distanceTo(projector.position) > sphere.radius + boxRadius
-    ) {
-      continue;
-    }
-    const clipped = new DecalGeometry(
-      proxy,
-      projector.position,
-      projector.orientation,
-      projector.size,
-    );
+    const clipped = input.receiverIndex
+      ? input.receiverIndex.project(proxy, projector.position, projector.orientation, projector.size)
+      : new DecalGeometry(proxy, projector.position, projector.orientation, projector.size);
+    if (!clipped) continue;
     const clippedPosition = clipped.getAttribute("position");
     if (clippedPosition) {
       let finite = true;
@@ -251,7 +253,7 @@ export async function buildDecalBody(
         continue;
       }
     }
-    if ((clipped.attributes.position?.count ?? 0) === 0) continue;
+    if ((clipped.attributes.position?.count ?? 0) === 0) { clipped.dispose(); continue; }
     const filtered =
       family === "hole" || route.surface === "plane"
         ? clipped
@@ -259,7 +261,12 @@ export async function buildDecalBody(
     if (filtered !== clipped) clipped.dispose();
     if (filtered) geometries.push(filtered);
   }
-  if (!geometries.length) return group;
+  if (!geometries.length) {
+    // Native scene decals remain projection-only. Library placements carry
+    // their own source and need a visible editing surface before attachment.
+    if (unit.decalSource && route.surface !== "plane") addFloatQuad(true);
+    return group;
+  }
   for (const geometry of geometries) {
     const uv = geometry.attributes.uv;
     for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
@@ -298,6 +305,9 @@ export async function buildDecalBody(
         decalData: input.decalLight,
       });
   const container = new THREE.Group();
+  if (family === "hole" && input.engineMaterials) {
+    configureHoleDecal(THREE, engineMaterial as ThreeNamespace.ShaderMaterial, frame, depthZ);
+  }
   container.matrix.copy(frame.matrix).invert();
   container.matrixAutoUpdate = false;
   for (const geometry of geometries) {

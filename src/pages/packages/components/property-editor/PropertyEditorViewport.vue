@@ -5,6 +5,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { disposeObject } from "@/lib/three-viewer";
 import { getLotModelObjects } from "@/lib/three-gltf";
+import { createRawMaskDecoder } from "@/render/resolve/rawMaskPixels";
 import { renderTelemetry } from "@/lib/renderTelemetry";
 import type { RenderTelemetryTrigger } from "@/lib/renderTelemetry";
 import type * as ThreeNamespace from "three";
@@ -26,6 +27,7 @@ import {
 } from "@/render/exec/three/overlays";
 import { groupPathPointPolylines } from "@/render/plan/path";
 import { kindGroup, stageDecals, stageUnits } from "@/render/session/stages";
+import { createSceneRebuildScheduler } from "@/render/session/sceneRebuildScheduler";
 import { stageGround } from "@/render/session/groundStage";
 import { loadSimParts, type SimPart } from "./simAssets";
 import { renderRefinedAssetUnit, type UnitRenderContext } from "./renderers";
@@ -55,6 +57,7 @@ import {
 } from "@/render/plan/ground";
 import { createLotDimensions } from "@/render/exec/three/ground";
 import { executeModel } from "@/render/exec/three/model";
+import { createDecalReceiverIndex } from "@/render/exec/three/decalReceiverIndex";
 import { buildDecalBody } from "@/render/exec/three/decalBody";
 import { normalizeStreetFacing } from "@/pages/studio/components/asset/streetFacing";
 
@@ -66,6 +69,8 @@ export type EditorTool = "select" | "translate" | "rotate" | "scale";
  * unitGizmos（六类 Unit）完成 SCP lot 视口。浮层 UI 亦在此层。
  * 底座/业务拆分见 docs/roadmap/asset-development.md §二（PE-重构-1）。
  */
+const decalReceiverIndex = createDecalReceiverIndex();
+
 const props = defineProps<{
   groundOnly?: boolean;
   modelPayload: LotModelPayload | null;
@@ -1151,31 +1156,19 @@ const TRIGGER_PRIORITY: Record<RenderTelemetryTrigger, number> = {
   grouping: 1,
   scene_rebuild: 0,
 };
-let rebuildScheduled = false;
-let rebuildRequested = false;
+const rebuildScheduler = createSceneRebuildScheduler({
+  suspended: () => props.suspended === true,
+  whenSettled: viewport.whenSettled,
+  rebuild: rebuildScene,
+  requestFrame: (callback) => { requestAnimationFrame(callback); },
+  onError: (error) => console.error("[pe] scene rebuild failed:", error),
+});
 function scheduleRebuild(trigger: RenderTelemetryTrigger) {
   if (props.suspended) return;
-  if (
-    !pendingTrigger ||
-    TRIGGER_PRIORITY[trigger] >= TRIGGER_PRIORITY[pendingTrigger]
-  ) {
+  if (!pendingTrigger || TRIGGER_PRIORITY[trigger] >= TRIGGER_PRIORITY[pendingTrigger]) {
     pendingTrigger = trigger;
   }
-  rebuildRequested = true;
-  if (rebuildScheduled) return;
-  rebuildScheduled = true;
-  requestAnimationFrame(async () => {
-    try {
-      while (rebuildRequested && !props.suspended) {
-        await viewport.whenSettled();
-        if (props.suspended) break;
-        rebuildRequested = false;
-        await rebuildScene();
-      }
-    } finally {
-      rebuildScheduled = false;
-    }
-  });
+  rebuildScheduler.request();
 }
 
 /**
@@ -1281,17 +1274,9 @@ async function loadMaskImageDims(): Promise<{
  *  ImageData**——若经 canvas 解码，预乘 alpha 会按 LC4 权重等比压缩/清零
  *  LC1-3 权重，精细合成随即满地判为草皮（2026-09-13 消防局对拍根因）。
  *  结果按源字符串缓存：编辑操作的全量重建不再重复 atob 逐字节拷贝。 */
+const decodeRawMask = createRawMaskDecoder();
 function loadRawMaskPixels(width: number, height: number): ImageData | null {
-  const base64 = props.lotMaskRawRgba;
-  if (!base64) return null;
-  const binary = atob(base64);
-  const expected = width * height * 4;
-  if (binary.length < expected) return null;
-  const pixels = new Uint8ClampedArray(expected);
-  for (let index = 0; index < expected; index += 1) {
-    pixels[index] = binary.charCodeAt(index);
-  }
-  return new ImageData(pixels, width, height);
+  return decodeRawMask(props.lotMaskRawRgba, width, height);
 }
 
 /** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入，按源 URL 缓存）。 */
@@ -1314,6 +1299,8 @@ onMounted(async () => {
   await ensureGizmo();
 });
 onBeforeUnmount(() => {
+  rebuildScheduler.dispose();
+  decalReceiverIndex.clear();
   stopNeonClock();
   clearParticleViews();
   gizmo?.detach();
@@ -1541,6 +1528,7 @@ async function assembleScene(
     // 执行器自持一份状态，调用后回写到视口既有计数/时钟变量（保持旧语义）
     const state = { ...decalExecState };
     const object = await buildDecalBody({
+      receiverIndex: decalReceiverIndex,
       THREE,
       unit,
       texture,
@@ -1624,12 +1612,10 @@ async function assembleScene(
   // concurrently with the independent ground worker; never compile a ground
   // placeholder that applyGroundMask is about to replace and dispose.
   //
-  // NOT awaited: prepareShaders now compiles on requestIdleCallback, so
-  // awaiting it makes rebuild completion (sceneReady/revision/首帧) wait for
-  // a GPU-idle slot — up to the 5 s fallback. Compilation is best-effort;
-  // the first draw links whatever is still missing.
-  void ctx.prepareStableShaders();
+  // Compile concurrently with ground work; gate first draw until programs are ready.
+  const shaderPreparation = ctx.prepareStableShaders();
   const ground = await groundStage;
+  await shaderPreparation;
   await decalPrefetch;
   if (ctx.isStale()) return;
 

@@ -4,6 +4,8 @@ import { useI18n } from "vue-i18n";
 import FSelect from "@/components/ui/FSelect.vue";
 import {
   groundResidence,
+  RESIDENCE_CAPACITY_FIELDS,
+  RESIDENCE_HAPPINESS_FIELDS,
   type ResidenceParams,
 } from "./residenceBehavior";
 
@@ -16,6 +18,7 @@ const profiles = [
   ["ground-residence-w1-v1", "residenceW1"],
   ["ground-residence-w2-v1", "residenceW2"],
   ["ground-residence-w3-v1", "residenceW3"],
+  ["ground-residence-w1-d3-v1", "residenceW1D3"],
   ["copan-residence-v1", "residenceCopan"],
   ["megatower-residence-v1", "residenceMegatower"],
 ] as const;
@@ -29,24 +32,33 @@ const slots = computed(() => {
   const original = defaults.value;
   if (!original) return null;
   const workers = Math.round((original.workers * capacity.value) / original.population);
+  const happinessCapacity = capacity.value * 11;
   return {
-    residentWorkers: workers,
+    residentWorkers: capacity.value - (props.params.residentShoppers ?? capacity.value - workers),
     residentChildren: Math.round((original.children * capacity.value) / original.population),
-    shoppers: capacity.value - (props.params.residentWorkers ?? workers),
+    residentShoppers: capacity.value - (props.params.residentWorkers ?? workers),
+    happinessInitial: Math.min(capacity.value, props.params.happinessCapacity ?? happinessCapacity),
+    happinessCapacity,
   };
 });
 
 function selectProfile(value: string): void {
   const residenceProfile = profiles.find(([profile]) => profile === value)?.[0];
   const patch: Partial<ResidenceParams> = { residenceProfile };
-  if (props.params.residentWorkers != null) patch.residentWorkers = null;
-  if (props.params.residentChildren != null) patch.residentChildren = null;
+  for (const field of [...RESIDENCE_CAPACITY_FIELDS, ...RESIDENCE_HAPPINESS_FIELDS]) {
+    if (props.params[field] != null) patch[field] = null;
+  }
   emit("patch", patch);
 }
 
-function setCount(field: "population" | "residentWorkers" | "residentChildren", event: Event): void {
+type Field = "population" | (typeof RESIDENCE_CAPACITY_FIELDS)[number] | (typeof RESIDENCE_HAPPINESS_FIELDS)[number];
+function setCount(field: Field, event: Event): void {
   const input = event.target as HTMLInputElement;
-  emit("patch", { [field]: input.value === "" && !input.validity.badInput ? null : input.valueAsNumber });
+  const value = input.value === "" && !input.validity.badInput ? null : input.valueAsNumber;
+  const patch: Partial<ResidenceParams> = { [field]: value };
+  if (field === "residentWorkers") patch.residentShoppers = null;
+  if (field === "residentShoppers") patch.residentWorkers = null;
+  emit("patch", patch);
 }
 </script>
 
@@ -69,15 +81,19 @@ function setCount(field: "population" | "residentWorkers" | "residentChildren", 
       @change="setCount('population', $event)" />
   </label>
   <template v-if="slots">
-    <label v-for="field in (['residentWorkers', 'residentChildren'] as const)" :key="field" class="logic-field">
+    <label v-for="field in RESIDENCE_CAPACITY_FIELDS" :key="field" class="logic-field">
       <span>{{ t(`${keys}.${field}`) }}</span>
       <input
         type="number" min="0" :max="capacity" step="1" :disabled="disabled"
         :placeholder="String(slots[field])" :value="params[field] ?? ''" @change="setCount(field, $event)" />
     </label>
-    <label class="logic-field">
-      <span>{{ t(`${keys}.residentShoppers`) }}</span>
-      <input type="number" :value="Number.isFinite(slots.shoppers) ? slots.shoppers : ''" readonly />
+    <label v-for="field in RESIDENCE_HAPPINESS_FIELDS" :key="field" class="logic-field">
+      <span>{{ t(`${keys}.${field}`) }}</span>
+      <input
+        type="number" :min="field === 'happinessInitial' ? 0 : 1"
+        :max="field === 'happinessInitial' ? params.happinessCapacity ?? slots.happinessCapacity : 1100000"
+        step="1" :disabled="disabled"
+        :placeholder="String(slots[field])" :value="params[field] ?? ''" @change="setCount(field, $event)" />
     </label>
   </template>
 </template>

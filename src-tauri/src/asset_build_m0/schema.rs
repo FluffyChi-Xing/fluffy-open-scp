@@ -96,6 +96,10 @@ pub struct SemanticsSchema {
     /// 与 legacy `behavior` 互斥；两者并存时 plan 阶段拒绝。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub behaviors: Vec<Value>,
+    #[serde(default, rename = "megaTower", skip_serializing_if = "Option::is_none")]
+    pub mega_tower: Option<Value>,
+    #[serde(default, rename = "ambientOcclusion", skip_serializing_if = "Option::is_none")]
+    pub ambient_occlusion: Option<Value>,
     /// Property patch documents are intentionally kept as JSON at M0. The
     /// typed Property writer owns their domain validation in M1, while M0
     /// still includes them in the schema hash and intermediate contract.

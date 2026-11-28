@@ -1,7 +1,7 @@
 /**
  * 单元计划执行器（唯一接触 three 的一层）。
  *
- * 语义与旧 `renderers/{tree,prop,spawner}Renderer` 完全一致；区别只在于：
+ * 精细道具与树木的渲染执行器：
  * 判定与参数选择在 `plan/units.ts`（纯函数、可单测），这里只负责取载荷、
  * 调材质/几何工厂、写 Object3D 与增量缩放标记。
  */
@@ -9,7 +9,6 @@ import type * as ThreeNamespace from "three";
 import type { LotModelPayload, LotUnitDto } from "@/api/tauri";
 import type { SunEnvRefs } from "@/pages/packages/components/property-editor/refinedRender";
 import type { SimPart } from "@/pages/packages/components/property-editor/simAssets";
-import { getSimPopulation } from "@/pages/packages/components/property-editor/simAssets";
 import {
   getTreeBillboard,
   getTreeModelObject,
@@ -102,34 +101,12 @@ async function executeProp(
   });
 }
 
-async function executeSpawner(
-  plan: Extract<UnitPlan, { kind: "spawner" }>,
-  unit: LotUnitDto,
-  resources: UnitExecutionResources,
-): Promise<ThreeNamespace.Object3D | null> {
-  const { THREE } = resources;
-  if (!resources.simParts.length) return null;
-  if (unit.kind !== "spawner") return null;
-  const position = new THREE.Vector3();
-  const quaternion = new THREE.Quaternion();
-  applyTransform(THREE, plan.transform, position, quaternion, new THREE.Vector3());
-  const population = await getSimPopulation(THREE, [...resources.simParts], unit);
-  if (!population) return null;
-  population.position.copy(position);
-  population.quaternion.copy(quaternion);
-  // 人形尺寸自持（合成骨架自带比例，矩阵缩放不参与渲染）
-  population.userData.incrementalScale = "keepScale";
-  population.userData.unitLocationPreview = true;
-  return population;
-}
-
 /** 计划 → Object3D；返回 null 表示资产缺席/解析失败，调用方退标记锥。 */
 export async function executeUnitPlan(
   plan: UnitPlan,
-  unit: LotUnitDto,
+  _unit: LotUnitDto,
   resources: UnitExecutionResources,
 ): Promise<ThreeNamespace.Object3D | null> {
   if (plan.kind === "tree") return executeTree(plan, resources);
-  if (plan.kind === "prop") return executeProp(plan, resources);
-  return executeSpawner(plan, unit, resources);
+  return executeProp(plan, resources);
 }

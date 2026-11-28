@@ -7,11 +7,11 @@ import {
   canonicalResourceKind,
   hasStateResource,
   stateResourcePixels,
-  STATE_RESOURCE_IDS,
 } from "./map-state-fields";
+import { createEditedResourceTexture } from "./map-resource-texture";
 
 export type TerrainMaterial = THREE.MeshLambertMaterial & {
-  setResource: (kind: string | null, opacity: number) => void;
+  setResource: (kind: string | null, opacity: number, edited?: Region3DData) => void;
 };
 
 /** Data fields stay in world space and at source resolution, independently of mesh LOD.
@@ -68,11 +68,17 @@ export function createTerrainMaterial(
     texture.magFilter = texture.minFilter = THREE.NearestFilter;
     return texture;
   };
-  const staticResources = Object.fromEntries(
-    Object.keys(STATE_RESOURCE_IDS)
-      .filter((kind) => hasStateResource(data, kind))
-      .map((kind) => [kind.toLowerCase(), resourceField(kind)]),
-  );
+  const staticResources = new Map<string, THREE.DataTexture>();
+  function staticResource(kind: string) {
+    const key = canonicalResourceKind(kind);
+    if (!hasStateResource(data, key)) return undefined;
+    let texture = staticResources.get(key);
+    if (!texture) {
+      texture = resourceField(key);
+      staticResources.set(key, texture);
+    }
+    return texture;
+  }
   const detail = (slot: keyof typeof detailPixels, fallback: string) => {
     const px = detailPixels[slot];
     const color = new THREE.Color(fallback).convertLinearToSRGB();
@@ -107,13 +113,28 @@ export function createTerrainMaterial(
     staticResource: { value: eco },
     hasStaticResource: { value: false },
   };
-  mat.setResource = (kind, opacity) => {
+  let editedTexture: ReturnType<typeof createEditedResourceTexture> | undefined;
+  let editedSource: Region3DData | undefined;
+  let editedKind: string | null = null;
+  mat.addEventListener("dispose", () => editedTexture?.texture.dispose());
+  mat.setResource = (kind, opacity, edited) => {
+    const cityLayer = kind && kind.toLowerCase() !== "watertable" ? kind : null;
+    if (edited !== editedSource || kind !== editedKind) {
+      const hasEdits = !!(edited && cityLayer && hasStateResource(edited, cityLayer));
+      if (kind !== editedKind || !hasEdits) {
+        editedTexture?.texture.dispose();
+        editedTexture = undefined;
+      }
+      if (edited && cityLayer && hasEdits) {
+        editedTexture ??= createEditedResourceTexture(cityLayer, size);
+        editedTexture.update(edited);
+      }
+      editedSource = edited;
+      editedKind = kind;
+    }
     // Regional groundwater uses ED everywhere; city groundwater uses only
     // bounded bootstrap cells and has no regional fallback (channel 3).
-    const resource =
-      kind && kind.toLowerCase() !== "watertable"
-        ? staticResources[canonicalResourceKind(kind).toLowerCase()]
-        : undefined;
+    const resource = cityLayer ? editedTexture?.texture ?? staticResource(cityLayer) : undefined;
     const channel = kind ? ecoChannel(kind) : null;
     overlay.staticResource.value = resource ?? eco;
     overlay.hasStaticResource.value = !!resource;
@@ -234,7 +255,7 @@ if (resourceChannel >= 0) {
   mat.addEventListener("dispose", () => {
     eco.dispose();
     normal.dispose();
-    Object.values(staticResources).forEach((tex) => tex.dispose());
+    staticResources.forEach((tex) => tex.dispose());
     Object.values(textures).forEach((tex) => tex.dispose());
   });
   return mat;

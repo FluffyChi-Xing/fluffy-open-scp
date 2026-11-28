@@ -1,3 +1,4 @@
+import { roadPreviewGroundHeight } from "./roadPreviewGround";
 import * as THREE from "three";
 import {
   createNativeRoads,
@@ -74,7 +75,10 @@ export async function createRoadAppearanceScene(
       ],
     },
   };
-  return createNativeRoads(data, pixels, () => 0);
+  const groundHeight = roadPreviewGroundHeight(assets, instance);
+  const group = createNativeRoads(data, pixels, () => groundHeight);
+  group.userData.previewGroundHeight = groundHeight;
+  return group;
 }
 
 export function disposeRoadAppearance(group: THREE.Object3D) {

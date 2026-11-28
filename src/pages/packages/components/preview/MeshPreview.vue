@@ -6,7 +6,7 @@ import { parseObjModel } from "@/lib/three-obj";
 import { parseLotModelContainer } from "@/lib/three-gltf";
 import { createSunEnv } from "../property-editor/refinedRender";
 import { getPropModelObject } from "../property-editor/propModels";
-import type { LotModelPayload } from "@/api/tauri";
+
 
 const props = defineProps<{
   objBase64s: string[];
@@ -114,7 +114,7 @@ watch(
   align-items: center;
   display: grid;
   font-size: 11px;
-  grid-template-columns: auto 160px;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, 160px);
   gap: 8px;
 }
 .mesh-controls span {
@@ -122,14 +122,19 @@ watch(
 }
 .mesh-controls input[type="range"] {
   accent-color: var(--primary);
-  width: 160px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
 }
 .mesh-viewport {
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: grab;
-  height: 280px;
+  aspect-ratio: 16 / 9;
+  min-height: 180px;
+  max-height: 320px;
+  width: 100%;
   min-width: 0;
   overflow: hidden;
   touch-action: none;
@@ -137,7 +142,9 @@ watch(
 .mesh-viewport:active {
   cursor: grabbing;
 }
-.mesh-viewport canvas {
+.mesh-viewport :deep(canvas) {
+  max-width: 100%;
+  max-height: 100%;
   display: block;
 }
 .mesh-error {

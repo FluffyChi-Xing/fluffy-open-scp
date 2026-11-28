@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "@/lib/monaco-workers";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as monaco from "monaco-editor";
 import { registerEr2 } from "./er2-language";

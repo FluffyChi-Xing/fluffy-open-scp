@@ -31,7 +31,9 @@ pub fn ensure_project_layout(root: &Path, mod_type: &str) -> Result<Value, Strin
             "assets/materials",
             "assets/audio",
         ],
-        "road" => vec!["assets/roads"],
+        "road" => vec!["assets/roads", "assets/images"],
+        "map_resources" => vec![],
+        "vanilla_variant" => vec!["assets/properties", "assets/textures"],
         "gameplay" => vec!["assets/properties", "assets/tuning", "assets/localization"],
         _ => return Err("Unknown mod type".into()),
     };
@@ -52,6 +54,10 @@ pub fn dispatch(
     let _guard = FLOW_LOCK.lock().map_err(|_| "Workflow lock failed")?;
     let string = |key: &str| payload[key].as_str().unwrap_or("");
     match action {
+        "road-project-read" => crate::road_asset::read_project(root),
+        "road-project-save" => crate::road_asset::save_project(root, &payload),
+        "map-resource-preview" => crate::map_resources::preview(&payload),
+        "map-resource-save" => crate::map_resources::save(root, &payload),
         "import-asset" => asset_inputs::import(root, &payload, blend_atlas),
         "import-menu-image" => asset_inputs::import_menu_image(root, &payload),
         "read-menu-image" => asset_inputs::read_menu_image(root, &payload),
@@ -342,6 +348,28 @@ pub fn initialize(
     if engine_manifest(&previous) {
         return Err("Project already has an engine workflow".into());
     }
+    initialize_workflow(root, name, author, description, mod_type, mode, Some(previous))
+}
+
+/// Fresh asset projects already carry their metadata from the creation form.
+pub(crate) fn initialize_new_asset_project(
+    root: &Path,
+    name: &str,
+    author: &str,
+    description: &str,
+) -> Result<FlowState, String> {
+    initialize_workflow(root, name, author, description, "assets", "assets", None)
+}
+
+fn initialize_workflow(
+    root: &Path,
+    name: &str,
+    author: &str,
+    description: &str,
+    mod_type: &str,
+    mode: &str,
+    previous: Option<Value>,
+) -> Result<FlowState, String> {
     let kinds: Vec<&str> = match mode {
         "original" => vec![
             "map-source",
@@ -456,14 +484,18 @@ pub fn initialize(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    let manifest = json!({"format":FORMAT,"manifest_version":2,"name":name,"version":"0.1.0","description":description,"author":author,"mod_type":mod_type,"origin":"openscp","created_at":now,"engine":{"enabled":true,"version":1},"workflow":mode,"nodes":nodes,"internal_dependencies":deps,"outer_dependencies":[],"resource_layout":layout,"legacy_metadata":previous});
+    let replace_manifest = previous.is_some();
+    let mut manifest = json!({"format":FORMAT,"manifest_version":2,"name":name,"version":"0.1.0","description":description,"author":author,"mod_type":mod_type,"origin":"openscp","created_at":now,"engine":{"enabled":true,"version":1},"workflow":mode,"nodes":nodes,"internal_dependencies":deps,"outer_dependencies":[],"resource_layout":layout});
+    if let Some(previous) = previous {
+        manifest["legacy_metadata"] = previous;
+    }
     let mut created = Vec::new();
     let result = (|| {
         for (file, value) in &schema_files {
             save_json(root, file, value, false)?;
             created.push(safe_path(root, file)?);
         }
-        save_json(root, "package.json", &manifest, true)
+        save_json(root, "package.json", &manifest, replace_manifest)
     })();
     if let Err(error) = result {
         for path in created {
@@ -471,7 +503,14 @@ pub fn initialize(
         }
         return Err(error);
     }
-    inspect(root)
+    let state = inspect(root);
+    if !replace_manifest && state.is_err() {
+        let _ = fs::remove_file(root.join("package.json"));
+        for path in created {
+            let _ = fs::remove_file(path);
+        }
+    }
+    state
 }
 
 fn diagnostic(
@@ -1371,6 +1410,38 @@ mod tests {
             assert_eq!(ensure_project_layout(&f.0, kind).unwrap(), layout);
             assert_eq!(fs::read(asset).unwrap(), b"preserve");
         }
+    }
+
+    #[test]
+    fn new_asset_project_opens_with_the_same_workflow_as_an_enabled_asset_project() {
+        let fresh = Fixture::new();
+        let legacy = Fixture::new();
+        let new = initialize_new_asset_project(&fresh.0, "New Asset", "", "").unwrap();
+        let enabled = initialize(&legacy.0, "Legacy Asset", "Artist", "A building", "assets", "assets").unwrap();
+        assert!(engine_manifest(&new.manifest));
+        assert_eq!(new.manifest["author"], "");
+        assert_eq!(new.manifest["description"], "");
+        assert!(new.manifest.get("legacy_metadata").is_none());
+        for field in ["engine", "mod_type", "workflow", "nodes", "internal_dependencies", "resource_layout"] {
+            assert_eq!(new.manifest[field], enabled.manifest[field], "{field}");
+        }
+        assert_eq!(json!(new.schemas), json!(enabled.schemas));
+        let reopened = inspect(&fresh.0).unwrap();
+        assert_eq!(reopened.revision, new.revision);
+        assert_eq!(reopened.nodes.len(), 8);
+        let building = reopened.schemas.iter().find(|schema| schema.kind == "building-asset").unwrap();
+        assert_eq!(building.config["asset"], "");
+        assert!(reopened.im.is_none());
+    }
+
+    #[test]
+    fn new_asset_project_never_overwrites_an_existing_manifest() {
+        let f = Fixture::new();
+        let previous = br#"{"name":"Existing asset"}"#;
+        fs::write(f.0.join("package.json"), previous).unwrap();
+        assert!(initialize_new_asset_project(&f.0, "New Asset", "", "").is_err());
+        assert_eq!(fs::read(f.0.join("package.json")).unwrap(), previous);
+        assert_eq!(fs::read_dir(f.0.join("schemas/assets")).unwrap().count(), 0);
     }
 
     #[test]

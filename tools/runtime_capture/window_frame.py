@@ -28,6 +28,14 @@ SelectObject = gdi32.SelectObject
 DeleteObject = gdi32.DeleteObject
 DeleteDC = gdi32.DeleteDC
 
+for fn,args,result in [
+ (GetDC,[wt.HWND],wt.HDC),(ReleaseDC,[wt.HWND,wt.HDC],ctypes.c_int),
+ (CreateCompatibleDC,[wt.HDC],wt.HDC),(CreateCompatibleBitmap,[wt.HDC,ctypes.c_int,ctypes.c_int],wt.HBITMAP),
+ (SelectObject,[wt.HDC,wt.HANDLE],wt.HANDLE),(DeleteObject,[wt.HANDLE],wt.BOOL),
+ (DeleteDC,[wt.HDC],wt.BOOL),(PrintWindow,[wt.HWND,wt.HDC,wt.UINT],wt.BOOL),
+ (gdi32.GetDIBits,[wt.HDC,wt.HBITMAP,wt.UINT,wt.UINT,ctypes.c_void_p,ctypes.c_void_p,wt.UINT],ctypes.c_int)]:
+    fn.argtypes=args;fn.restype=result
+
 
 class RECT(ctypes.Structure):
     _fields_ = [("left", wt.LONG), ("top", wt.LONG), ("right", wt.LONG), ("bottom", wt.LONG)]
@@ -49,7 +57,16 @@ def find_window(pid: int):
     return found[0] if found else None
 
 
+def is_black_content(image):
+    # Ignore borders/title fragments: PrintWindow may paint only window chrome.
+    rgb=image.convert("RGB")
+    w,h=rgb.size
+    core=rgb.crop((w//10,h//10,w-w//10,h-h//10)).resize((64,64))
+    return sum(max(pixel)<8 for pixel in core.getdata()) / 4096 > .995
+
+
 def capture(pid: int, output: Path):
+    user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
     hwnd = find_window(pid)
     if not hwnd:
         raise RuntimeError("window_not_found")
@@ -65,7 +82,7 @@ def capture(pid: int, output: Path):
     previous = SelectObject(memory_dc, bitmap)
     try:
         # PW_RENDERFULLCONTENT also captures modern compositor content when available.
-        printed = bool(PrintWindow(hwnd, memory_dc, 0x00000002))
+        printed = bool(PrintWindow(hwnd, memory_dc, 0x00000003))
         bits = ctypes.create_string_buffer(width * height * 4)
         class BITMAPINFOHEADER(ctypes.Structure):
             _fields_ = [("size", wt.DWORD), ("width", wt.LONG), ("height", wt.LONG), ("planes", wt.WORD), ("bits", wt.WORD), ("compression", wt.DWORD), ("size_image", wt.DWORD), ("x", wt.LONG), ("y", wt.LONG), ("colors", wt.DWORD), ("important", wt.DWORD)]
@@ -74,20 +91,20 @@ def capture(pid: int, output: Path):
         image = Image.frombuffer("RGBA", (width, height), bits, "raw", "BGRA", 0, 1).copy()
         # DirectX/RenderWare often reports success but paints a black bitmap.
         # Fall back to a read-only desktop copy of the visible client area.
-        extrema = image.convert("RGB").getextrema()
-        if (not printed) or max(channel[1] for channel in extrema) < 4:
-            window_rect = RECT()
-            if not GetWindowRect(hwnd, ctypes.byref(window_rect)):
+        if (not printed) or is_black_content(image):
+            if user32.IsIconic(hwnd):
+                raise RuntimeError("window_minimized")
+            origin=wt.POINT(0,0)
+            if not user32.ClientToScreen(hwnd,ctypes.byref(origin)):
                 raise RuntimeError("window_rect_failed")
-            border_x = max(0, (window_rect.right - window_rect.left - width) // 2)
-            title_h = max(0, (window_rect.bottom - window_rect.top - height) - border_x)
-            bbox = (window_rect.left + border_x, window_rect.top + title_h,
-                    window_rect.left + border_x + width, window_rect.top + title_h + height)
+            bbox=(origin.x,origin.y,origin.x+width,origin.y+height)
             try:
                 image = ImageGrab.grab(bbox=bbox, all_screens=True).convert("RGBA")
             except Exception as error:
                 if not printed:
                     raise RuntimeError("print_window_failed") from error
+        if is_black_content(image):
+            raise RuntimeError("frame_black_content")
         output.parent.mkdir(parents=True, exist_ok=True)
         image.save(output, "PNG", optimize=True)
     finally:

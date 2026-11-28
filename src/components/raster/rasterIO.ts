@@ -2,13 +2,15 @@ import { i18n } from "@/locales";
 const t = i18n.global.t;
 import { tauriApi } from "@/api";
 import type { PropertyDocumentSummary, Tgi } from "@/api/tauri";
-import { base64ToRgba } from "@/lib/raster-editor/encoders";
+import { base64ToRgba, rgbaToBase64 } from "@/lib/raster-editor/encoders";
 import {
   parseRasterSchema,
   type RasterSchema,
 } from "@/lib/raster-editor/schema";
 import { encodeRgbaPng } from "@/lib/raster-editor/png";
 import { lotSizeForImage } from "@/lib/lot-ground/ground";
+import { reverseMaskRows } from "@/lib/lot-ground/maskRows";
+import { visibleDecalPixels } from "@/lib/raster-editor/decalLayers";
 
 export function downloadJson(value: unknown, name: string) {
   const url = URL.createObjectURL(
@@ -27,10 +29,13 @@ export function downloadRasterAsset(value: RasterSchema) {
     return;
   }
   const image = schema.image!;
+  const pixels = base64ToRgba(image.data);
   const bytes = encodeRgbaPng(
     image.width,
     image.height,
-    base64ToRgba(image.data),
+    schema.profile === "lot-mask"
+      ? reverseMaskRows(pixels, image.width, image.height)
+      : visibleDecalPixels(pixels, schema.decal.layers),
   );
   const url = URL.createObjectURL(
     new Blob([new Uint8Array(bytes)], { type: "image/png" }),
@@ -75,7 +80,7 @@ export async function saveRasterCopy(
     throw new Error(t("rasterEditor.sign.animatedExport"));
   if (kind === "raster" && s.source?.tgi?.typeId === 0x2f4e681b)
     throw new Error(t("rasterEditor.rw4Export"));
-  const { width, height, data: rgbaBase64 } = s.image;
+  const { width, height, data } = s.image;
   if (kind === "lot" && s.profile !== "lot-mask")
     throw new Error(t("rasterEditor.text038"));
   if (kind === "lot" && s.sampling.metersPerPixel !== 0.75)
@@ -107,7 +112,11 @@ export async function saveRasterCopy(
   const common = {
     width,
     height,
-    rgbaBase64,
+    rgbaBase64: s.profile === "lot-mask"
+      ? rgbaToBase64(reverseMaskRows(base64ToRgba(data), width, height))
+      : s.decal.layers?.some(({ visible }) => !visible)
+        ? rgbaToBase64(visibleDecalPixels(base64ToRgba(data), s.decal.layers))
+        : data,
     generateMips: s.sampling.generateMips,
     outputPath,
   };
@@ -122,6 +131,8 @@ export async function saveRasterCopy(
       borderColors: s.lot.borderColors,
       borderPatternIndices: s.lot.borderPatternIndices,
       borderWidths: s.lot.borderWidths,
+      colorHeights: s.lot.colorHeights,
+      borderHeights: s.lot.borderHeights,
     });
   } else if (kind === "decal") {
     await tauriApi.raster.registerDecalEntry({
@@ -135,6 +146,7 @@ export async function saveRasterCopy(
       },
       aspectRatio: s.decal.aspectRatio,
       colors: s.decal.colors.map(storageColor),
+      ...(s.profile === "decal-graffiti" ? { expectedMaterialInstance: 0xe5390a98 } : {}),
       replaceInstance,
     });
   } else {
@@ -190,7 +202,7 @@ export async function loadLotCopy(
       image: {
         width: image.width,
         height: image.height,
-        pixels: base64ToRgba(image.rgbaBase64),
+        pixels: reverseMaskRows(base64ToRgba(image.rgbaBase64), image.width, image.height),
       },
       material,
       source: {

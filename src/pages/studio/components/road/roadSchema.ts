@@ -1,64 +1,15 @@
-export const recipes = {
-  dirt: {
-    lanes: 1,
-    width: 4.5,
-    offset: 0.5,
-    walkWidth: 4,
-    walkOffset: 8,
-    surface: "gravel",
-  },
-  lowStreet: {
-    lanes: 1,
-    width: 4.5,
-    offset: 0,
-    walkWidth: 3,
-    walkOffset: 9,
-    surface: "asphalt",
-  },
-  mediumStreet: {
-    lanes: 2,
-    width: 3.2,
-    offset: 0,
-    walkWidth: 3,
-    walkOffset: 9,
-    surface: "asphalt",
-  },
-  highStreet: {
-    lanes: 2,
-    width: 4.4,
-    offset: 0,
-    walkWidth: 3,
-    walkOffset: 9,
-    surface: "asphalt",
-  },
-  mediumAvenue: {
-    lanes: 2,
-    width: 5.45,
-    offset: 4.5,
-    walkWidth: 3,
-    walkOffset: 21.15,
-    surface: "asphalt",
-  },
-  highAvenue: {
-    lanes: 3,
-    width: 5.45,
-    offset: 4,
-    walkWidth: 3,
-    walkOffset: 21.15,
-    surface: "asphalt",
-  },
-  streetcar: {
-    lanes: 3,
-    width: 4.5,
-    offset: 6,
-    walkWidth: 2.85,
-    walkOffset: 21.15,
-    surface: "asphalt",
-  },
-} as const;
+import recipes from "./roadRecipes.json";
+import { isRoadComposition, type RoadComposition } from "./roadComposition";
+import { isRoadDraft, type RoadStrip } from "./roadDraft";
+
+export { default as recipes } from "./roadRecipes.json";
 
 export type RecipeId = keyof typeof recipes;
 export const recipeIds = Object.keys(recipes) as RecipeId[];
+export type PavedRecipe = Exclude<RecipeId, "dirt">;
+export const pavedRecipes = recipeIds.filter(
+  (recipe): recipe is PavedRecipe => recipe !== "dirt",
+);
 
 export const streetlightOptions = [
   "original",
@@ -66,7 +17,10 @@ export const streetlightOptions = [
   "right",
   "none",
 ] as const;
-export type Streetlights = (typeof streetlightOptions)[number];
+export const draftStreetlightOptions = [
+  "original", "both", "left", "right", "none",
+] as const;
+export type Streetlights = (typeof draftStreetlightOptions)[number];
 
 export interface RoadSchema {
   format: "openscp.road-asset/1";
@@ -74,9 +28,21 @@ export interface RoadSchema {
   identity: number;
   title: string;
   description: string;
+  unitCost?: number | null;
+  frontageEnabled?: boolean;
   gamePackage: string;
   scriptsPackage: string;
   streetlights?: Streetlights;
+  composition?: RoadComposition;
+  section?: RoadStrip[];
+  baseRecipe?: PavedRecipe;
+  menu?: RoadMenuSettings;
+}
+
+export interface RoadMenuSettings {
+  position?: number | null;
+  iconPng?: string;
+  marqueePng?: string;
 }
 
 export function parseRoadSchema(content: string): RoadSchema {
@@ -85,11 +51,37 @@ export function parseRoadSchema(content: string): RoadSchema {
     !value ||
     value.format !== "openscp.road-asset/1" ||
     !Object.hasOwn(recipes, value.recipe) ||
+    (value.frontageEnabled !== undefined &&
+      typeof value.frontageEnabled !== "boolean") ||
+    (value.unitCost != null &&
+      (!Number.isFinite(value.unitCost) ||
+        !Number.isFinite(Math.fround(value.unitCost)) ||
+        value.unitCost < 0)) ||
+    (value.baseRecipe !== undefined &&
+      !pavedRecipes.includes(value.baseRecipe)) ||
+    (value.menu !== undefined &&
+      (!value.menu ||
+        typeof value.menu !== "object" ||
+        Array.isArray(value.menu) ||
+        (value.menu.position != null &&
+          (!Number.isInteger(value.menu.position) ||
+            value.menu.position < -2147483648 ||
+            value.menu.position > 2147483647)) ||
+        ["iconPng", "marqueePng"].some(
+          (key) =>
+            value.menu[key] !== undefined &&
+            typeof value.menu[key] !== "string",
+        ))) ||
+    (value.section !== undefined && !isRoadDraft(value.section)) ||
+    (value.composition !== undefined &&
+      !isRoadComposition(value.composition, value.recipe)) ||
     (value.streetlights !== undefined &&
-      !streetlightOptions.includes(value.streetlights)) ||
+      !draftStreetlightOptions.includes(value.streetlights)) ||
     (value.streetlights &&
       value.streetlights !== "original" &&
-      value.recipe !== "highStreet") ||
+      (value.section !== undefined
+        ? value.baseRecipe === undefined || value.baseRecipe === "streetcar"
+        : value.recipe !== "highStreet" || value.streetlights === "both")) ||
     !Number.isInteger(value.identity) ||
     value.identity <= 0 ||
     value.identity > 0xffffffff ||
@@ -143,4 +135,29 @@ export function crossSection(id: RecipeId): SectionPart[] {
       : []),
     { id: "walk-right", kind: "walk", width: recipe.walkWidth },
   ];
+}
+
+export function recipeDraft(recipe: RecipeId): RoadStrip[] {
+  return crossSection(recipe).map(({ id, kind, direction, width }) => ({
+    id,
+    kind:
+      kind === "traffic" ? (direction === "←" ? "backward" : "forward") : kind,
+    width: Number(width.toFixed(9)),
+  }));
+}
+
+export function matchingRecipe(
+  section: readonly RoadStrip[],
+): RecipeId | undefined {
+  return recipeIds.find((recipe) => {
+    const template = recipeDraft(recipe);
+    return (
+      template.length === section.length &&
+      template.every(
+        (part, index) =>
+          part.kind === section[index].kind &&
+          Math.abs(part.width - section[index].width) < 1e-8,
+      )
+    );
+  });
 }

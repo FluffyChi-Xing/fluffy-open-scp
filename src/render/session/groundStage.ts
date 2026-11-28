@@ -7,9 +7,7 @@
 import type * as ThreeNamespace from "three";
 import { renderTelemetry } from "@/lib/renderTelemetry";
 import { prepareGroundComposer } from "@/pages/packages/components/property-editor/refinedGround";
-import {
-  groundFillMesh,
-} from "@/pages/packages/components/property-editor/editorGround";
+import { groundFillMesh } from "@/pages/packages/components/property-editor/editorGround";
 import { applyGroundTextures } from "../exec/three/groundTextures";
 import { createLotGround } from "../exec/three/ground";
 import { lotGroundPlan } from "../plan/ground";
@@ -39,7 +37,10 @@ export interface GroundStageInput {
   readonly groupLot: ThreeNamespace.Object3D;
   readonly primeTexture: (texture: ThreeNamespace.Texture) => void;
   readonly loadSurfacePixels: () => Promise<GroundMaskInput["surface"]>;
-  readonly loadMaskImageDims: () => Promise<{ width: number; height: number } | null>;
+  readonly loadMaskImageDims: () => Promise<{
+    width: number;
+    height: number;
+  } | null>;
   readonly loadImageDataFromUrl: (
     url: string | null,
   ) => Promise<GroundMaskInput["normalAtlas"]>;
@@ -81,31 +82,43 @@ export async function stageGround(
     input.lotModelBboxCenter ?? [0, 0];
   if (Math.abs(centerLocal[0]) > 1e-4 || Math.abs(centerLocal[1]) > 1e-4) {
     ground.matrix.multiply(
-      new input.THREE.Matrix4().makeTranslation(centerLocal[0], centerLocal[1], 0),
+      new input.THREE.Matrix4().makeTranslation(
+        centerLocal[0],
+        centerLocal[1],
+        0,
+      ),
     );
   }
   ground.matrixAutoUpdate = false;
   input.groupLot.add(ground);
 
   if (input.lotMaskPng || input.lotAlbedoPng) {
-    const [surface, maskDims, normalAtlas] = await Promise.all([
-      input.loadSurfacePixels(),
-      input.loadMaskImageDims(),
-      input.loadImageDataFromUrl(input.lotNormalAtlasPng),
-    ]);
-    if (!surface) {
+    const loadRefinedInputs = async () => {
+      const [surface, maskDims, normalAtlas] = await Promise.all([
+        input.loadSurfacePixels(),
+        input.loadMaskImageDims(),
+        input.loadImageDataFromUrl(input.lotNormalAtlasPng),
+      ]);
+      return {
+        surface, normalAtlas,
+        rawMask: !input.isStale() && maskDims
+          ? input.loadRawMaskPixels(maskDims.width, maskDims.height) : null,
+      };
+    };
+    // White ground only samples its flat PNG. Atlas readback and raw-mask
+    // decoding belong to refined rendering, not the white rebuild's critical path.
+    const refinedInputs = input.renderMode === "refined"
+      ? await loadRefinedInputs()
+      : { surface: null, normalAtlas: null, rawMask: null };
+    if (input.isStale()) return ground;
+    if (input.renderMode === "refined" && !refinedInputs.surface) {
       // 精细渲染的底图格依赖真实图集；静默占位会把沥青画成亮灰。
       console.warn(
         "[lot-ground] 'Lot Textures' surface unavailable — refined ground will use placeholder tiles. Open SimCity_Graphics.package (and the lot's own package) for the real atlas.",
       );
     }
-    const rawMask = maskDims
-      ? input.loadRawMaskPixels(maskDims.width, maskDims.height)
-      : null;
-    await applyGroundTextures({
-      rawMask,
-      surface,
-      normalAtlas,
+    const textureInput = {
+      ...refinedInputs,
       THREE: input.THREE,
       ground,
       maskPng: input.lotMaskPng,
@@ -125,7 +138,8 @@ export async function stageGround(
       surfaceKey: input.lotSurfacePng,
       normalAtlasKey: input.lotNormalAtlasPng,
       isStale: input.isStale,
-    });
+    };
+    await applyGroundTextures(textureInput);
   }
   span.end({ masked: Boolean(input.lotMaskPng || input.lotAlbedoPng) });
 

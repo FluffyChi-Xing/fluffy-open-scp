@@ -4,14 +4,82 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0878FE" />
-    <link rel="stylesheet" href="/src/styles/tokens.css" />
-    <link rel="stylesheet" href="/src/styles/startup.css" />
+    <style>
+      html { background: var(--background, #0c152a); }
+      /* First paint matches the native window and default dark theme. */
+      #app-startup {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: var(--background, #0c152a);
+        color: var(--foreground, #edf3f7);
+        font-family: var(--font-sans, Inter, system-ui, sans-serif);
+        transition:
+          opacity 200ms ease-out,
+          visibility 200ms;
+      }
+      #app-startup strong {
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+      #startup-label {
+        color: var(--muted-foreground, #9caabc);
+        font-size: 12px;
+      }
+      html:not([lang="en-US"]) #startup-label [lang="en-US"],
+      html[lang="en-US"] #startup-label [lang="zh-CN"] {
+        display: none;
+      }
+      .startup-progress {
+        width: 144px;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--border, #223349);
+        overflow: hidden;
+      }
+      .startup-progress span {
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--primary, #0878fe);
+        animation: startup-progress 1.3s ease-in-out infinite;
+      }
+      #app-startup.is-ready {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      @keyframes startup-progress {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(350%);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #app-startup {
+          transition: none;
+        }
+        .startup-progress span {
+          animation: none;
+          width: 100%;
+        }
+      }
+    </style>
     <title>OpenSCP</title>
   </head>
   <body>
     <!-- Visible before the application module and lazy routes download. -->
     <div id="app-startup" role="status" aria-live="polite">
-      <img src="/scp-logo.png" width="64" height="64" alt="" />
+      <img src="/src-tauri/icons/icon-128.png" width="64" height="64" alt="" />
       <strong>OpenSCP</strong>
       <div class="startup-progress" aria-hidden="true"><span></span></div>
       <span id="startup-label"
@@ -20,6 +88,9 @@
       >
     </div>
     <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module">
+      // Keep the document load independent of the Vue module graph.
+      void import("/src/main.ts");
+    </script>
   </body>
 </html>

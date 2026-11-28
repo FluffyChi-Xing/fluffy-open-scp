@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 // Bump whenever the Python→Rust Building40/material migration changes the
 // produced model or six-slot resources.  Reusing a pre-migration cache can
 // silently restore an old RW4/texture binding and present as missing windows.
-pub(super) const CACHE_VERSION: &str = "g3-8-street-placement";
-pub(super) const SCENE_OUTPUT_VERSION: &str = "lot-mask-locations-menu-attachments-copan-lighting-v12";
+pub(super) const CACHE_VERSION: &str = "g3-11-building40-material-rows";
+pub(super) const SCENE_OUTPUT_VERSION: &str = "lot-mask-locations-menu-attachments-copan-plop-v23-native-mall-default";
 
 fn digest_bytes(bytes: &[u8]) -> String {
     let digest = sha2::Sha256::digest(bytes);

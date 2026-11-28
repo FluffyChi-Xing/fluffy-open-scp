@@ -57,6 +57,17 @@ class AssetWatchTest(unittest.TestCase):
         self.assertNotIn("amountDelta", list(changes({}, parked, 3, 36000, 99))[0])
         self.assertNotIn("amountDelta", list(changes(parked, {}, 4, 36001, 99))[0])
 
+    def test_fusion_metrics_report_unit_local_sources(self):
+        plant = 0xFF466630
+        bins = {
+            (4, 7, 0x3EB59739): {"amount": 15555, "capacity": 2147483647},
+            (4, 7, 0x757068CF): {"amount": 15555, "capacity": 10000000},
+        }
+        rows = list(changes({}, bins, 3, 36000, plant))
+        self.assertEqual({row["name"] for row in rows}, {"fusionGeneration", "powerToTransmit"})
+        self.assertTrue(all(row["source"] == "unit-local" for row in rows))
+        self.assertTrue(all(row["buildingEntryId"] == plant for row in rows))
+
     def test_reads_identity_clock_local_resources_and_controller(self):
         mem = Memory()
         base, game, scripts, graphics, iid = 0x400000, 0x10000, 0x20000, 0x30000, 0xDDD772B5
@@ -100,6 +111,17 @@ class AssetWatchTest(unittest.TestCase):
         self.assertEqual(len(updates), 6)
         self.assertTrue(all(row["after"] is None for row in updates if row["unitStamp"] == 99))
         self.assertFalse(sample(mem, game, scripts, graphics, base, iid + 1)[2])
+
+        # A project capture discovers child entries from the built package.
+        _, _, members, component = sample(
+            mem, game, scripts, graphics, base, iid + 1, component_entries=(iid,),
+        )
+        self.assertEqual(members, {(0, 100)})
+        rows = list(changes({}, component, tick, clock, iid + 1))
+        self.assertTrue(rows)
+        self.assertTrue(all(row["unitEntryId"] == iid for row in rows))
+        self.assertTrue(all(row["buildingEntryId"] == iid + 1 for row in rows))
+        self.assertEqual({row["name"] for row in rows}, {"totalWorkers", "touristW1"})
 
 
 if __name__ == "__main__":

@@ -26,18 +26,6 @@ export default {
       },
     },
     {
-      name: "studio-overview",
-      path: "studio/overview",
-      component: () => import("@/pages/studio/overview.vue"),
-      meta: {
-        titleKey: "navigation.studioOverview",
-        icon: "dashboard",
-        groupKey: "navigation.modding",
-        order: 5,
-        hideInMenu: true,
-      },
-    },
-    {
       name: "studio-diagnostics",
       path: "studio/diagnostics",
       component: () => import("@/pages/studio/panels/diagnostics.vue"),
@@ -60,28 +48,6 @@ export default {
       },
     },
     {
-      name: "studio-i18n",
-      path: "studio/i18n",
-      component: () => import("@/pages/studio/panels/i18n.vue"),
-      meta: {
-        titleKey: "navigation.studioI18n",
-        icon: "globe",
-        groupKey: "navigation.modding",
-        order: 20,
-      },
-    },
-    {
-      name: "studio-property",
-      path: "studio/property",
-      component: () => import("@/pages/studio/panels/property.vue"),
-      meta: {
-        titleKey: "navigation.studioProperty",
-        icon: "filePen",
-        groupKey: "navigation.modding",
-        order: 30,
-      },
-    },
-    {
       name: "studio-raster",
       path: "studio/raster",
       component: () => import("@/pages/studio/panels/raster.vue"),
@@ -101,17 +67,6 @@ export default {
         icon: "panelTop",
         groupKey: "navigation.modding",
         order: 45,
-      },
-    },
-    {
-      name: "studio-asset",
-      path: "studio/asset",
-      component: () => import("@/pages/studio/panels/asset.vue"),
-      meta: {
-        titleKey: "navigation.studioAsset",
-        icon: "boxes",
-        groupKey: "navigation.modding",
-        order: 50,
       },
     },
     {

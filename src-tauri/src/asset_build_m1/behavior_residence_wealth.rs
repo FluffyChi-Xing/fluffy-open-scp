@@ -2,6 +2,7 @@
 //! 48E0C000:2BD0E3B2 / 513E2625 / CACB43D4, with the Copan ground access
 //! wiring. See docs/re/residential-wealth-recipes-20261113.md.
 
+use super::behavior_residence_d3 as d3;
 use super::behavior_templates::{ENABLE, EXCLUDED, array, contains, key};
 use super::property_edit::set_array_with_flags;
 use sc_properties::{PropType, PropertyFile, Value};
@@ -10,7 +11,7 @@ use serde::Serialize;
 const COMMON: &[u32] = &[
     0x5C74_D18B,
     0xA5B9_D272,
-    0x182D_2924,
+    d3::GROWTH_STATE,
     0x9DEF_44FB,
     0x3748_6456,
     0x44F5_CF6C,
@@ -98,19 +99,30 @@ pub(super) enum Wealth {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(super) struct GroundResidence {
     wealth: Wealth,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    high_density: bool,
     pub population: u32,
     workers: u32,
+    shoppers: u32,
     children: u32,
+    happiness_initial: u32,
+    happiness_capacity: u32,
 }
 
 impl GroundResidence {
     pub(super) fn select(params: &serde_json::Value, id: &str) -> Result<Option<Self>, String> {
-        let (wealth, base) = match params["residenceProfile"].as_str() {
+        let profile = params["residenceProfile"].as_str();
+        let high_density = profile == Some(d3::PROFILE);
+        let (wealth, base) = match profile {
+            Some(d3::PROFILE) => (Wealth::W1, d3::POPULATION),
             Some("ground-residence-w1-v1") => (Wealth::W1, [60, 40, 15]),
             Some("ground-residence-w2-v1") => (Wealth::W2, [30, 20, 10]),
             Some("ground-residence-w3-v1") => (Wealth::W3, [10, 7, 4]),
             _ => {
-                if !params["residentWorkers"].is_null() || !params["residentChildren"].is_null() {
+                if ["residentWorkers", "residentShoppers", "residentChildren", "happinessInitial", "happinessCapacity"]
+                    .into_iter()
+                    .any(|field| !params[field].is_null())
+                {
                     return Err(format!("RESIDENCE_GROUND_PROFILE: {id}"));
                 }
                 return Ok(None);
@@ -131,15 +143,29 @@ impl GroundResidence {
         };
         let population = count("population", base[0], 1, 100_000)?;
         let scaled = |stock: u32| (stock * population + base[0] / 2) / base[0];
+        let shoppers = count("residentShoppers", population - scaled(base[1]), 0, population)?;
+        let workers = count("residentWorkers", population - shoppers, 0, population)?;
+        let shoppers = count("residentShoppers", population - workers, 0, population)?;
+        if workers + shoppers != population {
+            return Err(format!("RESIDENCE_GROUND_ROLES: {id}"));
+        }
+        let happiness_capacity = count("happinessCapacity", population * 11, 1, 1_100_000)?;
         Ok(Some(Self {
             wealth,
+            high_density,
             population,
-            workers: count("residentWorkers", scaled(base[1]), 0, population)?,
+            workers,
+            shoppers,
             children: count("residentChildren", scaled(base[2]), 0, population)?,
+            happiness_initial: count("happinessInitial", population.min(happiness_capacity), 0, happiness_capacity)?,
+            happiness_capacity,
         }))
     }
 
     fn variant(&self) -> &'static [u32] {
+        if self.high_density {
+            return d3::BUNDLES;
+        }
         match self.wealth {
             Wealth::W1 => W1,
             Wealth::W2 => W2,
@@ -148,27 +174,34 @@ impl GroundResidence {
     }
 
     pub(super) fn bundles(&self) -> impl Iterator<Item = u32> {
-        COMMON.iter().chain(self.variant()).chain(GROUND).copied()
+        let ground = if self.high_density { d3::GROUND } else { GROUND };
+        COMMON.iter().copied().map(|id| {
+            // Every workbench residence is ploppable. The zoning construction
+            // initializer is replaced by Copan's plop lifecycle at every density.
+            if id == d3::GROWTH_STATE { d3::PLOP_STATE } else { id }
+        }).chain(self.variant().iter().chain(ground).copied())
     }
 
-    fn excluded(&self) -> impl Iterator<Item = u32> {
+    pub(super) fn excluded(&self) -> impl Iterator<Item = u32> {
         ALTERNATE
             .iter()
             .chain(W1)
             .chain(W2)
             .chain(W3)
+            .chain(std::iter::once(&d3::GROWTH_STATE))
+            .chain(if self.high_density { d3::ALTERNATE } else { &[] })
             .copied()
-            .filter(|id| !self.variant().contains(id))
+            .filter(|id| !(self.variant().contains(id) || *id == d3::PLOP_STATE))
     }
 
     pub(super) fn fields(&self) -> Vec<(u32, PropType, Value)> {
-        let (unit_kind, density_key, wealth, happiness, commute, delay, move_out, hour, service) =
+        let (unit_kind, density_key, wealth, happiness, commute, delay, crime, hour, service) =
             match self.wealth {
                 Wealth::W1 => (
                     0x31D3_307B,
                     0x192F_CF57,
                     1.0,
-                    [60.0, 660.0, 450.0],
+                    450.0,
                     4.0,
                     80.0,
                     0.28,
@@ -179,7 +212,7 @@ impl GroundResidence {
                     0x02CA_56B2,
                     0x3732_3D04,
                     2.0,
-                    [30.0, 330.0, 270.0],
+                    270.0,
                     3.0,
                     192.0,
                     0.2,
@@ -190,7 +223,7 @@ impl GroundResidence {
                     0x10BA_89C9,
                     0x2534_5F45,
                     3.0,
-                    [10.0, 110.0, 78.0],
+                    78.0,
                     2.0,
                     224.0,
                     0.12,
@@ -203,14 +236,14 @@ impl GroundResidence {
             (0x0A79_17C2, self.population as f32),
             (0x0A79_17CC, self.children as f32),
             (0x0E33_502E, self.workers as f32),
-            (0x0E33_5022, (self.population - self.workers) as f32),
+            (0x0E33_5022, self.shoppers as f32),
             (0x0A79_17C4, delay),
             (0x0C20_0553, 2.0),
             (0x0D08_4715, wealth),
             (0x0DF0_635A, 6.0),
-            (0x0E54_6790, happiness[0]),
-            (0x0E54_6791, happiness[1]),
-            (0x0E54_6792, happiness[2]),
+            (0x0E54_6790, self.happiness_initial as f32),
+            (0x0E54_6791, self.happiness_capacity as f32),
+            (0x0E54_6792, happiness),
             (0x0E83_DE1C, commute),
             (0x0E83_DE27, commute),
             (0x0D7B_1448, 0.07),
@@ -219,12 +252,20 @@ impl GroundResidence {
             (0x0D7B_144B, 0.75),
             (0x0E0C_1481, 13000.0),
             (0x0C12_C537, 0.2),
-            (0x0D63_43C2, move_out),
+            (0x0D63_43C2, crime),
             (0x0D63_5C98, hour),
             (0x0D89_7622, service),
         ]
-        .map(|(hash, value)| (hash, PropType::Float, Value::Float(value)))
+        .map(|(hash, value)| {
+            let value = if self.high_density {
+                d3::FIELDS.iter().find(|field| field.0 == hash).map_or(value, |field| field.1)
+            } else {
+                value
+            };
+            (hash, PropType::Float, Value::Float(value))
+        })
         .to_vec();
+        let density_key = if self.high_density { d3::DENSITY } else { density_key };
         fields.extend([
             (0x0D02_D846, PropType::Key, key(unit_kind)),
             (0x0E30_E65A, PropType::Key, key(density_key)),
@@ -258,15 +299,19 @@ impl GroundResidence {
             }
         }
         let mut flags = array(unit, INITIAL_FLAGS)?.to_vec();
+        flags.retain(|flag| !d3::blocks_move_in(flag));
         if !flags.contains(&VACANT) {
             flags.push(VACANT);
+        }
+        if flags != array(unit, INITIAL_FLAGS)? {
             super::property_edit::set_array(unit, INITIAL_FLAGS, PropType::Int32, flags);
         }
         self.verify(unit)
     }
 
     pub(super) fn verify(&self, unit: &PropertyFile) -> Result<(), String> {
-        if !array(unit, INITIAL_FLAGS)?.contains(&VACANT) {
+        let flags = array(unit, INITIAL_FLAGS)?;
+        if !flags.contains(&VACANT) || flags.iter().any(d3::blocks_move_in) {
             return Err("RESIDENCE_GROUND_VACANT".into());
         }
         for id in self.bundles() {
@@ -289,5 +334,82 @@ impl GroundResidence {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn every_ground_wealth_uses_plop_construction_and_accepts_move_in() {
+        for profile in ["ground-residence-w1-v1", "ground-residence-w2-v1", "ground-residence-w3-v1"] {
+            let residence = GroundResidence::select(
+                &json!({"residenceProfile":profile,"population":600}), "home"
+            ).unwrap().unwrap();
+            let mut unit = PropertyFile::default();
+            super::super::property_edit::set_array(
+                &mut unit, INITIAL_FLAGS, PropType::Int32,
+                [13, 14, 49, 23].map(Value::Int32).to_vec(),
+            );
+            residence.patch(&mut unit).unwrap();
+            assert_eq!(array(&unit, INITIAL_FLAGS).unwrap(),
+                [Value::Int32(49), Value::Int32(23), VACANT]);
+            assert!(contains(&unit, &ENABLE, d3::PLOP_STATE));
+            assert!(!contains(&unit, &ENABLE, d3::GROWTH_STATE));
+            assert!(contains(&unit, &[EXCLUDED], d3::GROWTH_STATE));
+            let bytes = super::super::property_edit::encode(&unit).unwrap();
+            residence.verify(&PropertyFile::parse(&bytes).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn high_density_ground_residence_uses_native_intake_tax_and_happiness() {
+        let params = json!({"residenceProfile":d3::PROFILE,"population":1100,
+            "residentWorkers":800,"residentShoppers":300});
+        let residence = GroundResidence::select(&params, "home").unwrap().unwrap();
+        let fields: std::collections::BTreeMap<_, _> = residence.fields().into_iter()
+            .map(|(hash, _, value)| (hash, value)).collect();
+        assert_eq!(fields[&0x0E54_6790], Value::Float(1100.0));
+        assert_eq!(fields[&0x0E54_6791], Value::Float(12100.0));
+        assert_eq!(fields[&0x0A79_17CC], Value::Float(183.0));
+        for id in [0x999F_8484, 0x927C_3F79, 0xCC2B_572E] {
+            assert!(residence.bundles().any(|bundle| bundle == id));
+            assert!(!residence.excluded().any(|bundle| bundle == id));
+        }
+        for id in [0x999F_8485, 0x927C_3F78, 0x78A7_30CD, 0xEBFC_1753] {
+            assert!(residence.excluded().any(|bundle| bundle == id));
+        }
+        let mut unit = PropertyFile::default();
+        super::super::property_edit::set_array(
+            &mut unit,
+            INITIAL_FLAGS,
+            PropType::Int32,
+            [13, 14, 49, 22].map(Value::Int32).to_vec(),
+        );
+        residence.patch(&mut unit).unwrap();
+        assert_eq!(array(&unit, INITIAL_FLAGS).unwrap(), [Value::Int32(49), VACANT]);
+        assert!(contains(&unit, &ENABLE, d3::PLOP_STATE));
+        assert!(!contains(&unit, &ENABLE, d3::GROWTH_STATE));
+        assert!(contains(&unit, &[EXCLUDED], d3::GROWTH_STATE));
+    }
+
+    #[test]
+    fn sizes_ground_happiness_and_preserves_resident_role_accounting() {
+        let mut params = json!({"residenceProfile":"ground-residence-w1-v1","population":600,
+            "residentShoppers":180,"residentChildren":75,"happinessCapacity":6800});
+        let residence = GroundResidence::select(&params, "home").unwrap().unwrap();
+        let fields: std::collections::BTreeMap<_, _> = residence.fields().into_iter()
+            .map(|(hash, _, value)| (hash, value)).collect();
+        for (hash, value) in [(0x0E33_502E, 420.0), (0x0E33_5022, 180.0), (0x0A79_17CC, 75.0),
+            (0x0E54_6790, 600.0), (0x0E54_6791, 6800.0), (0x0E54_6792, 450.0)] {
+            assert_eq!(fields[&hash], Value::Float(value));
+        }
+        params["residentWorkers"] = json!(419);
+        assert!(GroundResidence::select(&params, "home").is_err());
+        params["residentWorkers"] = json!(420);
+        params["happinessCapacity"] = json!(false);
+        assert!(GroundResidence::select(&params, "home").is_err());
     }
 }

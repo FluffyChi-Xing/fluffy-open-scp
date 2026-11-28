@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 import { resourceColor } from "@/lib/region-map";
+import FButton from "@/components/ui/FButton.vue";
+import FSlider from "@/components/ui/FSlider.vue";
 
 defineProps<{
   options: { kind: string; label: string; available: boolean }[];
@@ -19,18 +21,22 @@ const { t } = useI18n();
       :aria-label="t('studio.map.resourceControls')"
     >
       <span class="resource-label">{{ t("studio.map.resourceControls") }}</span>
-      <button
-        type="button"
+      <FButton
+        class="resource-switch"
+        variant="ghost"
+        size="sm"
         :disabled="disabled"
         :aria-pressed="selected === null"
         @click="selected = null"
       >
         {{ t("studio.map.layerOff") }}
-      </button>
-      <button
+      </FButton>
+      <FButton
         v-for="option in options"
         :key="option.kind"
-        type="button"
+        class="resource-switch"
+        variant="ghost"
+        size="sm"
         :disabled="disabled || !option.available"
         :aria-pressed="selected === option.kind"
         :title="
@@ -39,9 +45,10 @@ const { t } = useI18n();
         @click="selected = selected === option.kind ? null : option.kind"
       >
         {{ option.label }}
-      </button>
+      </FButton>
     </div>
-    <div v-if="selected" class="resource-legend">
+    <div v-if="selected === 'wind'" class="resource-legend">{{ t("mapResources.windLegend") }}</div>
+    <div v-else-if="selected" class="resource-legend">
       <span>{{ t("studio.map.resourceLow") }}</span>
       <span
         class="resource-ramp"
@@ -50,15 +57,10 @@ const { t } = useI18n();
         }"
       ></span>
       <span>{{ t("studio.map.resourceHigh") }}</span>
-      <label
-        >{{ t("studio.map.resourceOpacity")
-        }}<input
-          v-model.number="opacity"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-      /></label>
+      <div class="opacity">
+        <span>{{ t("studio.map.resourceOpacity") }}</span>
+        <FSlider v-model="opacity" class="opacity-slider" :label="t('studio.map.resourceOpacity')" :min="0" :max="1" :step="0.05" />
+      </div>
     </div>
   </div>
 </template>
@@ -80,34 +82,15 @@ const { t } = useI18n();
   color: var(--muted-foreground);
   margin-inline-end: 8px;
 }
-button {
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted-foreground);
-  font: inherit;
-  font-size: 12px;
-  min-height: 28px;
-  padding: 3px 9px;
-  cursor: pointer;
+.resource-switch {
+  min-height: 24px;
+  padding-inline: 6px;
+  font-weight: 500;
 }
-button:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--foreground);
-}
-button[aria-pressed="true"] {
+.resource-switch[aria-pressed="true"] {
   border-color: var(--border);
   background: var(--surface-elevated);
   color: var(--foreground);
-}
-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-button:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
 }
 .resource-legend {
   display: flex;
@@ -123,14 +106,13 @@ input:focus-visible {
   height: 6px;
   border-radius: 3px;
 }
-label {
+.opacity {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-inline-start: 12px;
 }
-input {
+.opacity-slider {
   width: 90px;
-  accent-color: var(--brand);
 }
 </style>

@@ -849,7 +849,10 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+}
+:global(.shell-body:has(.packages-page) > .sidebar::-webkit-scrollbar) {
+  display: none;
 }
 :global(.no-navbar .shell-body:has(.packages-page)) {
   height: 100vh;

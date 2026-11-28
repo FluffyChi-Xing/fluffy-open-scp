@@ -300,6 +300,15 @@ pub fn build_heightmap_overlay(
     group: u32,
     heights: &[u16],
 ) -> Result<Vec<u8>, String> {
+    let entries = heightmap_entries(package, group, heights)?;
+    dbpf::write_uncompressed_overlay(&entries).map_err(|e| e.to_string())
+}
+
+pub(crate) fn heightmap_entries(
+    package: &Package,
+    group: u32,
+    heights: &[u16],
+) -> Result<Vec<OverlayEntry>, String> {
     if heights.len() != REGION_FIELD_PX * REGION_FIELD_PX {
         return Err(format!(
             "高度场 {} px ≠ {}×{}",
@@ -338,7 +347,7 @@ pub fn build_heightmap_overlay(
             data,
         ));
     }
-    dbpf::write_uncompressed_overlay(&entries).map_err(|e| e.to_string())
+    Ok(entries)
 }
 
 /// Apply edited-field deltas to the shipped mip payloads, preserving their

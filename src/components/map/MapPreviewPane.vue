@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import MapViewer3D from "./MapViewer3D.vue";
 import MapResourceControls from "./MapResourceControls.vue";
 import FSheet from "@/components/ui/FSheet.vue";
+import FButton from "@/components/ui/FButton.vue";
 import { Switch } from "@/components/ui/switch";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
@@ -20,8 +21,13 @@ const props = defineProps<{
   selectedPlotUid?: string | null;
   options?: { kind: string; label: string; available: boolean }[];
   terrainSource?: { packagePath: string; group: string } | null;
+  resourceEditor?: { data?: Region3DData; editing: boolean; radius: number; pointPlacement?: boolean };
 }>();
-const emit = defineEmits<{ selectPlot: [uid: string] }>();
+const emit = defineEmits<{
+  selectPlot: [uid: string];
+  resourceStroke: [points: [number, number][]];
+}>();
+const activeResource = defineModel<string | null>("activeResource", { default: null });
 const { t } = useI18n();
 const mode = ref<TerrainBrushMode | null>(null);
 const radius = ref(256);
@@ -70,6 +76,10 @@ async function preview(next: TerrainStroke[]) {
 }
 
 function stamp(x: number, y: number) {
+  if (props.resourceEditor?.pointPlacement) {
+    emit("resourceStroke", [[x, y]]);
+    return;
+  }
   if (mode.value && strokes.value.length < 256) {
     void preview([...strokes.value, { mode: mode.value, x, y, radius: radius.value, strength: strength.value }]);
   } else if (mode.value && !busy.value) {
@@ -108,7 +118,6 @@ const brushStatus = computed(() => statusKey.value
   ? t(`studio.map.brush.${statusKey.value}`, { count: exportedTiles.value })
   : "");
 const fullscreen = ref(false),
-  activeResource = ref<string | null>(null),
   opacity = ref(0.75);
 const plots = ref(true),
   vegetation = ref(true),
@@ -122,6 +131,10 @@ const layers = computed(() => ({
   showRoads: roads.value,
   activeResource: activeResource.value,
   resourceOpacity: opacity.value,
+  resourceData: props.resourceEditor?.data,
+  resourceBrushDrag: !!props.resourceEditor && !props.resourceEditor.pointPlacement,
+  terrainEditing: props.resourceEditor?.editing ?? mode.value !== null,
+  brushRadius: props.resourceEditor?.radius ?? radius.value,
 }));
 const options = computed(() =>
   (
@@ -155,24 +168,26 @@ watch(options, () => {
         :options="options"
         :disabled="!data"
       />
-      <button
-        :disabled="!data"
+      <FButton
+        class="viewport-action"
+        variant="secondary"
+        size="sm"
         :aria-label="t('studio.map.fullscreen')"
         @click="fullscreen = true"
       >
         <FIcon name="Expand" :size="15" />
-      </button>
+      </FButton>
+      <slot name="actions" />
     </header>
     <div class="viewport" :class="{ 'viewport-empty': !data }">
       <MapViewer3D
         v-if="data && !fullscreen"
         :data="data"
         :edited-height="editedHeight"
-        :terrain-editing="mode !== null"
-        :brush-radius="radius"
         v-bind="layers"
         @select-plot="emit('selectPlot', $event)"
         @terrain-point="stamp"
+        @resource-stroke="emit('resourceStroke', $event)"
       />
       <TerrainBrushToolbar
         v-if="!fullscreen && data && terrainSource"
@@ -198,20 +213,19 @@ watch(options, () => {
             v-model:opacity="opacity"
             :options="options"
             :disabled="!data"
-          /><button :aria-label="t('shell.close')" @click="fullscreen = false">
+          /><FButton class="viewport-action" variant="secondary" size="sm" :aria-label="t('shell.close')" @click="fullscreen = false">
             <FIcon name="X" :size="15" />
-          </button>
+          </FButton>
         </header>
         <div class="viewport">
           <MapViewer3D
             v-if="fullscreen"
             :data="data"
             :edited-height="editedHeight"
-            :terrain-editing="mode !== null"
-            :brush-radius="radius"
             v-bind="layers"
             @select-plot="emit('selectPlot', $event)"
             @terrain-point="stamp"
+            @resource-stroke="emit('resourceStroke', $event)"
           />
           <TerrainBrushToolbar
             v-if="fullscreen && data && terrainSource"
@@ -269,16 +283,11 @@ watch(options, () => {
   overflow-wrap: anywhere;
   margin-inline-end: auto;
 }
-button {
-  display: grid;
-  place-items: center;
+.viewport-action {
   min-width: 28px;
   min-height: 28px;
-  border: 1px solid var(--border);
+  padding: 0;
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--foreground);
-  cursor: pointer;
 }
 .viewport {
   position: relative;

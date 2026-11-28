@@ -11,6 +11,10 @@ import type {
 } from "@/api/tauri";
 import { useBuildActivityStore } from "@/stores/buildActivity";
 import { buildQueueErrorKey } from "@/lib/buildQueueError";
+import { buildStageLabel } from "@/lib/buildStageLabel";
+import PanelRuntimeNotice from './PanelRuntimeNotice.vue';
+import { unsupportedPanelItems } from './panel-editor/panelBuildDiagnostic';
+import { describeBehaviorConflict } from './behaviorBuildDiagnostics';
 
 /**
  * OpenSCP Actions：构建历史 + GitHub Actions 风格步骤耗时/详情日志。
@@ -18,10 +22,11 @@ import { buildQueueErrorKey } from "@/lib/buildQueueError";
  */
 const props = defineProps<{
   project: string;
+  road?: boolean;
   /** 场景编辑器刚入队的任务；打开面板时自动展开详情。 */
   focusJobId?: string | null;
 }>();
-const { t } = useI18n();
+const { t, te } = useI18n();
 const buildActivity = useBuildActivityStore();
 
 interface StepView {
@@ -36,9 +41,6 @@ const selectedId = ref<string | null>(null);
 const expandedStage = ref<string | null>(null);
 const loading = ref(false);
 let refreshRequest = 0;
-const schemaText = ref("");
-const enqueueBusy = ref(false);
-const enqueueError = ref("");
 const projectBuildBusy = ref(false);
 const projectBuildError = ref("");
 const projectSchema = ref("");
@@ -48,7 +50,6 @@ const projectLogic = ref<{
   behaviors: number;
   warnings: string[];
 } | null>(null);
-const showDiagnostic = ref(false);
 
 const selectedJob = computed(
   () => jobs.value.find((job) => job.id === selectedId.value) ?? null,
@@ -57,6 +58,10 @@ const selectedJob = computed(
 const selectedSteps = computed(() =>
   selectedJob.value ? stepsFromEvents(selectedJob.value.events) : [],
 );
+
+function stageLabel(stage: string) {
+  return buildStageLabel(stage, t);
+}
 
 function stepsFromEvents(events: StageEventDto[]): StepView[] {
   const order: string[] = [];
@@ -207,8 +212,38 @@ function toggleStep(stage: string) {
 }
 
 function buildError(message: string): string {
-  const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT))\b/);
+  if (/\broad_frontage_donor_missing\b/.test(message)) return t("roadAsset.frontage.donorMissing");
+  if (/\broad_unit_cost_invalid\b/.test(message)) return t("roadAsset.project.unitCostInvalid");
+  if (/\broad_unit_cost_resource_missing\b/.test(message)) return t("roadAsset.project.unitCostResourceMissing");
+  if (/\broad_draft_end_cap_missing\b/.test(message)) return t("roadAsset.project.endCapMissing");
+  const roadDiagnostic = message.match(/\broad_draft_(layout_unsupported|empty|base_invalid)\b/);
+  if (roadDiagnostic?.[1] === "layout_unsupported") return t("roadAsset.draft.unsupported");
+  if (roadDiagnostic?.[1] === "empty") return t("roadAsset.draft.emptyBuild");
+  if (roadDiagnostic?.[1] === "base_invalid") return t("roadAsset.draft.chooseBase");
+  const pair = message.match(/\bBEHAVIOR_LEAF_CONFLICT:\s*([\w-]+)\/([\w-]+)/);
+  if (pair) return describeBehaviorConflict(pair[1], pair[2], t);
+  const behaviorDiagnostic = message.match(/\b(HOTEL_(?:ROOMS|WEALTH|ROAD_ACCESS|RESOURCE|BUNDLE|FIELD)|FUSION_(?:COMPOSITION|PARAMETER|EP1|MENU_REQUIRED|RESOURCE|BUNDLE|FIELD)|CONTROLNET_(?:COMPOSITION|PARAMETER|EP1|MENU_REQUIRED|RESOURCE|BUNDLE|FIELD)|BEHAVIOR_LEAF_(?:LIMIT|CONFLICT)|BEHAVIOR_COPAN_(?:BASE|SERVICES|RESIDENCE))\b/);
   if (behaviorDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${behaviorDiagnostic[1]}`);
+  const missingTowerLayout = message.match(/\bPANEL_TOWER_LAYOUT_MISSING:([\w-]+):([\w:]+)/);
+  if (missingTowerLayout) {
+    const [, id, resource] = missingTowerLayout;
+    const key = `panelEditor.components.${id}`;
+    return t('panelEditor.towerLayoutMissing', { name: te(key) ? t(key) : id, resource });
+  }
+  if (/\bPANEL_TOWER_OPERATIONS_REQUIRE_COMPONENTS\b/.test(message)) return t('panelEditor.towerOperationsRequireComponents');
+  const runtimeDiagnostic = message.match(/\b(PANEL_RUNTIME_(?:PATCH_IDENTITY|COMPOSITION_CONFLICT|PATCH_DEPENDENCY|CONTRACT|CAPABILITY|SOURCE))\b/);
+  if (runtimeDiagnostic) return t(`panelEditor.runtimeErrors.${runtimeDiagnostic[1]}`);
+  const containerPanelDiagnostic = message.match(/\b(PANEL_CONTAINER_QUERY_UNSUPPORTED|PANEL_CONTAINER_BINDING|PANEL_CONTAINER_POWER_REQUIRED)\b/);
+  const unsupportedItems = unsupportedPanelItems(message);
+  if (unsupportedItems.length) {
+    const items = unsupportedItems.map(({ view, id }) => {
+      const key = `panelEditor.components.${id}`;
+      const name = te(key) ? t(key) : id;
+      return view ? t('panelEditor.controlLocation', { view: t(`panelEditor.${view}`), name }) : name;
+    });
+    return t('panelEditor.unsupportedControls', { items: items.join(t('panelEditor.controlSeparator')) });
+  }
+  if (containerPanelDiagnostic) return t(`studio.assetWorkbench.behaviorSheet.buildError.${containerPanelDiagnostic[1]}`);
   const queueError = buildQueueErrorKey(message);
   if (queueError) return t(queueError);
   const vehicleDiagnostic = message.match(/\bVEHICLE_PATH_(RECEIVER|BINDING)\b/);
@@ -265,32 +300,17 @@ async function enqueueProject() {
         ? (cause as { message: string }).message
         : String(cause);
     projectBuildError.value = message;
+    await refresh();
+    const failed = jobs.value.filter(job => job.status === "failed" && job.error === message).at(-1);
+    if (failed) {
+      selectedId.value = failed.id;
+      expandedStage.value = "project-preflight";
+    }
   } finally {
     projectBuildBusy.value = false;
   }
 }
 
-async function enqueueSchema() {
-  enqueueError.value = "";
-  const schema = schemaText.value.trim();
-  if (!schema) return;
-  try {
-    JSON.parse(schema);
-  } catch (cause) {
-    enqueueError.value = String(cause);
-    return;
-  }
-  enqueueBusy.value = true;
-  try {
-    await tauriApi.buildQueue.enqueue(props.project, schema);
-    schemaText.value = "";
-    await refresh();
-  } catch (cause) {
-    enqueueError.value = String(cause);
-  } finally {
-    enqueueBusy.value = false;
-  }
-}
 </script>
 
 <template>
@@ -307,7 +327,7 @@ async function enqueueSchema() {
                 ? t("studio.assetWorkbench.actionsBuildProjectSchema", {
                     path: projectSchema,
                   })
-                : t("studio.assetWorkbench.actionsBuildProjectHint")
+                : t(road ? "roadAsset.actionsHint" : "studio.assetWorkbench.actionsBuildProjectHint")
             }}
           </p>
         </div>
@@ -331,7 +351,7 @@ async function enqueueSchema() {
                 : t("studio.assetWorkbench.actionsBuildProject")
             }}</strong>
             <small>{{
-              t("studio.assetWorkbench.actionsBuildProjectCaption")
+              t(road ? "roadAsset.compileStage" : "studio.assetWorkbench.actionsBuildProjectCaption")
             }}</small>
           </span>
         </button>
@@ -356,6 +376,10 @@ async function enqueueSchema() {
         <p v-if="projectBuildError" class="enqueue-error">
           {{ buildError(projectBuildError) }}
         </p>
+        <details v-if="projectBuildError && buildError(projectBuildError) !== projectBuildError" class="diagnostic">
+          <summary>{{ t("assetCapture.rawBuildError") }}</summary>
+          <pre class="diagnostic-body">{{ projectBuildError }}</pre>
+        </details>
       </div>
     </section>
 
@@ -421,7 +445,7 @@ async function enqueueSchema() {
                     :size="12"
                     aria-label=""
                   />
-                  <span class="stage-name">{{ step.stage === "road::compile" ? t("roadAsset.compileStage") : step.stage }}</span>
+                  <span class="stage-name">{{ stageLabel(step.stage) }}</span>
                   <span class="stage-duration">{{
                     formatDuration(step.durationMs)
                   }}</span>
@@ -438,44 +462,16 @@ async function enqueueSchema() {
               {{ t("studio.assetWorkbench.actionsResources") }}:
               {{ job.result.resourceCount }} · sha256
               {{ String(job.result.sha256 ?? "").slice(0, 12) }}…
+              <template v-if="String(job.result.scope ?? '').startsWith('map_resources')">
+                <br />{{ t("mapResources.output") }} <code class="break-all">{{ job.result.path }}</code>
+              </template>
             </p>
+            <PanelRuntimeNotice v-if="job.result" :legacy-path="job.result.panelRuntime" :required="job.result.requiresPanelRuntime === true" />
           </div>
         </li>
       </ul>
     </div>
 
-    <div class="diagnostic">
-      <button
-        type="button"
-        class="diagnostic-toggle"
-        :aria-expanded="showDiagnostic"
-        @click="showDiagnostic = !showDiagnostic"
-      >
-        <FIcon
-          :name="showDiagnostic ? 'ChevronDown' : 'ChevronRight'"
-          :size="12"
-          aria-label=""
-        />
-        {{ t("studio.assetWorkbench.actionsEnqueueTitle") }}
-      </button>
-      <div v-if="showDiagnostic" class="diagnostic-body">
-        <textarea
-          v-model="schemaText"
-          class="schema-input"
-          :placeholder="t('studio.assetWorkbench.actionsEnqueueHint')"
-          spellcheck="false"
-        />
-        <button
-          type="button"
-          class="diagnostic-button"
-          :disabled="enqueueBusy || !schemaText.trim()"
-          @click="enqueueSchema"
-        >
-          {{ t("studio.assetWorkbench.actionsEnqueueButton") }}
-        </button>
-        <p v-if="enqueueError" class="enqueue-error">{{ buildError(enqueueError) }}</p>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -853,52 +849,11 @@ async function enqueueSchema() {
   border-top: 1px solid var(--border);
   padding-top: 4px;
 }
-.diagnostic-toggle {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  font-size: 11px;
-  gap: 4px;
-  padding: 6px 2px;
-}
-.diagnostic-toggle:hover {
-  color: var(--foreground);
-}
 .diagnostic-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 0 0 4px;
-}
-.schema-input {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--foreground);
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  height: 96px;
-  padding: 8px 10px;
-  width: 100%;
-}
-.diagnostic-button {
-  align-self: flex-start;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--foreground);
-  cursor: pointer;
-  font-size: 12px;
-  min-height: 28px;
-  padding: 0 12px;
-}
-.diagnostic-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 .enqueue-error {
   color: var(--danger, #ef4444);

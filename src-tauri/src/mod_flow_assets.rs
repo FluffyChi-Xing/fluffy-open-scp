@@ -80,7 +80,7 @@ pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, S
         .and_then(|x| x.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    let relative = match (kind, extension.as_str()) {
+    let mut relative = match (kind, extension.as_str()) {
         ("icon", "png") => "assets/images/menu-icon.png".to_string(),
         ("marquee", "png") | ("marquee", "jpg") | ("marquee", "jpeg") => {
             "assets/images/menu-marquee.jpg".to_string()
@@ -96,6 +96,10 @@ pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, S
             .encode_image(&image::DynamicImage::ImageRgb8(image.to_rgb8()))
             .map_err(|e| e.to_string())?;
         bytes = jpg;
+    }
+    if payload["contentAddressed"] == true {
+        relative = format!("assets/images/road-{kind}-{}.{}", digest(&bytes),
+            if kind == "icon" { "png" } else { "jpg" });
     }
     let target = safe_path(root, &relative)?;
     fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
@@ -143,7 +147,12 @@ pub(super) fn import(root: &Path, payload: &Value, blend_atlas: Option<&Path>) -
 
 /// Read the Blend file with Blender and convert it to LOTM with Rust.
 fn import_blend(root: &Path, source: &Path, blend_atlas: Option<&Path>) -> Result<Value, String> {
-    let cache_key = blend_cache_key(source)?;
+    let atlas_extension = crate::blend_native::atlas_extension::AtlasExtension::read(source)?;
+    let mut cache_key = blend_cache_key(source)?;
+    if let Some(extension) = &atlas_extension {
+        cache_key.push('-');
+        cache_key.push_str(&extension.fingerprint);
+    }
     if let Some(mut cached) = read_blend_cache(root, &cache_key) {
         cached["cache"] = json!("hit");
         crate::blend_native::trace::emit(
@@ -175,7 +184,7 @@ fn import_blend(root: &Path, source: &Path, blend_atlas: Option<&Path>) -> Resul
     // writes never collide with stale temps (Windows os error 183).
     let _ = fs::remove_dir_all(&temp);
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
-    let lotm_bytes = match blender_service::export_native_rust(&atlas, source, &temp) {
+    let lotm_bytes = match blender_service::export_native_rust(&atlas, source, &temp, atlas_extension) {
         Ok(bytes) => {
             crate::blend_native::trace::emit("native_ok", json!({ "lotm_bytes": bytes.len() }));
             bytes
@@ -188,14 +197,22 @@ fn import_blend(root: &Path, source: &Path, blend_atlas: Option<&Path>) -> Resul
             return Err(format!("原生导出失败：{detail}"));
         }
     };
-    let result = import_native_bundle(root, lotm_bytes)?;
+    let mut result = import_native_bundle(root, lotm_bytes)?;
+    match crate::blend_scene::initialize(root, source, &temp) {
+        Ok(scene) => result["scene"] = scene,
+        Err(detail) => result["sceneError"] = json!(detail),
+    }
     let _ = fs::remove_dir_all(&temp);
-    write_blend_cache(root, &cache_key, &result)?;
+    if result["sceneError"].is_null() {
+        if let Err(detail) = write_blend_cache(root, &cache_key, &result) {
+            result["sceneError"] = json!(detail);
+        }
+    }
     Ok(result)
 }
 
-// Invalidate results written before the standalone Rust import configuration.
-const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-12.3";
+// Older exports could flatten authored cutout faces into opaque walls.
+const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-27.slot1-cutout";
 
 fn blend_cache_key(source: &Path) -> Result<String, String> {
     let bytes = fs::read(source).map_err(|error| error.to_string())?;
@@ -217,6 +234,9 @@ fn read_blend_cache(root: &Path, key: &str) -> Option<Value> {
         return None;
     }
     if !safe_path(root, asset).ok()?.is_file() {
+        return None;
+    }
+    if !safe_path(root, result["scene"]["asset"].as_str()?).ok()?.is_file() {
         return None;
     }
     Some(result)
@@ -439,5 +459,41 @@ mod native_import_tests {
             "the project must not contain a GLB model"
         );
         let _ = fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod full_scene_acceptance {
+    use super::*;
+    #[test]
+    #[ignore = "requires Blender and user acceptance blend"]
+    fn full_elements_blend_scene() {
+        let root=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/full-elements-acceptance");
+        fs::create_dir_all(&root).unwrap();
+        let atlas=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/blend-atlas");
+        let source=std::env::var("OPENSCP_TEST_BLEND").unwrap();
+        let result=import(&root,&json!({"path":source}),Some(&atlas)).unwrap();
+        assert!(result["sceneError"].is_null(),"{result}");
+        let scene=&result["scene"]["document"];
+        assert_eq!(scene["errors"],json!([]),"{scene}");
+        let units=scene["units"].as_array().unwrap();
+        for (kind,count) in [("light",31),("prop",8),("effect",1)] {
+            assert_eq!(units.iter().filter(|u|u["kind"]==kind).count(),count,"{kind}");
+        }
+        assert_eq!(scene["lot"]["meta"]["format"],"openscp.lot-ground");
+        assert!(root.join(result["asset"].as_str().unwrap()).is_file());
+        assert!(root.join(result["scene"]["asset"].as_str().unwrap()).is_file());
+        let cached=import(&root,&json!({"path":std::env::var("OPENSCP_TEST_BLEND").unwrap()}),Some(&atlas)).unwrap();
+        assert_eq!(cached["cache"],"hit");
+        assert_eq!(cached["scene"]["asset"], result["scene"]["asset"]);
+        let cached_units = cached["scene"]["document"]["units"].as_array().unwrap();
+        assert_eq!(cached_units.len(), units.len());
+        for (before, after) in units.iter().zip(cached_units) {
+            assert_eq!(before["kind"], after["kind"]);
+            for (a,b) in before["transform"]["matrix"].as_array().unwrap().iter().zip(after["transform"]["matrix"].as_array().unwrap()) {
+                assert!((a.as_f64().unwrap()-b.as_f64().unwrap()).abs()<1e-10);
+            }
+        }
+        println!("ACCEPTANCE {} lights=31 props=8 effects=1 lot=1 cache=hit",root.display());
     }
 }

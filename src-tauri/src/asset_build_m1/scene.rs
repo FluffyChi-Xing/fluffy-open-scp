@@ -123,6 +123,8 @@ pub struct SceneDocument {
     pub writes: Vec<String>,
     pub units: Vec<SceneUnit>,
     pub paths: Vec<ScenePath>,
+    /// Additive explicit vignette selections; empty preserves legacy recipes.
+    pub performance_presets: Vec<String>,
 }
 
 impl SceneDocument {
@@ -290,6 +292,15 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
     if let Some(units) = json.get("units").and_then(Json::as_array) {
         for unit in units {
             document.units.push(parse_unit(unit)?);
+            if unit.get("kind").and_then(Json::as_str) == Some("spawner") {
+                if let Some(value) = unit.get("performancePresets") {
+                    let presets = value.as_array().ok_or("performancePresets must be an array")?;
+                    for preset in presets {
+                        let id = preset.as_str().filter(|s| !s.is_empty()).ok_or("invalid performance preset")?;
+                        if !document.performance_presets.iter().any(|v|v==id) { document.performance_presets.push(id.to_owned()); }
+                    }
+                }
+            }
         }
     }
     validate_spawner_anchors(&document)?;

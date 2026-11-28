@@ -1,0 +1,7 @@
+{
+  "fusion-generation": ["kPowerProduction_Unconnected"],
+  "fusion-charge": ["kFusionReactorPowerStored", "kFusionReactorPowerUp", "kPowerForLocalUseToggle"],
+  "fusion-controlnet": ["kAcademyConsumerCondensed"],
+  "controlnet-workers": ["kAcademyWorkers"],
+  "controlnet-production": ["kAcademySkillGenerated", "kAcademySkillForLocalUseToggle"]
+}

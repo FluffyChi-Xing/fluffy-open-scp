@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
@@ -11,19 +12,14 @@ import type {
   PropUnit,
   Tgi,
 } from "@/api/tauri";
-import {
-  CATEGORY_LABEL_KEYS,
-  propSemanticCategory,
-  type AssetCategory,
-} from "@/pages/packages/components/property-editor/assetCategories";
-import SpawnerLibraryPanel from "@/pages/packages/components/unit-inspector/SpawnerLibraryPanel.vue";
+import SpawnerLibraryPanel from "./PerformanceLibraryPanel.vue";
 import AssetDecalLibrary from "./AssetDecalLibrary.vue";
 import type { PlacePayload } from "./useWorkbenchAsset";
 
 /**
  * 右栏"组件库"：prop bin 语义目录（后端 list_prop_bin_catalog：树/车辆/
- * 垃圾桶/代售牌子/杂件，resourceID→模型全链解析）优先分组，命名模型目录
- * （list_model_catalog）排除已覆盖模型后按包兜底。lights/spawners/effects/
+ * 垃圾桶/代售牌子四类，固定 resourceID→模型解析）分组。无需命名模型目录
+ * 或未分类条目全量扫描。lights/spawners/effects/
  * paths 为参数化预设。条目 pointerdown 拾起 → 视口地面落点放置。
  */
 const props = defineProps<{
@@ -50,17 +46,8 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const dependencies = useEditorPackageContext();
 const loading = ref(false);
-const catalog = ref<
-  {
-    packageId: number;
-    packagePath?: string;
-    instance: number;
-    group: number;
-    name: string;
-    size: number;
-  }[]
->([]);
 const search = ref("");
 const collapsed = ref(new Set<string>());
 
@@ -75,25 +62,27 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 const activeTab = ref<TabId>("props");
 
+let catalogEpoch = 0;
 async function loadCatalog() {
-  if (catalog.value.length || loading.value) return;
+  if (dependencies.loading || binCatalog.value.length || loading.value) return;
+  const epoch = ++catalogEpoch;
   loading.value = true;
   try {
-    const [models, bins] = await Promise.all([
-      tauriApi.packages.listModelCatalog(),
-      tauriApi.packages
-        .listPropBinCatalog()
-        .catch(() => [] as PropBinCatalogEntry[]),
-    ]);
-    catalog.value = models;
-    binCatalog.value = bins;
+    const result = await tauriApi.packages.listPropBinCatalog();
+    if (epoch === catalogEpoch) binCatalog.value = result;
   } catch {
-    catalog.value = [];
+    if (epoch === catalogEpoch) binCatalog.value = [];
   } finally {
-    loading.value = false;
+    if (epoch === catalogEpoch) loading.value = false;
   }
 }
 onMounted(loadCatalog);
+watch(() => dependencies.opened.map(p => p.package.packageId).join(","), () => {
+  catalogEpoch++;
+  loading.value = false;
+  binCatalog.value = [];
+  void loadCatalog();
+});
 watch(
   () => props.editEnabled,
   (enabled) => {
@@ -188,13 +177,13 @@ interface CatalogEntry {
   binResourceId?: number;
 }
 
-/** 语义目录固定组序：四个明确目标在前，杂件桶次之。 */
+/** 仅支持四种明确的 prop 类别。 */
 const BIN_CATEGORY_ORDER: PropBinCatalogEntry["category"][] = [
   "trees",
   "vehicles",
   "waste",
   "signs",
-  "misc",
+
 ];
 const binCatalog = ref<PropBinCatalogEntry[]>([]);
 
@@ -221,6 +210,7 @@ const propGroups = computed<{ name: string; entries: CatalogEntry[] }[]>(() => {
   const binEntries: CatalogEntry[] = binCatalog.value
     .map((bin): CatalogEntry => ({
       packageId: bin.modelPackageId,
+      packagePath: bin.modelPackagePath,
       instance: bin.model.instance,
       group: bin.model.group,
       name: bin.name,
@@ -232,63 +222,7 @@ const propGroups = computed<{ name: string; entries: CatalogEntry[] }[]>(() => {
     .filter((entry) =>
       keyword ? entry.name.toLowerCase().includes(keyword) : true,
     );
-  const binModelKeys = new Set(
-    binEntries.map((entry) => `${entry.packageId}:${entry.instance}`),
-  );
-
-  // 2) 旧命名模型目录：排除已被语义目录覆盖的模型（按 包:实例 去重）
-  const matched: CatalogEntry[] = catalog.value
-    .map((entry) => ({ ...entry }))
-    .filter(
-      (entry) =>
-        !binModelKeys.has(`${entry.packageId}:${entry.instance}`) &&
-        (keyword ? entry.name.toLowerCase().includes(keyword) : true),
-    );
-  // 引用了但目录缺席的模型（纯 hex 名被目录噪声过滤排除）→ 兜底补入
-  for (const reference of props.referencedModels) {
-    if (
-      matched.some(
-        (entry) =>
-          entry.instance === reference.instance &&
-          entry.group === reference.group &&
-          entry.packageId === reference.packageId,
-      )
-    )
-      continue;
-    const hexName = t("package.modelFallbackName", {
-      hex: `0x${reference.instance.toString(16).toUpperCase()}`,
-    });
-    if (keyword && !hexName.toLowerCase().includes(keyword)) continue;
-    matched.push({
-      packageId: reference.packageId,
-      instance: reference.instance,
-      group: reference.group,
-      name: hexName,
-      size: 0,
-    });
-  }
-  const legacyGroups = new Map<string, CatalogEntry[]>();
-  for (const entry of matched) {
-    const reference = props.referencedModels.find(
-      (item) =>
-        item.instance === entry.instance &&
-        item.group === entry.group &&
-        item.packageId === entry.packageId,
-    );
-    entry.template = props.templateOf(reference?.resourceId ?? -1);
-    const category: AssetCategory = propSemanticCategory(
-      reference?.resourceId ?? null,
-      entry.name,
-      props.propTreeIds,
-    );
-    const packageLabel =
-      entry.packagePath?.split(/[\\/]/).pop() || `Package ${entry.packageId}`;
-    const group = `${packageLabel} · ${t(CATEGORY_LABEL_KEYS[category])}`;
-    if (!legacyGroups.has(group)) legacyGroups.set(group, []);
-    legacyGroups.get(group)!.push(entry);
-  }
-
-  // 3) 语义目录固定组在前，旧命名目录按包·类别在后
+  // 固定语义分类，不补入未分类模型。
   const groups: { name: string; entries: CatalogEntry[] }[] = [];
   for (const category of BIN_CATEGORY_ORDER) {
     const entries = binEntries.filter((entry) => entry.binCategory === category);
@@ -299,11 +233,6 @@ const propGroups = computed<{ name: string; entries: CatalogEntry[] }[]>(() => {
       }),
       entries,
     });
-  }
-  for (const [name, entries] of [...legacyGroups.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
-  )) {
-    groups.push({ name, entries });
   }
   return groups;
 });
@@ -378,8 +307,8 @@ function beginEffectDrag(event: PointerEvent, entry: EffectCatalogEntry) {
   });
 }
 
-function onSpawnerPlace() {
-  emit("place", { kind: "spawner" });
+function onSpawnerPlace(selection: { performancePreset?: string }) {
+  emit("place", { kind: "spawner", ...selection });
 }
 </script>
 
@@ -443,7 +372,7 @@ function onSpawnerPlace() {
           <div v-show="!collapsed.has(group.name)" class="library-grid">
             <div
               v-for="entry in group.entries"
-              :key="`${entry.packageId}:${entry.group}:${entry.instance}`"
+              :key="`${entry.binResourceId}:${entry.packageId}:${entry.group}:${entry.instance}`"
               class="library-entry"
               :title="entry.name"
               @pointerdown.stop.prevent="beginPropDrag($event, entry)"

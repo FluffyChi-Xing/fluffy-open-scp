@@ -1,3 +1,4 @@
+import { registeredTextureInputs } from "./materialTextureInputs";
 import type * as ThreeNamespace from "three";
 
 /** 纹理预热所需的最小视口接口（与 ThreeViewer 解耦，便于测试）。 */
@@ -20,15 +21,26 @@ export function collectSceneTextures(
     const mesh = object as ThreeNamespace.Mesh;
     if (!mesh.isMesh && !(object as ThreeNamespace.Sprite).isSprite) return;
     const material = mesh.material as
-      | ThreeNamespace.Material
-      | ThreeNamespace.Material[]
-      | undefined;
+      ThreeNamespace.Material | ThreeNamespace.Material[] | undefined;
     if (!material) return;
     const list = Array.isArray(material) ? material : [material];
     for (const entry of list) {
-      for (const value of Object.values(entry as unknown as Record<string, unknown>)) {
+      const uniforms = (entry as ThreeNamespace.ShaderMaterial).uniforms ?? {};
+      const uniformTextures = Object.values(uniforms).flatMap((uniform) =>
+        Array.isArray(uniform.value) ? uniform.value : [uniform.value],
+      );
+      const values = [
+        ...Object.values(entry as unknown as Record<string, unknown>),
+        ...registeredTextureInputs(entry),
+        ...uniformTextures,
+      ];
+      for (const value of values) {
         const texture = value as ThreeNamespace.Texture;
-        if (!texture?.isTexture || seen.has(texture) || host.isPrimed(texture)) {
+        if (
+          !texture?.isTexture ||
+          seen.has(texture) ||
+          host.isPrimed(texture)
+        ) {
           continue;
         }
         seen.add(texture);
@@ -56,12 +68,14 @@ export function primeTexturesInBackground(
   const pending = collectSceneTextures(host);
   if (!pending.length) return;
   const schedule = (run: () => void) => {
-    const idle = (window as Window & {
-      requestIdleCallback?: (
-        callback: () => void,
-        options?: { timeout: number },
-      ) => number;
-    }).requestIdleCallback;
+    const idle = (
+      window as Window & {
+        requestIdleCallback?: (
+          callback: () => void,
+          options?: { timeout: number },
+        ) => number;
+      }
+    ).requestIdleCallback;
     if (idle) idle(run, { timeout: 500 });
     else setTimeout(run, 0);
   };
@@ -76,4 +90,24 @@ export function primeTexturesInBackground(
     if (pending.length) schedule(runChunk);
   };
   schedule(runChunk);
+}
+
+/** Required first-frame uploads, with task boundaries between small batches. */
+export async function primeTexturesBeforeDraw(
+  host: TexturePrimingHost,
+  isStale: () => boolean,
+  yieldTask: () => Promise<void> = () =>
+    new Promise((resolve) => setTimeout(resolve, 0)),
+): Promise<void> {
+  const pending = collectSceneTextures(host);
+  let started = performance.now();
+  for (const texture of pending) {
+    if (host.isDisposed() || isStale()) return;
+    if (performance.now() - started >= 6) {
+      await yieldTask();
+      if (host.isDisposed() || isStale()) return;
+      started = performance.now();
+    }
+    host.primeTexture(texture);
+  }
 }

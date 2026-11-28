@@ -15,6 +15,7 @@ reader schema, not the plug-in package: no `ny_facade` import or registration
 happens here.
 """
 
+import base64
 import bpy
 import json
 import os
@@ -233,13 +234,150 @@ def dump_material(material):
     return item
 
 
+def used_materials(meshes):
+    materials = set()
+    for obj in meshes:
+        slots = obj.data.materials
+        for index in {face.material_index for face in obj.data.polygons}:
+            if index < len(slots) and slots[index]:
+                materials.add(slots[index])
+    return sorted(materials, key=lambda item: item.name)
+
+
+def packed_window_sources(materials, known_packs):
+    windows, images = {}, {}
+    for material in materials:
+        signature = material.get("ny_resource_signature", "")
+        fields = signature.split(":", 2) if isinstance(signature, str) else []
+        if (len(fields) != 3 or fields[1] in known_packs
+                or material.get("ny_kind") != "WINDOW" or not material.node_tree):
+            continue
+        pack = fields[1]
+        pending = [(material.node_tree, None)]
+        seen = set()
+        while pending:
+            tree, binding = pending.pop()
+            if tree in seen:
+                continue
+            seen.add(tree)
+            pending.extend((node.node_tree, node) for node in tree.nodes
+                           if node.type == "GROUP" and node.node_tree)
+            # These texture-node numbers are the five bindings in
+            # resources.py::configure_window. Read the effective preview binding,
+            # including cached exterior sheets, and the exact float table.
+            nodes = [tree.nodes.get(name) for name in (
+                "Image Texture.004", "Image Texture.006", "Image Texture.008",
+                "Image Texture.010", "Image Texture.014", "Image Texture",
+            )]
+            if any(node is None or node.type != "TEX_IMAGE" or not node.image for node in nodes):
+                continue
+            *slots, params = [node.image for node in nodes]
+            if not all(
+                image.name.startswith((f"NY_PACK_{pack}_slot{slot}", f"NY_Win3_{pack}_{slot}_"))
+                and image.packed_file
+                and image.packed_file.data.startswith(b"\x89PNG\r\n\x1a\n")
+                for slot, image in enumerate(slots, 1)
+            ):
+                continue
+            if "_Parameters" not in params.name or params.size[0] < 1 or params.size[1] != 4:
+                continue
+            stride = params.size[0] * 4
+            rect = list(params.pixels[2 * stride:2 * stride + 4])
+            row = list(params.pixels[3 * stride:3 * stride + 4])
+            if len(rect) != 4 or len(row) != 4:
+                continue
+            if binding is None or "Palette Row" not in binding.inputs:
+                continue
+            windows[material.name] = {
+                "images": [image.name for image in slots],
+                "rect": rect,
+                "row": row,
+                "palette_row": binding.inputs["Palette Row"].default_value,
+            }
+            for image in slots:
+                if image.name not in images:
+                    images[image.name] = base64.b64encode(image.packed_file.data).decode("ascii")
+            break
+    return windows, images
+
+
+def packed_cutout_sources(materials, images):
+    cutouts = {}
+    for material in materials:
+        if not material.node_tree:
+            continue
+        def source(node, socket):
+            if node is None or (isinstance(socket, str) and socket not in node.inputs):
+                return None
+            links = node.inputs[socket].links
+            return links[0].from_node if len(links) == 1 else None
+
+        output = next((n for n in material.node_tree.nodes
+                       if n.type == "OUTPUT_MATERIAL" and n.is_active_output), None)
+        shader = source(output, "Surface")
+        if shader is None or shader.type != "BSDF_PRINCIPLED":
+            continue
+        clip = source(shader, "Alpha")
+        mix = source(shader, "Base Color")
+        normal_map = source(shader, "Normal")
+        if (clip is None or clip.type != "MATH" or clip.operation != "GREATER_THAN"
+                or clip.inputs[1].is_linked or clip.inputs[1].default_value != 0.5
+                or mix is None or mix.type != "MIX_RGB" or mix.blend_type != "MULTIPLY"
+                or mix.inputs[0].is_linked or mix.inputs[0].default_value != 1.0
+                or mix.inputs[2].is_linked
+                or normal_map is None or normal_map.type != "NORMAL_MAP"
+                or normal_map.space != "TANGENT" or normal_map.inputs["Strength"].is_linked):
+            continue
+        color = source(clip, 0)
+        normal = source(normal_map, "Color")
+        if (color is None or normal is None or color != source(mix, 1)
+                or clip.inputs[0].links[0].from_socket.name != "Alpha"
+                or mix.inputs[1].links[0].from_socket.name != "Color"
+                or normal_map.inputs["Color"].links[0].from_socket.name != "Color"):
+            continue
+        uv = source(color, "Vector")
+        if uv is None or uv.type != "UVMAP" or not uv.uv_map or uv != source(normal, "Vector"):
+            continue
+        if not all(
+            node.type == "TEX_IMAGE" and node.extension == "REPEAT"
+            and node.interpolation == "Linear" and node.image and node.image.packed_file
+            and node.image.packed_file.data.startswith(b"\x89PNG\r\n\x1a\n")
+            for node in (color, normal)
+        ):
+            continue
+        if (color.image.colorspace_settings.name != "sRGB"
+                or normal.image.colorspace_settings.name != "Non-Color"):
+            continue
+        cutouts[material.name] = {
+            "uv": uv.uv_map, "color": color.image.name, "normal": normal.image.name,
+            "tint": list(mix.inputs[2].default_value)[:3],
+            "normal_strength": normal_map.inputs["Strength"].default_value,
+        }
+        for node in (color, normal):
+            if node.image.name not in images:
+                images[node.image.name] = base64.b64encode(node.image.packed_file.data).decode("ascii")
+    return cutouts
+
+
 def main():
     args = sys.argv[sys.argv.index("--") + 1 :]
-    source, output = args
+    source, output = args[:2]
+    known_packs = set()
+    if len(args) == 3:
+        with open(args[2], encoding="utf-8") as handle:
+            known_packs.update(json.load(handle)["packs"])
     register_reader_schema()
     try:
         bpy.ops.wm.open_mainfile(filepath=source)
         scene = bpy.context.scene
+        view_layer = bpy.context.view_layer
+        # The Asset Editor exports meshes selected in the view layer.
+        # Use its visible meshes for the headless import instead of all data-blocks.
+        meshes = [
+            obj
+            for obj in view_layer.objects
+            if obj.type == "MESH" and obj.visible_get(view_layer=view_layer)
+        ]
         trees = {}
         for tree in bpy.data.node_groups:
             trees[tree.name] = dump_tree(tree)
@@ -255,6 +393,9 @@ def main():
             }
             for image in bpy.data.images
         ]
+        materials = used_materials(meshes)
+        packed_windows, packed_images = packed_window_sources(materials, known_packs)
+        packed_cutouts = packed_cutout_sources(materials, packed_images)
         bundle = {
             "version": 1,
             "frame_color": [round(float(value), 12) for value in scene.ny_facade.frame_color],
@@ -263,10 +404,13 @@ def main():
                 if scene.unit_settings.system != "NONE"
                 else 1.0
             ),
-            "objects": [dump_object(obj) for obj in bpy.data.objects],
+            "objects": [dump_object(obj) for obj in meshes],
             "materials": [dump_material(material) for material in bpy.data.materials],
             "node_trees": trees,
             "images": images,
+            "packed_windows": packed_windows,
+            "packed_window_images": packed_images,
+            "packed_cutouts": packed_cutouts,
         }
         os.makedirs(os.path.dirname(os.path.abspath(output)) or ".", exist_ok=True)
         with open(output, "w", encoding="utf-8") as handle:

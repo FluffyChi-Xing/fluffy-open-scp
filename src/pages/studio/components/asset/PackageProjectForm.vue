@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import ProjectConfigTabs from "./ProjectConfigTabs.vue";
+import ProjectConfigOverview from "./ProjectConfigOverview.vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import MonacoEditor from "@/components/ui/MonacoEditor.vue";
@@ -8,9 +10,14 @@ import { useToast } from "@/composables/useToast";
 import MenuBindingForm from "./MenuBindingForm.vue";
 import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
 import BehaviorLeafSheet from "./BehaviorLeafSheet.vue";
+import GarbageBehaviorFields from "./GarbageBehaviorFields.vue";
+import UtilityConsumerFields from "./UtilityConsumerFields.vue";
+import MegaTowerBehaviorForm from "./MegaTowerBehaviorForm.vue";
 import { useBehaviorConflicts } from "./useBehaviorConflicts";
+import { behaviorCombinationConflict } from "./behaviorBuildDiagnostics";
 import {
   LOGIC_NODE_SPECS,
+  MAX_BEHAVIOR_LEAVES,
   addLogicNode,
   connectLogic,
   ensureCoreNode,
@@ -18,12 +25,17 @@ import {
   removeLogicNode,
   updateLogicParams,
   type BehaviorLeafType,
+  type BehaviorCoreParams,
   type BuildingInfoParams,
   type LeafParams,
   type LogicGraph,
   type LogicNode,
+  type UtilityParams,
 } from "./logicGraph";
 import type { WorkbenchMenuBinding } from "./menuBinding";
+import VanillaVariantMenuForm from "./VanillaVariantMenuForm.vue";
+import VanillaPowerProductionForm from "./VanillaPowerProductionForm.vue";
+const PanelProjectEditor = defineAsyncComponent(() => import("./panel-editor/PanelProjectEditor.vue"));
 
 /**
  * package.json 可视化配置（HBuilderX manifest.json 式分类表单）。
@@ -37,6 +49,7 @@ const props = defineProps<{
   project: string;
   menu: WorkbenchMenuBinding;
   logic: LogicGraph;
+  megaTower?: unknown;
   /** 工作台文档是否有未保存修改。 */
   savedDirty: boolean;
   /** 保存工作台文档（内部会同步 package.json dependencies）。 */
@@ -47,6 +60,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:menu": [patch: Partial<WorkbenchMenuBinding>];
   "update:logic": [graph: LogicGraph];
+  "update:megaTower": [value: unknown];
   close: [];
 }>();
 
@@ -54,16 +68,24 @@ const { t } = useI18n();
 const toast = useToast();
 const behaviorConflicts = useBehaviorConflicts();
 
-type TabId = "basic" | "menu" | "building" | "behavior" | "dependencies" | "advanced";
+type TabId = "overview" | "basic" | "menu" | "panel" | "building" | "behavior" | "dependencies" | "advanced";
 const TABS: { id: TabId; icon: string; labelKey: string }[] = [
+  { id: "overview", icon: "ListChecks", labelKey: "studio.assetWorkbench.projectConfig.tabOverview" },
   { id: "basic", icon: "FileText", labelKey: "studio.assetWorkbench.projectConfig.tabBasic" },
   { id: "menu", icon: "Menu", labelKey: "studio.assetWorkbench.projectConfig.tabMenu" },
+  { id: "panel", icon: "PanelsTopLeft", labelKey: "panelEditor.title" },
   { id: "building", icon: "Users", labelKey: "studio.assetWorkbench.projectConfig.tabBuilding" },
   { id: "behavior", icon: "Gauge", labelKey: "studio.assetWorkbench.projectConfig.tabBehavior" },
   { id: "dependencies", icon: "Network", labelKey: "studio.assetWorkbench.projectConfig.tabDependencies" },
   { id: "advanced", icon: "Braces", labelKey: "studio.assetWorkbench.projectConfig.tabAdvanced" },
 ];
-const activeTab = ref<TabId>("basic");
+const activeTab = ref<TabId>("overview");
+const panelEditor = ref<InstanceType<typeof PanelProjectEditor>>();
+const panelVisited = ref(false);
+const panelDirty = ref(false);
+watch(activeTab, value => { if (value === "panel") panelVisited.value = true; });
+const isVanillaVariant = computed(() => manifest.value?.mod_type === "vanilla_variant");
+const tabs = computed(() => isVanillaVariant.value ? TABS.filter((tab) => tab.id !== "behavior" && tab.id !== "panel") : TABS);
 
 // ---- package.json 读写 ----
 const manifest = ref<Record<string, unknown> | null>(null);
@@ -73,10 +95,33 @@ const loading = ref(false);
 const loadError = ref("");
 const saving = ref(false);
 const saveError = ref("");
+const utilityLoadFailed = ref(false);
+const powerLoadFailed = ref(false);
 
 async function readManifest(): Promise<void> {
-  const doc = await tauriApi.workspace.codeReadText(props.project, "package.json");
+  const project = props.project;
+  const doc = await tauriApi.workspace.codeReadText(project, "package.json");
   const parsed = JSON.parse(doc.content) as Record<string, unknown>;
+  const source = parsed.vanillaVariant as VariantConfig | undefined;
+  utilityLoadFailed.value = false;
+  if (parsed.mod_type === "vanilla_variant" && source?.unit && !source.utilityFieldsVersion) {
+    try {
+      const available = await tauriApi.workspace.vanillaVariantUtilityFields(project);
+      source.fields = { ...available, ...source.fields };
+      source.utilityFieldsVersion = 1;
+    } catch {
+      if (project === props.project) utilityLoadFailed.value = true;
+    }
+  }
+  powerLoadFailed.value = false;
+  if (parsed.mod_type === "vanilla_variant" && source?.unit && source.powerProduction === undefined) {
+    try {
+      source.powerProduction = await tauriApi.workspace.vanillaVariantPowerFields(project);
+    } catch {
+      if (project === props.project) powerLoadFailed.value = true;
+    }
+  }
+  if (project !== props.project) return;
   manifest.value = parsed;
   baseline.value = JSON.stringify(parsed);
   revision.value = doc.revision;
@@ -108,7 +153,7 @@ const manifestDirty = computed(
   () => !!manifest.value && JSON.stringify(manifest.value) !== baseline.value,
 );
 const dirty = computed(
-  () => manifestDirty.value || props.savedDirty || advancedDirty.value,
+    () => manifestDirty.value || props.savedDirty || advancedDirty.value || panelDirty.value,
 );
 
 function stringField(key: string): string {
@@ -119,6 +164,55 @@ function stringField(key: string): string {
 function setStringField(key: string, value: string): void {
   if (!manifest.value) return;
   manifest.value = { ...manifest.value, [key]: value };
+}
+
+type VariantConfig = {
+  title: string;
+  description?: string;
+  iconPng?: string;
+  marqueePng?: string;
+  unit: string;
+  lot: string;
+  utilityFieldsVersion?: number;
+  powerProduction?: Awaited<ReturnType<typeof tauriApi.workspace.vanillaVariantPowerFields>>;
+  fields: Record<string, { hash: string; original: number; value: number; consumerBound?: boolean }>;
+};
+const variant = computed(() => manifest.value?.vanillaVariant as VariantConfig | undefined);
+function patchPowerField(group: string, field: string, value: number) {
+  const entry = variant.value?.powerProduction?.[group]?.[field];
+  if (entry) entry.value = value;
+}
+const utilityGroups = {
+  power: ["powerAmount", "powerCapacity", "powerInterval"],
+  water: ["waterAmount", "waterCapacity", "waterInterval"],
+};
+const utilityFields = new Set(Object.values(utilityGroups).flat());
+const variantFieldGroups = computed(() => {
+  const groups = {
+    costs: ["constructionCost", "maintenanceCost"],
+    ...utilityGroups,
+    labor: ["minimumWorkers", "jobsW1", "jobsW2", "jobsW3", "workersW1", "workersW2", "workersW3"],
+    production: ["productionInterval", "productionAmount"],
+    education: ["studentCapacity"],
+  };
+  const fields = Object.entries(variant.value?.fields ?? {});
+  const assigned = new Set(Object.values(groups).flat());
+  return [
+    ...Object.entries(groups).map(([id, keys]) => ({ id, fields: fields.filter(([key]) => keys.includes(key)) })),
+    { id: "other", fields: fields.filter(([key]) => !assigned.has(key)) },
+  ].filter((group) => group.fields.length > 0);
+});
+function patchVariantField(field: string, event: Event) {
+  const input = event.target as HTMLInputElement;
+  const value = input.valueAsNumber;
+  const entry = variant.value?.fields[field];
+  if (!entry) return;
+  if (Number.isFinite(value) && value >= 0 && (!utilityFields.has(field) || input.validity.valid)) {
+    entry.value = value;
+  } else {
+    input.value = String(entry.value);
+    if (utilityFields.has(field)) toast.error(t("flow.variant.utilityIntegerRequired"));
+  }
 }
 
 // ---- 高级 JSON ----
@@ -181,6 +275,13 @@ function patchSchedule(schedule: number[]): void {
 const coreNode = computed<LogicNode | null>(
   () => props.logic.nodes.find((node) => node.kind === "behavior-core") ?? null,
 );
+const coreUtilities = computed(() => coreNode.value
+  ? props.logic.params[coreNode.value.id] as BehaviorCoreParams | undefined
+  : undefined);
+function updateUtility(kind: "power" | "water" | "garbage", value: UtilityParams): void {
+  const core = graphWithCore();
+  emit("update:logic", updateLogicParams(core.graph, core.node.id, { [kind]: value }));
+}
 const leafNodes = computed(() =>
   props.logic.nodes
     .filter((node) => node.kind === "behavior-leaf")
@@ -202,6 +303,10 @@ const leafCatalog = computed(() =>
     }),
   ),
 );
+const behaviorConflict = computed(() => {
+  const pair = behaviorCombinationConflict(leafNodes.value.flatMap(leaf => leaf.type ? [leaf.type] : []));
+  return Boolean(pair && pair[0] !== pair[1]);
+});
 const editingLeafId = ref<string | null>(null);
 const editTrigger = ref<HTMLElement | null>(null);
 const editingLeaf = computed(() => {
@@ -260,6 +365,14 @@ const dependencies = computed<Record<string, unknown>>(() => {
     ? (value as Record<string, unknown>)
     : {};
 });
+const variantDependencies = computed(() => {
+  const report = dependencies.value.vanillaVariant as { resources?: { mode?: string }[] } | undefined;
+  const rows = Array.isArray(report?.resources) ? report.resources : [];
+  return {
+    count: rows.length,
+    unresolved: rows.filter((row) => row.mode === "unresolved").length,
+  };
+});
 function dependencyResources(): Record<string, unknown> {
   const value = dependencies.value.resources;
   return value && typeof value === "object"
@@ -302,6 +415,17 @@ async function save(): Promise<void> {
       manifest.value = parsed;
       advancedDirty.value = false;
     }
+    for (const [amountName, capacityName, intervalName] of Object.values(utilityGroups)) {
+      const fields = variant.value?.fields;
+      const amount = fields?.[amountName];
+      const capacity = fields?.[capacityName];
+      const interval = fields?.[intervalName];
+      if (amount && capacity && [amount, capacity, interval].some((field) => field && field.value !== field.original)
+        && capacity.value < amount.value) {
+        saveError.value = t("flow.variant.utilityCapacityTooSmall", { field: t(`flow.variant.${capacityName}`) });
+        return;
+      }
+    }
     if (manifestDirty.value && manifest.value) {
       const written = await tauriApi.workspace.codeWriteText(
         props.project,
@@ -312,6 +436,7 @@ async function save(): Promise<void> {
       revision.value = written.revision;
       baseline.value = JSON.stringify(manifest.value);
     }
+    if (panelDirty.value && panelEditor.value && !(await panelEditor.value.save())) return;
     if (props.savedDirty) {
       await props.saveDocument();
     }
@@ -330,7 +455,13 @@ async function save(): Promise<void> {
 }
 
 const tabHint = computed(() => {
+  if (isVanillaVariant.value && activeTab.value === "building") return t("flow.variant.propertiesHint");
+  if (isVanillaVariant.value && activeTab.value === "menu") return t("flow.variant.parkHint");
   switch (activeTab.value) {
+    case "panel":
+      return t("panelEditor.hint");
+    case "overview":
+      return t("studio.assetWorkbench.overviewHint");
     case "menu":
       return t("studio.assetWorkbench.projectConfig.menuHint", {
         path: props.documentPath,
@@ -384,26 +515,15 @@ const tabHint = computed(() => {
       {{ t("studio.assetWorkbench.projectConfig.loadFailed", { error: loadError }) }}
     </p>
     <div v-else-if="manifest" class="ppf-body">
-      <nav class="ppf-nav" role="tablist">
-        <button
-          v-for="tab in TABS"
-          :key="tab.id"
-          type="button"
-          role="tab"
-          :aria-selected="activeTab === tab.id"
-          :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          <FIcon :name="tab.icon" :size="13" aria-label="" />
-          {{ t(tab.labelKey) }}
-        </button>
-      </nav>
+      <ProjectConfigTabs v-model="activeTab" :tabs="tabs" :label="t('studio.assetWorkbench.projectConfig.title')" />
 
       <div class="ppf-content">
         <p class="ppf-hint">{{ tabHint }}</p>
+        <PanelProjectEditor v-if="panelVisited" v-show="activeTab === 'panel'" ref="panelEditor" :project="project" :logic="logic" :title="menu.label || stringField('name')" :active="activeTab === 'panel'" @dirty="panelDirty = $event" />
 
         <!-- 基础配置 -->
-        <div v-if="activeTab === 'basic'" class="ppf-fields">
+        <ProjectConfigOverview v-if="activeTab === 'overview'" :project="project" :manifest="manifest" :menu="menu" :logic="logic" :variant="isVanillaVariant" :advanced-text="advancedDirty ? advancedText : undefined" />
+        <div v-else-if="activeTab === 'basic'" class="ppf-fields">
           <label class="ppf-field">
             <span>{{ t("studio.assetWorkbench.projectConfig.name") }}</span>
             <input
@@ -459,6 +579,12 @@ const tabHint = computed(() => {
         </div>
 
         <!-- 菜单 -->
+        <div v-else-if="activeTab === 'menu' && isVanillaVariant">
+          <VanillaVariantMenuForm
+            v-if="variant" :project="project" :unit="variant.unit" :menu="variant" :disabled="saving"
+            @update="Object.assign(variant, $event)" />
+          <p v-else class="ppf-empty">{{ t("flow.variant.sceneHint") }}</p>
+        </div>
         <MenuBindingForm
           v-else-if="activeTab === 'menu'"
           :menu="menu"
@@ -469,7 +595,33 @@ const tabHint = computed(() => {
 
         <!-- 建筑属性 -->
         <div v-else-if="activeTab === 'building'" class="ppf-fields">
-          <template v-if="infoParams && infoNode">
+          <template v-if="isVanillaVariant">
+            <p v-if="utilityLoadFailed" class="ppf-empty" role="status">{{ t("flow.variant.utilityLoadFailed") }}</p>
+            <p v-if="powerLoadFailed" class="ppf-empty" role="status">{{ t("flow.variant.powerLoadFailed") }}</p>
+            <VanillaPowerProductionForm
+              v-if="variant?.powerProduction"
+              :groups="variant.powerProduction"
+              :disabled="saving"
+              @change="patchPowerField" />
+            <details v-for="(group, index) in variantFieldGroups" :key="group.id" class="ppf-field-group" :open="index === 0">
+              <summary>{{ t("flow.variant.fieldGroup", { name: t(`flow.variant.groups.${group.id}`), count: group.fields.length }) }}</summary>
+              <p v-if="group.fields.some(([, field]) => field.consumerBound === false)" class="ppf-utility-hint">
+                {{ t("flow.variant.utilityUnbound") }}
+              </p>
+              <div class="ppf-fields">
+                <label v-for="[name, field] in group.fields" :key="name" class="ppf-field">
+                  <span>{{ t(`flow.variant.${name}`, name) }}</span>
+                  <input
+                    type="number" :min="utilityFields.has(name) && name.endsWith('Interval') ? 1 : 0"
+                    :max="utilityFields.has(name) ? 16777216 : undefined" :step="utilityFields.has(name) ? 1 : 'any'"
+                    :value="field.value" :disabled="saving" @change="patchVariantField(name, $event)" />
+                  <small>{{ t("flow.variant.originalValue", { value: field.original }) }} · <code>{{ field.hash }}</code></small>
+                </label>
+              </div>
+            </details>
+            <p v-if="!variantFieldGroups.length" class="ppf-empty">{{ t(variant ? "flow.variant.noEditableFields" : "flow.variant.sceneHint") }}</p>
+          </template>
+          <template v-else-if="infoParams && infoNode">
             <label
               v-for="field in (['w1', 'w2', 'w3', 'minWorkers'] as const)"
               :key="field"
@@ -485,6 +637,19 @@ const tabHint = computed(() => {
                 @change="patchInfo(field, $event)"
               />
             </label>
+          <div class="ppf-field wide">
+            <span>{{ t("studio.assetWorkbench.scheduleTitle") }}</span>
+            <ShiftScheduleSlider
+              :schedule="
+                Array.isArray(infoParams.schedule) && infoParams.schedule.length === 8
+                  ? infoParams.schedule
+                  : [6, 6, 7, 7, 6, 6, 7, 6]
+              "
+              :disabled="saving"
+              @update:schedule="patchSchedule($event)"
+            />
+          </div>
+          <p class="ppf-hint wide">{{ t("studio.assetWorkbench.scheduleHint") }}</p>
             <p class="ppf-hint wide">{{ t("studio.assetWorkbench.labor.hint") }}</p>
           </template>
           <div v-else class="ppf-empty">
@@ -498,41 +663,8 @@ const tabHint = computed(() => {
 
         <!-- 行为 -->
         <div v-else-if="activeTab === 'behavior'" class="ppf-behavior">
-          <div v-if="infoParams && infoNode" class="ppf-behavior-block">
-            <header>
-              <span>{{ t("studio.assetWorkbench.behaviorRecruit") }}</span>
-            </header>
-            <div class="ppf-fields">
-              <label
-                v-for="field in (['w1', 'w2', 'w3', 'minWorkers'] as const)"
-                :key="field"
-                class="ppf-field"
-              >
-                <span>{{ t(`studio.assetWorkbench.labor.${field}`) }}</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  :value="infoParams[field]"
-                  :disabled="saving"
-                  @change="patchInfo(field, $event)"
-                />
-              </label>
-              <div class="ppf-field wide">
-                <span>{{ t("studio.assetWorkbench.scheduleTitle") }}</span>
-                <ShiftScheduleSlider
-                  :schedule="
-                    Array.isArray(infoParams.schedule) && infoParams.schedule.length === 8
-                      ? infoParams.schedule
-                      : [6, 6, 7, 7, 6, 6, 7, 6]
-                  "
-                  :disabled="saving"
-                  @update:schedule="patchSchedule($event)"
-                />
-              </div>
-              <p class="ppf-hint wide">{{ t("studio.assetWorkbench.scheduleHint") }}</p>
-            </div>
-          </div>
+          <MegaTowerBehaviorForm :model-value="megaTower" :disabled="saving" @update:model-value="emit('update:megaTower', $event)" />
+          <template v-if="megaTower == null">
           <div class="ppf-behavior-block">
             <header>
               <span>{{ t("studio.assetWorkbench.logicNode.behaviorCore") }}</span>
@@ -548,14 +680,21 @@ const tabHint = computed(() => {
             <p v-if="!coreNode" class="ppf-note">
               {{ t("studio.assetWorkbench.projectConfig.noCore") }}
             </p>
-            <p v-else class="ppf-note">
-              {{ t("studio.assetWorkbench.logicNode.behaviorCoreHint") }}
-            </p>
+            <template v-else>
+              <p class="ppf-note">{{ t("studio.assetWorkbench.behaviorComposition.hint") }}</p>
+              <p v-if="leafNodes.some(leaf => leaf.type === 'fusion-power')" class="ppf-note">
+                {{ t('studio.assetWorkbench.behaviorSheet.fusionManagesPower') }}
+              </p>
+              <UtilityConsumerFields v-else kind="power" :value="coreUtilities?.power" :disabled="saving" @update:value="updateUtility('power', $event)" />
+              <UtilityConsumerFields kind="water" :value="coreUtilities?.water" :disabled="saving" @update:value="updateUtility('water', $event)" />
+              <GarbageBehaviorFields :garbage="coreUtilities?.garbage" :disabled="saving" @update:garbage="updateUtility('garbage', $event)" />
+            </template>
           </div>
           <div class="ppf-behavior-block">
             <header>
               <span>{{ t("studio.assetWorkbench.projectConfig.leaves") }}</span>
             </header>
+            <p v-if="behaviorConflict" class="ppf-note">{{ t("studio.assetWorkbench.behaviorComposition.isolated") }}</p>
             <ul class="ppf-leaf-list">
               <li v-for="leaf in leafNodes" :key="leaf.node.id">
                 <span>{{ t(leaf.labelKey) }}</span>
@@ -590,16 +729,30 @@ const tabHint = computed(() => {
                 v-for="option in leafCatalog"
                 :key="option.type"
                 type="button"
-                :disabled="saving"
+                :disabled="saving || !behaviorConflicts.available(logic, option.type)"
+                :title="behaviorConflicts.addHint(logic, option.type)"
                 @click="addLeaf(option.type)"
               >
                 {{ option.label }}
               </button>
             </div>
+            <p v-if="leafNodes.length >= MAX_BEHAVIOR_LEAVES" class="ppf-note">
+              {{ t("studio.assetWorkbench.behaviorConflicts.limit", { count: MAX_BEHAVIOR_LEAVES }) }}
+            </p>
           </div>
+          </template>
         </div>
 
         <!-- 依赖与资源 -->
+        <div v-else-if="activeTab === 'dependencies' && isVanillaVariant" class="ppf-deps">
+          <div v-if="variant" class="ppf-deps-grid ppf-variant-deps">
+            <div><span>{{ t("flow.variant.unit") }}</span><code>{{ variant.unit }}</code></div>
+            <div><span>{{ t("flow.variant.lot") }}</span><code>{{ variant.lot }}</code></div>
+            <div><span>{{ t("flow.variant.references") }}</span><strong>{{ variantDependencies.count }}</strong></div>
+            <div><span>{{ t("flow.variant.unresolvedReferences") }}</span><strong>{{ variantDependencies.unresolved }}</strong></div>
+          </div>
+          <p v-else class="ppf-empty">{{ t("flow.variant.sceneHint") }}</p>
+        </div>
         <div v-else-if="activeTab === 'dependencies'" class="ppf-deps">
           <div class="ppf-deps-grid">
             <div>
@@ -631,7 +784,7 @@ const tabHint = computed(() => {
         </div>
 
         <!-- 高级 JSON -->
-        <div v-else class="ppf-advanced">
+        <div v-else-if="activeTab === 'advanced'" class="ppf-advanced">
           <div class="ppf-advanced-head">
             <span>{{ t("studio.assetWorkbench.projectConfig.rawJson") }}</span>
             <button type="button" :disabled="saving" @click="resetAdvanced">
@@ -733,39 +886,6 @@ const tabHint = computed(() => {
   display: flex;
   flex: 1;
   min-height: 0;
-}
-.ppf-nav {
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 168px;
-  padding: 10px 8px;
-  overflow-y: auto;
-}
-.ppf-nav button {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: flex;
-  font: inherit;
-  font-size: 12px;
-  gap: 7px;
-  min-height: 32px;
-  padding: 0 9px;
-  text-align: left;
-}
-.ppf-nav button:hover {
-  background: var(--surface-hover);
-  color: var(--foreground);
-}
-.ppf-nav button.active {
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
-  color: var(--primary);
-  font-weight: 600;
 }
 .ppf-content {
   display: flex;
@@ -922,6 +1042,14 @@ const tabHint = computed(() => {
   gap: 10px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+.ppf-field-group { grid-column: 1 / -1; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.ppf-field-group summary { padding: 10px 12px; font-weight: 600; cursor: pointer; }
+.ppf-field-group summary:hover { background: var(--surface-hover); }
+.ppf-field-group > .ppf-fields { padding: 0 12px 12px; }
+.ppf-utility-hint { padding: 0 12px 10px; color: var(--muted-foreground); font-size: 12px; }
+.ppf-variant-deps { grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)); }
+.ppf-variant-deps > div { min-width: 0; }
+.ppf-variant-deps code { white-space: normal; overflow-wrap: anywhere; }
 .ppf-deps-grid div {
   background: var(--surface-elevated);
   border: 1px solid var(--border);

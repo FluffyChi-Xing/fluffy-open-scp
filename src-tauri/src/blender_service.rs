@@ -44,6 +44,10 @@ pub(crate) fn run_script(script: &Path, script_args: &[String]) -> Result<Output
     run_script_with_startup(script, script_args, &[])
 }
 
+pub(crate) fn read_scene_script(script: &Path, args: &[String]) -> Result<Output, String> {
+    run_script_with_startup(script, args, &["--factory-startup", "--disable-autoexec", "--python-exit-code", "1"])
+}
+
 fn run_script_with_startup(
     script: &Path,
     script_args: &[String],
@@ -72,6 +76,7 @@ pub(crate) fn export_native_rust(
     atlas: &Path,
     source: &Path,
     work_dir: &Path,
+    atlas_extension: Option<crate::blend_native::atlas_extension::AtlasExtension>,
 ) -> Result<Vec<u8>, String> {
     let script = work_dir.join("extract_blend.py");
     std::fs::write(&script, EXTRACT_SCRIPT).map_err(|error| error.to_string())?;
@@ -87,7 +92,11 @@ pub(crate) fn export_native_rust(
     );
     let output = run_script_with_startup(
         &script,
-        &[path_arg(source), path_arg(&bundle_path)],
+        &[
+            path_arg(source),
+            path_arg(&bundle_path),
+            path_arg(&atlas.join("catalog.json")),
+        ],
         &["--factory-startup", "--disable-autoexec", "--python-exit-code", "1"],
     )?;
     crate::blend_native::trace::emit(
@@ -108,10 +117,14 @@ pub(crate) fn export_native_rust(
     let bundle = crate::blend_native::dump::Bundle::parse(&bundle_bytes)
         .map_err(|error| format!("bundle parse failed: {error}"))?;
     let store = crate::blend_native::resources::PackStore::new(atlas);
-    let catalog = crate::blend_native::catalog::Catalog::parse(
+    let mut catalog = crate::blend_native::catalog::Catalog::parse(
         &std::fs::read(atlas.join("catalog.json")).map_err(|error| error.to_string())?,
     )
     .map_err(|error| format!("catalog parse failed: {error}"))?;
+    let store = match atlas_extension {
+        Some(extension) => extension.merge(&mut catalog, store),
+        None => store,
+    };
     let index = catalog.index();
     let report = crate::blend_native::export::export(&crate::blend_native::export::ExportInput {
         bundle: &bundle,

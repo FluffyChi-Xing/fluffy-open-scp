@@ -19,6 +19,7 @@ const { t } = useI18n();
 const host = ref<HTMLDivElement | null>(null);
 const status = ref<"loading" | "empty" | "error" | "ready">("loading");
 const unresolved = ref(0);
+const groundDepth = ref(0);
 
 watch(
   () => [host.value, props.packageId, props.tgi, props.loadRecipe] as const,
@@ -26,6 +27,7 @@ watch(
     if (!element) return;
     status.value = "loading";
     unresolved.value = 0;
+    groundDepth.value = 0;
     let cancelled = false;
     let release: (() => void) | undefined;
     onCleanup(() => {
@@ -57,6 +59,10 @@ watch(
         return;
       }
       release = () => disposeRoadAppearance(road);
+      groundDepth.value = Math.max(
+        0,
+        -Number(road.userData.previewGroundHeight ?? 0),
+      );
       const bounds = new THREE.Box3().setFromObject(road);
       if (bounds.isEmpty()) {
         status.value = "empty";
@@ -130,7 +136,14 @@ watch(
     <p v-if="status !== 'ready'" class="status" role="status">
       {{ t(`roadAsset.appearance.${status}`) }}
     </p>
-    <p v-else-if="unresolved" class="status">
+    <p v-if="status === 'ready' && groundDepth > 0" class="sample-ground">
+      {{
+        t("roadAsset.appearance.supportGround", {
+          depth: groundDepth.toFixed(1),
+        })
+      }}
+    </p>
+    <p v-if="status === 'ready' && unresolved" class="status">
       {{ t("roadAsset.appearance.partial", { count: unresolved }) }}
     </p>
   </section>
@@ -166,6 +179,19 @@ watch(
   margin: 0;
   color: var(--muted-foreground);
   font-size: 12px;
+  pointer-events: none;
+}
+.sample-ground {
+  position: absolute;
+  inset-inline: 10px;
+  inset-block-end: 8px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  background: var(--surface-elevated);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
   pointer-events: none;
 }
 </style>

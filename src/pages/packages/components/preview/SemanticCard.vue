@@ -13,6 +13,8 @@ import {
   keyText,
   textOf,
 } from "./semanticCard";
+import SceneEntryPreview from "./SceneEntryPreview.vue";
+import TransportDescription from "./TransportDescription.vue";
 import MeshPreviewView from "./MeshPreview.vue";
 
 /**
@@ -74,39 +76,6 @@ watch(
       .catch(() => {
         parentName.value = null;
       });
-  },
-  { immediate: true },
-);
-
-// ---- 装载槽资源名批量解析（kResourceID* 实例多在注册表有名字） ----
-const slotNames = ref<Map<number, string>>(new Map());
-watch(
-  () =>
-    props.card.kind === "resource-entry"
-      ? ([props.packageId, props.card.slots] as const)
-      : null,
-  async (payload) => {
-    slotNames.value = new Map();
-    if (!payload) return;
-    const [packageId, slots] = payload;
-    if (!slots.length || !isTauri()) return;
-    try {
-      const rows = await tauriApi.packages.resolveNames(
-        packageId,
-        slots.map((slot) => ({
-          typeId: slot.resource.typeId,
-          group: slot.resource.groupId,
-          instance: slot.resource.instanceId,
-        })),
-      );
-      const map = new Map<number, string>();
-      rows.forEach((row, i) => {
-        if (row.displayName) map.set(i, row.displayName);
-      });
-      slotNames.value = map;
-    } catch {
-      /* 无 tauri / 解析失败：显示哈希 */
-    }
   },
   { immediate: true },
 );
@@ -276,14 +245,7 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
 
     <!-- 载具/小人卡：列表 / 3D 切换 -->
     <template v-else-if="card.kind === 'vehicle'">
-      <FEmpty
-        v-if="!card.models.length"
-        variant="compact"
-        icon-name="CarFront"
-        status="warning"
-        :title="$t('package.card.vehicleEmptyTitle')"
-        :desc="$t('package.card.vehicleEmptyDesc')"
-      />
+      <TransportDescription v-if="!card.models.length" :package-id="packageId" :details="card.details" :parent="card.parent" />
       <template v-else>
       <div class="view-toggle">
         <button
@@ -438,47 +400,7 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
 
     <!-- 站点装载条目卡 -->
     <template v-else-if="card.kind === 'resource-entry'">
-      <section class="card-section">
-        <h4>{{ $t("package.card.slots") }}</h4>
-        <p class="semantic-hint">{{ $t("package.card.resourceEntryHint") }}</p>
-        <table v-if="card.slots.length" class="slot-table">
-          <thead>
-            <tr>
-              <th>{{ $t("package.card.slotIndex") }}</th>
-              <th>{{ $t("package.card.resource") }}</th>
-              <th v-for="p in 4" :key="p">{{ $t("package.card.paramN", { n: p }) }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(slot, i) in card.slots" :key="i">
-              <td>{{ i + 1 }}</td>
-              <td :title="keyText(slot.resource)">
-                <strong class="slot-resource-name">
-                  {{ slotNames.get(i) ?? $t("package.card.unnamedResource") }}
-                </strong>
-                <code class="slot-resource-tgi">{{ keyText(slot.resource) }}</code>
-              </td>
-              <td v-for="(v, j) in slot.values" :key="j" class="slot-value">
-                <span :class="{ 'slot-value-empty': v == null }">
-                  {{ v ?? $t("package.card.unsetValue") }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="card-empty">{{ $t("package.card.noText") }}</p>
-      </section>
-      <div class="meta-row">
-        <span v-if="card.enabled != null" class="duration-badge">
-          {{ $t(card.enabled ? "package.card.enabled" : "package.card.disabled") }}
-        </span>
-        <span v-if="card.floatA != null" class="duration-badge">
-          {{ $t("package.card.scalarA") }} <code class="ref-code">{{ card.floatA }}</code>
-        </span>
-        <span v-if="card.floatB != null" class="duration-badge">
-          {{ $t("package.card.scalarB") }} <code class="ref-code">{{ card.floatB }}</code>
-        </span>
-      </div>
+      <SceneEntryPreview :scene="card.scene" :package-id="packageId" />
     </template>
 
     <!-- Parent 面包屑（共用） -->
@@ -493,11 +415,15 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
 
 <style scoped>
 .semantic-card {
+  contain: inline-size;
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
-  padding: 4px 2px;
+  padding: 14px;
 }
 .alert-row {
   align-items: center;
@@ -536,6 +462,7 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
 }
 .meta-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .duration-badge {
@@ -633,7 +560,7 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
   display: inline-flex;
   gap: 8px;
   line-height: 1;
-  margin-left: 4px;
+  margin-inline-start: 4px;
   white-space: nowrap;
 }
 .vehicle-3d {
@@ -643,13 +570,17 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
   min-width: 0;
 }
 .vehicle-mesh {
-  height: 300px;
+  flex: none;
   width: 100%;
 }
 .model-select {
+  max-width: 100%;
+  min-width: 0;
   align-self: flex-start;
 }
 .model-trigger {
+  overflow-wrap: anywhere;
+  text-align: start;
   align-items: center;
   background: var(--surface-elevated);
   border: 1px solid var(--border);

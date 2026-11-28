@@ -23,6 +23,29 @@ pub struct Bundle {
     pub node_trees: BTreeMap<String, NodeTree>,
     #[serde(default)]
     pub images: Vec<BundleImage>,
+    #[serde(default)]
+    pub(super) packed_windows: BTreeMap<String, PackedWindow>,
+    #[serde(default)]
+    pub(super) packed_window_images: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(super) packed_cutouts: BTreeMap<String, PackedCutout>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct PackedCutout {
+    pub uv: String,
+    pub color: String,
+    pub normal: String,
+    pub tint: [f32; 3],
+    pub normal_strength: f32,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub(super) struct PackedWindow {
+    pub images: [String; 5],
+    pub rect: [f64; 4],
+    pub row: [f64; 4],
+    pub palette_row: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -247,6 +270,8 @@ impl Bundle {
             object.mesh.is_some()
                 && !object.props.contains_key("ny_lot")
                 && !object.props.contains_key("ny_lot_regions")
+                && !object.props.contains_key("ny_prop_preset")
+                && !object.props.contains_key("ny_effect_preview")
         })
     }
 

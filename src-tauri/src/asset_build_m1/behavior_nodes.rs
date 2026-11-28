@@ -85,6 +85,23 @@ pub struct LaborSpec {
     pub slots: Option<[i32; 3]>,
 }
 
+pub(super) fn add_job_counts(base: LaborSpec, jobs: [i32; 3]) -> Result<[i32; 3], &'static str> {
+    let tiers = [base.w1, base.w2, base.w3];
+    let [w1, w2, w3] = std::array::from_fn(|index| i64::from(tiers[index]) + i64::from(jobs[index]));
+    if w1 + w2 + w3 > 100_000 {
+        return Err("combined totalJobs");
+    }
+    Ok([w1 as i32, w2 as i32, w3 as i32])
+}
+
+pub(super) fn add_worker_slots(base: [i32; 3], extra: [i32; 3]) -> Result<[i32; 3], &'static str> {
+    let mut total = base;
+    for (slot, increase) in total.iter_mut().zip(extra) {
+        *slot = slot.checked_add(increase).ok_or("combined workerSlots")?;
+    }
+    Ok(total)
+}
+
 /// 表现层请求（教育叶子的 donor 克隆）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PresentationRequest {
@@ -99,6 +116,26 @@ pub struct PresentationRequest {
 /// 合并后的行为指令集：behavior.rs 的唯一输入。
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ResolvedBehavior {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) copan_plop_base: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) copan_service_budget: Option<super::behavior_copan_services::Budget>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) copan_residence_balance: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) copan_crown_tourism: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) copan_park_core: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) host_base_labor: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) unit_scope: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) units: Vec<super::behavior_units::UnitBehavior>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) host_parking_staff: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) office_and_retail: bool,
     pub ensure_bundles: Vec<u32>,
     pub remove_bundles: Vec<u32>,
     pub remove_fields: Vec<u32>,
@@ -151,6 +188,12 @@ pub struct ResolvedBehavior {
     pub(super) commercial: Option<super::behavior_commercial::Commercial>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) hotel: Option<super::behavior_hotel::Hotel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) casino: Option<super::behavior_casino::Casino>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) controlnet: Option<super::behavior_controlnet::ControlNet>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) fusion: Option<super::behavior_fusion::FusionPower>,
 }
 
 impl ResolvedBehavior {
@@ -208,7 +251,7 @@ pub fn parse_nodes(values: &[Value]) -> Result<Vec<Value>, String> {
             .ok_or_else(|| format!("behaviors node {id}: missing type"))?;
         if !matches!(
             kind,
-            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel"
+            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel" | "casino" | "controlnet" | "fusion-power"
         ) {
             return Err(format!("behaviors node {id}: unknown type {kind:?}"));
         }
@@ -443,12 +486,12 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
         LaborProfile::AuthorOnly => {
             // 只补岗位合计与学历分布；bundle / 排除表解封 / 内部 path 由
             // labor 闭环（behavior_loops::LABOR）统一落地。
-            let job_w1 = resolved.set_float_fields.get(&JOB_W1).copied();
+            let w1 = resolved.set_float_fields.get(&JOB_W1).copied().unwrap_or(0.0);
             let job_w2 = resolved.set_float_fields.get(&JOB_W2).copied().unwrap_or(0.0);
             let job_w3 = resolved.set_float_fields.get(&JOB_W3).copied().unwrap_or(0.0);
-            let Some(w1) = job_w1.filter(|w| *w > 0.0) else {
+            if w1 + job_w2 + job_w3 <= 0.0 {
                 return;
-            };
+            }
             if !resolved.set_float_fields.contains_key(&JOB_TOTAL) {
                 resolved
                     .set_float_fields
@@ -551,13 +594,31 @@ pub(super) fn compile_with_profile(
     nodes: &[Value],
     author_tourism: bool,
 ) -> Result<ResolvedBehavior, String> {
+    let casino = super::behavior_casino::select(nodes, author_tourism)?;
+    let controlnet = super::behavior_controlnet::select(nodes)?;
+    let fusion = super::behavior_fusion::select(nodes)?;
+    let labor = if controlnet.is_some() || fusion.is_some() { None } else { labor };
+    if super::behavior_units::scoped(nodes) {
+        return super::behavior_units::compile(labor, nodes);
+    }
     super::behavior_policy::validate(nodes)?;
     let mut resolved = ResolvedBehavior::default();
     resolved.author_tourism = author_tourism;
-    let office = super::behavior_office::select(nodes)?;
-    let labor = office.as_ref().map(|office| office.labor(labor)).or(labor);
-    let commercial = super::behavior_commercial::select(nodes)?;
-    let labor = commercial.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
+    resolved.casino = casino;
+    resolved.controlnet = controlnet;
+    resolved.fusion = fusion;
+    let (office, labor) = match super::behavior_office::select(nodes)? {
+        Some(office) => {
+            let (office, staffing) = office.with_labor(labor)?;
+            (Some(office), Some(staffing))
+        }
+        None => (None, labor),
+    };
+    let commercial = super::behavior_commercial::select(nodes, labor)?;
+    let labor = match &commercial {
+        Some(recipe) => Some(recipe.labor(labor)?),
+        None => labor,
+    };
     let hotel = super::behavior_hotel::select(nodes)?;
     let labor = hotel.as_ref().map(|recipe| recipe.labor(labor)).or(labor);
     let mut intent =
@@ -569,7 +630,7 @@ pub(super) fn compile_with_profile(
     if templates.land_value() {
         intent.landvalue = false;
     }
-    let native_tourism = super::behavior_tourism::select(nodes)?;
+    let native_tourism = super::behavior_tourism::select(nodes, commercial.is_some())?;
     if native_tourism.is_some() && !author_tourism {
         // This recipe installs the visitor bundles explicitly, independent of
         // the identity chosen for education, park and labor.
@@ -652,7 +713,7 @@ pub(super) fn compile_with_profile(
             }
             "residence" if templates.residence() => {}
             "residence" => compile_residence(&mut resolved, &id, &params)?,
-            "office" | "commercial" | "hotel" => {}
+            "office" | "commercial" | "hotel" | "casino" | "controlnet" | "fusion-power" => {}
             "park" => compile_land_values(&mut resolved, &id, &params, true)?,
             "landvalue" if templates.land_value() => {}
             "landvalue" => compile_land_values(&mut resolved, &id, &params, false)?,
@@ -685,7 +746,7 @@ pub(super) fn compile_with_profile(
         super::behavior_family::apply_to_behavior(&mut resolved, &family);
     }
     if let Some(recipe) = native_tourism {
-        recipe.apply(&mut resolved)?;
+        recipe.apply(&mut resolved, commercial.is_some())?;
         resolved.native_tourism = Some(recipe);
     }
     templates.reconcile(&mut resolved);
@@ -746,6 +807,9 @@ fn compile_utilities(
         ),
         ("garbage", GARBAGE_BUNDLE, None, GARBAGE_AMOUNT, 0, 0),
     ] {
+        if name == "power" && resolved.fusion.is_some() {
+            continue;
+        }
         let Some(utility) = object.get(name) else {
             continue;
         };
@@ -773,6 +837,11 @@ fn compile_utilities(
         if let Some(rate_key) = rate {
             if let Some(rate_value) = utility.get("rate").filter(|value| !value.is_null()) {
                 let rate_value = number(rate_value, &format!("{name}.rate"))?;
+                // Native SpecialiseRuleBase maps this float to integer simRate.
+                // Restrict to positive exactly representable tick intervals.
+                if rate_value < 1.0 || rate_value > 16_777_216.0 || rate_value.fract() != 0.0 {
+                    return Err(format!("behaviors node {node}: {name}.rate must be a positive whole tick interval"));
+                }
                 resolved.record_float(rate_key, rate_value, node)?;
             }
         }
@@ -1246,6 +1315,27 @@ mod tests {
         assert_eq!(resolved.set_float_fields[&POWER_CAPACITY], 270.0);
         assert_eq!(resolved.set_float_fields[&POWER_CAPACITY_COMPANION], 270.0);
         assert_eq!(resolved.set_float_fields[&POWER_RATE], 72.0);
+    }
+
+    #[test]
+    fn utility_intervals_preserve_native_loops_and_reject_fractional_or_zero_ticks() {
+        for (name, rate, amount, cap, companion, bundle) in [
+            ("power", POWER_RATE, POWER_AMOUNT, POWER_CAPACITY, POWER_CAPACITY_COMPANION, POWER_BUNDLE),
+            ("water", WATER_RATE, WATER_AMOUNT, WATER_CAPACITY, WATER_CAPACITY_COMPANION, WATER_BUNDLE),
+        ] {
+            let nodes = |interval| vec![node("core", "utilities-core", json!({name: {"mode":"explicit", "amount":25,"rate":interval}}))];
+            let result = compile(None, &nodes(json!(30))).unwrap();
+            assert_eq!(result.set_float_fields[&rate], 30.0);
+            assert_eq!(result.set_float_fields[&amount], 25.0);
+            assert_eq!(result.set_float_fields[&cap], 75.0);
+            assert_eq!(result.set_float_fields[&companion], 75.0);
+            assert!(result.ensure_bundles.contains(&bundle));
+            let inherit = compile(None, &nodes(serde_json::Value::Null)).unwrap();
+            assert!(!inherit.set_float_fields.contains_key(&rate));
+            for invalid in [0.0, -1.0, 0.5, 30.5, 16_777_218.0] {
+                assert!(compile(None, &nodes(json!(invalid))).is_err(), "{name}: {invalid}");
+            }
+        }
     }
 
     #[test]

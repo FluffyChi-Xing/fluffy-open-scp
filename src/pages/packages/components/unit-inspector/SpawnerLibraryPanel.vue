@@ -53,22 +53,22 @@ function beginDrag() {
         })
       }}
       <template v-if="summary.duplicates">
-        {{
-          t("spawnerPanel.statsDuplicate", { count: summary.duplicates })
-        }}
+        {{ t("spawnerPanel.statsDuplicate", { count: summary.duplicates }) }}
       </template>
     </p>
 
-    <button
-      type="button"
-      class="sl-preset"
-      :title="t('spawnerPanel.presetStandardHint')"
-      :disabled="!editEnabled"
-      @pointerdown.stop.prevent="beginDrag"
+    <slot name="preset"
+      ><button
+        type="button"
+        class="sl-preset"
+        :title="t('spawnerPanel.presetStandardHint')"
+        :disabled="!editEnabled"
+        @pointerdown.stop.prevent="beginDrag"
+      >
+        <FIcon name="MapPin" :size="16" aria-label="" />
+        <span>{{ t("spawnerPanel.presetStandard") }}</span>
+      </button></slot
     >
-      <FIcon name="MapPin" :size="16" aria-label="" />
-      <span>{{ t("spawnerPanel.presetStandard") }}</span>
-    </button>
 
     <input
       v-model="search"
@@ -78,7 +78,11 @@ function beginDrag() {
       :aria-label="t('spawnerPanel.listSearch')"
     />
 
-    <div class="sl-list" role="listbox" :aria-label="t('spawnerPanel.listTitle')">
+    <div
+      class="sl-list"
+      role="listbox"
+      :aria-label="t('spawnerPanel.listTitle')"
+    >
       <button
         v-for="anchor in filtered"
         :key="anchor.unitId"
@@ -91,7 +95,11 @@ function beginDrag() {
         @click="emit('select', anchor.unitId)"
       >
         <span class="sl-item-id">
-          {{ anchor.anchorId === null ? t("spawnerPanel.anchorUnnamed") : anchor.label }}
+          {{
+            anchor.anchorId === null
+              ? t("spawnerPanel.anchorUnnamed")
+              : anchor.label
+          }}
         </span>
         <span class="sl-item-kind" :class="`kind-${anchor.kind}`">
           {{ t(ANCHOR_KIND_LABEL[anchor.kind]) }}
@@ -101,7 +109,11 @@ function beginDrag() {
         </span>
       </button>
       <p v-if="!filtered.length" class="sl-empty">
-        {{ anchors.length ? t("package.materialsEmpty") : t("spawnerPanel.listEmpty") }}
+        {{
+          anchors.length
+            ? t("package.materialsEmpty")
+            : t("spawnerPanel.listEmpty")
+        }}
       </p>
     </div>
   </div>
@@ -120,6 +132,8 @@ function beginDrag() {
   margin: 0;
 }
 .sl-preset {
+  width: 88px;
+  align-self: flex-start;
   align-items: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

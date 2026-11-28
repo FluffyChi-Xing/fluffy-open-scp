@@ -8,7 +8,11 @@ import {
   type Streetlights,
 } from "./roadSchema";
 
-defineProps<{ selected: RecipeId; streetlights: Streetlights }>();
+defineProps<{
+  selected?: RecipeId;
+  streetlights: Streetlights;
+  options?: readonly RecipeId[];
+}>();
 const emit = defineEmits<{
   select: [id: RecipeId];
   lighting: [placement: Streetlights];
@@ -24,7 +28,7 @@ function drag(event: DragEvent, id: RecipeId) {
   <aside class="library" :aria-label="t('roadAsset.library')">
     <header>{{ t("roadAsset.library") }}</header>
     <button
-      v-for="id in recipeIds"
+      v-for="id in options ?? recipeIds"
       :key="id"
       type="button"
       draggable="true"

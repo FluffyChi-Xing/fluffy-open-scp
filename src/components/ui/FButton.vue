@@ -3,6 +3,7 @@ import FSpinner from '@/components/ui/FSpinner.vue'
 
 interface Props {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+  size?: 'sm'
   loading?: boolean
   disabled?: boolean
   type?: 'button' | 'submit' | 'reset'
@@ -15,7 +16,7 @@ const props = withDefaults(defineProps<Props>(), {
 </script>
 
 <template>
-  <button class="f-button" :class="`f-button-${props.variant}`" :type="props.type" :disabled="props.disabled || props.loading">
+  <button class="f-button" :class="[`f-button-${props.variant}`, { 'f-button-sm': props.size === 'sm' }]" :type="props.type" :disabled="props.disabled || props.loading">
     <FSpinner v-if="props.loading" size="sm" />
     <slot />
   </button>
@@ -23,4 +24,13 @@ const props = withDefaults(defineProps<Props>(), {
 
 <style scoped>
 .f-button{align-items:center;border:1px solid transparent;border-radius:var(--radius-md);cursor:pointer;display:inline-flex;font-size:13px;font-weight:700;gap:8px;justify-content:center;min-height:38px;padding:0 13px;transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease}.f-button:disabled{cursor:not-allowed;opacity:.55}.f-button-primary{background:var(--primary);color:var(--primary-foreground)}.f-button-primary:hover:not(:disabled){background:var(--primary-hover)}.f-button-secondary{background:var(--surface);border-color:var(--border);color:var(--foreground)}.f-button-secondary:hover:not(:disabled){background:var(--surface-hover)}.f-button-ghost{background:transparent;color:var(--muted-foreground)}.f-button-ghost:hover:not(:disabled){background:var(--surface-hover);color:var(--foreground)}.f-button-danger{background:var(--danger);color:var(--primary-foreground)}
+.f-button-sm {
+  min-height: 28px;
+  padding: 2px 8px;
+  gap: 5px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
 </style>

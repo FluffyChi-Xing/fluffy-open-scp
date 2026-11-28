@@ -27,7 +27,7 @@ function errorCode(cause: unknown) {
   return "failed";
 }
 
-export function useAssetCapture(project: string) {
+export function useAssetCapture(project: string, mode: "asset" | "map" = "asset") {
   const processes = shallowRef<GameProcess[]>([]);
   const builds = shallowRef<{ path: string; ids: number[] }[]>([]);
   const targetKey = shallowRef("");
@@ -36,11 +36,13 @@ export function useAssetCapture(project: string) {
   const busy = shallowRef(false);
   const loading = shallowRef(false);
   const error = shallowRef("");
+  const landValueCapture = shallowRef(false);
   const epoch = shallowRef(0);
   const targets = computed(() =>
     builds.value.flatMap(({ path, ids }) =>
       ids.map((iid) => ({
         key: `${path}/${iid}`,
+        path,
         iid,
         label: `${path.split("/").slice(-3).join("/")} · 0x${iid.toString(16).toUpperCase().padStart(8, "0")}`,
       })),
@@ -58,10 +60,10 @@ export function useAssetCapture(project: string) {
     try {
       const [games, summary] = await Promise.all([
         runtimeObserver.listProcesses(),
-        tauriApi.studio.projects.repoSummary(project),
+        mode === "asset" ? tauriApi.studio.projects.repoSummary(project) : null,
       ]);
       const results = await Promise.allSettled(
-        summary.releases.slice(0, 8).map(async ({ relativePath }) => {
+        (summary?.releases ?? []).slice(0, 8).map(async ({ relativePath }) => {
           const ids = await command<number[]>("code_package_observable_units", {
             request: { project, relativePath },
           });
@@ -111,16 +113,22 @@ export function useAssetCapture(project: string) {
     }
   }
 
-  async function start() {
+  async function start(landValue = false) {
     const target = targets.value.find((entry) => entry.key === targetKey.value);
-    if (!pid.value || !target || busy.value || directory) return;
+    if (!pid.value || (mode === "asset" && !landValue && !target) || busy.value || directory) return;
     busy.value = true;
     error.value = "";
     try {
+      const componentEntries = !landValue && target ? await command<number[]>("code_package_observable_units", {
+        request: { project, relativePath: target.path },
+        unitEntry: target.iid,
+      }) : undefined;
       const next = await command<ObserverStatus>("observer_start", {
         pid: pid.value,
         seconds: 300,
-        unitEntry: target.iid,
+        ...(mode === "map" || landValue
+          ? { observation: landValue ? "map:land-value" : "map:resources", projectCapture: true }
+          : { unitEntry: target?.iid, componentEntries }),
       });
       if (!next.directory) throw new Error("observer_session_missing");
       if (!active) {
@@ -128,6 +136,7 @@ export function useAssetCapture(project: string) {
         return;
       }
       directory = next.directory;
+      landValueCapture.value = landValue;
       epoch.value += 1;
       status.value = next;
       const run = ++version;
@@ -186,6 +195,7 @@ export function useAssetCapture(project: string) {
     busy,
     loading,
     error,
+    landValueCapture,
     epoch,
     scan,
     start,

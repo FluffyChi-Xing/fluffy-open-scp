@@ -344,6 +344,12 @@ const sharedGeometries = new WeakSet<ThreeNamespace.BufferGeometry>();
 let cachedPayload: LotModelPayload | null = null;
 let cachedRoots: ThreeNamespace.Object3D[] = [];
 
+/** Read-only consumers can reuse geometry already decoded by the viewport. */
+export function cloneCachedLotModelObjects(payload: LotModelPayload): ThreeNamespace.Object3D[] | null {
+  if (cachedPayload !== payload) return null;
+  return cachedRoots.map((root) => root.clone());
+}
+
 /** clone 后入场的几何共享标记（disposeObject 跳过用）。 */
 export function isSharedGeometry(
   geometry: ThreeNamespace.BufferGeometry | undefined,

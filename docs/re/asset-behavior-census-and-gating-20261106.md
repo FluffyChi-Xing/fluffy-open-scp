@@ -42,12 +42,10 @@
    路网为纯 Local+None、915 个单位 lot 无任何 path 条目——**roadConnect
    与水电接入无关**（Q11 代码定案：Local 路径实现完全忽略 roadConnect；
    该标志只被 GlobalConnector 的 30m 吸附消费，属路径几何层）。**水电
-   接入的真正机制是 pipe 几何邻接**：建筑 bbox 的 local +Y 面（正面）
-   中点为门前点，在道路 segment 集合里按 sink 条目 mMaxDist 找最近段
-   绑定（§4.3）。s17–s22 的头号嫌疑因此收敛为**几何/朝向**：克隆 lot 的
-   footprint/bbox 是小学的近 3 倍（§5.2 既有 diff），若正面(+Y)背对道路
-   或门前点超出 mMaxDist，attach 永不成立 → SinkCapacity(e) 恒 0 →
-   无水无电 → FailUnit 降级链。
+   接入使用 pipe 几何邻接**：实际绑路与规则的可达性检查分别从已注册 sink
+   的位置和建筑的 +Y 门前点寻找最近的合格道路段（§4.3）。两者任一超出对应
+   搜索距离都可能影响交付。s17–s22 克隆 lot 的 footprint/bbox 是小学的近
+   3 倍（§5.2 既有 diff），因此优先核对两处坐标与实际路段的距离。
 5. **菜单乱码**：标题链 = Menu2 `0x0A09F5FA`(text[])→ locale 表；miss 时 UI
    显示 placeholder 串或 JS null（`BuildTextPropertyJSValue` 的 placeholder
    字段），**不会崩溃、不会拒绝**。原版 455/476 菜单共用官方表
@@ -277,16 +275,19 @@ if ( mKeyBinIndex < 0 )                        return 10; // 无 key bin 保底�
   unit↔unit 直连语义，不是水电通道。小学 lot 全链没有它。
 - **水电接入的真正机制 = pipe 几何邻接 attach（Q11 定案）**：
   `AddUnitSinks`（放置完成）→ 通知 TransportHandler →
-  `cTransportPipe::AddSink`（0x7704D0，入池待绑，**无任何资格检查**）→
-  **`GetFrontRoadAttachPoint`（0x7D78E0）：取建筑 bbox 的 local +Y 面
-  （正面）中点为"门前点"** → `cPool::FindSinkAttachment`（0x76E510）在
-  **道路 pathSet 的 segment 集合**里按 sink 条目的 `mMaxDist` 找最近
-  segment 绑定（缓存，挪动 >0.33m 才重算）→ ERZ 规则的 `mAgentTests`
+  `cTransportPipe::AddSink`（0x7704D0）将接收点加入待绑定队列。
+  `cTransportPipe::Update` 绑定队列时把 `cEcoSinkInfo::mPosition` 直接传给
+  `cPool::FindSinkAttachment` 的坐标重载。标准建筑的 `AddUnitSinks` 从零
+  初始化该位置，再应用 Unit 的世界变换，因此搜索从 Unit 原点出发。
+  坐标重载按管道允许的道路类型和 `mMaxDist` 选最近路段。
+  `HasConnectedSink` 等规则检查走 Unit 重载（0x76E510），该重载才调用
+  `GetFrontRoadAttachPoint`（0x7D78E0），计算经世界变换的 `(0, bbox.maxY, 0)`。
+  两个重载可以在拐角地块选中不同道路。ERZ 规则的 `mAgentTests`
   （sinkEntryID+范围）驱动 pipe pool 送达 → `DeliverTransaction` →
   `UpdateUnitSinkCapacities` 写 bin。**全程不触碰 lot path、roadConnect、
   0x0CE4B739、mConnectedUnits**。因此标准临路建筑有水有电的充要条件：
-  ① 门前点（**模型/lot 的 +Y 正面朝向**）落在道路 segment 的 mMaxDist
-  内；② sink 三件套（sink 条目 + bundle `0x0A2725CE` 引用 + 资源表三列）；
+  ① 接收点能绑定合格道路，相关规则的门前可达性检查也能通过；
+  ② sink 三件套（sink 条目 + bundle `0x0A2725CE` 引用 + 资源表三列）；
   ③ 投递规则（mAgentTests，随标准 bundle 继承）。
 - `FindConnectedUnits` 是**单跳**展开；只服务于 connected 型 sink 的
   直连资源测试（如塔间互联）。
@@ -297,6 +298,45 @@ if ( mKeyBinIndex < 0 )                        return 10; // 无 key bin 保底�
 - `cPipeSinkEntry::FillFromProps`（0x76B610，SC 表现层）读的 maxDist
   （`0x0B695F0C`）/ sinkAttachInterval（`0x0B73EC90`）正是 pipe 绑定
   的半径参数——**这一层不是装饰参数，是水电接入半径**。
+
+瓦科补查（2026-11-24）。标准接收点初始化、世界变换和 pipe 坐标查询
+分别见零售反编译 `cEcoSinkInfo`、`AddUnitSinks`、`cTransportPipe::Update`。
+检查 `cPipeSinkEntry::FillFromProps` 的接线字段后，仍未发现资产可指定的
+接点偏移或临街方向。接入半径只限制距离。改变它无法让较远的 +Y 道路
+优先于较近且合格的 −X 道路。旧实况抓取保存了接收点位置与容量，
+缺少 `mPipeSinkInfoMap` 的路段索引和路段几何，无法据此认定具体道路。
+
+用户随后用红箭头标注了瓦科的临街边。电力支线接到左侧道路，临街道路
+在建筑下方。希望大厦和瓦科的可见宿主都没有显示通电配色。
+`cPipeOverlay::DrawSinks`（零售反编译约 995466–995568 行）从
+`mPipeSinkInfoMap` 读取已绑定的路段索引与插值位置，并从 Graphics Unit
+包围盒计算建筑端标点。道路端反映已绑定的管网路段，建筑端圆点用于显示。
+部署包 `70f1679d…` 和 `90e50f19…` 的宿主均在 `0A0209B2` 排除了
+标准电力 `48939D96` 及供水 `825B4CA4`。图 3–5 对应的旧建筑宿主
+启用这两项。实况 tick 42118–42127 同时确认，瓦科与希望大厦宿主
+缺少 Power/Water bin，瓦科六个行为子单元各有 Power 9/9、Water 9/9。
+容器构建恢复普通 Toy 消费 bundle 及供体消费输入，写盘检查接线与容量。
+瓦科对拍包仅宿主 Unit 变化，其余 39 项资源的解码 payload 逐字节一致。
+临街路段选择与宿主供电为两项独立验收，仍需实机核验。
+
+更新的瓦科 `E1202372`（部署与构建 SHA-256 均为 `3fd7e406…`）已在
+tick 43643 验证两条支线的归属。宿主 slot 816 的水、电接收点均绑定
+正面路段 399。六个隐藏组件的水、电接收点均绑定侧路段 380，七个 Unit
+的世界原点重合。主体及组件的 Power/Water 资源均为 9/9。红色小框
+有独立的放置判定来源。包内宿主与组件的显式 Asset 包围盒均为整楼尺寸，
+组件继承的模型空占位模板有 20 米方盒。图层数据足以认定侧路是组件的
+重复接线，截图中「重叠！」小框的放置判定归属仍未确认。
+
+同一版本宿主垃圾读数为 `Garbage=0/300`、`GarbageDisplayCount=0/3`、
+`TotalGarbageToCreate=10/10`。包内启用了容量和清运 bundle
+`D7C62954`，但容器排除表屏蔽了持有周期规则 `9204F9AC` 的
+`54AB8B16`。该入口接 `4114920D → 74A74AB3` 等生产分支。
+工作区构建恢复该原版 bundle，在同身份对拍中仅宿主排除表移除
+`54AB8B16`，其余 39 项资源解码一致。修正尚未部署。
+
+部署包的六个独立子单元 Asset 均保存了与宿主一致的 `00F9EFBA`。
+`cUnitLotEntry::GetUnitLotCorners` 另从 `mFrontageMin/mDepthMin` 计算
+放置判定范围，截图里的中心小框仍需取得运行时地块与 Unit slot 对应关系。
 
 ### 4.4 菜单/工具门控（静默三连）
 

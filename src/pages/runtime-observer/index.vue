@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { ScanLine } from "lucide-vue-next";
+import ElementsPanel from "./ElementsPanel.vue";
+import FStatValue from "@/components/ui/FStatValue.vue";
 import {
   computed,
   onActivated,
@@ -24,6 +27,7 @@ import {
 } from "@/api/runtimeObserver";
 const { t, te } = useI18n();
 const mode = ref("live");
+const tool = ref("elements");
 const empty = (): ObserverStatus => ({
   running: false,
   records: 0,
@@ -38,8 +42,11 @@ const selectedPid = ref<number>();
 const profile = ref("balanced");
 const observation = ref("ui:all");
 const capturedObservation = ref("ui:all");
-const captureTarget = computed(() => capturedObservation.value.startsWith("agent:")
-  ? capturedObservation.value.slice(6) : undefined);
+const captureTarget = computed(() =>
+  capturedObservation.value.startsWith("agent:")
+    ? capturedObservation.value.slice(6)
+    : undefined,
+);
 const frameUrl = ref("");
 const captureFrames = ref(true);
 const error = ref("");
@@ -48,7 +55,11 @@ const displayError = computed(() => {
     const detail = JSON.parse(error.value);
     const key = `runtimeObserver.errors.${detail.code}`;
     const assetKey = `assetCapture.errors.${detail.code}`;
-    return te(key) ? t(key) : te(assetKey) ? t(assetKey) : detail.message || error.value;
+    return te(key)
+      ? t(key)
+      : te(assetKey)
+        ? t(assetKey)
+        : detail.message || error.value;
   } catch {
     return error.value;
   }
@@ -91,7 +102,10 @@ const phase = computed(() =>
 const events = computed(() =>
   Object.values(status.value.eventCounts).reduce((a, b) => a + b, 0),
 );
-const latestDataResult = (requestName: string) => [...status.value.recent].reverse().find((row) => row.requestName === requestName && row.channel === "result");
+const latestDataResult = (requestName: string) =>
+  [...status.value.recent]
+    .reverse()
+    .find((row) => row.requestName === requestName && row.channel === "result");
 const gameState = computed(() => {
   if (status.value.gamePaused === true) return "paused";
   if (status.value.clockAdvancing === false) return "clockStopped";
@@ -100,20 +114,26 @@ const gameState = computed(() => {
   return "unknownStatus";
 });
 const gameTime = computed(() => {
-  const source = typeof status.value.gameClockSeconds === "number"
-    ? status.value.gameClockSeconds
-    : status.value.gameTimeSeconds;
+  const source =
+    typeof status.value.gameClockSeconds === "number"
+      ? status.value.gameClockSeconds
+      : status.value.gameTimeSeconds;
   if (typeof source === "number") {
     const total = Math.max(0, Math.floor(source));
     return `${String(Math.floor(total / 3600)).padStart(2, "0")}:${String(Math.floor(total / 60) % 60).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   }
   const row = latestDataResult("totalElapsedGameTime");
-  const value = row?.result && typeof row.result === "object" && "value" in row.result ? Number(row.result.value) : NaN;
+  const value =
+    row?.result && typeof row.result === "object" && "value" in row.result
+      ? Number(row.result.value)
+      : NaN;
   if (!Number.isFinite(value)) return undefined;
   const total = Math.max(0, Math.floor(value));
   return `${String(Math.floor(total / 3600)).padStart(2, "0")}:${String(Math.floor(total / 60) % 60).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 });
-const gameTimeIsClock = computed(() => typeof status.value.gameClockSeconds === "number");
+const gameTimeIsClock = computed(
+  () => typeof status.value.gameClockSeconds === "number",
+);
 function message(e: unknown) {
   return e && typeof e === "object" && "message" in e
     ? String(e.message)
@@ -145,14 +165,23 @@ async function refresh() {
     if (captureFrames.value && next.pid) {
       try {
         const frame = await runtimeObserver.frame(next.pid);
-        if (active && captureFrames.value && epoch === captureEpoch.value && version === pollVersion)
+        if (
+          active &&
+          captureFrames.value &&
+          epoch === captureEpoch.value &&
+          version === pollVersion
+        )
           frameUrl.value = `data:${frame.mime};base64,${frame.dataBase64}`;
       } catch {
         // A minimized or transitioning window can fail one frame; keep the last good frame.
       }
     }
     if (!next.running) stopping.value = false;
-    if (next.status?.error) error.value = JSON.stringify({ code: next.status.error, message: next.status.error });
+    if (next.status?.error)
+      error.value = JSON.stringify({
+        code: next.status.error,
+        message: next.status.error,
+      });
     if (next.directory) await runtimeObserver.sync();
   } catch (e) {
     if (active && epoch === captureEpoch.value && version === pollVersion)
@@ -183,7 +212,12 @@ async function start() {
   frameUrl.value = "";
   processMenu.value = false;
   try {
-    const next = await runtimeObserver.start(selectedPid.value, 60, profile.value, observation.value);
+    const next = await runtimeObserver.start(
+      selectedPid.value,
+      60,
+      profile.value,
+      observation.value,
+    );
     if (active) status.value = next;
     else await runtimeObserver.stop();
   } catch (e) {
@@ -211,7 +245,8 @@ async function stop() {
           recent: status.value.recent,
           records: status.value.records,
           eventCounts: status.value.eventCounts,
-          gameClockSeconds: next.gameClockSeconds ?? status.value.gameClockSeconds,
+          gameClockSeconds:
+            next.gameClockSeconds ?? status.value.gameClockSeconds,
           gameTimeSeconds: next.gameTimeSeconds ?? status.value.gameTimeSeconds,
           gamePaused: next.gamePaused ?? status.value.gamePaused,
           clockAdvancing: next.clockAdvancing ?? status.value.clockAdvancing,
@@ -248,107 +283,355 @@ onDeactivated(release);
 onBeforeUnmount(release);
 </script>
 <template>
-  <TabsRoot v-model="mode" as="main" class="console-page">
-    <header class="console-header">
-      <h1>{{ t("runtimeObserver.title") }}</h1>
-      <span v-if="mode === 'live'">{{ t("runtimeObserver.memoryOnly") }}</span>
-      <TabsList class="mode-tabs" :aria-label="t('runtimeObserver.title')">
-        <TabsTrigger value="live">{{ t("diagnostics.liveTab") }}</TabsTrigger>
-        <TabsTrigger value="static">{{
-          t("diagnostics.staticTab")
-        }}</TabsTrigger>
-      </TabsList>
-    </header>
-    <div v-show="mode === 'live'">
-      <TabsContent value="live" force-mount class="mode-panel">
-        <p v-if="error" class="error" role="alert">{{ displayError }}</p>
+  <main class="console-page">
+    <TabsRoot v-model="tool">
+      <header class="console-header">
+        <h1>{{ t("runtimeObserver.title") }}</h1>
+        <TabsList class="tool-tabs" :aria-label="t('devtool.title')">
+          <TabsTrigger value="elements">{{
+            t("devtool.elements")
+          }}</TabsTrigger>
+          <TabsTrigger value="console" disabled>{{
+            t("devtool.console")
+          }}</TabsTrigger>
+          <TabsTrigger value="network">{{ t("devtool.network") }}</TabsTrigger>
+        </TabsList>
+      </header>
+      <TabsContent value="elements" force-mount v-show="tool === 'elements'">
+        <ElementsPanel :pid="selectedPid" :active="tool === 'elements'">
+          <template #process>
+            <div class="element-process">
+              <label class="sr-only" for="devtool-process">{{
+                t("devtool.process")
+              }}</label>
+              <FSelect
+                id="devtool-process"
+                :model-value="selectedPid ? String(selectedPid) : ''"
+                :options="
+                  processes.map((p) => ({
+                    value: String(p.pid),
+                    label: p.name + ' · PID ' + p.pid,
+                  }))
+                "
+                :disabled="status.running"
+                @update:model-value="selectedPid = Number($event)"
+              />
+              <FButton
+                variant="ghost"
+                size="sm"
+                class="scan-process"
+                :title="t('runtimeObserver.scan')"
+                :aria-label="t('runtimeObserver.scan')"
+                :disabled="status.running"
+                @click="scan"
+                ><ScanLine :size="16"
+              /></FButton>
+            </div>
+          </template>
+        </ElementsPanel>
+      </TabsContent>
+      <TabsContent value="network" force-mount v-show="tool === 'network'">
+        <TabsRoot v-model="mode">
+          <TabsList class="mode-tabs" :aria-label="t('devtool.network')">
+            <TabsTrigger value="live">{{ t("devtool.capture") }}</TabsTrigger>
+            <TabsTrigger value="static">{{
+              t("devtool.analysis")
+            }}</TabsTrigger>
+          </TabsList>
+          <div v-show="mode === 'live'">
+            <TabsContent value="live" force-mount class="mode-panel">
+              <p v-if="error" class="error" role="alert">{{ displayError }}</p>
 
-        <section class="summary">
-          <div class="preview" :class="{ ready: captureFrames && frameUrl }">
-            <img v-if="captureFrames && frameUrl" :src="frameUrl" :alt="t('runtimeObserver.frame')" />
-            <span v-else>{{ t("runtimeObserver.previewUnavailable") }}</span>
-          </div>
-          <div class="session">
-            <div class="runtime-strip">
-              <span class="runtime-strip-title">{{ t(status.running || !status.records ? "runtimeObserver.runtimeStatus" : "runtimeObserver.lastGameStatus") }}</span>
-              <span class="runtime-pill" :class="{ paused: gameState === 'paused', active: gameState === 'playing' }">
-                <span class="runtime-dot" aria-hidden="true"></span>
-                {{ t(`runtimeObserver.${gameState}`) }}
-              </span>
-              <span class="runtime-time"><span>{{ t(gameTimeIsClock ? (status.running ? "runtimeObserver.gameClock" : "runtimeObserver.lastGameClock") : "runtimeObserver.gameTime") }}</span><strong>{{ gameTime ?? "—" }}</strong></span>
-              <label class="frame-toggle"><Switch v-model="captureFrames" :aria-label="t('runtimeObserver.captureFrame')" /><span>{{ t("runtimeObserver.captureFrame") }}</span></label>
-              <div class="header-process">
-                <FDropdown v-model:open="processMenuOpen" :width="240">
-                  <template #trigger>
-                    <FButton id="observer-process" class="process-trigger" variant="secondary" :disabled="status.running || busy || !processes.length" :aria-label="t('runtimeObserver.processes')" aria-haspopup="menu" :aria-expanded="processMenuOpen">
-                      {{ selectedProcess ? `${selectedProcess.name} · PID ${selectedProcess.pid}` : t("runtimeObserver.noProcesses") }}
-                      <FIcon class="process-chevron" name="ChevronDown" :size="14" aria-label="" />
-                    </FButton>
-                  </template>
-                  <button v-for="p in processes" :key="p.pid" type="button" role="menuitemradio" :aria-checked="p.pid === selectedPid" @click="selectedPid = p.pid; processMenuOpen = false">
-                    {{ p.name }} · PID {{ p.pid }}
-                  </button>
-                </FDropdown>
-                <FButton variant="secondary" :loading="busy" :disabled="status.running" @click="scan">{{ t("runtimeObserver.scan") }}</FButton>
-              </div>
-            </div>
-            <h2 class="capture-title">{{ t("diagnostics.liveTitle") }}</h2>
-            <p class="capture-hint">{{ t("diagnostics.liveHint") }}</p>
-          </div>
-          <dl class="metrics">
-            <div class="metric-card">
-              <dt>{{ t("runtimeObserver.records") }}</dt>
-              <dd>{{ status.records }}</dd>
-            </div>
-            <div class="metric-card">
-              <dt>{{ t("runtimeObserver.eventTotal") }}</dt>
-              <dd>{{ events }}</dd>
-            </div>
-            <div class="metric-card">
-              <dt>{{ t("runtimeObserver.eventCamera") }}</dt>
-              <dd>
+              <section class="summary">
+                <div
+                  class="preview"
+                  :class="{ ready: captureFrames && frameUrl }"
+                >
+                  <img
+                    v-if="captureFrames && frameUrl"
+                    :src="frameUrl"
+                    :alt="t('runtimeObserver.frame')"
+                  />
+                  <span v-else>{{
+                    t("runtimeObserver.previewUnavailable")
+                  }}</span>
+                </div>
+                <div class="session">
+                  <div class="runtime-strip">
+                    <span class="runtime-strip-title">{{
+                      t(
+                        status.running || !status.records
+                          ? "runtimeObserver.runtimeStatus"
+                          : "runtimeObserver.lastGameStatus",
+                      )
+                    }}</span>
+                    <span
+                      class="runtime-pill"
+                      :class="{
+                        paused: gameState === 'paused',
+                        active: gameState === 'playing',
+                      }"
+                    >
+                      <span class="runtime-dot" aria-hidden="true"></span>
+                      {{ t(`runtimeObserver.${gameState}`) }}
+                    </span>
+                    <span class="runtime-time"
+                      ><span>{{
+                        t(
+                          gameTimeIsClock
+                            ? status.running
+                              ? "runtimeObserver.gameClock"
+                              : "runtimeObserver.lastGameClock"
+                            : "runtimeObserver.gameTime",
+                        )
+                      }}</span
+                      ><strong>{{ gameTime ?? "—" }}</strong></span
+                    >
+                    <label class="frame-toggle"
+                      ><Switch
+                        v-model="captureFrames"
+                        :aria-label="t('runtimeObserver.captureFrame')"
+                      /><span>{{
+                        t("runtimeObserver.captureFrame")
+                      }}</span></label
+                    >
+                    <div class="header-process">
+                      <FDropdown v-model:open="processMenuOpen" :width="240">
+                        <template #trigger>
+                          <FButton
+                            id="observer-process"
+                            class="process-trigger"
+                            variant="secondary"
+                            :disabled="
+                              status.running || busy || !processes.length
+                            "
+                            :aria-label="t('runtimeObserver.processes')"
+                            aria-haspopup="menu"
+                            :aria-expanded="processMenuOpen"
+                          >
+                            {{
+                              selectedProcess
+                                ? `${selectedProcess.name} · PID ${selectedProcess.pid}`
+                                : t("runtimeObserver.noProcesses")
+                            }}
+                            <FIcon
+                              class="process-chevron"
+                              name="ChevronDown"
+                              :size="14"
+                              aria-label=""
+                            />
+                          </FButton>
+                        </template>
+                        <button
+                          v-for="p in processes"
+                          :key="p.pid"
+                          type="button"
+                          role="menuitemradio"
+                          :aria-checked="p.pid === selectedPid"
+                          @click="
+                            selectedPid = p.pid;
+                            processMenuOpen = false;
+                          "
+                        >
+                          {{ p.name }} · PID {{ p.pid }}
+                        </button>
+                      </FDropdown>
+                      <FButton
+                        variant="secondary"
+                        :loading="busy"
+                        :disabled="status.running"
+                        @click="scan"
+                        >{{ t("runtimeObserver.scan") }}</FButton
+                      >
+                    </div>
+                  </div>
+                  <h2 class="capture-title">
+                    {{ t("diagnostics.liveTitle") }}
+                  </h2>
+                  <p class="capture-hint">{{ t("diagnostics.liveHint") }}</p>
+                </div>
+                <dl class="metrics">
+                  <div class="metric-card">
+                    <dt>{{ t("runtimeObserver.records") }}</dt>
+                    <dd><FStatValue :value="$n(status.records)" /></dd>
+                  </div>
+                  <div class="metric-card">
+                    <dt>{{ t("runtimeObserver.eventTotal") }}</dt>
+                    <dd><FStatValue :value="$n(events)" /></dd>
+                  </div>
+                  <div class="metric-card">
+                    <dt>{{ t("runtimeObserver.eventCamera") }}</dt>
+                    <dd>
+                      <FStatValue
+                        :value="
+                          $n(
+                            (status.eventCounts['205419630'] ?? 0) +
+                              (status.eventCounts['205419631'] ?? 0),
+                          )
+                        "
+                      />
+                    </dd>
+                  </div>
+                  <div class="metric-card">
+                    <dt>{{ t("runtimeObserver.synced") }}</dt>
+                    <dd><FStatValue :value="$n(status.synced)" /></dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section
+                class="capture-toolbar"
+                :aria-label="t('runtimeObserver.control')"
+              >
+                <CaptureFilters
+                  v-model="observation"
+                  :disabled="status.running || busy || stopping"
+                />
+                <div
+                  v-if="
+                    !observation.startsWith('city:') &&
+                    observation !== 'map:resources'
+                  "
+                  class="toolbar-profile"
+                >
+                  <label class="profile-picker"
+                    ><span>{{ t("runtimeObserver.profileLabel") }}</span
+                    ><FSelect
+                      v-model="profile"
+                      :options="profileOptions"
+                      :disabled="status.running || busy"
+                      :aria-label="t('runtimeObserver.profileLabel')"
+                  /></label>
+                  <p class="profile-description">
+                    {{ t(`runtimeObserver.profile.${profile}.description`) }}
+                  </p>
+                </div>
+                <div class="toolbar-actions">
+                  <FButton
+                    :disabled="status.running || !selectedPid || !observation"
+                    :loading="busy"
+                    @click="start"
+                    >{{ t("runtimeObserver.start") }}</FButton
+                  >
+                  <FButton
+                    variant="secondary"
+                    :disabled="!status.running || stopping"
+                    @click="stop"
+                    >{{ t("runtimeObserver.stop") }}</FButton
+                  >
+                  <span class="phase" role="status">{{
+                    t("runtimeObserver." + phase)
+                  }}</span>
+                </div>
+              </section>
+
+              <p
+                v-if="capturedObservation.startsWith('city:') && !error"
+                role="status"
+                class="scope-hint"
+              >
                 {{
-                  (status.eventCounts["205419630"] ?? 0) +
-                  (status.eventCounts["205419631"] ?? 0)
+                  status.status?.ready
+                    ? t("observerMenu.cityStatus", {
+                        matched: status.status.matched,
+                        tracked: status.status.tracked,
+                      })
+                    : status.running
+                      ? t("observerMenu.cityWaiting")
+                      : ""
                 }}
-              </dd>
-            </div>
-            <div class="metric-card">
-              <dt>{{ t("runtimeObserver.synced") }}</dt>
-              <dd>{{ status.synced }}</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section class="capture-toolbar" :aria-label="t('runtimeObserver.control')">
-          <CaptureFilters v-model="observation" :disabled="status.running || busy || stopping" />
-          <div v-if="!observation.startsWith('city:')" class="toolbar-profile">
-            <label class="profile-picker"><span>{{ t("runtimeObserver.profileLabel") }}</span><FSelect v-model="profile" :options="profileOptions" :disabled="status.running || busy" :aria-label="t('runtimeObserver.profileLabel')" /></label>
-            <p class="profile-description">{{ t(`runtimeObserver.profile.${profile}.description`) }}</p>
+              </p>
+              <p
+                v-if="capturedObservation === 'map:resources' && !error"
+                role="status"
+                class="scope-hint"
+              >
+                {{
+                  status.status?.ready
+                    ? t("observerMenu.mapStatus", {
+                        tracked: status.status.tracked,
+                      })
+                    : status.running
+                      ? t("observerMenu.mapWaiting")
+                      : ""
+                }}
+              </p>
+              <LogStream
+                :key="`capture-${captureEpoch}`"
+                :rows="status.recent"
+                :target="captureTarget"
+              />
+            </TabsContent>
           </div>
-          <div class="toolbar-actions">
-            <FButton :disabled="status.running || !selectedPid || !observation" :loading="busy" @click="start">{{ t("runtimeObserver.start") }}</FButton>
-            <FButton variant="secondary" :disabled="!status.running || stopping" @click="stop">{{ t("runtimeObserver.stop") }}</FButton>
-            <span class="phase" role="status">{{ t("runtimeObserver." + phase) }}</span>
+          <div v-show="mode === 'static'">
+            <TabsContent value="static" force-mount class="mode-panel">
+              <DiagnosticWorkbench />
+            </TabsContent>
           </div>
-        </section>
-
-        <p v-if="capturedObservation.startsWith('city:') && !error" role="status" class="scope-hint">
-          {{ status.status?.ready
-            ? t("observerMenu.cityStatus", { matched: status.status.matched, tracked: status.status.tracked })
-            : status.running ? t("observerMenu.cityWaiting") : "" }}
-        </p>
-        <LogStream :key="`capture-${captureEpoch}`" :rows="status.recent" :target="captureTarget" />
+        </TabsRoot>
       </TabsContent>
-    </div>
-    <div v-show="mode === 'static'">
-      <TabsContent value="static" force-mount class="mode-panel">
-        <DiagnosticWorkbench />
-      </TabsContent>
-    </div>
-  </TabsRoot>
+    </TabsRoot>
+  </main>
 </template>
 <style scoped>
+.tool-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tool-tabs button {
+  font: inherit;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.tool-tabs button[data-state="active"] {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+.tool-tabs button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.element-process {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.element-process :deep(.f-select-anchor) {
+  width: 240px;
+  max-width: 100%;
+  min-width: 0;
+}
+.element-process :deep(.f-select) {
+  min-height: 30px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+  background: var(--surface);
+}
+.scan-process {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .console-page {
   padding: 16px;
   display: flex;
@@ -430,8 +713,18 @@ dt {
   align-self: center;
   text-align: center;
 }
-.preview.ready { padding: 0; overflow: hidden; background: #050b16; }
-.preview img { display: block; width: 100%; height: 100%; object-fit: contain; outline: 1px solid oklch(1 0 0 / 0.1); }
+.preview.ready {
+  padding: 0;
+  overflow: hidden;
+  background: #050b16;
+}
+.preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  outline: 1px solid oklch(1 0 0 / 0.1);
+}
 .capture-title {
   font-size: 14px;
   margin: 0;
@@ -457,19 +750,73 @@ dt {
   padding-bottom: 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
-.runtime-strip-title { color: var(--muted-foreground); font-size: 11px; }
-.runtime-pill, .runtime-time { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); font-size: 11px; }
-.runtime-pill.active { color: var(--success, #72c7a0); border-color: color-mix(in srgb, var(--success, #72c7a0) 45%, var(--border)); }
-.runtime-pill.paused { color: var(--warning, #d6a85e); border-color: color-mix(in srgb, var(--warning, #d6a85e) 45%, var(--border)); }
-.runtime-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-foreground); }
-.runtime-pill.active .runtime-dot { background: var(--success, #72c7a0); }
-.runtime-pill.paused .runtime-dot { background: var(--warning, #d6a85e); }
-.runtime-time span { color: var(--muted-foreground); }
-.runtime-time strong { font: 600 12px ui-monospace, Consolas, monospace; color: var(--foreground); }
-.header-process { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
-.header-process .process-trigger { min-height: 28px; font-size: 11px; }
-.header-process :deep(button) { white-space: nowrap; }
-.frame-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: 11px; cursor: pointer; }
+.runtime-strip-title {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.runtime-pill,
+.runtime-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  font-size: 11px;
+}
+.runtime-pill.active {
+  color: var(--success, #72c7a0);
+  border-color: color-mix(in srgb, var(--success, #72c7a0) 45%, var(--border));
+}
+.runtime-pill.paused {
+  color: var(--warning, #d6a85e);
+  border-color: color-mix(in srgb, var(--warning, #d6a85e) 45%, var(--border));
+}
+.runtime-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+.runtime-pill.active .runtime-dot {
+  background: var(--success, #72c7a0);
+}
+.runtime-pill.paused .runtime-dot {
+  background: var(--warning, #d6a85e);
+}
+.runtime-time span {
+  color: var(--muted-foreground);
+}
+.runtime-time strong {
+  font:
+    600 12px ui-monospace,
+    Consolas,
+    monospace;
+  color: var(--foreground);
+}
+.header-process {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.header-process .process-trigger {
+  min-height: 28px;
+  font-size: 11px;
+}
+.header-process :deep(button) {
+  white-space: nowrap;
+}
+.frame-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  cursor: pointer;
+}
 .controls {
   display: flex;
   gap: 8px;
@@ -521,8 +868,18 @@ dt {
   font-size: 12px;
   color: var(--muted-foreground);
 }
-.scope-hint { margin: 0; color: var(--muted-foreground); font-size: 11px; }
-.capture-notice { margin: 0; color: var(--warning, #d6a85e); font-size: 11px; line-height: 1.35; max-width: 360px; }
+.scope-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.capture-notice {
+  margin: 0;
+  color: var(--warning, #d6a85e);
+  font-size: 11px;
+  line-height: 1.35;
+  max-width: 360px;
+}
 .metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -539,7 +896,9 @@ dt {
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--surface-elevated) 70%, var(--surface));
 }
-.metric-card dd { font-size: 18px; }
+.metric-card dd {
+  font-size: 18px;
+}
 .capture-toolbar {
   display: flex;
   align-items: center;
@@ -551,10 +910,25 @@ dt {
   background: var(--surface);
   box-shadow: 0 4px 14px rgb(0 0 0 / 10%);
 }
-.toolbar-process, .toolbar-profile, .toolbar-actions { display: grid; gap: 5px; }
-.toolbar-process { min-width: 240px; }
-.toolbar-profile { min-width: 260px; flex: 1 1 280px; }
-.toolbar-actions { margin-inline-start: auto; display: flex; align-items: center; gap: 8px; }
+.toolbar-process,
+.toolbar-profile,
+.toolbar-actions {
+  display: grid;
+  gap: 5px;
+}
+.toolbar-process {
+  min-width: 240px;
+}
+.toolbar-profile {
+  min-width: 260px;
+  flex: 1 1 280px;
+}
+.toolbar-actions {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 dd {
   font-size: 18px;
   font-variant-numeric: tabular-nums;
@@ -590,7 +964,9 @@ dd {
     border-left: 0;
     border-top: 1px solid var(--border);
   }
-  .toolbar-actions { margin-inline-start: 0; }
+  .toolbar-actions {
+    margin-inline-start: 0;
+  }
 }
 @media (max-width: 600px) {
   .summary {

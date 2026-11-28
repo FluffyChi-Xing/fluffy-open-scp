@@ -345,8 +345,9 @@ pub fn generate(
     identity: Option<&connector::Resources>,
     root: &std::path::Path,
     author_building40: bool,
+    game_data: Option<&std::path::Path>,
 ) -> Result<MenuResources, String> {
-    let instance = alloc_menu_instance(spec, resources);
+    let instance = alloc_menu_instance(spec, resources, game_data);
     // Building40 always uses the complete parent-free property recipe. The old
     // minimal clone route dropped the panel and utility fields even though its
     // identity-link checks passed. Other geometry routes retain their bytes.
@@ -978,10 +979,21 @@ fn build_donor_locale(spec: &MenuRegistrationSpec, instance: u32, table: u32) ->
         "    \"0x00000001\" : {}",
         serde_json::to_string(spec.title.trim()).unwrap_or_default()
     )];
-    if let Some(description) = &spec.description {
+    if let Some(description) = spec
+        .description
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         lines.push(format!(
             "    \"0x00000002\" : {}",
             serde_json::to_string(description.trim()).unwrap_or_default()
+        ));
+    } else {
+        // clone_donor_identity always points HASH_DESC at row 2. A title-only
+        // project still needs that row to resolve in the written menu gate.
+        lines.push(format!(
+            "    \"0x00000002\" : {}",
+            serde_json::to_string(spec.title.trim()).unwrap_or_default()
         ));
     }
     lines.push("    \"0xffffffff\" : \"0xffffffff\"".to_string());
@@ -1279,7 +1291,7 @@ fn alloc_raster_instance(
 
 /// 新 instance：标题内容哈希，对已存在 property TGI 线性探测。与构建器
 /// 其它实例分配同契约（内容确定、冲突避让）。
-fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resources) -> u32 {
+fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resources, game_data: Option<&std::path::Path>) -> u32 {
     let mut instance = u32::from_be_bytes(
         Sha256::digest(spec.title.as_bytes())[..4]
             .try_into()
@@ -1288,8 +1300,9 @@ fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resou
     // 游戏原生 unit/lot 实例集（部署安全：新身份不得撞游戏既有 TGI，
     // 否则我们的内容会顶替真实游戏单位——2026-11-08 HopeTower 事故）。
     let mut vanilla: std::collections::HashSet<(u32, u32)> = Default::default();
-    if let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") {
-        for path in crate::game_assets::package_paths(std::path::Path::new(&game_data)) {
+    let configured = std::env::var_os("OPENSCP_GAME_DATA").map(std::path::PathBuf::from);
+    if let Some(game_data) = game_data.or(configured.as_deref()) {
+        for path in crate::game_assets::package_paths(game_data) {
             let Ok(package) = dbpf::Package::open(&path) else {
                 continue;
             };
@@ -1856,6 +1869,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn donor_locale_keeps_the_description_reference_resolvable_when_omitted() {
+        let spec = MenuRegistrationSpec::from_values(&std::collections::BTreeMap::from([
+            ("title".into(), serde_json::json!("Title only")),
+        ])).unwrap();
+        let bytes = build_donor_locale(&spec, 1, 1);
+        let rows: serde_json::Value = serde_json::from_slice(&bytes[3..]).unwrap();
+        assert_eq!(rows["0x00000001"], "Title only");
+        assert_eq!(rows["0x00000002"], "Title only");
+    }
+
+    #[test]
     fn graphics_unit_contract_requires_both_interior_switches() {
         // 回归防护（夜灯反复十几次的类别）：图形单元缺任一开关 → 构建期直接失败，
         // 不再等到进游戏才发现窗格全黑。
@@ -2142,7 +2166,7 @@ mod tests {
 /// 128×128 工具图标 PNG：`iconPng` 指向项目内真实 PNG 时原样使用；
 /// 缺失/非法文件 fail-closed（不再静默回退占位图——r10 类"图没换也没人
 /// 知道"的静默失败必须消失）。空串 = 生成占位棋盘。
-fn build_icon_png(
+pub(crate) fn build_icon_png(
     spec: &MenuRegistrationSpec,
     instance: u32,
     root: &std::path::Path,
@@ -2194,7 +2218,7 @@ fn build_icon_png(
 
 /// 454×263 rollover 大图 JPG：`marqueePng` 指向项目内真实 JPG 时原样使用；
 /// 缺失/非 JPG 时 fail-closed。空串 = 生成占位横幅。
-fn build_marquee_jpg(
+pub(crate) fn build_marquee_jpg(
     spec: &MenuRegistrationSpec,
     instance: u32,
     root: &std::path::Path,

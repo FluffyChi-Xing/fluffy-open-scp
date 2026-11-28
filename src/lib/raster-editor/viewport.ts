@@ -9,10 +9,11 @@ export function viewportToPixel(
   rect: { left: number; top: number },
   pan: { x: number; y: number },
   zoom: number,
+  zoomY = zoom,
 ): { x: number; y: number } {
   const scale = Math.max(0.0001, zoom);
   return {
     x: Math.floor((client.x - rect.left - pan.x) / scale),
-    y: Math.floor((client.y - rect.top - pan.y) / scale),
+    y: Math.floor((client.y - rect.top - pan.y) / Math.max(0.0001, zoomY)),
   };
 }

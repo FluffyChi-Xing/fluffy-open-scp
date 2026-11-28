@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { Mesh } from "three";
 import {
   inspectGlb,
+  cloneCachedLotModelObjects,
+  getLotModelObjects,
   normalizeLotModelScene,
   parseLotModelContainer,
   parseLotModelObjects,
+  releaseLotModelCache,
   rotationXForUpAxis,
 } from "./three-gltf";
 
@@ -259,6 +263,26 @@ describe("imported model axis", () => {
     expect(view.min[1]).toBeCloseTo(0, 1);
     expect(view.max[1]).toBeCloseTo(37, 1);
   }, 20000);
+
+  it("reuses decoded geometry for the Lot drawing without sharing model positions", async () => {
+    const payload = parseLotModelContainer(buildPayload([], [], [], []));
+    payload.glbs = [await nativeStyleGlb()];
+    expect(cloneCachedLotModelObjects(payload)).toBeNull();
+    try {
+      const [viewport] = await getLotModelObjects(payload);
+      const [drawing] = cloneCachedLotModelObjects(payload)!;
+      const [viewportMesh] = viewport.getObjectsByProperty("isMesh", true) as Mesh[];
+      const [drawingMesh] = drawing.getObjectsByProperty("isMesh", true) as Mesh[];
+      // Projection may update scene matrices without changing the 3D view transforms.
+      drawing.position.set(3, 4, 5);
+      expect(viewport.position.toArray()).toEqual([0, 0, 0]);
+      expect(drawing).not.toBe(viewport);
+      expect(drawingMesh.geometry).toBe(viewportMesh.geometry);
+      expect(cloneCachedLotModelObjects({ ...payload })).toBeNull();
+    } finally {
+      releaseLotModelCache();
+    }
+  });
 
   /** 最小 GLB 容器（仅 asset.extras + POSITION 包围盒，供轴向判定）。 */
   function axisFixture(axis?: unknown): ArrayBuffer {

@@ -40,7 +40,7 @@ pub(super) struct Conflict {
     other_bundle: String,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Debug)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Report {
     conflicts: Vec<Conflict>,
@@ -49,6 +49,7 @@ pub(super) struct Report {
 
 fn bundles(node: &Value) -> Result<BTreeSet<u32>, String> {
     let program = compile(None, std::slice::from_ref(node))?;
+    let program = if program.units.len()==1 { program.units.into_iter().next().unwrap().program } else { program };
     let mut bundles: BTreeSet<_> = program
         .ensure_bundles
         .into_iter()
@@ -63,8 +64,27 @@ fn bundles(node: &Value) -> Result<BTreeSet<u32>, String> {
     Ok(bundles)
 }
 
+fn shared_retail_shopper_bin(first: u32, second: u32, bin: u32) -> bool {
+    let retail = |id| matches!(id, 0x3A82_63E1..=0x3A82_63E3)
+        || super::behavior_commercial_mixed::STREET.contains(&id);
+    let tourist = |id| matches!(id, 0x75D2_2FD0..=0x75D2_2FD2);
+    matches!(bin, 0xC1F5_69B9 | 0xCE6E_3D2D)
+        && ((retail(first) && tourist(second)) || (tourist(first) && retail(second)))
+}
+
 pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
     let nodes = parse_nodes(nodes)?;
+    if super::behavior_casino::requested(&nodes)
+        && nodes.iter().any(|node| node["id"] == added_id)
+        && nodes.iter().all(|node| matches!(node["type"].as_str(), Some("tourism" | "casino")))
+    {
+        // These leaves form one native visitor recipe with shared bins.
+        super::behavior_casino::select(&nodes, super::author_tourism::selected(&nodes))?;
+        return Ok(Report::default());
+    }
+    if super::behavior_units::scoped(&nodes) {
+        super::behavior_units::compile(None, &nodes)?;
+    }
     let added = nodes
         .iter()
         .find(|node| node["id"] == added_id)
@@ -79,6 +99,10 @@ pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
         }
     }
     for other in nodes.iter().filter(|node| node["id"] != added_id) {
+        if added["unit"].is_string()
+            && other["unit"].as_str().map(str::trim) != added["unit"].as_str().map(str::trim) {
+            continue;
+        }
         let other_id = other["id"]
             .as_str()
             .ok_or("BEHAVIOR_BIN_CHECK: missing leaf id")?;
@@ -102,7 +126,10 @@ pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
                 for bin in added_bins
                     .iter()
                     .copied()
-                    .filter(|bin| other_bins.contains(bin))
+                    .filter(|bin| {
+                        other_bins.contains(bin)
+                            && !shared_retail_shopper_bin(added_bundle, other_bundle, *bin)
+                    })
                 {
                     collisions
                         .entry(bin)
@@ -126,10 +153,45 @@ pub(super) fn check(nodes: &[Value], added_id: &str) -> Result<Report, String> {
     Ok(report)
 }
 
+/// Match the actual new-building compiler before comparing local bins.
+/// Identical bin hashes in distinct component Units cannot collide.
+pub(super) fn check_building(nodes:&[Value],added_id:&str)->Result<Report,String>{
+    let nodes=parse_nodes(nodes)?;
+    if !nodes.iter().any(|n|n["id"]==added_id){return Err("BEHAVIOR_BIN_CHECK: missing added leaf".into());}
+    if super::behavior_copan_base::supports(&nodes){
+        super::behavior_copan_base::compile_building(None,&nodes)?;
+        Ok(Report::default())
+    }else{check(&nodes,added_id)}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn building_check_uses_isolated_scopes_and_still_rejects_duplicates_and_limit(){
+        let nodes=[json!({"id":"park","type":"park","params":{}}),
+            json!({"id":"visits","type":"tourism","params":{"tourismProfile":"native-tourism-v1"}})];
+        assert!(check_building(&nodes,"visits").unwrap().conflicts.is_empty());
+        let duplicate=[nodes[0].clone(),json!({"id":"park2","type":"park","params":{}})];
+        assert!(check_building(&duplicate,"park2").unwrap_err().starts_with("BEHAVIOR_LEAF_CONFLICT"));
+        let too_many=["park","tourism","office","commercial","residence"].map(|kind|json!({"id":kind,"type":kind,"params":{}}));
+        assert!(check_building(&too_many,"park").unwrap_err().starts_with("BEHAVIOR_LEAF_LIMIT"));
+    }
+
+    #[test]
+    fn retail_and_tourism_intentionally_share_one_shopper_pool() {
+        let nodes = [
+            json!({"id":"retail","type":"commercial","params":{"commercialProfile":"ground-megatower-mall-w2-v1","shoppers":20}}),
+            json!({"id":"tourism","type":"tourism","params":{"tourismProfile":"native-tourism-v1","shoppers":175}}),
+        ];
+        let program = compile(None, &nodes).unwrap();
+        assert!(program.native_tourism.is_some());
+        assert!(!program.set_float_fields.contains_key(&0x0AD6_A725));
+        assert!(check(&nodes, "tourism").unwrap().conflicts.is_empty());
+        assert!(check(&nodes, "retail").unwrap().conflicts.is_empty());
+    }
 
     #[test]
     fn reports_real_open_shopper_overlap_between_park_and_tourism() {
@@ -143,6 +205,10 @@ mod tests {
                 && row.name.as_deref() == Some("OpenShoppers")
                 && row.other_bundle == "6EA8E701"
         }));
+        let mut same_unit = nodes.clone();
+        same_unit[0]["unit"] = json!(" shared ");
+        same_unit[1]["unit"] = json!("shared");
+        assert!(!check(&same_unit, "tourism").unwrap().conflicts.is_empty());
     }
 
     #[test]

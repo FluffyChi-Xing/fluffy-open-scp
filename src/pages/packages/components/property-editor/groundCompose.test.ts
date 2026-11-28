@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composeGroundPixels,
+  composeGroundPreview,
   groundOutputSize,
   type GroundComposeInput,
   type Pixels,
@@ -286,4 +287,17 @@ describe("groundOutputSize（图案原生密度 = 探针 hires 口径）", () =>
     expect(groundOutputSize(128, 128, 1, 1, 0)).toEqual({ width: 512, height: 512 });
     expect(groundOutputSize(128, 128, 9, 9, 1)).toEqual({ width: 512, height: 512 });
   });
+});
+
+it("worker preview matches the previous compose then enhancement pipeline byte for byte", () => {
+  const request = input({
+    rawMask: pixels(2, 2, () => [255, 0, 0, 0]),
+    normalAtlas: atlas16(),
+    enhanceTintDetail: true,
+  });
+  const previous = composeGroundPixels(request);
+  enhanceTintDetail(previous.albedo, previous.normal, previous.width, previous.height, request.rawMask! as ImageData);
+  const result = composeGroundPreview(request);
+  expect(result.albedo).toEqual(previous.albedo);
+  expect(result.normal).toEqual(previous.normal);
 });

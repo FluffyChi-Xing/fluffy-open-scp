@@ -17,6 +17,7 @@ import type {
   Tgi,
 } from "@/api/tauri";
 import DecalImageViewerSheet from "./DecalImageViewerSheet.vue";
+import { decalPlacementKind } from "@/lib/decalPlacement";
 
 const props = defineProps<{
   packageId: number;
@@ -24,6 +25,7 @@ const props = defineProps<{
   compact?: boolean;
   placeable?: boolean;
   scrollRoot?: HTMLElement | null;
+  showPlacementType?: boolean;
 }>();
 const emit = defineEmits<{ place: [entry: DecalEntryMeta] }>();
 
@@ -51,6 +53,7 @@ const gridRef = ref<HTMLElement | null>(null);
 const BATCH_SIZE = 8;
 
 const entries = computed(() => dictionary.value?.entries ?? []);
+const placementKind = computed(() => decalPlacementKind(dictionary.value?.material?.instance));
 const entriesByIndex = computed(() => new Map(entries.value.map((entry) => [entry.index, entry])));
 
 const filtered = computed(() => {
@@ -391,6 +394,13 @@ watch([gridRef, filtered, () => props.scrollRoot], observeCells, { flush: "post"
           @pointerdown="pickForPlacement($event, entry)"
           @click="openViewer(entry.index)"
         >
+          <span
+            v-if="showPlacementType"
+            class="decal-placement-tag"
+            :data-placement="placementKind"
+            :title="$t(`decal.placement.${placementKind}Hint`)"
+            :aria-label="$t(`decal.placement.${placementKind}Hint`)"
+          >{{ $t(`decal.placement.${placementKind}`) }}</span>
           <span class="decal-cell-thumb">
             <img
               v-if="thumb(entry.index)"
@@ -546,6 +556,7 @@ watch([gridRef, filtered, () => props.scrollRoot], observeCells, { flush: "post"
   }
 }
 .decal-cell {
+  position: relative;
   align-items: center;
   background: var(--surface-elevated);
   border: 1px solid var(--border);
@@ -557,6 +568,21 @@ watch([gridRef, filtered, () => props.scrollRoot], observeCells, { flush: "post"
   gap: 3px;
   padding: 6px 5px;
   text-align: center;
+}
+.decal-placement-tag {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  max-width: calc(100% - 8px);
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  color: var(--foreground);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 .decal-cell:hover {
   background: var(--surface-hover);

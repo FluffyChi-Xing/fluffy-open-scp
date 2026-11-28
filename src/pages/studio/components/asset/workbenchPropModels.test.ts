@@ -51,3 +51,19 @@ it("binds the model read from a reopened package to the saved prop's render key"
     treeModelPayloadCount: 0, simPartsCount: 0,
   })).toMatchObject({ kind: "prop" });
 });
+
+it("recovers a legacy saved prop when its process-local package handle has expired", async () => {
+  const placed = { ...vehicle, modelTgi, modelPackageId: 3 };
+  const source = {
+    openPackage: vi.fn(),
+    readLotModelMeshes: vi.fn().mockRejectedValueOnce(new Error("package missing"))
+      .mockResolvedValueOnce(new ArrayBuffer(0)),
+    resolvePropModels: vi.fn().mockResolvedValue({ resolutions: [
+      { resourceId: 1, packageId: 19, models: [modelTgi] },
+    ] }),
+  };
+  const result = await loadPlacedPropModel(source, placed);
+  expect(source.resolvePropModels).toHaveBeenCalledWith([1]);
+  expect(source.readLotModelMeshes).toHaveBeenLastCalledWith(19, modelTgi);
+  expect(result?.key).toBe(`3:${0x2f4e681b}:0:13`);
+});

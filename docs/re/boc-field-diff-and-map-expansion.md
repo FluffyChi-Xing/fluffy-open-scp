@@ -2,6 +2,8 @@
 
 记录日期：2026-10-10。
 
+2026-11-15 补充：下面“脚本相同”只适用于当时抽出的核心载荷。对指定目录同修订完整脚本包重新验哈希并逐 TGI 对拍，普通版有 194 条 Property 差异（含 106 个 PathEntry 的过滤器字段），OverPlop 相对普通版另有 42 条。见[全区域单城研究与样本身份](full-region-city-research-20261115.md#旧-boc-包究竟改了什么)。
+
 ## 先把“字段级 diff”说准确
 
 SimCity 的 `.package` 覆盖单位是完整的 DBPF resource，索引键是

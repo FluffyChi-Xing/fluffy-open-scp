@@ -190,6 +190,27 @@ pub(crate) fn workbench_lotm_with_meshes(meshes: u32) -> Vec<u8> {
     bytes
 }
 
+#[test]
+fn source_uv_convention_reaches_building40_vertex_bytes() {
+    let mut doc = super::lotm::parse(&workbench_lotm()).unwrap();
+    let template = include_bytes!("../../resources/sc5/175EFB4E.research-template.rw4");
+    let collision = include_bytes!("../../resources/sc5/collision-source.rw4");
+    for (convention, expected) in [("native-v-down", [0.0, 50.0]), ("blender-v-up", [1.0, -49.0])] {
+        doc.diagnostics = serde_json::json!({"schema":"openscp.ny-native/1","source":"OpenSCP native Rust","uvConvention":convention}).to_string();
+        let compiled = super::author_building40::compile_model(&doc, 0, template, collision).unwrap();
+        let file = rw4::Rw4File::parse(&compiled.compiled.rw4).unwrap();
+        let vertex_blob = file.sections_of_type(rw4::SectionType::BLOB)
+            .find(|section| section.size as usize == compiled.compiled.vertex_count * 40).unwrap();
+        let bytes = file.payload(&compiled.compiled.rw4, vertex_blob.number).unwrap();
+        for (offset, value) in [(28, expected[0]), (36, expected[1])] {
+            assert_eq!(f32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()), value);
+        }
+        assert_eq!(f32::from_le_bytes(bytes[32..36].try_into().unwrap()), 40.0);
+    }
+    doc.diagnostics = r#"{"schema":"openscp.ny-native/1","source":"OpenSCP native Rust","uvConvention":"ambiguous"}"#.into();
+    assert!(super::author_building40::compile_model(&doc, 0, template, collision).is_err());
+}
+
 fn source_lot_property() -> Vec<u8> {
     let transform = |x: f32| {
         Value::Transform(sc_properties::Transform {
@@ -214,8 +235,10 @@ fn source_lot_property() -> Vec<u8> {
                 hash: 0x00F9_EFBA,
                 prop_type: PropType::BoundingBox,
                 kind: Kind::Scalar(Value::BoundingBox {
-                    min: [-4.0, -4.0, 0.0],
-                    max: [0.0, 0.0, 4.0],
+                    // The v9 fixture uses Building40's native 0-degree
+                    // contract; its mesh spans positive XY, not legacy 180.
+                    min: [0.0, 0.0, 0.0],
+                    max: [4.0, 4.0, 4.0],
                 }),
                 encoding: PropertyEncoding::default(),
             },

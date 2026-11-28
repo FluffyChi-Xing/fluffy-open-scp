@@ -55,6 +55,9 @@ export default defineConfig(({ mode }) => {
      * 「发现新依赖 → 重新优化 → 整页刷新」的二次卡顿。
      */
     optimizeDeps: {
+      // Only the real application is an entry point. Temporary probe HTML
+      // files under tmp/tools must not enter cold-start dependency scanning.
+      entries: ['./index.html'],
       include: [
         'three',
         'three/examples/jsm/controls/TransformControls.js',

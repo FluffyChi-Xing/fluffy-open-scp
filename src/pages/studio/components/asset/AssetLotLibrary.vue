@@ -5,10 +5,11 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { tauriApi } from "@/api";
 import type { PropertyDocumentSummary, Tgi } from "@/api/tauri";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import AssetLotDiagram from "./AssetLotDiagram.vue";
 import AssetAuthoredLotSection from "./AssetAuthoredLotSection.vue";
 import type { AuthoredLot } from "@/lib/lot-ground/authored";
+import type { LotModelProjection } from "@/components/raster/lotModelProjection";
 
 /** 应用载荷：Lot 资源位置（会话层据此读取并套用尺寸/四色分层）。 */
 export interface LotPresetRef {
@@ -29,6 +30,9 @@ const props = defineProps<{
   editMode: "native" | "draft";
   /** 当前地块绑定的是自绘地面。 */
   authoredBound: boolean;
+  allowNativeGround?: boolean;
+  lotSize?: [number, number] | null;
+  projection?: LotModelProjection | null;
 }>();
 const emit = defineEmits<{
   apply: [preset: LotPresetRef];
@@ -37,7 +41,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const packages = useGamePackagesStore();
+const packages = useEditorPackageContext();
 const busy = ref(false);
 const error = ref("");
 const search = ref("");
@@ -52,8 +56,9 @@ interface LotEntry {
 const groups = shallowRef<{ name: string; entries: LotEntry[] }[]>([]);
 const PER_GROUP_CAP = 48;
 
+let scanEpoch = 0;
 async function scan() {
-  if (busy.value) return;
+  const epoch = ++scanEpoch;
   busy.value = true;
   error.value = "";
   try {
@@ -80,6 +85,7 @@ async function scan() {
         }
       }),
     );
+    if (epoch !== scanEpoch) return;
     groups.value = results
       .flat()
       .reduce<{ name: string; entries: LotEntry[] }[]>((acc, entry) => {
@@ -90,9 +96,9 @@ async function scan() {
       }, [])
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch (cause) {
-    error.value = String(cause);
+    if (epoch === scanEpoch) error.value = String(cause);
   } finally {
-    busy.value = false;
+    if (epoch === scanEpoch) busy.value = false;
   }
 }
 onMounted(scan);
@@ -156,8 +162,10 @@ watch(
     <AssetAuthoredLotSection
       :project="project"
       :edit-enabled="editEnabled"
-      :edit-mode="editMode"
+      :edit-mode="allowNativeGround ? 'draft' : editMode"
       :bound="authoredBound"
+      :lot-size="lotSize"
+      :projection="projection"
       @apply="emit('applyAuthored', $event)"
       @saved="emit('authoredSaved', $event)"
     />
@@ -213,7 +221,7 @@ watch(
                   {{ hex32(entry.tgi.instance) }}
                 </code>
                 <span v-if="entry.lotSize" class="lot-card-size">
-                  {{ entry.lotSize[0] }} × {{ entry.lotSize[1] }} m
+                  {{ entry.lotSize[0].toFixed(1) }} × {{ entry.lotSize[1].toFixed(1) }} m
                 </span>
                 <button
                   type="button"

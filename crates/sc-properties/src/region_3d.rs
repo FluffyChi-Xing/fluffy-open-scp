@@ -258,7 +258,7 @@ pub fn template_name_for_group(group: u32) -> Option<&'static str> {
 
 /// 注册表查找：全名 → 归一化（去 `_`/`-` 小写）→ SC_ 前缀剥离 → 包含。
 /// （模板名 "SC_Desolation" ↔ 注册表键 "Desolation" 这类差异）
-fn registry_lookup<'a>(
+pub fn registry_lookup<'a>(
     registry: &'a HashMap<String, (u32, HashMap<String, u32>)>,
     template_name: &str,
 ) -> Option<&'a (u32, HashMap<String, u32>)> {

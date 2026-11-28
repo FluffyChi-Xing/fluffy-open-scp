@@ -6,7 +6,7 @@
  * 渲染管线：sc_properties::region_3d（341-tile 金字塔 + ED 地面场 +
  * 水位面 4928(-870m) + 地块名/伟工位；three.js 位移网格 + 引擎式顶点色）。
  */
-import { computed, ref, shallowRef } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { hasStateResource } from "@/components/map/map-state-fields";
 import { invoke } from "@tauri-apps/api/core";
@@ -16,12 +16,13 @@ import FDropdown from "@/components/ui/FDropdown.vue";
 
 
 import MapPreviewPane from "@/components/map/MapPreviewPane.vue";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackages } from "@/composables/useEditorPackages";
+import EditorPackagesBar from "@/components/EditorPackagesBar.vue";
 import { ecoChannel } from "@/components/map/map-fields";
 import type { Region3DData, RegionSummary } from "@/lib/region-map";
 
 const { t, te, locale } = useI18n();
-const gamePackages = useGamePackagesStore();
+const gamePackages = useEditorPackages("terrain");
 
 function resourceAvailable(kind: string) {
   return ecoChannel(kind) !== null || hasStateResource(render.value, kind);
@@ -167,10 +168,14 @@ function resourceLabel(kind: string): string {
   const key = `studio.map.res${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
   return te(key) ? t(key) : kind;
 }
+watch(() => gamePackages.opened.map(p => p.package.packageId), ids => {
+  void selectPackage(ids[0] ?? null);
+});
 </script>
 
 <template>
   <section class="map-page">
+    <EditorPackagesBar :scope="gamePackages" />
     <header class="map-command-bar">
       <h2 class="map-heading"><FIcon name="Map" :size="19" />{{ t("studio.map.title") }}</h2>
       <div class="toolbar" role="group" :aria-label="t('studio.map.configLabel')">

@@ -19,6 +19,12 @@ import {
   type LogicNodeSpec,
 } from "./logicGraph";
 
+it("flags duplicate behavior kinds restored from a document before building", () => {
+  const first = addLogicNode(emptyLogicGraph(), leafSpec("park"), [0, 0]);
+  const second = addLogicNode(first.graph, leafSpec("park"), [0, 0]);
+  expect(logicIssues(second.graph)).toContainEqual({ code: "behaviorLeafDuplicate", nodeId: second.node.id });
+});
+
 const spec = (kind: LogicNodeSpec["kind"], leafType?: LogicNodeSpec["leafType"]) =>
   LOGIC_NODE_SPECS.find(
     (item) => item.kind === kind && item.leafType === leafType,
@@ -137,6 +143,22 @@ describe("logicIssues", () => {
     });
     const codes = logicIssues(graph).map((issue) => issue.code);
     expect(codes).toContain("coreAmount:power");
+  });
+
+  it("keeps utility cycles across document restore and rejects unsafe intervals", () => {
+    let graph = addLogicNode(emptyLogicGraph(), coreSpec, [0, 0]).graph;
+    graph = connectLogic(graph, "core-1", "asset", "behavior").graph;
+    for (const name of ["power", "water"] as const) {
+      for (const rate of [null, 1, 30, 16_777_216]) {
+        const changed = updateLogicParams(graph, "core-1", { [name]: { mode: "explicit", amount: 25, rate } });
+        expect(logicIssues(changed)).toEqual([]);
+        expect(normalizeLogicGraph(JSON.parse(JSON.stringify(changed))).params["core-1"]).toEqual(changed.params["core-1"]);
+      }
+      for (const rate of [0, -1, 0.5, 30.5, 16_777_218]) {
+        const changed = updateLogicParams(graph, "core-1", { [name]: { mode: "explicit", amount: 25, rate } });
+        expect(logicIssues(changed).map(issue => issue.code)).toContain(`coreRate:${name}`);
+      }
+    }
   });
 
   it("accepts a complete education leaf", () => {

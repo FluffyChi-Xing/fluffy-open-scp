@@ -53,29 +53,37 @@
   --accent-gradient: linear-gradient(120deg, #02B0EE 0%, #0B93FD 75%, #76D6E9 100%);
 
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --background: #F6F8FB;
+  --background: #EDF2F8;
   --surface: #FFFFFF;
   --surface-elevated: #FBFCFE;
-  --surface-hover: #EDF3F7;
+  --surface-hover: #E6EDF5;
   --foreground: #0E1728;
-  --muted-foreground: #52667D;
-  --subtle-foreground: #78899F;
-  --border: #E2E9F0;
-  --border-strong: #CBD5DF;
-  --primary: var(--brand);
+  --muted-foreground: #384D66;
+  --subtle-foreground: #52667D;
+  --border: #CBD5DF;
+  --border-strong: #9CAABC;
+  --primary: color-mix(in srgb, var(--brand) 76%, var(--scp-primary-900));
   --primary-foreground: #FFFFFF;
-  --primary-hover: color-mix(in srgb, var(--brand) 88%, black);
+  --primary-hover: color-mix(in srgb, var(--primary) 84%, black);
   --accent: color-mix(in srgb, var(--brand) 9%, transparent);
-  --accent-foreground: color-mix(in srgb, var(--brand) 78%, var(--foreground));
-  --success: #04914C;
-  --warning: #C57C00;
-  --danger: #F4241C;
-  --info: #1280FE;
-  --ring: color-mix(in srgb, var(--brand) 72%, white);
+  --accent-foreground: color-mix(in srgb, var(--primary) 84%, var(--foreground));
+  --success: var(--scp-success-700);
+  --warning: var(--scp-warning-700);
+  --danger: var(--scp-error-700);
+  --info: var(--scp-info-800);
+  --ring: var(--primary);
   --sidebar: #FBFCFE;
   --sidebar-hover: #EDF3F7;
   --sidebar-active: color-mix(in srgb, var(--brand) 10%, transparent);
-  --sidebar-active-foreground: color-mix(in srgb, var(--brand) 82%, var(--foreground));
+  --sidebar-active-foreground: var(--accent-foreground);
+
+  --glass-opacity: 82%;
+  --glass-ambient: 9%;
+  --glass-rim: 85%;
+  --motion-fast: 140ms;
+  --motion-enter: 280ms;
+  --motion-emphasis: 440ms;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* elevation: shadow-xs/sm/md/lg/xl/2xl per token sheet */
   --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
@@ -108,6 +116,7 @@
   --subtle-foreground: #78899F;
   --border: #223349;
   --border-strong: #384D66;
+  --primary: var(--brand);
   --primary-hover: color-mix(in srgb, var(--brand) 86%, white);
   --accent: color-mix(in srgb, var(--brand) 18%, transparent);
   --accent-foreground: color-mix(in srgb, var(--brand) 55%, white);
@@ -116,6 +125,9 @@
   --danger: #FC5D4F;
   --info: #66B2FC;
   --ring: color-mix(in srgb, var(--brand) 72%, white);
+  --glass-opacity: 72%;
+  --glass-ambient: 13%;
+  --glass-rim: 9%;
   --sidebar: #101A30;
   --sidebar-hover: #1D2B40;
   --sidebar-active: color-mix(in srgb, var(--brand) 22%, transparent);

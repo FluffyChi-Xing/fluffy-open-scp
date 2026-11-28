@@ -173,27 +173,15 @@ pub fn compile_model_with_transform(
     collision_source: &[u8],
 ) -> Result<AuthorModel, String> {
     let scene = transform.map(SceneTransform::new).transpose()?;
+    let source_uv = super::source_uv::SourceUv::from_diagnostics(&doc.diagnostics)?;
     if doc.version != 9 {
         return Err(format!(
             "author Building40 route requires LOTM9, received LOTM{}",
             doc.version
         ));
     }
-    if doc.meshes.len() != doc.materials.len() {
-        return Err(format!(
-            "author Building40 route requires one material per source group ({} meshes, {} materials)",
-            doc.meshes.len(),
-            doc.materials.len()
-        ));
-    }
-    if doc.meshes.is_empty() || doc.meshes.len() > 128 {
-        return Err(format!(
-            "author Building40 palette supports 1..=128 source groups, received {}",
-            doc.meshes.len()
-        ));
-    }
+    let layout = super::author_material_groups::material_layout(doc)?;
     let rotation = rotate_xyz_matrix(rotation_degrees)?;
-    let parameter_width = doc.meshes.len().next_power_of_two();
     let mut vertices = Vec::<[u8; 40]>::new();
     let mut indices = Vec::<u32>::new();
     let mut source_triangles = 0usize;
@@ -208,6 +196,7 @@ pub fn compile_model_with_transform(
     let mut max = [f32::NEG_INFINITY; 3];
 
     for (group, glb) in doc.meshes.iter().enumerate() {
+        let material_row = layout.row_by_group[group] as u8;
         let (document, bin) = parse_glb(glb)?;
         let primitive = document
             .pointer("/meshes/0/primitives/0")
@@ -314,9 +303,9 @@ pub fn compile_model_with_transform(
                 write_f32x3(&mut bytes[0..12], p);
                 bytes[12..16].copy_from_slice(&packed_normal);
                 bytes[16..20].copy_from_slice(&packed_tangent);
-                bytes[20..24].copy_from_slice(&[0, 0, group as u8, seed]);
-                write_f32x2(&mut bytes[24..32], [uv[0], 1.0 - uv[1]]);
-                write_f32x2(&mut bytes[32..40], [uv_top[0], 1.0 - uv_top[1]]);
+                bytes[20..24].copy_from_slice(&[0, 0, material_row, seed]);
+                write_f32x2(&mut bytes[24..32], source_uv.adapt(uv));
+                write_f32x2(&mut bytes[32..40], source_uv.adapt(uv_top));
                 for axis in 0..3 {
                     min[axis] = min[axis].min(p[axis]);
                     max[axis] = max[axis].max(p[axis]);
@@ -370,13 +359,6 @@ pub fn compile_model_with_transform(
         source_triangles,
         removed_degenerate_triangles: removed,
         bounds: [min, max],
-    })
-    .and_then(|model| {
-        if model.compiled.vertex_count == 0 || model.source_groups > parameter_width {
-            Err("author Building40: parameter table does not cover material rows".into())
-        } else {
-            Ok(model)
-        }
     })
 }
 

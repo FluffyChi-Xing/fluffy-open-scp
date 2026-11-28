@@ -104,11 +104,9 @@ describe("planUnit 分发语义（与旧 renderers 对齐）", () => {
     expect(planUnit(unit, context())).toBeNull();
   });
 
-  it("spawner：无小人资产 → null；有资产 → intrinsic", () => {
+  it("keeps spawners on the marker path even with Sim assets available", () => {
     expect(planUnit(spawner(), context({ simPartsCount: 0 }))).toBeNull();
-    const plan = planUnit(spawner(), context({ simPartsCount: 2 }));
-    expect(plan?.kind).toBe("spawner");
-    expect(plan?.scale).toEqual({ kind: "intrinsic" });
+    expect(planUnit(spawner(), context({ simPartsCount: 2 }))).toBeNull();
   });
 
   it("稳定 id 与旧 unitId 一致", () => {

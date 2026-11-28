@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, provide, ref, watch } from "vue";
+import EditorPackagesBar from "@/components/EditorPackagesBar.vue";
+import { EDITOR_PACKAGES, useEditorPackages } from "@/composables/useEditorPackages";
 import { useI18n } from "vue-i18n";
+import { initializeBlendScene } from "./blendSceneInitialization";
+import type { NativeBlendImport } from "./blendSceneTypes";
+import { importedLotSize } from "@/lib/lot-ground/lotDrawing";
+import type { LotModelProjection } from "@/components/raster/lotModelProjection";
+import { saveAuthoredLot } from "./authoredLotStore";
 import { useEventListener } from "@vueuse/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
-import FSpinner from "@/components/ui/FSpinner.vue";
+import FStartupLoading from "@/components/ui/FStartupLoading.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
 import MonacoEditor from "@/components/ui/MonacoEditor.vue";
@@ -14,7 +21,7 @@ import { command } from "@/api/tauri";
 import type { Tgi } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import SchemaPropertyViewport from "@/pages/packages/components/property-editor/SchemaPropertyViewport.vue";
+import SchemaPropertyViewport from "./WorkbenchSchemaViewport.vue";
 import PropertyEditorOutliner from "@/pages/packages/components/property-editor/PropertyEditorOutliner.vue";
 import UnitInspector from "@/pages/packages/components/unit-inspector/UnitInspector.vue";
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
@@ -42,6 +49,7 @@ import AssetLotLibrary from "./AssetLotLibrary.vue";
 import type { AuthoredLot } from "@/lib/lot-ground/authored";
 import AssetMaterialSlotsPanel from "./AssetMaterialSlotsPanel.vue";
 import PackageProjectForm from "./PackageProjectForm.vue";
+import VanillaVariantPicker from "./VanillaVariantPicker.vue";
 
 /**
  * Assets Mod 工作台（Blender 式三栏，2026-10-25 彻底重构）：
@@ -51,12 +59,43 @@ import PackageProjectForm from "./PackageProjectForm.vue";
  *  Schema(Monaco) + 检查器（原 property editor 右侧四页签）。
  * 资产来源：GLB/LOTM 文件（Blender 六槽烘焙管线）或 TGI 直接解析游戏包。
  */
-const props = defineProps<{ project: string }>();
+const props = defineProps<{
+  project: string;
+  variantSchemaPath?: string;
+  variantSource?: { packagePath: string; lot: string };
+}>();
 
 const { t } = useI18n();
 const toast = useToast();
-const asset = useWorkbenchAsset(props.project);
+const dependencies = useEditorPackages("assets");
+provide(EDITOR_PACKAGES, dependencies);
+const asset = useWorkbenchAsset(props.project, Boolean(props.variantSchemaPath), dependencies);
 const ui = asset.ui;
+const pathDrawing = computed(() => asset.activePathId.value !== null);
+const variantPickerOpen = ref(false);
+const variantProject = computed(() => Boolean(props.variantSchemaPath));
+
+async function selectVariant(input: { gameData: string; scripts: string; unit: string; lot: string }) {
+  if (asset.savedDirty.value && !window.confirm(t("flow.variant.replaceScene"))) return false;
+  const registration = await tauriApi.workspace.vanillaVariantRegister({ project: props.project, ...input });
+  const tgi = parseTgiText(registration.lot);
+  if (!tgi) throw new Error(registration.lot);
+  await asset.openNative(registration.packagePath, tgi);
+  if (ui.value?.loadError || !(await asset.saveDocument())) throw new Error("variant scene");
+  selectedFile.value = null;
+  void treeRef.value?.refresh();
+  return true;
+}
+
+async function saveVariantScene() {
+  if (!asset.schemaDocument.value) {
+    variantPickerOpen.value = true;
+    return false;
+  }
+  return asset.saveDocument();
+}
+
+defineExpose({ saveVariantScene });
 // 两条竖分隔线相邻时，命中区也要保持独立。
 
 // ---- 顶部工具条状态（与 PropertyEditor 渲染控制同口径）----
@@ -146,6 +185,7 @@ function commitTransform(id: string, matrix: number[]) {
 function toggleEdit() {
   editEnabled.value = !editEnabled.value;
   if (editEnabled.value) renderMode.value = "default";
+  else if (pathDrawing.value) finishPathDraw();
 }
 function commitFields(id: string, patch: Record<string, unknown>) {
   ui.value?.edit.setUnitFields(id, patch);
@@ -183,8 +223,8 @@ const viewportBindings = computed(() => {
     decalTextures: current.decalTextures,
     decalLight: current.decalLight,
     selectedId: current.selectedId.value,
-    tool: tool.value,
-    editEnabled: editEnabled.value,
+    tool: pathDrawing.value ? "select" : tool.value,
+    editEnabled: editEnabled.value && !pathDrawing.value,
     modelSelectable:
       editEnabled.value && current.editMode === "draft" && !current.loading && !!current.modelPayload,
     modelTransform: current.modelTransform,
@@ -246,23 +286,17 @@ useEventListener(window, "pointerup", async (event: PointerEvent) => {
 });
 
 // ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----
-const pathDrawing = ref(false);
-let viewportDownAt: { x: number; y: number } | null = null;
+let viewportDownAt: { x: number; y: number; pointerId: number; pathId: string } | null = null;
 
 function startPathDraw(type: PathTypeId): void {
-  if (!editEnabled.value) return;
-  if (!asset.activePathId.value) {
-    asset.createPath({ type });
-  } else {
-    // 已有激活路径：切换类型 = 换语义配方（entry/scope/connect 由构建器换算）
-    asset.updatePath(asset.activePathId.value, { type });
-  }
-  pathDrawing.value = true;
+  if (!editEnabled.value || pathDrawing.value) return;
+  viewportDownAt = null;
+  asset.createPath({ type });
 }
 
 function finishPathDraw(): void {
   asset.finishPath();
-  pathDrawing.value = false;
+  viewportDownAt = null;
   // 结束绘制时丢弃尚未落点的路径拖放载荷，避免完成后 pointerup
   // 通过通用放置管线再创建一个孤立 pathPoint。
   if (placementPayload.value?.kind === "pathPoint") {
@@ -273,22 +307,30 @@ function finishPathDraw(): void {
 
 /** Draw 模式视口点击加点：按下/抬起位移 <6px 才算点击（相机轨道拖拽排除）。 */
 function onViewportPointerDown(event: PointerEvent): void {
-  if (!pathDrawing.value || event.button !== 0) return;
-  viewportDownAt = { x: event.clientX, y: event.clientY };
+  const pathId = asset.activePathId.value;
+  if (!editEnabled.value || !pathId || event.button !== 0 ||
+      !(event.target instanceof HTMLCanvasElement)) return;
+  viewportDownAt = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, pathId };
 }
 function onViewportPointerUp(event: PointerEvent): void {
-  if (!pathDrawing.value || event.button !== 0 || !viewportDownAt) return;
-  const moved = Math.hypot(
-    event.clientX - viewportDownAt.x,
-    event.clientY - viewportDownAt.y,
-  );
+  const start = viewportDownAt;
+  if (!start || event.pointerId !== start.pointerId) return;
   viewportDownAt = null;
+  if (!editEnabled.value || event.button !== 0 || asset.activePathId.value !== start.pathId) return;
+  const moved = Math.hypot(
+    event.clientX - start.x,
+    event.clientY - start.y,
+  );
   if (moved > 6) return;
   const position = viewportRef.value?.groundPointAt(
     event.clientX,
     event.clientY,
   );
   if (position) asset.addPathPoint(position);
+}
+
+function onViewportPointerCancel(event: PointerEvent): void {
+  if (viewportDownAt?.pointerId === event.pointerId) viewportDownAt = null;
 }
 
 // ---- 单元剪贴板（逻辑层见 clipboard/；组件只做热键与 toast 映射）----
@@ -310,6 +352,7 @@ const unitClipboard = useUnitClipboard({
 useEditorHotkeys(
   computed(() => ui.value !== null),
   () => [
+    ...(pathDrawing.value ? [{ combo: "enter", handler: finishPathDraw }] : []),
     { combo: "g", handler: () => (tool.value = "translate") },
     { combo: "r", handler: () => (tool.value = "rotate") },
     { combo: "s", handler: () => (tool.value = "scale") },
@@ -385,7 +428,19 @@ async function onBindMaterialSlots(binding: MaterialSlotBinding) {
     toast.error(String(cause));
   }
 }
-async function onBlendImported(lotm: string) {
+const lotModelProjection = computed<LotModelProjection | null>(() => {
+  const current = ui.value;
+  if (current?.editMode !== "draft" || !current.modelPayload) return null;
+  return {
+    payload: current.modelPayload,
+    origin: current.modelOrigin,
+    transform: current.modelTransform,
+    center: current.lotOverlayBoxOffset,
+  };
+});
+const importedSceneRevision = ref(0);
+async function onBlendImported(result: NativeBlendImport) {
+  const lotm = result.asset;
   try {
     await asset.openDraftAsset(lotm, {
       nativeBlender: true,
@@ -395,8 +450,45 @@ async function onBlendImported(lotm: string) {
       toast.error(t("studio.assetWorkbench.blendNativeFailed"));
       return;
     }
-    // Save the current model binding before the next build reads the document.
-    await asset.saveDocument();
+    const failures = await initializeBlendScene([
+      {
+        id: "register-units",
+        run: async () => {
+          if (result.sceneError) throw new Error(result.sceneError);
+          const scene = result.scene?.document;
+          if (!scene) throw new Error("missing scene document");
+          asset.registerBlendUnits(scene);
+          if (scene.errors.length) throw new Error("some scene elements failed");
+        },
+      },
+      {
+        id: "authored-lot",
+        run: async () => {
+          const imported = result.scene?.document.lot;
+          if (!imported) return;
+          const size = importedLotSize(imported.meta.size);
+          const lot = {
+            ...imported,
+            meta: { ...imported.meta, size, metersPerPixel: size[0] / imported.meta.width },
+          };
+          await saveAuthoredLot(props.project, lot);
+          await asset.applyAuthoredLot(lot);
+          asset.setImportedLotOffset(lot.offset);
+          importedSceneRevision.value++;
+        },
+      },
+      {
+        id: "save-scene",
+        run: async () => {
+          if (!await asset.saveDocument()) throw new Error("scene document unavailable");
+        },
+      },
+      { id: "refresh-assets", run: async () => { await treeRef.value?.refresh(); } },
+    ]);
+    if (failures.length) {
+      toast.error(t("studio.assetWorkbench.blendSceneInitializationFailed"));
+      return;
+    }
     toast.success(t("studio.assetWorkbench.blendNativeImported"));
   } catch (cause) {
     toast.error(String(cause));
@@ -465,6 +557,7 @@ function onTreeSelect(relativePath: string): void {
   selectedFile.value = relativePath;
 }
 async function onOpenAsset(relativePath: string): Promise<void> {
+  if (variantProject.value) return;
   selectedFile.value = null;
   await asset.openDraftAsset(relativePath);
   // 导入/打开后立刻落盘 assetPath，避免「视口已是新 LOTM、构建仍读旧 schema.model」
@@ -479,6 +572,7 @@ const tgiBusy = ref(false);
 const packageCandidates = ref<Tgi[]>([]);
 /** 树 .package 点击 → 读资源表 → 列出 Lot property 候选并打开选择页。 */
 async function onOpenPackage(relativePath: string) {
+  if (variantProject.value) return;
   selectedFile.value = null;
   packageCandidates.value = [];
   tgiPackagePath.value = relativePath;
@@ -694,8 +788,25 @@ async function onRemoveAsset() {
   }
 }
 
-onMounted(() => {
-  void asset.restoreFromProject();
+onMounted(async () => {
+  await dependencies.ready;
+  if (await asset.restoreFromProject()) return;
+  const source = props.variantSource;
+  if (!source) return;
+  const tgi = parseTgiText(source.lot);
+  if (!tgi) return;
+  try {
+    await asset.openNative(source.packagePath, tgi);
+    if (ui.value && !ui.value.loadError) {
+      await asset.saveDocument();
+      void treeRef.value?.refresh();
+    }
+  } catch (cause) {
+    console.warn("[workbench] variant scene initialization failed:", cause);
+    const reason = cause && typeof cause === "object" && "message" in cause
+      ? String(cause.message) : String(cause);
+    toast.error(t("flow.variant.registerFailedDetail", { reason }));
+  }
 });
 
 function templateOf(resourceId: number) {
@@ -712,6 +823,7 @@ function templateOf(resourceId: number) {
 
 <template>
   <section class="maw" :aria-label="t('studio.assetWorkbench.title')">
+    <EditorPackagesBar :scope="dependencies" />
     <header class="maw-toolbar">
       <div class="maw-title">
         <span class="maw-badge" :data-kind="asset.sourceKind.value">
@@ -743,7 +855,11 @@ function templateOf(resourceId: number) {
       </div>
 
       <div class="maw-actions">
-        <button type="button" class="maw-btn" @click="tgiSheetOpen = true">
+        <button v-if="variantProject" type="button" class="maw-btn" @click="variantPickerOpen = true">
+          <FIcon name="Search" :size="13" aria-label="" />
+          {{ t("flow.variant.choose") }}
+        </button>
+        <button v-else type="button" class="maw-btn" @click="tgiSheetOpen = true">
           <FIcon name="Hash" :size="13" aria-label="" />
           {{ t("studio.assetWorkbench.tgiParse") }}
         </button>
@@ -972,7 +1088,7 @@ function templateOf(resourceId: number) {
       </div>
     </header>
 
-    <SceneWorkbenchLayout>
+    <SceneWorkbenchLayout :hide-lower="variantProject">
       <template #files>
         <div class="maw-scroll-pane maw-tree-pane">
           <AssetSourceTree
@@ -980,6 +1096,7 @@ function templateOf(resourceId: number) {
             :project="props.project"
             :active-asset="asset.sourceAssetPath.value"
             :selected-path="selectedFile"
+            :read-only="variantProject"
             @select="onTreeSelect"
             @open-asset="onOpenAsset"
             @open-package="onOpenPackage"
@@ -993,11 +1110,13 @@ function templateOf(resourceId: number) {
             :project="props.project"
             :menu="asset.menu"
             :logic="asset.draftLogic.value"
+            :mega-tower="asset.draftMegaTower.value"
             :saved-dirty="asset.savedDirty.value"
             :save-document="asset.saveDocument"
             :document-path="asset.documentPath"
             @update:menu="asset.setMenuBinding($event)"
             @update:logic="asset.setLogicGraph($event)"
+            @update:mega-tower="asset.setMegaTower($event)"
             @close="selectedFile = null"
           />
         </div>
@@ -1008,11 +1127,15 @@ function templateOf(resourceId: number) {
               class="maw-viewport"
               @pointerdown="onViewportPointerDown"
               @pointerup="onViewportPointerUp"
+              @pointercancel="onViewportPointerCancel"
             >
               <p v-if="pathDrawing" class="maw-draw-hint" role="status">
                 {{ t("studio.assetWorkbench.pathDrawHint") }}
               </p>
-              <template v-if="ui">
+              <div v-if="asset.restoring.value" class="maw-empty">
+                <FStartupLoading :label="t('common.loading')" />
+              </div>
+              <template v-else-if="ui">
                 <p v-if="ui.loadError" class="maw-load-error" role="alert">
                   {{ t(ui.loadError) }}
                 </p>
@@ -1043,12 +1166,14 @@ function templateOf(resourceId: number) {
                 <div class="maw-empty-art" aria-hidden="true"></div>
                 <FIcon name="Box" :size="30" aria-label="" />
                 <strong>{{ t("studio.assetWorkbench.emptyTitle") }}</strong>
-                <p>{{ t("studio.assetWorkbench.emptyHint") }}</p>
-                <div class="maw-empty-actions">
+                <p>{{ t(variantProject ? "flow.variant.sceneHint" : "studio.assetWorkbench.emptyHint") }}</p>
+                <button v-if="variantProject" type="button" class="maw-btn primary" @click="variantPickerOpen = true">
+                  {{ t("flow.variant.choose") }}
+                </button>
+                <div v-else class="maw-empty-actions">
                   <button
                     type="button"
                     class="maw-btn primary"
-                    :disabled="asset.restoring.value"
                     @click="treeRef?.refresh()"
                   >
                     <FIcon name="FolderOpen" :size="13" aria-label="" />
@@ -1063,15 +1188,10 @@ function templateOf(resourceId: number) {
                     {{ t("studio.assetWorkbench.tgiParse") }}
                   </button>
                 </div>
-                <FSpinner
-                  v-if="asset.restoring.value"
-                  size="sm"
-                  :label="t('common.loading')"
-                />
               </div>
             </div>
       </template>
-      <template #lower>
+      <template v-if="!variantProject" #lower>
             <AssetBlueprintCanvas
               :source-kind="asset.sourceKind.value"
               :source-label="asset.sourceLabel.value"
@@ -1158,11 +1278,15 @@ function templateOf(resourceId: number) {
                     @set-street-facing="asset.setStreetFacingDegrees($event)"
                   />
                   <AssetLotLibrary
+                    :key="importedSceneRevision"
                     v-else-if="rightTab === 'lotlib'"
                     :project="props.project"
                     :edit-enabled="editEnabled"
                     :edit-mode="ui.editMode"
                     :authored-bound="asset.appliedAuthoredLot.value"
+                    :lot-size="ui.lotSize"
+                    :projection="lotModelProjection"
+                    :allow-native-ground="variantProject"
                     @apply="onApplyLotPreset"
                     @apply-authored="onApplyAuthoredLot"
                     @authored-saved="onAuthoredLotSaved"
@@ -1212,6 +1336,13 @@ function templateOf(resourceId: number) {
       </template>
     </SceneWorkbenchLayout>
 
+    <VanillaVariantPicker
+      v-if="variantSchemaPath"
+      v-model:open="variantPickerOpen"
+      :project="project"
+      :schema-path="variantSchemaPath"
+      :select="selectVariant"
+    />
     <FSheet
       v-model:open="tgiSheetOpen"
       :label="t('studio.assetWorkbench.tgiParse')"

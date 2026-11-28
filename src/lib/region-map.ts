@@ -54,6 +54,7 @@ export const RESOURCE_COLORS: Record<string, string> = {
   desirability: "#e05656",
   desirabilitytwo: "#9b59b6",
   radiation: "#35c94f",
+  wind: "#70d9da",
   groundpollution: "#a03cc8",
 };
 
@@ -89,6 +90,7 @@ export interface Region3DPlot {
 
 /** map_panel_region_3d 返回的区域 3D 数据。 */
 export interface Region3DData {
+  windArrows?: { site: string; x: number; y: number; direction: number }[];
   staticStatus?: "ready" | "missing" | "invalid";
   staticError?: string | null;
   forestModels?: MapModel[];
@@ -142,6 +144,11 @@ export interface Region3DData {
   plots: Region3DPlot[];
   /** 资源画刷清单（目标 map 名 + stamp 世界坐标）。 */
   brushes: [string, [number, number][]][];
+}
+
+/** The game evaluates cos/sin((WindDirection - 90) * pi / 180). */
+export function windArrowRotation(direction: number): number {
+  return 90 - direction;
 }
 
 export interface MapModel {

@@ -6,6 +6,9 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::io::Write;
 
+pub mod edit;
+pub mod wind;
+
 #[derive(Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateSource {
@@ -480,8 +483,7 @@ impl Reader<'_> {
     }
 }
 
-/// Input must already be decompressed. Never searches arbitrary bytes for paths.
-pub fn read_state(bytes: &[u8]) -> Result<RegionState, String> {
+fn map_reader(bytes: &[u8]) -> Result<(Reader<'_>, u32, u32, usize, u32), String> {
     let mut r = Reader { bytes, pos: 0 };
     let version = r.u()?;
     if !matches!(version, 17 | 18 | 20) {
@@ -505,6 +507,25 @@ pub fn read_state(bytes: &[u8]) -> Result<RegionState, String> {
     if !matches!(map_version, 3 | 4) {
         return Err(format!("unsupported map version {map_version}"));
     }
+    Ok((r, version, environment, n, map_version))
+}
+
+/// Input must already be decompressed. Never searches arbitrary bytes for paths.
+pub fn read_state(bytes: &[u8]) -> Result<RegionState, String> {
+    read_state_prefix(bytes).map(|(state, _)| state)
+}
+
+/// Offsets of the EcoMap table and the first record after the path set.
+pub(crate) fn read_bootstrap_layout(
+    bytes: &[u8],
+) -> Result<(RegionState, std::ops::Range<usize>), String> {
+    let (maps, ..) = map_reader(bytes)?;
+    let (state, end) = read_state_prefix(bytes)?;
+    Ok((state, maps.pos - 8..end.pos))
+}
+
+fn read_state_prefix(bytes: &[u8]) -> Result<(RegionState, Reader<'_>), String> {
+    let (mut r, version, environment, n, map_version) = map_reader(bytes)?;
     let mut maps = Vec::new();
     for _ in 0..n {
         let id = r.u()?;
@@ -662,13 +683,16 @@ pub fn read_state(bytes: &[u8]) -> Result<RegionState, String> {
             ],
         });
     }
-    Ok(RegionState {
-        version,
-        environment,
-        maps,
-        curves,
-        units: unit_records,
-    })
+    Ok((
+        RegionState {
+            version,
+            environment,
+            maps,
+            curves,
+            units: unit_records,
+        },
+        r,
+    ))
 }
 
 #[cfg(test)]

@@ -1,3 +1,5 @@
+import { registerTextureUniforms } from "@/lib/materialTextureInputs";
+import { createByteContentMemo } from "@/render/resolve/byteContentMemo";
 import { pngBlobUrl } from "@/lib/three-gltf";
 import type * as ThreeNamespace from "three";
 import type { LotModelPayload } from "@/api/tauri";
@@ -313,7 +315,9 @@ export async function loadTintTextures(
     colorSpaceConversion: "none",
     imageOrientation: "none",
   });
-  const loadTex = (bytes: Uint8Array<ArrayBuffer>) =>
+  const textureMemo = createByteContentMemo<ThreeNamespace.Texture>();
+  const heightMemo = createByteContentMemo<boolean>();
+  const decodeTex = (bytes: Uint8Array<ArrayBuffer>) =>
     new Promise<ThreeNamespace.Texture>((resolve, reject) => {
       const url = pngBlobUrl(bytes);
       // blob URL 由材质资产缓存持有（见 getRefinedMaterialAssets），
@@ -339,6 +343,8 @@ export async function loadTintTextures(
         reject,
       );
     });
+  const loadTex = (bytes: Uint8Array<ArrayBuffer>, sampler = "data") =>
+    textureMemo.get(bytes, sampler, () => decodeTex(bytes));
   return Promise.all(
     materials.map(async (material) => {
       // 逐材质内 5 张 PNG 并行解码（此前串行 await，首载成本 = 各张之和）。
@@ -362,7 +368,7 @@ export async function loadTintTextures(
           // B 通道相对抬升红→品红 (182,5,80)。alpha 携带 specA，sRGB 解码
           // 不动 alpha 通道，spec 链不受影响。
           material.palettePng
-            ? loadTex(material.palettePng).then((t) => {
+            ? loadTex(material.palettePng, "palette").then((t) => {
                 t.minFilter = THREE.NearestFilter;
                 t.magFilter = THREE.NearestFilter;
                 t.generateMipmaps = false;
@@ -381,7 +387,7 @@ export async function loadTintTextures(
             ? loadTex(material.shaderPng)
             : Promise.resolve(null),
           material.interiorPng
-            ? loadTex(material.interiorPng).then((t) => {
+            ? loadTex(material.interiorPng, "interior").then((t) => {
                 // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
                 // scale）依赖回绕取样；ClampToEdge 会把越界采样钳成边缘纯色（绿/紫块）
                 t.wrapS = THREE.RepeatWrapping;
@@ -393,12 +399,13 @@ export async function loadTintTextures(
               })
             : Promise.resolve(null),
         ]);
-      const shaderPixels = material.shaderPng
-        ? await decodePngPixels(material.shaderPng)
-        : null;
-      const reliefAvailable = shaderPixels
-        ? reliefHasHeight(shaderPixels)
-        : Boolean(material.shaderPng);
+      const shaderPng = material.shaderPng;
+      const reliefAvailable = shaderPng
+        ? await heightMemo.get(shaderPng, "height", async () => {
+            const pixels = await decodePngPixels(shaderPng);
+            return pixels ? reliefHasHeight(pixels) : true;
+          })
+        : false;
       return {
         tintTex,
         paletteTex,
@@ -660,6 +667,7 @@ export function attachTintShader(
 ) {
   // 注意：three 默认编译为 GLSL ES 1.00——texelFetch/ivec2 不可用，
   // 参数表用 texture2D + 预计算 V 寻址（Nearest 采样取整行）。
+  registerTextureUniforms(material, uniforms);
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader

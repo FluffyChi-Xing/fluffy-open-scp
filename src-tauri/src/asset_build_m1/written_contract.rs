@@ -31,6 +31,10 @@ const PATH_SCOPES: u32 = 0x0D9A_4E54;
 const PATH_CONNECTS: u32 = 0x0D9A_A2BB;
 
 pub(crate) struct WrittenContractSpec<'a> {
+    pub panel: Option<&'a super::panel::PanelPlan>,
+    pub container_program: Option<&'a super::behavior_nodes::ResolvedBehavior>,
+    pub ground_behavior_selection: bool,
+    pub ground_landscape_components: usize,
     pub menu_instance: Option<u32>,
     pub selected_menu_categories: Option<&'a [u32]>,
     pub reference_lot: Option<ResourceId>,
@@ -71,7 +75,11 @@ pub(crate) fn validate(
     } else {
         spec.reference_lot.expect("lot checked above").group
     };
-    let menu = if spec.author_building40 {
+    let menu = if let Some(program) = spec.container_program {
+        if program.copan_plop_base && program.units.is_empty() {
+            super::behavior_copan_base::validate_base_menu(resources,instance,spec.donor,program,spec.panel)?
+        } else {super::behavior_container::validate_menu(resources, instance, spec.donor, program, spec.panel)?}
+    } else if spec.author_building40 {
         super::menu_contract::validate_building40(
             resources,
             instance,
@@ -106,7 +114,15 @@ pub(crate) fn validate(
         .ok_or_else(|| format!("written-contract: final Asset/Lot {lot_id} is missing"))?;
     let lot = PropertyFile::parse(lot_bytes)
         .map_err(|error| format!("written-contract: final Asset/Lot {lot_id}: {error}"))?;
-    let interior_lighting = spec.menu_instance.is_some() && spec.native_spawner_rotation.is_some();
+    if spec.ground_behavior_selection {
+        let unit_id = ResourceId { group: super::menu::UNIT_GROUP, ..lot_id };
+        let unit = resources.get(&unit_id).ok_or("MEGA_TOWER_CONFIG: missing ordinary Unit")?;
+        super::behavior_mega_tower::verify(unit, &lot, spec.ground_landscape_components)?;
+        if let Some(panel) = spec.panel {
+            super::panel::verify_single_business(panel, &lot)?;
+        }
+    }
+    let interior_lighting = spec.menu_instance.is_some() && (spec.native_spawner_rotation.is_some() || spec.ground_behavior_selection);
     if interior_lighting {
         super::interior_lighting::verify_written(resources, lot_id, &lot)?;
     }

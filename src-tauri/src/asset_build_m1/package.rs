@@ -26,6 +26,8 @@ pub(crate) type LodModelIds = [ResourceId; 4];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct M1BuildResult {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub requires_panel_runtime: bool,
     pub path: PathBuf,
     pub schema_hash: String,
     pub build_hash: String,
@@ -76,6 +78,11 @@ impl std::ops::Deref for BuildResources {
 }
 
 impl BuildResources {
+    pub(crate) fn remove(&mut self, id: &ResourceId) {
+        self.all.remove(id);
+        self.touched.remove(id);
+    }
+
     /// 空集(stages.rs 的 BuildContext 初始化用;真实内容在 load_inputs 装载)。
     pub(crate) fn empty() -> Self {
         Self {
@@ -275,19 +282,44 @@ fn build_from_schema_inner(
     root: &Path,
     raw_schema: &str,
     progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
+    game_data: Option<&Path>,
 ) -> Result<M1BuildResult, String> {
-    let plan = plan_from_schema(raw_schema)?;
+    if let Some(request) = super::vanilla_variant::preflight(root, raw_schema)? {
+        if root.join("package.json").is_file() {
+            let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(root.join("package.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            if super::panel::manifest::dependency(&manifest)?.is_some() { return Err("PANEL_VARIANT_BUILD_UNSUPPORTED".into()); }
+        }
+        return super::vanilla_variant::build(root, raw_schema, request, progress);
+    }
+    let mut plan = plan_from_schema(raw_schema)?;
+    if plan.behavior_program.as_ref().is_some_and(|program| program.controlnet.is_some()) {
+        let env_path = std::env::var_os("OPENSCP_GAME_DATA").map(std::path::PathBuf::from);
+        let game_data = game_data.or(env_path.as_deref()).ok_or("CONTROLNET_EP1: game data directory")?;
+        super::behavior_controlnet::verify_installation(game_data)?;
+    }
+    let fusion = plan.behavior_program.as_ref().and_then(|program| program.fusion.as_ref())
+        .map(|recipe| recipe.requires_control_net);
+    if let Some(requires_control_net) = fusion {
+        let env_path = std::env::var_os("OPENSCP_GAME_DATA").map(std::path::PathBuf::from);
+        let game_data = game_data.or(env_path.as_deref()).ok_or("FUSION_EP1: game data directory")?;
+        super::behavior_fusion::verify_installation(game_data, requires_control_net)?;
+    }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("project root must be a directory".into());
     }
-    super::filesystem::prune_previous_builds_for_root(&root)?;
+    super::panel::attach(&root, &mut plan)?;
     // G3a 全链复用（用户指令 2026-11-05）："已确认的无变更流程，跑通
     // 构建器自检就能保证结果正确"。输入指纹命中 + 产物包 sha256 自检
     // 通过 → 直接回放上次结果；任何不一致都走全量链重建缓存。
-    let fingerprint =
+    let mut fingerprint =
         super::build_cache::input_fingerprint(&root, &plan, &plan.intermediate.scene.document);
-    if let Some(entry) = super::build_cache::lookup_run(&root, &fingerprint) {
+    if let Some(panel) = &plan.panel {
+        fingerprint = digest(format!("{fingerprint}:{}", panel.fingerprint).as_bytes());
+    }
+    let controlnet = plan.behavior_program.as_ref().is_some_and(|program| program.controlnet.is_some());
+    if let Some(entry) = (plan.panel.is_none() && !controlnet && fusion.is_none()).then(|| super::build_cache::lookup_run(&root, &fingerprint)).flatten() {
+        super::filesystem::prune_previous_builds_for_root(&root, &entry.build_hash)?;
         let reuse_detail = serde_json::json!({
             "buildHash": entry.build_hash,
             "sha256": entry.sha256,
@@ -301,6 +333,7 @@ fn build_from_schema_inner(
             ));
         }
         return Ok(M1BuildResult {
+            requires_panel_runtime: false,
             path: root
                 .join(".build")
                 .join(&entry.build_hash)
@@ -324,12 +357,14 @@ fn build_from_schema_inner(
     }
     let package_relative = package_relative_name(&plan);
     let mut ctx = stages::BuildContext::new(root, plan);
+    ctx.game_data = game_data.map(Path::to_path_buf);
     ctx.progress = progress;
     stages::run_chain(&mut ctx)?;
     // 链尾补 materialize 的 finished 事件后回填,保证 Actions 页拿到全量
     // 步骤;失败路径的事件随 Err 文本携带阶段名(P2 队列改结构化错误)。
     let mut result = ctx.result.take().expect("chain completed without result");
     result.events = ctx.events.clone();
+    super::filesystem::prune_previous_builds_for_root(&ctx.root, &result.build_hash)?;
     super::build_cache::store_run(
         &ctx.root,
         &fingerprint,
@@ -356,7 +391,16 @@ pub fn build_from_schema_with_progress(
     raw_schema: &str,
     progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
 ) -> Result<M1BuildResult, String> {
-    build_from_schema_inner(root, raw_schema, progress)
+    build_from_schema_inner(root, raw_schema, progress, None)
+}
+
+pub(crate) fn build_from_schema_for_installation(
+    root: &Path,
+    raw_schema: &str,
+    progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
+    game_data: Option<&Path>,
+) -> Result<M1BuildResult, String> {
+    build_from_schema_inner(root, raw_schema, progress, game_data)
 }
 
 pub(crate) fn package_relative_name(plan: &super::plan::PropertyBuildPlan) -> String {
@@ -1378,7 +1422,7 @@ pub(crate) fn protected_templates(
 
 /// 无进度包装(命令行/黄金用例入口,行为与带进度版完全一致)。
 pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult, String> {
-    build_from_schema_inner(root, raw_schema, None)
+    build_from_schema_inner(root, raw_schema, None, None)
 }
 
 #[cfg(test)]

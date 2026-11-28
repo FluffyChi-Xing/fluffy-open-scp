@@ -1,5 +1,6 @@
 import type * as ThreeNamespace from "three";
 import type { EffectEmitterData, EffectUnit, SwarmParticle, UnitTransformDto } from "@/api/tauri";
+import { unitPlanId } from "@/render/plan/units";
 import { ParticleSolver, sampleColor, sampleScalar } from "./solver";
 import { particleAtlasFrame } from "./frame";
 import { resolveSwarmUnitScale, toSceneEmitter } from "./scale";
@@ -66,6 +67,10 @@ export function createParticleEffect(
   const unitScale = options.unitScale ?? resolveSwarmUnitScale();
   const sceneEmitters = emitters.map((emitter) => toSceneEmitter(emitter, unitScale));
   const object = new THREE.Group();
+  // Incremental toggles use the same identity as the full scene assembly.
+  object.userData.unitId = unitPlanId(unit);
+  object.userData.unitKind = unit.kind;
+  object.userData.effectParticlePreview = true;
   if (unit.transform) {
     unitMatrix(THREE, unit.transform).decompose(object.position, object.quaternion, object.scale);
   }

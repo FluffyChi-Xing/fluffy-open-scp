@@ -876,6 +876,7 @@ pub fn compile_building40_template(
     collision_source: &[u8],
 ) -> Result<CompiledNativeModel, String> {
     let rotation = rotate_xyz_matrix(rotation_degrees)?;
+    let source_uv = super::source_uv::SourceUv::from_diagnostics(&doc.diagnostics)?;
     let mut vertices: Vec<[u8; 40]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
     let mut primitive_count = 0usize;
@@ -953,8 +954,8 @@ pub fn compile_building40_template(
                     .get(i)
                     .map(|uv| [uv[2], uv[3]])
                     .unwrap_or([0.0, 0.0]);
-                let base = [base[0], 1.0 - base[1]];
-                let top = [top[0], 1.0 - top[1]];
+                let base = source_uv.adapt(base);
+                let top = source_uv.adapt(top);
                 let seed = primitive.seeds.get(i).copied().unwrap_or(84);
                 let bits = |values: &[f32]| -> Vec<u32> {
                     values.iter().map(|value| value.to_bits()).collect()
@@ -1031,8 +1032,8 @@ pub fn compile_building40_template(
                     .get(i)
                     .map(|uv| [uv[2], uv[3]])
                     .unwrap_or([0.0, 0.0]);
-                let base = [base[0], 1.0 - base[1]];
-                let top = [top[0], 1.0 - top[1]];
+                let base = source_uv.adapt(base);
+                let top = source_uv.adapt(top);
                 let seed = primitive.seeds.get(i).copied().unwrap_or(84);
                 let bits = |values: &[f32]| -> Vec<u32> {
                     values.iter().map(|value| value.to_bits()).collect()

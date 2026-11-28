@@ -422,11 +422,7 @@ fn validate_profile(
     })
 }
 
-fn validate_complete_building(
-    menu: &PropertyFile,
-    unit: &PropertyFile,
-    instance: u32,
-) -> Result<Vec<String>, String> {
+pub(super) fn validate_complete_panel(menu: &PropertyFile, instance: u32) -> Result<(), String> {
     // These are presentation fields present in both the s31 GOLDEN menu and
     // the complete reference candidate, but absent from Hope's 22-field leaf.
     for hash in [
@@ -448,6 +444,15 @@ fn validate_complete_building(
             menu.values.len()
         ));
     }
+    Ok(())
+}
+
+fn validate_complete_building(
+    menu: &PropertyFile,
+    unit: &PropertyFile,
+    instance: u32,
+) -> Result<Vec<String>, String> {
+    validate_complete_panel(menu, instance)?;
     // The stock elementary-school leaf is intentionally short and obtains
     // common utility bundles from the game's typed Unit template chain.
     let native_school = scalar_key(unit, 0x00B2_CCCB).is_some_and(|parent| {
@@ -574,7 +579,8 @@ fn validate_complete_building(
         matches!(&property.kind, Kind::Array(values) if values.iter()
             .any(|value| matches!(value, Value::Key(key) if key.instance == 0x4893_9D96)))
     });
-    if !(power_bundle || native_school) || power_excluded {
+    let native_fusion = super::behavior_fusion::has_power_provider(unit);
+    if !native_fusion && (!(power_bundle || native_school) || power_excluded) {
         return Err(format!(
             "Building40 unit {instance:08X}: power bundle 48939D96 is absent from A2/A3/A4/A5; refusing an unpowered building"
         ));
@@ -583,7 +589,8 @@ fn validate_complete_building(
         format!("Building40 panelFields={}", menu.values.len()),
         format!("Building40 unitFields={}", unit.values.len()),
         format!("Building40 statisticRows={}", texts.len()),
-        if power_bundle { "Building40 powerBundle=48939D96" }
+        if native_fusion { "Building40 powerBundle=61EFC700:6D26CFD5" }
+        else if power_bundle { "Building40 powerBundle=48939D96" }
         else { "Building40 powerBundle=48939D96 (native school template)" }.into(),
     ])
 }

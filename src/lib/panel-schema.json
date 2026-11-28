@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openscp.panel",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "shell", "hover", "click", "power", "missingFeedback"],
+  "properties": {
+    "$schema": {"const": "openscp.panel"},
+    "schema_version": {"const": 1},
+    "shell": {"type": "string", "pattern": "^[0-9a-fA-F]{8}:[0-9a-fA-F]{8}:[0-9a-fA-F]{8}$"},
+    "hover": {"$ref": "#/$defs/items"},
+    "click": {"$ref": "#/$defs/items"},
+    "power": {"type": "boolean"},
+    "missingFeedback": {"enum": ["hide", "native"]}
+  },
+  "$defs": {"items": {"type": "array", "maxItems": 48, "uniqueItems": true, "items": {"type": "string", "enum": ["maintenance", "feedback", "profit", "profit-index", "park-feedback", "park-hours", "park-visitors-title", "park-visitors", "residence-feedback", "residents", "residence-happy-high", "residence-happy-medium", "residence-happy-low", "residence-sad-high", "residence-sad-medium", "residence-sad-low", "shoppers", "hotel-guests", "hotel-occupancy", "controlnet-workers", "controlnet-production", "fusion-generation", "fusion-charge", "fusion-controlnet", "casino-gamblers", "casino-revenue", "tourism-profit", "tourism-revenue", "tourists", "education-feedback", "education-hours", "students", "workers", "land-value-residential", "land-value-commercial", "industrial-tech-level", "density-happiness", "density-profit", "residential-happiness-reasons", "residential-sadness-reasons", "commercial-happiness-reasons", "commercial-sadness-reasons", "industrial-happiness-reasons", "industrial-sadness-reasons", "workers-by-wealth", "mall-average-shoppers", "tower-business-profit"]}}}
+}

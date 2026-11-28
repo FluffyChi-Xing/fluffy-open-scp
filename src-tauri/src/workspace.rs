@@ -19,75 +19,6 @@ const MAX_CODE_TREE_DEPTH: usize = 16;
 const MAX_PATH_COMPONENT_BYTES: usize = 128;
 const MAX_RELATIVE_PATH_BYTES: usize = 512;
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CameraPackageRequest {
-    pub source_path: String,
-    pub output_path: String,
-    pub max_zoom: f32,
-    pub max_pitch: f32,
-    pub dof_strength: f32,
-}
-
-#[tauri::command]
-pub async fn build_camera_package(request: CameraPackageRequest) -> Result<String, CommandError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        use dbpf::{OverlayEntry, Package, ResourceId, write_uncompressed_overlay};
-        use sc_properties::{Kind, PropertyFile, Value};
-        let source = Package::open(&request.source_path)
-            .map_err(|e| CommandError::new("camera_source_invalid", e.to_string()))?;
-        let mut entries = Vec::new();
-        for entry in source
-            .entries()
-            .iter()
-            .filter(|entry| entry.id.type_id == 0x00B1_B104 && entry.id.group == 0x4041_0100)
-        {
-            let bytes = source
-                .read(entry)
-                .map_err(|e| CommandError::new("camera_source_read_failed", e.to_string()))?;
-            let mut file = PropertyFile::parse(&bytes)
-                .map_err(|e| CommandError::new("camera_property_invalid", e.to_string()))?;
-            for property in &mut file.values {
-                let value = match property.hash {
-                    0x00C7_C4FB => Some(request.max_zoom.max(100.0)),
-                    0x00C7_C4FC | 0x00C7_C4FD => Some(request.max_pitch.abs().clamp(1.0, 89.0)),
-                    0x0F17_C26D => Some(request.dof_strength.clamp(0.0, 3.0)),
-                    _ => None,
-                };
-                if let Some(number) = value {
-                    if let Kind::Scalar(Value::Float(current)) = &mut property.kind {
-                        *current = number;
-                    }
-                }
-            }
-            let data = file
-                .encode_canonical()
-                .map_err(|e| CommandError::new("camera_property_encode_failed", e.to_string()))?;
-            entries.push(OverlayEntry::new(
-                ResourceId {
-                    type_id: entry.id.type_id,
-                    group: entry.id.group,
-                    instance: entry.id.instance,
-                },
-                data,
-            ));
-        }
-        if entries.is_empty() {
-            return Err(CommandError::new(
-                "camera_source_empty",
-                "No Isometric Camera property resources were found",
-            ));
-        }
-        let bytes = write_uncompressed_overlay(&entries)
-            .map_err(|e| CommandError::new("camera_package_build_failed", e.to_string()))?;
-        fs::write(&request.output_path, bytes)
-            .map_err(|e| CommandError::new("camera_package_write_failed", e.to_string()))?;
-        Ok(request.output_path)
-    })
-    .await
-    .map_err(|e| CommandError::internal(e.to_string()))?
-}
-
 #[derive(Debug)]
 pub struct WorkspaceManager {
     lock: Mutex<()>,
@@ -1244,19 +1175,63 @@ pub async fn code_read_text(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
-/// 在系统文件管理器中打开项目根目录（Windows Explorer / macOS Finder / xdg-open）。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeExplorerRequest {
+    pub project: String,
+    pub relative_path: Option<String>,
+}
+
+/// 在系统文件管理器中打开项目目录或定位其中的文件。
 #[command]
 pub async fn code_open_in_explorer(
     state: State<'_, AppState>,
-    request: CodeProjectRequest,
+    request: CodeExplorerRequest,
 ) -> Result<(), CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        open_path_in_file_manager(&root).map_err(CommandError::from)
+        let result = match request.relative_path {
+            None => open_path_in_file_manager(&root),
+            Some(relative) => {
+                let relative = validate_relative_path(&relative, false).map_err(CommandError::from)?;
+                let file = existing_path(&root, &relative).map_err(CommandError::from)?;
+                if !file.is_file() {
+                    return Err(CommandError::from(WorkspaceError::NotFound));
+                }
+                reveal_file_in_file_manager(&file)
+            }
+        };
+        result.map_err(CommandError::from)
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+fn reveal_file_in_file_manager(path: &Path) -> Result<(), WorkspaceError> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let path = strip_extended_prefix(&path.to_string_lossy());
+        std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{path}\""))
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+            .map_err(WorkspaceError::Io)?;
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        open_path_in_file_manager(path.parent().ok_or(WorkspaceError::NotFound)?)
+    }
 }
 
 fn open_path_in_file_manager(path: &Path) -> Result<(), WorkspaceError> {
@@ -1587,6 +1562,7 @@ pub async fn code_package_entries(
 pub async fn code_package_observable_units(
     state: State<'_, AppState>,
     request: CodePathRequest,
+    unit_entry: Option<u32>,
 ) -> Result<Vec<u32>, CommandError> {
     use crate::asset_build_m1::menu::{MENU_GROUP, PROPERTY_TYPE, UNIT_GROUP};
     let store = Arc::clone(&state.store);
@@ -1604,6 +1580,37 @@ pub async fn code_package_observable_units(
         }).collect();
         ids.sort_unstable();
         ids.dedup();
+        if let Some(host) = unit_entry {
+            use sc_properties::{Kind, PropertyFile, Value};
+            if !ids.contains(&host) {
+                return Err(CommandError::new("asset_capture_host_missing", "Build package does not contain the selected building"));
+            }
+            let mut members = vec![host];
+            let mut index = 0;
+            while let Some(&instance) = members.get(index) {
+                index += 1;
+                let id = dbpf::ResourceId { type_id: PROPERTY_TYPE, group: UNIT_GROUP, instance };
+                let entry = package.entry(id).expect("member in package");
+                let bytes = package.read(entry).map_err(|error| CommandError::internal(error.to_string()))?;
+                let unit = PropertyFile::parse(&bytes).map_err(|error| CommandError::internal(error.to_string()))?;
+                if let Some(Kind::Array(values)) = unit.get(0x07E0_AD0A).map(|p| &p.kind) {
+                    for value in values {
+                        if let Value::Key(key) = value
+                            && [0, UNIT_GROUP].contains(&key.group)
+                            && [0, PROPERTY_TYPE].contains(&key.type_id)
+                            && package.entry(dbpf::ResourceId { instance: key.instance, ..id }).is_some()
+                            && !members.contains(&key.instance)
+                        {
+                            members.push(key.instance);
+                        }
+                    }
+                }
+                if members.len() > 64 {
+                    return Err(CommandError::new("asset_capture_member_limit", "Build package has more than 64 observable components"));
+                }
+            }
+            return Ok(members);
+        }
         Ok(ids)
     })
     .await
@@ -1871,6 +1878,13 @@ pub async fn code_manifest(
         let manifest_path = crate::mod_flow::safe_path(&root, CODE_MANIFEST_NAME)
             .map_err(CommandError::internal)?;
         let existed = manifest_path.is_file();
+        let pending = root.join(crate::asset_build_m1::vanilla_variant::PENDING_PROJECT);
+        if !existed && pending.is_file() {
+            let bytes = fs::read(&pending).map_err(WorkspaceError::from)?;
+            let manifest = serde_json::from_slice(&bytes)
+                .map_err(|error| CommandError::internal(error.to_string()))?;
+            return Ok(CodeManifestResponse { existed: false, created: false, manifest });
+        }
         let mut manifest: serde_json::Value = if existed {
             let bytes = fs::read(&manifest_path).map_err(WorkspaceError::from)?;
             serde_json::from_slice(&bytes).map_err(|error| {

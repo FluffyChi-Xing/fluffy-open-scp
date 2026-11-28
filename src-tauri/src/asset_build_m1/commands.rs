@@ -7,7 +7,7 @@ pub fn asset_build_m1_check_behavior_bins(
     nodes: Vec<serde_json::Value>,
     added_id: String,
 ) -> Result<serde_json::Value, CommandError> {
-    let report = super::behavior_conflicts::check(&nodes, &added_id)
+    let report = super::behavior_conflicts::check_building(&nodes, &added_id)
         .map_err(|error| CommandError::new("asset_behavior_bin_check_failed", error))?;
     serde_json::to_value(report)
         .map_err(|error| CommandError::new("asset_behavior_bin_check_failed", error.to_string()))

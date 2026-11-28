@@ -1,25 +1,22 @@
 <script setup lang="ts">
-import { ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { command, type Tgi } from "@/api/tauri";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import DecalDictionaryGallery from "@/pages/packages/components/preview/DecalDictionaryGallery.vue";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import type { DecalSelection } from "./workbenchDecals";
 
 defineProps<{ editEnabled?: boolean }>();
 const emit = defineEmits<{ place: [selection: DecalSelection] }>();
 
-interface DecalPackage {
-  packageId: number;
-  path: string;
-  atlases: { tgi: Tgi; entryCount: number }[];
-}
+import { decalLibraryGroups, type DecalPackage } from "./decalLibraryGroups";
 
 const { t } = useI18n();
-const packages = useGamePackagesStore();
+const packages = useEditorPackageContext();
 const scrollRoot = shallowRef<HTMLElement | null>(null);
 const catalog = shallowRef<DecalPackage[]>([]);
+const groups = computed(() => decalLibraryGroups(catalog.value));
 const expanded = ref(new Set<number>());
 const loading = ref(false);
 const failed = ref(false);
@@ -52,6 +49,8 @@ function updateExpanded(packageId: number, event: Event): void {
   else expanded.value.delete(packageId);
 }
 
+function hexGroup(group: number): string { return `0x${group.toString(16).padStart(8, "0").toUpperCase()}`; }
+
 function atlasLabel(tgi: Tgi): string {
   return [tgi.typeId, tgi.group, tgi.instance]
     .map((part) => part.toString(16).padStart(8, "0").toUpperCase())
@@ -71,30 +70,31 @@ function atlasLabel(tgi: Tgi): string {
       {{ t("studio.assetWorkbench.decalLibraryEmpty") }}
     </p>
     <details
-      v-for="group in catalog"
-      :key="group.packageId"
+      v-for="group in groups"
+      :key="group.id"
       class="decal-library-package"
-      :open="expanded.has(group.packageId)"
-      @toggle="updateExpanded(group.packageId, $event)"
+      :open="expanded.has(group.id)"
+      @toggle="updateExpanded(group.id, $event)"
     >
-      <summary :title="group.path">
-        {{ group.path.split(/[\\/]/).at(-1) }}
+      <summary>
+        {{ t("decal.group", { hex: hexGroup(group.id) }) }}
         <span class="decal-library-count">
           {{ group.atlases.reduce((total, atlas) => total + atlas.entryCount, 0) }}
         </span>
       </summary>
-      <template v-if="expanded.has(group.packageId)">
+      <template v-if="expanded.has(group.id)">
         <section v-for="atlas in group.atlases" :key="atlasLabel(atlas.tgi)" class="decal-library-atlas">
-          <h3>{{ atlasLabel(atlas.tgi) }}</h3>
+          <h3 :title="atlas.path">{{ atlasLabel(atlas.tgi) }}</h3>
           <DecalDictionaryGallery
-            :package-id="group.packageId"
+            :package-id="atlas.packageId"
             :tgi="atlas.tgi"
             :scroll-root="scrollRoot"
             :placeable="editEnabled"
             compact
+            show-placement-type
             @place="entry => entry.id && emit('place', {
               id: entry.id,
-              source: { packagePath: group.path, atlas: atlas.tgi },
+              source: { packagePath: atlas.path, atlas: atlas.tgi },
             })"
           />
         </section>

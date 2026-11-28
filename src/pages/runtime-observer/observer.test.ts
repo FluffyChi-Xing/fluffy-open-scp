@@ -71,6 +71,38 @@ describe("observer controls", () => {
     }
   });
 
+  it("starts map resource capture and localizes net-zero cell changes", async () => {
+    vi.mocked(runtimeObserver.listProcesses).mockResolvedValue([{ pid: 4, name: "SimCity.exe" }]);
+    vi.mocked(runtimeObserver.status).mockResolvedValue(idle);
+    vi.mocked(runtimeObserver.start).mockResolvedValue({
+      ...idle, running: true, records: 1,
+      status: { ready: true, tracked: 7 },
+      recent: [{
+        sequence: 1, channel: "map.resource", semantic: "resource_change", name: "coal",
+        changedCells: 2, increased: 100, decreased: 100, amountDelta: 0,
+      }],
+    });
+    const w = mount(Page, { global: { plugins: [i18n] } });
+    try {
+      await flushPromises();
+      const click = (label: string) =>
+        w.findAll("button").find((button) => button.text() === label)!.trigger("click");
+      await click("地图资源");
+      await click("开始捕获");
+      await flushPromises();
+      expect(runtimeObserver.start).toHaveBeenCalledWith(4, 60, "balanced", "map:resources");
+      expect(w.get(".tone-resource").text()).toContain("2 格变化");
+      expect(w.get(".tone-resource").text()).toContain("净变化 0");
+      i18n.global.locale.value = "en-US";
+      await flushPromises();
+      expect(w.get(".tone-resource").text()).toContain("Coal");
+      expect(w.get(".tone-resource").text()).toContain("2 cells changed");
+    } finally {
+      i18n.global.locale.value = "zh-CN";
+      w.unmount();
+    }
+  });
+
   it("gives vehicle and worker rows separate categories and shows inventory changes", async () => {
     const w = mount(LogStream, {
       props: {
@@ -107,6 +139,9 @@ describe("observer controls", () => {
       global: { plugins: [i18n] },
     });
     await flushPromises();
+    expect(w.find(".summary").isVisible()).toBe(false);
+    await w.find('.tool-tabs [data-state="inactive"]:not([disabled])').trigger("mousedown", { button: 0, ctrlKey: false });
+    await flushPromises();
     expect(w.find(".summary").isVisible()).toBe(true);
     expect(w.find(".diagnostic-controls").isVisible()).toBe(false);
     await w
@@ -119,8 +154,8 @@ describe("observer controls", () => {
     expect(w.find('input[type="file"]').attributes()).toHaveProperty("hidden");
     i18n.global.locale.value = "en-US";
     await flushPromises();
-    expect(w.find(".mode-tabs").text()).toContain("Live log capture");
-    expect(w.find(".mode-tabs").text()).toContain("Static log analysis");
+    expect(w.find(".mode-tabs").text()).toContain("Live capture");
+    expect(w.find(".mode-tabs").text()).toContain("Static analysis");
     expect(w.find(".file-picker").text()).toContain("Choose file");
     expect(w.find(".file-picker").text()).toContain("No file selected");
     expect(w.find(".file-picker").text()).not.toContain("选择文件");

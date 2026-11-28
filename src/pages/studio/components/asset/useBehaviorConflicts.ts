@@ -1,7 +1,7 @@
 import { command } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { useI18n } from "vue-i18n";
-import { MAX_BEHAVIOR_LEAVES, behaviorTypesConflict, isLeaf, leafSpec, leafTypeOf, type BehaviorLeafType, type LogicGraph } from "./logicGraph";
+import { MAX_BEHAVIOR_LEAVES, isLeaf, leafSpec, leafTypeOf, type LogicGraph, type BehaviorLeafType } from "./logicGraph";
 
 interface BehaviorBinReport {
   conflicts: {
@@ -19,19 +19,45 @@ export function useBehaviorConflicts() {
   const toast = useToast();
   const key = "studio.assetWorkbench.behaviorConflicts";
 
-  function canAdd(graph: LogicGraph, type: BehaviorLeafType): boolean {
+  function additionIssue(graph: LogicGraph, type?: BehaviorLeafType): "duplicate" | "limit" | "casinoComposition" | "controlnetComposition" | "fusionComposition" | undefined {
     const leaves = graph.nodes.filter(isLeaf);
-    if (leaves.length >= MAX_BEHAVIOR_LEAVES) {
+    if (type && leaves.some(node => leafTypeOf(graph, node) === type)) return "duplicate";
+    if (leaves.length >= MAX_BEHAVIOR_LEAVES) return "limit";
+    const types = leaves.map(node => leafTypeOf(graph, node));
+    if (type && ((type === "fusion-power" && types.length > 0) || types.includes("fusion-power"))) {
+      return "fusionComposition";
+    }
+    const canShareControlNet = (kind: BehaviorLeafType | null) => kind === "tree" || kind === "landvalue";
+    if (type && ((type === "controlnet" && types.some(kind => !canShareControlNet(kind)))
+      || (types.includes("controlnet") && !canShareControlNet(type)))) return "controlnetComposition";
+    if ((type === "casino" && (types.length !== 1 || types[0] !== "tourism"))
+        || (type && type !== "tourism" && types.includes("casino"))) return "casinoComposition";
+  }
+  function addHint(graph: LogicGraph, type: BehaviorLeafType): string {
+    const issue = additionIssue(graph, type);
+    if (issue === "duplicate") return t(`${key}.duplicate`, { behavior: t(leafSpec(type).labelKey) });
+    if (issue === "casinoComposition" || issue === "controlnetComposition" || issue === "fusionComposition") return t(`${key}.${issue}`);
+    return issue === "limit" ? t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }) : "";
+  }
+  function available(graph: LogicGraph, type: BehaviorLeafType): boolean {
+    return !additionIssue(graph, type);
+  }
+  function canAdd(graph: LogicGraph, type?: BehaviorLeafType): boolean {
+    const issue = additionIssue(graph, type);
+    if (issue === "duplicate" && type) {
+      toast.warning(addHint(graph, type));
+      return false;
+    }
+    if (issue === "limit") {
       toast.warning(t(`${key}.limit`, { count: MAX_BEHAVIOR_LEAVES }));
       return false;
     }
-    for (const node of leaves) {
-      const other = leafTypeOf(graph, node);
-      if (other == null || !behaviorTypesConflict(type, other)) continue;
-      toast.warning(t(`${key}.incompatible`, {
-        added: t(leafSpec(type).labelKey), other: t(leafSpec(other).labelKey),
-      }), { title: t(`${key}.potential`) });
+    if (issue === "casinoComposition" || issue === "controlnetComposition" || issue === "fusionComposition") {
+      toast.warning(t(`${key}.${issue}`));
       return false;
+    }
+    if (type === "commercial") {
+      toast.warning(t("studio.assetWorkbench.logicNode.leafCommercialCaution"), { duration: 8000 });
     }
     return true;
   }
@@ -51,7 +77,6 @@ export function useBehaviorConflicts() {
     });
     const added = nodes.find((node) => node.id === addedId);
     if (!added || nodes.length < 2) return;
-
     try {
       const result = await command<BehaviorBinReport>("asset_build_m1_check_behavior_bins", {
         nodes,
@@ -81,5 +106,5 @@ export function useBehaviorConflicts() {
     }
   }
 
-  return { canAdd, check };
+  return { canAdd, check, available, addHint };
 }

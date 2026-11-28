@@ -41,7 +41,7 @@ pub(super) fn selected(nodes: &[serde_json::Value]) -> bool {
     let mut tourism = false;
     for node in nodes {
         match node["type"].as_str() {
-            Some("education") => return false,
+            Some("education" | "commercial") => return false,
             Some("residence") => {
                 // Copan contributes its residential fields and bundles through
                 // Templates::patch after the landmark Unit is built.
@@ -316,6 +316,9 @@ fn profile(
             unit.values.push(property.clone());
         }
     }
+    if let Some(casino) = &program.casino {
+        casino.apply(&mut unit)?;
+    }
     Ok(unit)
 }
 
@@ -357,6 +360,9 @@ pub(super) fn verify(
     let anchors = anchors();
     let unit_id = id(UNIT_GROUP, instance);
     let unit = parse(resources, unit_id)?;
+    if let Some(casino) = &program.casino {
+        casino.verify(&unit)?;
+    }
     let lot = parse(resources, id(lot_group(), instance))?;
     for hash in [0x0CA5_2005, super::interior_lighting::ACTIVE_CONTROLLER] {
         if lot.get(hash).and_then(|property| property.scalar()) != Some(&Value::Bool(true)) {
@@ -421,6 +427,7 @@ pub(super) fn verify(
         "facilitySwitch": "0CA52005",
         "facilityControls": "0CD4E49C",
         "interiorController": "0F169C46",
+        "casino": program.casino,
     }))
 }
 

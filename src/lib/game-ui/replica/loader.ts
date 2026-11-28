@@ -168,6 +168,16 @@ async function resolvePaletteIcons(data: ReplicaData): Promise<void> {
 
 const ICON_PNG_TYPE = 0x2f7d0004;
 const ICON_PNG_GROUP = 0x40e02400;
+
+export async function loadReplicaToolPreview(preview: string): Promise<string> {
+  if (preview.startsWith("data:")) return preview;
+  const icon = /tool_icon_([\dA-F]{8})\.png$/i.exec(preview);
+  if (!icon) return (await gameAssetDataUrl(preview)) ?? preview;
+  const instance = Number.parseInt(icon[1], 16);
+  return (await gameAssetTgiDataUrl(ICON_PNG_TYPE, instance, ICON_PNG_GROUP))
+    ?? (await gameAssetTgiDataUrl(ICON_PNG_TYPE, instance))
+    ?? preview;
+}
 const MARQUEE_JPG_TYPE = 0x3f8662ea;
 
 /** 全部菜单条目的槽位图标/大图：文件名内嵌资源 instance
@@ -233,7 +243,7 @@ async function resolveLayoutAssetMap(data: ReplicaData): Promise<void> {
       unique.slice(i, i + chunk).map(async (ref) => {
         const url = await gameAssetDataUrl(ref);
         if (!url) return;
-        const base = ref.split(/[\/]/).pop() ?? ref;
+        const base = ref.replaceAll("\\", "/").split("/").pop() ?? ref;
         data.assets[base] = url;
       }),
     );
@@ -269,10 +279,12 @@ function mergeSubmenus(data: ReplicaData, index: MenuCostIndex): void {
   }
 }
 
+let catalogue: Promise<ReplicaData> | null = null;
 let cached: Promise<ReplicaData> | null = null;
 
-export function loadReplicaData(): Promise<ReplicaData> {
-  cached ??= (async () => {
+/** Menu metadata can be browsed before an installation is configured. */
+export function loadReplicaCatalogue(): Promise<ReplicaData> {
+  catalogue ??= (async () => {
     for (const name of DATA_FILES) {
       await injectScript(DATA_BASE + name);
     }
@@ -286,6 +298,17 @@ export function loadReplicaData(): Promise<ReplicaData> {
     const costIndex = await loadCostIndex();
     mergeSubmenus(data, costIndex);
     mergeMenuCosts(data.tools, costIndex);
+    return data;
+  })().catch((cause) => {
+    catalogue = null;
+    throw cause;
+  });
+  return catalogue;
+}
+
+export function loadReplicaData(): Promise<ReplicaData> {
+  cached ??= (async () => {
+    const data = structuredClone(await loadReplicaCatalogue());
     // 布局烘焙槽位图标改走玩家安装包解析（Tauri）；浏览器回退仓库内置路径
     await resolvePaletteIcons(data);
     // 全部菜单条目的槽位图标/大图 + 布局图片引用 → 玩家安装包

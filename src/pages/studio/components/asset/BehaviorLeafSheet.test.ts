@@ -16,6 +16,33 @@ describe("BehaviorLeafSheet", () => {
     i18n.global.locale.value = previousLocale;
   });
 
+  it("edits pure park capacities in both languages and rejects fractional seats", async () => {
+    i18n.global.locale.value = "zh-CN";
+    const wrapper = mount(BehaviorLeafSheet, {
+      attachTo: document.body, global: { plugins: [i18n] },
+      props: { node: { ...node, id: "park", position: [0, 0] },
+        params: { type: "park", landValue: 500, attraction: 500 },
+        labelKey: "studio.assetWorkbench.logicNode.leafPark", trigger: null },
+    });
+    try {
+      await nextTick();
+      const dialog = document.querySelector('[role="dialog"]')!;
+      const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
+      expect([...fields].map(input => input.value)).toEqual(["90", "80", "960"]);
+      expect(fields[1].closest("label")?.textContent).toContain("儿童接待容量");
+      i18n.global.locale.value = "en-US"; await nextTick();
+      expect(fields[1].closest("label")?.textContent).toContain("Child capacity");
+      fields[1].value = "12.5";
+      fields[1].dispatchEvent(new Event("change", { bubbles: true })); await nextTick();
+      dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(wrapper.emitted("apply")).toBeUndefined();
+      fields[1].value = "120";
+      fields[1].dispatchEvent(new Event("change", { bubbles: true })); await nextTick();
+      dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(wrapper.emitted("apply")?.[0]?.[0]).toMatchObject({ childrenCapacity: 120 });
+    } finally { wrapper.unmount(); }
+  });
+
   it("translates the retail capacity controls and saves a custom value", async () => {
     i18n.global.locale.value = "zh-CN";
     const wrapper = mount(BehaviorLeafSheet, {
@@ -31,30 +58,39 @@ describe("BehaviorLeafSheet", () => {
     try {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
-      const shoppers = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[4];
-      expect(shoppers.value).toBe("9");
-      expect(shoppers.closest("label")?.textContent?.trim()).toBe("顾客容量");
+      const shoppers = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[1];
+      expect(shoppers.value).toBe("60");
+      expect(shoppers.closest("label")?.textContent?.trim()).toBe("中收入顾客 ($$)");
+      const goods = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]')[3];
+      expect(goods.closest("label")?.textContent?.trim()).toBe("低价值商品数量 ($)");
       i18n.global.locale.value = "en-US";
       await nextTick();
-      expect(shoppers.closest("label")?.textContent?.trim()).toBe("Shopper capacity");
+      expect(shoppers.closest("label")?.textContent?.trim()).toBe("Medium-wealth shoppers ($$)");
+      expect(goods.closest("label")?.textContent?.trim()).toBe("Low-value goods ($)");
+      goods.value = "123";
+      goods.dispatchEvent(new Event("change", { bubbles: true }));
+      await nextTick();
       shoppers.value = "15";
       shoppers.dispatchEvent(new Event("change", { bubbles: true }));
       await nextTick();
       dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      expect(wrapper.emitted("apply")).toEqual([[{ type: "commercial", shoppers: 15 }]]);
+      expect(wrapper.emitted("apply")).toEqual([[{
+        type: "commercial", commercialProfile: "ground-mall-mixed-v1",
+        shoppers: undefined, shoppersW1: 60, shoppersW2: 15, shoppersW3: 60, goodsW1: 123, goodsW2: 750, goodsW3: 375,
+      }]]);
     } finally {
       wrapper.unmount();
     }
   });
 
-  it("changes retail customer tiers while keeping explicit job overrides", async () => {
+  it("leaves staffing in Building Properties while editing retail", async () => {
     i18n.global.locale.value = "zh-CN";
     const wrapper = mount(BehaviorLeafSheet, {
       attachTo: document.body,
       global: { plugins: [i18n] },
       props: {
-        node: { ...node, id: "leaf-retail-wealth", position: [0, 0] },
-        params: { type: "commercial", commercialProfile: "ground-commercial-w2-v1", w1: 6 },
+        node: { ...node, position: [0, 0] },
+        params: { type: "commercial", shoppers: 20, goods: 20 },
         labelKey: "studio.assetWorkbench.logicNode.leafCommercial",
         trigger: null,
       },
@@ -62,24 +98,44 @@ describe("BehaviorLeafSheet", () => {
     try {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
-      const trigger = dialog.querySelector<HTMLButtonElement>(".f-select")!;
-      trigger.click();
-      await nextTick();
-      const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
-      expect(options.map((option) => option.textContent?.trim())).toEqual([
-        "低收入商业 ($)", "中收入商业 ($$)", "高收入商业 ($$$)",
-      ]);
-      options[2].click();
+      const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
+      expect(fields).toHaveLength(6);
+      expect(dialog.textContent).toContain("建筑属性统一设置");
       i18n.global.locale.value = "en-US";
       await nextTick();
-      expect(trigger.textContent?.trim()).toBe("High-wealth retail ($$$)");
+      expect(dialog.textContent).toContain("Set jobs and shifts in Building Properties");
+      expect(dialog.querySelector('[role="alert"]')).toBeNull();
+
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it("adds another customer tier while keeping the saved tier and goods", async () => {
+    i18n.global.locale.value = "zh-CN";
+    const wrapper = mount(BehaviorLeafSheet, {
+      attachTo: document.body,
+      global: { plugins: [i18n] },
+      props: {
+        node: { ...node, id: "leaf-retail-wealth", position: [0, 0] },
+        params: { type: "commercial", commercialProfile: "ground-commercial-w2-v1", shoppers: 6 },
+        labelKey: "studio.assetWorkbench.logicNode.leafCommercial",
+        trigger: null,
+      },
+    });
+    try {
+      await nextTick();
+      const dialog = document.querySelector('[role="dialog"]')!;
       const fields = dialog.querySelectorAll<HTMLInputElement>('input[type="number"]');
-      expect(fields[0].value).toBe("6");
-      expect(fields[4].placeholder).toBe("7");
-      expect(fields[5].placeholder).toBe("15");
+      expect([...fields].map((field) => field.value)).toEqual(["0", "6", "0", "36", "18", "9"]);
+      fields[0].value = "25";
+      fields[0].dispatchEvent(new Event("change", { bubbles: true }));
+      await nextTick();
+      expect(dialog.textContent).toContain("共享接待容量 31");
       dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       expect(wrapper.emitted("apply")).toEqual([[
-        { type: "commercial", commercialProfile: "ground-commercial-w3-v1", w1: 6 },
+        { type: "commercial", commercialProfile: "ground-mall-mixed-v1", shoppers: undefined,
+          shoppersW1: 25, shoppersW2: 6, shoppersW3: 0, goodsW1: 36, goodsW2: 18, goodsW3: 9 },
       ]]);
     } finally {
       wrapper.unmount();
@@ -210,7 +266,7 @@ describe("BehaviorLeafSheet", () => {
     }
   });
 
-  it("offers three residence tiers and derives shopper capacity from the worker allocation", async () => {
+  it("offers three residence tiers and edits shopper and happiness capacities", async () => {
     i18n.global.locale.value = "zh-CN";
     const wrapper = mount(BehaviorLeafSheet, {
       attachTo: document.body,
@@ -228,14 +284,24 @@ describe("BehaviorLeafSheet", () => {
       dialog.querySelector<HTMLButtonElement>(".f-select")!.click();
       await nextTick();
       const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
-      expect(options.slice(0, 3).map((option) => option.textContent?.trim()))
-        .toEqual(["低收入住宅 ($)", "中收入住宅 ($$)", "高收入住宅 ($$$)"]);
-      options[2].click();
+      expect(options.slice(0, 4).map((option) => option.textContent?.trim()))
+        .toEqual(["低收入住宅 ($)", "中收入住宅 ($$)", "高收入住宅 ($$$)", "低收入高密住宅 ($)"]);
       i18n.global.locale.value = "en-US";
+      await nextTick();
+      expect(options[3].textContent?.trim()).toBe("High-density low-wealth residence ($)");
+      options[3].click();
+      await nextTick();
+      expect(dialog.querySelector('input[placeholder="6600"]')).not.toBeNull();
+      dialog.querySelector<HTMLButtonElement>(".f-select")!.click();
+      await nextTick();
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
+        .find((option) => option.textContent?.trim() === "High-wealth residence ($$$)")!.click();
       await nextTick();
       const workers = dialog.querySelector<HTMLInputElement>('input[placeholder="7"]')!;
       expect(workers.closest("label")?.textContent?.trim()).toBe("Resident worker capacity");
-      expect(dialog.querySelector<HTMLInputElement>("input[readonly]")?.value).toBe("3");
+      const shoppers = dialog.querySelector<HTMLInputElement>('input[placeholder="3"]')!;
+      expect(shoppers.closest("label")?.textContent?.trim()).toBe("Resident shopper capacity");
+      expect(shoppers.readOnly).toBe(false);
       workers.value = "11";
       workers.dispatchEvent(new Event("change", { bubbles: true }));
       await nextTick();
@@ -243,10 +309,18 @@ describe("BehaviorLeafSheet", () => {
       workers.value = "6";
       workers.dispatchEvent(new Event("change", { bubbles: true }));
       await nextTick();
-      expect(dialog.querySelector<HTMLInputElement>("input[readonly]")?.value).toBe("4");
+      expect(shoppers.placeholder).toBe("4");
+      shoppers.value = "2";
+      shoppers.dispatchEvent(new Event("change", { bubbles: true }));
+      const happiness = dialog.querySelector<HTMLInputElement>('input[placeholder="110"]')!;
+      happiness.value = "120";
+      happiness.dispatchEvent(new Event("change", { bubbles: true }));
+      await nextTick();
+      expect(workers.placeholder).toBe("8");
       dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       expect(wrapper.emitted("apply")).toEqual([[
-        { type: "residence", residenceProfile: "ground-residence-w3-v1", residentWorkers: 6 },
+        { type: "residence", residenceProfile: "ground-residence-w3-v1", residentWorkers: null,
+          residentShoppers: 2, happinessCapacity: 120 },
       ]]);
     } finally {
       wrapper.unmount();
@@ -269,21 +343,11 @@ describe("BehaviorLeafSheet", () => {
       await nextTick();
       const dialog = document.querySelector('[role="dialog"]')!;
       const inputs = Array.from(dialog.querySelectorAll<HTMLInputElement>('input[type="number"]'));
-      expect(inputs.map((input) => input.value)).toEqual(["400", "200", "100", "1"]);
-      expect(inputs[0].closest("label")?.textContent?.trim()).toBe("低收入岗位");
+      expect(inputs).toHaveLength(0);
+      expect(dialog.textContent).toContain("在建筑属性页设置岗位");
       i18n.global.locale.value = "en-US";
       await nextTick();
-      expect(inputs[0].closest("label")?.textContent?.trim()).toBe("Low-wealth jobs");
-      const minimum = inputs[3];
-      minimum.value = "701";
-      minimum.dispatchEvent(new Event("change", { bubbles: true }));
-      await nextTick();
-      expect(dialog.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
-      minimum.value = "10";
-      minimum.dispatchEvent(new Event("change", { bubbles: true }));
-      await nextTick();
-      dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      expect(wrapper.emitted("apply")).toEqual([[{ type: "office", minWorkers: 10 }]]);
+      expect(dialog.textContent).toContain("Set jobs, minimum staffing, and shifts in Building Properties");
     } finally {
       wrapper.unmount();
     }

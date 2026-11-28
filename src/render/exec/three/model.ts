@@ -246,7 +246,7 @@ export async function executeModel(input: ModelExecutionInput): Promise<void> {
   }
   if (modelUnit) input.modelGroup.add(modelUnit);
 
-  if (plan.deferredEnabled && payload) {
+  if (plan.deferredEnabled && payload && materialGroups.some((group) => group.length > 0)) {
     const deferredSpan = renderTelemetry.begin("texture_compose", {
       phase: "deferred",
     });

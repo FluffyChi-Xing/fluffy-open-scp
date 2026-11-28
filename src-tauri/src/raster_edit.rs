@@ -44,6 +44,8 @@ enum RasterEditError {
     CompanionTooLarge,
     #[error("target resource is not a decal dictionary")]
     NotDecalDictionary,
+    #[error("decal dictionary material {actual:?} does not match {expected:#010x}")]
+    DecalMaterialMismatch { expected: u32, actual: Option<u32> },
     #[error("property parse error: {0}")]
     Properties(String),
     #[error("decal entry id was not found in the atlas")]
@@ -77,6 +79,7 @@ impl RasterEditError {
             Self::InvalidCompanion(_) => "invalid_companion",
             Self::CompanionTooLarge => "limit_exceeded",
             Self::NotDecalDictionary => "not_decal_dictionary",
+            Self::DecalMaterialMismatch { .. } => "decal_material_mismatch",
             Self::Properties(_) => "property_parse",
             Self::EntryNotFound => "entry_not_found",
             Self::NotWritable => "not_writable",
@@ -539,24 +542,8 @@ pub async fn read_lot_material(
             sc_properties::ParseLimits::default(),
         )
         .map_err(|error| RasterEditError::Properties(error.to_string()))?;
-        // Parent(0x00B2CCCB) 继承展平：lot 变体常把 LotColors 挂在父级
-        //（本级只有 LotMask/LOD），不展平会全部落到回退色。
-        let mut properties =
-            crate::package_service::flatten_lot_parents(raw_properties.clone(), &package, &manager);
-        // 父级在 SimCity_Game.package 而会话未打开 Game 时，父链会断在中间：
-        // 用同目录源包句柄重试（仅授权 key 全缺时，避免无谓打开大包）。
-        if !crate::package_service::lot_chain_resolved(&properties) {
-            let sources = crate::package_service::locate_sim_source_packages(&manager, &store)
-                .unwrap_or_default();
-            if !sources.is_empty() {
-                properties = crate::package_service::flatten_lot_parents_with_sources(
-                    raw_properties,
-                    &package,
-                    &manager,
-                    &sources,
-                );
-            }
-        }
+        let properties =
+            crate::package_service::resolve_lot_properties(raw_properties, &package, &manager, &store);
         let document = sc_properties::LotEditorDocument::from_property_file(properties);
         let (colors, colors_authored) = crate::package_service::lot_colors(&document);
         let (border_colors, border_widths, border_pattern_indices) =
@@ -630,6 +617,8 @@ pub struct RegisterDecalEntryRequest {
     pub aspect_ratio: f32,
     /// Color1-4 存储口径（线性分量的一半，与既有字典一致）。
     pub colors: [[f32; 4]; 4],
+    /// Material required by the authoring profile, when the caller specifies one.
+    pub expected_material_instance: Option<u32>,
     /// Some(instance) 时按条目 ID 替换既有行；None 追加新行。
     #[serde(default)]
     pub replace_instance: Option<u32>,
@@ -708,6 +697,9 @@ pub async fn register_decal_entry(
         if !sc_properties::decal::looks_like_dictionary(&file) {
             return Err(RasterEditError::NotDecalDictionary);
         }
+        if let Some(expected) = request.expected_material_instance {
+            require_decal_material(&file, expected)?;
+        }
         let upsert = sc_properties::DecalEntryUpsert {
             id: dbpf_key(&request.entry_id),
             raster: dbpf_key(&request.raster_tgi),
@@ -722,9 +714,8 @@ pub async fn register_decal_entry(
         let property_data = file.encode_canonical().map_err(|error| {
             RasterEditError::InvalidArgument(format!("atlas encode failed: {error}"))
         })?;
-        let entry_count = sc_properties::DecalDictionary::from_file(&file)
-            .entries
-            .len();
+        let dictionary = sc_properties::DecalDictionary::from_file(&file);
+        let entry_count = dictionary.entries.len();
 
         // 两资源同包导出（raster + atlas property，副本语义）。
         let raster_id = ResourceId {
@@ -746,6 +737,20 @@ pub async fn register_decal_entry(
         }
         write_export(&output_path, &overlay)?;
 
+        if request.expected_material_instance.is_some() {
+            let written = dbpf::Package::open(&output_path)?;
+            let (raster, atlas) = verify_written_decal(&written, raster_id, atlas_id)?;
+            if raster.width != request.width
+                || raster.height != request.height
+                || raster.decode_top_mip_rgba()? != rgba
+                || atlas != dictionary
+            {
+                return Err(RasterEditError::Overlay(
+                    "decal package readback mismatch".into(),
+                ));
+            }
+        }
+
         Ok(RegisterDecalEntryResult {
             output_path: output_path.to_string_lossy().into_owned(),
             raster_tgi: request.raster_tgi,
@@ -758,6 +763,32 @@ pub async fn register_decal_entry(
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
     .map_err(CommandError::from)
+}
+
+fn require_decal_material(
+    file: &sc_properties::PropertyFile,
+    expected: u32,
+) -> Result<(), RasterEditError> {
+    let actual = sc_properties::DecalDictionary::from_file(file)
+        .material
+        .map(|key| key.instance);
+    if actual != Some(expected) {
+        return Err(RasterEditError::DecalMaterialMismatch { expected, actual });
+    }
+    Ok(())
+}
+
+fn verify_written_decal(
+    package: &dbpf::Package,
+    raster: ResourceId,
+    atlas: ResourceId,
+) -> Result<(RasterImage, sc_properties::DecalDictionary), RasterEditError> {
+    let raster_entry = package.entry(raster).ok_or(RasterEditError::NotFound)?;
+    let atlas_entry = package.entry(atlas).ok_or(RasterEditError::NotFound)?;
+    let raster = RasterImage::parse(&package.read(raster_entry)?)?;
+    let atlas = sc_properties::DecalDictionary::parse(&package.read(atlas_entry)?)
+        .map_err(|error| RasterEditError::Properties(error.to_string()))?;
+    Ok((raster, atlas))
 }
 
 /// TgiDto → sc_properties::Key（条目 ID / raster 引用共用）。
@@ -795,6 +826,10 @@ pub struct CreateLotOverlayRequest {
     pub border_pattern_indices: Option<[u8; 4]>,
     #[serde(default)]
     pub border_widths: Option<[f32; 4]>,
+    #[serde(default)]
+    pub color_heights: Option<[f32; 4]>,
+    #[serde(default)]
+    pub border_heights: Option<[f32; 4]>,
     pub output_path: String,
 }
 
@@ -829,6 +864,8 @@ fn build_new_lot_property(
     border_colors: [[u8; 3]; 4],
     border_pattern_indices: [u8; 4],
     border_widths: [f32; 4],
+    color_heights: Option<[f32; 4]>,
+    border_heights: Option<[f32; 4]>,
 ) -> sc_properties::PropertyFile {
     use sc_properties::{Kind, PropType, Property, PropertyEncoding, Value};
 
@@ -883,6 +920,16 @@ fn build_new_lot_property(
             kind: Kind::Scalar(Value::Float(border_widths[index])),
             encoding: PropertyEncoding::default(),
         });
+    }
+    for (hash, heights) in [(0x0D02_D58A, color_heights), (0x0D02_D58B, border_heights)] {
+        if let Some(heights) = heights {
+            values.push(Property {
+                hash,
+                prop_type: PropType::Vector4,
+                kind: Kind::Scalar(Value::Vector4(heights)),
+                encoding: PropertyEncoding::default(),
+            });
+        }
     }
     let claimed_count = values.len() as u32;
     sc_properties::PropertyFile {
@@ -952,6 +999,8 @@ pub async fn create_lot_overlay(
             request.border_colors.unwrap_or([[156; 3]; 4]),
             request.border_pattern_indices.unwrap_or([0; 4]),
             request.border_widths.unwrap_or([0.0; 4]),
+            request.color_heights,
+            request.border_heights,
         );
         let property_data = property.encode_canonical().map_err(|error| {
             RasterEditError::InvalidArgument(format!("lot property encode failed: {error}"))
@@ -1127,6 +1176,75 @@ mod tests {
     }
 
     #[test]
+    fn graffiti_registration_preserves_material_and_all_paint_channels() {
+        let material = 0xe539_0a98;
+        let atlas_id = ResourceId {
+            type_id: PROPERTY_TYPE_ID,
+            group: 0xc67f_b185,
+            instance: 0xeefd_390c,
+        };
+        let raster_id = ResourceId {
+            type_id: RASTER_TYPE_ID,
+            group: 0,
+            instance: 0x18,
+        };
+        let bytes = property_file_bytes(vec![scalar(
+            sc_properties::decal::DECAL_MATERIAL_HASH,
+            PropType::Key,
+            Value::Key(sc_properties::Key {
+                type_id: 0x2f4e_681b,
+                group: 0,
+                instance: material,
+            }),
+        )]);
+        let mut file = sc_properties::PropertyFile::parse(&bytes).unwrap();
+        require_decal_material(&file, material).unwrap();
+        assert!(matches!(
+            require_decal_material(&file, 0x7368_4efc),
+            Err(RasterEditError::DecalMaterialMismatch { .. })
+        ));
+        let new_entry = sc_properties::DecalEntryUpsert {
+            id: sc_properties::Key {
+                type_id: 0,
+                group: 0,
+                instance: 0x61,
+            },
+            raster: sc_properties::Key {
+                type_id: raster_id.type_id,
+                group: raster_id.group,
+                instance: raster_id.instance,
+            },
+            aspect_ratio: 2.0,
+            colors: [[0.25, 0.1, 0.0, 0.0]; 4],
+        };
+        let position = sc_properties::upsert_entry(&mut file, &new_entry, None).unwrap();
+        let rgba = [180, 0, 0, 0, 0, 0, 0, 220];
+        let raster = RasterImage::build_raw_bgra(2, 1, &rgba, false).unwrap();
+        let package_bytes = dbpf::write_uncompressed_overlay(&[
+            OverlayEntry::new(raster_id, raster.to_bytes()),
+            OverlayEntry::new(atlas_id, file.encode_canonical().unwrap()),
+        ])
+        .unwrap();
+        let path =
+            std::env::temp_dir().join(format!("openscp-graffiti-{}.package", std::process::id()));
+        fs::write(&path, package_bytes).unwrap();
+        let package = dbpf::Package::open(&path).unwrap();
+        let (actual_raster, actual_atlas) =
+            verify_written_decal(&package, raster_id, atlas_id).unwrap();
+        drop(package);
+        fs::remove_file(&path).unwrap();
+        assert_eq!(actual_raster.decode_top_mip_rgba().unwrap(), rgba);
+        assert_eq!(
+            actual_atlas,
+            sc_properties::DecalDictionary::from_file(&file)
+        );
+        assert_eq!(
+            actual_atlas.entries[position].raster,
+            Some(new_entry.raster)
+        );
+    }
+
+    #[test]
     fn new_lot_property_round_trips_through_editor_document() {
         let mask = sc_properties::Key {
             instance: 0xabcd,
@@ -1147,11 +1265,21 @@ mod tests {
             [[156; 3]; 4],
             [0; 4],
             [0.0; 4],
+            Some([-2.0, -1.0, -2.0, -2.0]),
+            Some([-2.5, 0.0, -2.0, -2.0]),
         );
 
         // 编码必须可逆，且 LotEditorDocument 能读回语义字段。
         let encoded = file.encode_canonical().unwrap();
         let reparsed = sc_properties::PropertyFile::parse(&encoded).unwrap();
+        assert!(matches!(
+            reparsed.get(0x0D02_D58A).and_then(|property| property.scalar()),
+            Some(sc_properties::Value::Vector4(heights)) if *heights == [-2.0, -1.0, -2.0, -2.0]
+        ));
+        assert!(matches!(
+            reparsed.get(0x0D02_D58B).and_then(|property| property.scalar()),
+            Some(sc_properties::Value::Vector4(heights)) if *heights == [-2.5, 0.0, -2.0, -2.0]
+        ));
         let document = sc_properties::LotEditorDocument::from_property_file(reparsed);
         assert_eq!(document.lot_size, Some([48.0, 96.0]));
         assert_eq!(

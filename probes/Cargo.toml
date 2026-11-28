@@ -19,6 +19,16 @@ base64.workspace = true
 serde.workspace = true
 serde_json = "1"
 flate2 = "1"
+sha2 = "0.10"
+
+[[example]]
+name = "lot_alignment"
+path = "property/lot_alignment.rs"
+
+# runtime —— validate a single Menu2 change before a live experiment
+[[example]]
+name = "package_reload_prepare"
+path = "runtime/package_reload_prepare.rs"
 
 [[example]]
 name = "building_economy_audit"
@@ -732,6 +742,42 @@ name = "region_state_maps"
 path = "region/region_state_maps.rs"
 
 [[example]]
+name = "region_coal_control"
+path = "region/region_coal_control.rs"
+
+[[example]]
+name = "edgewater_single_slot"
+path = "region/edgewater_single_slot.rs"
+
+[[example]]
+name = "edgewater_single_slot_ui"
+path = "region/edgewater_single_slot_ui.rs"
+
+[[example]]
+name = "edgewater_expanded_height"
+path = "region/edgewater_expanded_height.rs"
+
+[[example]]
+name = "edgewater_expanded_data"
+path = "region/edgewater_expanded_data.rs"
+
+[[example]]
+name = "edgewater_surface_data"
+path = "region/edgewater_surface_data.rs"
+
+[[example]]
+name = "edgewater_aligned_surface"
+path = "region/edgewater_aligned_surface.rs"
+
+[[example]]
+name = "half_coast_contour_candidate"
+path = "region/half_coast_contour_candidate.rs"
+
+[[example]]
+name = "edgewater_groundfix_pair"
+path = "region/edgewater_groundfix_pair.rs"
+
+[[example]]
 name = "region_state_probe"
 path = "region/region_state_probe.rs"
 
@@ -1138,6 +1184,10 @@ path = "ui/ui_layout_census.rs"
 [[example]]
 name = "ui_observer_package"
 path = "ui/ui_observer_package.rs"
+
+[[example]]
+name = "updater_test_package"
+path = "ui/updater_test_package.rs"
 
 # effect —— Swarm / 特效
 [[example]]

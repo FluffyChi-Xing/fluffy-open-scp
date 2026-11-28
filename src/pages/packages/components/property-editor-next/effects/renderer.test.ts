@@ -1,7 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { mount } from "@vue/test-utils";
+import { shallowRef } from "vue";
+import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import type { EffectEmitterData, EffectUnit, SwarmParticle } from "@/api/tauri";
+import { i18n } from "@/locales";
+import WorkbenchSchemaViewport from "@/pages/studio/components/asset/WorkbenchSchemaViewport.vue";
+import { schemaUnitJson } from "@/pages/packages/components/property-editor/peSchemaDoc";
+import { buildUnitObject } from "@/render/exec/three/overlays";
 import { createParticleEffect } from "./renderer";
+
+const viewportHost = vi.hoisted(() => ({ create: vi.fn() }));
+vi.mock("@/pages/packages/components/property-editor/useEditorViewport", () => ({
+  useEditorViewport: viewportHost.create,
+}));
+vi.mock("@/pages/packages/components/property-editor/simAssets", () => ({
+  loadSimParts: () => new Promise(() => {}),
+}));
 
 const particle: SwarmParticle = {
   typeCode: 1, index: 0, flags: 0,
@@ -81,4 +95,73 @@ describe("createParticleEffect (parallel)", () => {
     expect(legacyMaterial.defines.SWARM_EMITTER_PLANE).toBeUndefined();
     view.dispose();
   });
+});
+
+it("restores the original cone when the scene editor disables its effect switch in refined mode", async () => {
+  const marker = buildUnitObject(THREE, unit)!;
+  const effects = new THREE.Group().add(marker);
+  const unitObjects = new Map([["effect:0", marker]]);
+  const rebuild = vi.fn();
+  const invalidate = vi.fn();
+  viewportHost.create.mockReturnValue({
+    // Seed the already assembled scene and exercise the real incremental watcher.
+    ready: new Promise<void>(() => {}),
+    rebuild,
+    container: shallowRef(null),
+    revision: shallowRef(0),
+    unitObjects,
+    setModelPickable: vi.fn(),
+    viewer: shallowRef({
+      THREE,
+      group: () => effects,
+      setDepthOfField: vi.fn(),
+      setToneMapping: vi.fn(),
+      setOnFrame: vi.fn(),
+      setHoverOutline: vi.fn(),
+      setSelectedOutline: vi.fn(),
+      setSelected: vi.fn(),
+      invalidate,
+    }),
+  });
+  const wrapper = mount(WorkbenchSchemaViewport, {
+    props: { schema: {
+      $schema: "openscp.lot-asset/1",
+      units: [schemaUnitJson(unit)],
+      lot: {
+        size: null, tilePeriod: null, placement: null,
+        colors: [], borderColors: [], borderWidths: [], borderPatterns: [], baseTile: 8,
+        overlayBoxOffset: null, modelBBoxCenter: null,
+      },
+      editor: { groups: { effects: true } },
+    } },
+    attrs: { renderMode: "refined", renderEffects: false },
+    global: { plugins: [i18n] },
+  });
+  try {
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      if (cycle === 0) {
+        await wrapper.setProps({ renderEffects: true } as never);
+        expect(unitObjects.get("effect:0")?.id).toBe(marker.id);
+      }
+      await wrapper.setProps({
+        renderEffects: true,
+        effectDefinitions: new Map([[1, { emitters: [emitter] }]]),
+      } as never);
+      const effect = unitObjects.get("effect:0")!;
+      expect(effect.userData.effectParticlePreview).toBe(true);
+      expect(effects.children.map((child) => child.id)).toEqual([effect.id]);
+      const dispose = vi.fn();
+      (effect.children[1] as THREE.Mesh).geometry.addEventListener("dispose", dispose);
+      invalidate.mockClear();
+      await wrapper.setProps({ renderEffects: false, effectDefinitions: new Map() } as never);
+      expect(unitObjects.get("effect:0")?.id).toBe(marker.id);
+      expect(effects.children.map((child) => child.id)).toEqual([marker.id]);
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(invalidate).toHaveBeenCalled();
+    }
+    expect(rebuild).not.toHaveBeenCalled();
+  } finally {
+    wrapper.unmount();
+    viewportHost.create.mockReset();
+  }
 });

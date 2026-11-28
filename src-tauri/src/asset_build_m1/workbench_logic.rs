@@ -18,6 +18,7 @@ use std::path::Path;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CompiledLogic {
     pub menu: Option<Value>,
+    pub mega_tower: Option<Value>,
     pub labor: Option<Value>,
     pub behaviors: Vec<Value>,
     /// 文档是否声明了逻辑图（false = 不触碰 base 的 labor/behaviors）。
@@ -35,13 +36,35 @@ pub fn compile(
     let workbench = document.pointer("/editor/workbench");
 
     let menu = compile_menu(workbench, path_exists, &mut errors);
-    let (labor, behaviors, logic_present) = compile_logic(workbench, &mut errors, &mut warnings);
+    let mut mega_tower = workbench.and_then(|workbench| workbench.get("megaTower")).filter(|value| !value.is_null()).cloned();
+    let (labor, behaviors, logic_present) = if let Some(value) = &mut mega_tower {
+        let logic = workbench.and_then(|workbench| workbench.get("logic"));
+        let info = logic.and_then(|logic| logic["nodes"].as_array())
+            .and_then(|nodes| nodes.iter().find(|node| node["kind"] == "building-info"))
+            .and_then(|node| node["id"].as_str());
+        let labor = compile_building_labor(
+            logic.and_then(|logic| logic["params"].as_object()), info, &mut errors,
+        );
+        if let Some(selection) = value.as_object_mut() {
+            selection.remove("labor");
+            if let Some(labor) = labor {
+                selection.insert("labor".into(), labor);
+            }
+        }
+        if let Err(error) = super::behavior_mega_tower::Selection::parse(value.clone()).and_then(|selection| selection.compile()) {
+            errors.push(error);
+        }
+        (None, Vec::new(), false)
+    } else {
+        compile_logic(workbench, &mut errors, &mut warnings)
+    };
 
     if !errors.is_empty() {
         return Err(errors);
     }
     Ok(CompiledLogic {
         menu,
+        mega_tower,
         labor,
         behaviors,
         logic_present,
@@ -222,6 +245,74 @@ fn param_of(
     }
 }
 
+fn compile_building_labor(
+    params: Option<&Map<String, Value>>,
+    info: Option<&str>,
+    errors: &mut Vec<String>,
+) -> Option<Value> {
+    let mut labor = None;
+    if let Some(id) = info {
+        if let Some(node_params) = param_of(params, id, errors) {
+            let field = |name: &str| -> Option<i64> {
+                node_params
+                    .get(name)
+                    .and_then(Value::as_i64)
+                    .filter(|v| *v >= 0)
+            };
+            // 主输入 = workers（这栋楼需要的劳工总数）；w1/w2/w3 是"按收入档
+            // 拆分"的高级覆盖，minWorkers 留空由后端按原版比例自动推导。
+            let workers = field("workers");
+            let tiers = (field("w1"), field("w2"), field("w3"));
+            let base = match (workers, tiers) {
+                (Some(total), (Some(a), Some(b), Some(c))) => {
+                    json!({ "workers": total, "w1": a, "w2": b, "w3": c })
+                }
+                (Some(total), _) => json!({ "workers": total }),
+                (None, (Some(a), Some(b), Some(c))) => json!({ "w1": a, "w2": b, "w3": c }),
+                _ => {
+                    errors.push(format!(
+                        "logic node {id}: workers (需要的劳工总数) must be a non-negative integer"
+                    ));
+                    Value::Null
+                }
+            };
+            if !base.is_null() {
+                let mut labor_value = base;
+                if let Some(min) = field("minWorkers") {
+                    labor_value["minWorkers"] = json!(min);
+                }
+                // 可选排班表（8 个非负整数=8 班位规模，0=关班；缺省由后端自动补齐）
+                if let Some(schedule) = node_params
+                    .get("schedule")
+                    .and_then(Value::as_array)
+                    .filter(|values| values.len() == 8)
+                {
+                    let mut values = Vec::with_capacity(8);
+                    let mut valid = true;
+                    for value in schedule {
+                        match value.as_i64().filter(|v| (0..=999).contains(v)) {
+                            Some(item) => values.push(item as i32),
+                            None => {
+                                errors.push(format!(
+                                    "logic node {id}: schedule values must be integers 0-999"
+                                ));
+                                valid = false;
+                                break;
+                            }
+                        }
+                    }
+                    if valid {
+                        labor_value["schedule"] = json!(values);
+                    }
+                }
+                labor = Some(labor_value);
+            }
+        }
+    }
+
+    labor
+}
+
 fn compile_logic(
     workbench: Option<&Value>,
     errors: &mut Vec<String>,
@@ -335,65 +426,7 @@ fn compile_logic(
         }
     }
 
-    let mut labor = None;
-    if let Some(id) = infos.first() {
-        if let Some(node_params) = param_of(params, id, errors) {
-            let field = |name: &str| -> Option<i64> {
-                node_params
-                    .get(name)
-                    .and_then(Value::as_i64)
-                    .filter(|v| *v >= 0)
-            };
-            // 主输入 = workers（这栋楼需要的劳工总数）；w1/w2/w3 是"按收入档
-            // 拆分"的高级覆盖，minWorkers 留空由后端按原版比例自动推导。
-            let workers = field("workers");
-            let tiers = (field("w1"), field("w2"), field("w3"));
-            let base = match (workers, tiers) {
-                (Some(total), (Some(a), Some(b), Some(c))) => {
-                    json!({ "workers": total, "w1": a, "w2": b, "w3": c })
-                }
-                (Some(total), _) => json!({ "workers": total }),
-                (None, (Some(a), Some(b), Some(c))) => json!({ "w1": a, "w2": b, "w3": c }),
-                _ => {
-                    errors.push(format!(
-                        "logic node {id}: workers (需要的劳工总数) must be a non-negative integer"
-                    ));
-                    Value::Null
-                }
-            };
-            if !base.is_null() {
-                let mut labor_value = base;
-                if let Some(min) = field("minWorkers") {
-                    labor_value["minWorkers"] = json!(min);
-                }
-                // 可选排班表（8 个非负整数=8 班位规模，0=关班；缺省由后端自动补齐）
-                if let Some(schedule) = node_params
-                    .get("schedule")
-                    .and_then(Value::as_array)
-                    .filter(|values| values.len() == 8)
-                {
-                    let mut values = Vec::with_capacity(8);
-                    let mut valid = true;
-                    for value in schedule {
-                        match value.as_i64().filter(|v| (0..=999).contains(v)) {
-                            Some(item) => values.push(item as i32),
-                            None => {
-                                errors.push(format!(
-                                    "logic node {id}: schedule values must be integers 0-999"
-                                ));
-                                valid = false;
-                                break;
-                            }
-                        }
-                    }
-                    if valid {
-                        labor_value["schedule"] = json!(values);
-                    }
-                }
-                labor = Some(labor_value);
-            }
-        }
-    }
+    let labor = compile_building_labor(params, infos.first().copied(), errors);
 
     let mut behaviors = Vec::new();
     for core in &cores {
@@ -415,7 +448,7 @@ fn compile_logic(
             .unwrap_or("");
         if !matches!(
             kind,
-            "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel"
+            "education" | "tourism" | "park" | "tree" | "landvalue" | "residence" | "office" | "commercial" | "hotel" | "casino" | "controlnet" | "fusion-power"
         ) {
             errors.push(format!("logic leaf {leaf}: unknown behavior type {kind:?}"));
             continue;
@@ -423,39 +456,27 @@ fn compile_logic(
         behaviors.push(json!({"id": leaf, "type": kind, "params": node_params}));
     }
 
-    // Asset Editor permits both tourism and park leaves to author the same
-    // attraction field.  In the game this is one Unit property, not two
-    // additive channels.  Tourism is the requested landmark behavior and is
-    // therefore authoritative; retain the park node's land-value semantics
-    // while dropping only its duplicate attraction write.
-    let tourism_writes_attraction = behaviors.iter().any(|behavior| {
-        behavior.get("type").and_then(Value::as_str) == Some("tourism")
-            && behavior
-                .pointer("/params/attraction")
-                .is_some_and(|value| !value.is_null())
-    });
-    if tourism_writes_attraction {
-        for behavior in &mut behaviors {
-            if behavior.get("type").and_then(Value::as_str) != Some("park") {
-                continue;
-            }
-            if behavior.pointer("/params/attraction").is_some() {
-                if let Some(params) = behavior.get_mut("params").and_then(Value::as_object_mut) {
-                    params.remove("attraction");
-                    let id = behavior.get("id").and_then(Value::as_str).unwrap_or("park");
-                    warnings.push(format!(
-                        "behavior node {id}: park.attraction ignored because tourism.attraction is authoritative"
-                    ));
-                }
-            }
-        }
+    // The legacy school binder rewrites paths and donor decals. An authored
+    // host keeps its scene; the school binder can target its own internal lot.
+    let authored_geometry = workbench
+        .and_then(|value| value["writes"].as_array())
+        .is_some_and(|writes| writes.iter().any(|value| matches!(value.as_str(), Some("paths" | "decals"))));
+    if authored_geometry
+        && behaviors.iter().filter(|node| node["type"] != "utilities-core").count() == 1
+        && let Some(school) = behaviors.iter_mut().find(|node| node["type"] == "education")
+    {
+        school["unit"] = school["id"].clone();
     }
 
     // 提前跑一遍行为编译：参数冲突/非法值在入队前点名节点。
     if errors.is_empty() {
         match crate::asset_build_m1::behavior_nodes::parse_labor(labor.as_ref()).and_then(|labor| {
             crate::asset_build_m1::behavior_nodes::parse_nodes(&behaviors)
-                .and_then(|nodes| crate::asset_build_m1::behavior_nodes::compile(labor, &nodes))
+                .and_then(|nodes| {
+                    let authored_casino = super::behavior_casino::requested(&nodes)
+                        && super::author_tourism::selected(&nodes);
+                    super::behavior_mega_tower::compile_building(labor, &nodes, authored_casino)
+                })
         }) {
             Ok(resolved) => warnings.extend(resolved.notes),
             Err(error) => errors.push(error),
@@ -576,7 +597,12 @@ pub fn apply_to_schema(base: &mut Value, compiled: &CompiledLogic) -> Result<(),
     if let Some(menu) = &compiled.menu {
         semantics.insert("menu".into(), menu.clone());
     }
-    if compiled.logic_present {
+    if let Some(tower) = &compiled.mega_tower {
+        semantics.insert("megaTower".into(), tower.clone());
+        for field in ["labor", "behaviors", "behavior"] {
+            semantics.remove(field);
+        }
+    } else if compiled.logic_present {
         match &compiled.labor {
             Some(labor) => {
                 semantics.insert("labor".into(), labor.clone());
@@ -590,7 +616,7 @@ pub fn apply_to_schema(base: &mut Value, compiled: &CompiledLogic) -> Result<(),
     // Old workbench schemas can request a delta even after the document adds
     // simulation behavior to a new menu identity. The behavior processor
     // requires a standalone package for that combination.
-    if compiled.menu.is_some() && (compiled.labor.is_some() || !compiled.behaviors.is_empty()) {
+    if compiled.mega_tower.is_some() || (compiled.menu.is_some() && (compiled.labor.is_some() || !compiled.behaviors.is_empty())) {
         if let Some(outputs) = root.get_mut("outputs").and_then(Value::as_object_mut) {
             outputs.insert("mode".into(), json!("full"));
         }
@@ -667,6 +693,7 @@ mod tests {
         let mut schema = json!({"outputs": {"mode": "delta", "package": "test.package"}});
         let compiled = CompiledLogic {
             menu: Some(json!({"title": "Test"})),
+            mega_tower: None,
             labor: Some(json!({"workers": 5})),
             behaviors: Vec::new(),
             logic_present: true,
@@ -801,6 +828,35 @@ mod tests {
         assert_eq!(compiled.labor.unwrap()["w1"], 20);
         assert_eq!(compiled.behaviors.len(), 2);
         assert_eq!(compiled.behaviors[1]["type"], "education");
+    }
+
+    #[test]
+    fn office_and_retail_use_only_the_building_workforce() {
+        let logic = json!({
+            "nodes": [
+                {"id":"info","kind":"building-info"}, {"id":"core","kind":"behavior-core"},
+                {"id":"office","kind":"behavior-leaf"}, {"id":"retail","kind":"behavior-leaf"}
+            ],
+            "edges": [
+                {"source":"info","target":"asset","targetHandle":"info"},
+                {"source":"core","target":"asset","targetHandle":"behavior"},
+                {"source":"office","target":"core","targetHandle":"leaf"},
+                {"source":"retail","target":"core","targetHandle":"leaf"}
+            ],
+            "params": {
+                "info":{"w1":350,"w2":150,"w3":50,"minWorkers":5},
+                "core":{}, "office":{"type":"office","w1":999,"minWorkers":99},
+                "retail":{"type":"commercial","commercialProfile":"ground-mall-mixed-v1","jobsW2":999}
+            }
+        });
+        let built = compile(&document(menu(true), logic), &|_| true).unwrap();
+        assert!(built.behaviors.iter().all(|leaf| leaf["unit"].is_null()));
+        let labor = super::super::behavior_nodes::parse_labor(built.labor.as_ref()).unwrap();
+        let program = super::super::behavior_mega_tower::compile_building(labor, &built.behaviors, false).unwrap();
+        assert!(program.office_and_retail && program.units.is_empty());
+        for (hash, value) in [(0x0A79_17C5,350.0),(0x0A79_17C6,150.0),(0x0A79_17C7,50.0),(0x0A79_17C8,5.0)] {
+            assert_eq!(program.set_float_fields.get(&hash), Some(&value));
+        }
     }
 
     #[test]

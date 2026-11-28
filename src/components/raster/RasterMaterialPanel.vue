@@ -7,14 +7,14 @@ import FSelect from "@/components/ui/FSelect.vue";
 import { Switch } from "@/components/ui/switch";
 import { computed, ref, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import type { DecalEntryMeta, PropertyDocumentSummary, Tgi } from "@/api/tauri";
 import type {
   RasterProfile,
   RasterSchema,
   RasterSource,
 } from "@/lib/raster-editor/schema";
-const props = defineProps<{ profile: RasterProfile; disabled?: boolean }>();
+const props = defineProps<{ profile: RasterProfile; disabled?: boolean; hideDecalPalette?: boolean }>();
 const lot = defineModel<RasterSchema["lot"]>("lot", { required: true });
 const decal = defineModel<RasterSchema["decal"]>("decal", { required: true });
 const sampling = defineModel<RasterSchema["sampling"]>("sampling", {
@@ -25,7 +25,7 @@ const emit = defineEmits<{
   loadDecal: [entry: DecalEntryMeta, atlas: RasterSource];
   changed: [];
 }>();
-const packages = useGamePackagesStore();
+const packages = useEditorPackageContext();
 const documents = ref<(PropertyDocumentSummary & { packageId: number })[]>([]);
 const busy = ref(false),
   error = ref(""),
@@ -79,7 +79,7 @@ async function scan() {
     const results = await Promise.all(
       packages.opened.map(async (p) =>
         (
-          await tauriApi.raster.listPropertyDocuments(p.package.packageId, kind)
+          await tauriApi.raster.listPropertyDocuments(p.package.packageId, kind).catch(() => [])
         ).map((d) => ({ ...d, packageId: p.package.packageId })),
       ),
     );
@@ -98,7 +98,7 @@ async function scan() {
   }
 }
 watch(
-  () => props.profile,
+  () => [props.profile, packages.opened.map(p => p.package.packageId).join(',')] as const,
   () => {
     generation++;
     documents.value = [];
@@ -174,7 +174,7 @@ const label = (s: RasterSource | null) =>
         </button>
       </template>
       <template v-if="isDecal">
-        <div v-if="PROFILE_BEHAVIOR[profile].palette" class="colors">
+        <div v-if="PROFILE_BEHAVIOR[profile].palette && !hideDecalPalette" class="colors">
           <label v-for="(c, i) in decal.colors" :key="i"
             >{{ t("rasterEditor.decalColor", { n: i + 1 })
             }}<input

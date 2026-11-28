@@ -52,6 +52,7 @@ pub struct PackageManager {
     next_package_id: AtomicU64,
     next_job_id: AtomicU64,
     packages: Mutex<HashMap<u64, Arc<Package>>>,
+    editor_packages: Mutex<HashMap<u64, Arc<Package>>>,
     registries: Mutex<HashMap<RegistryKey, Arc<sc_registry::Registry>>>,
     jobs: Mutex<HashMap<u64, ExportStatus>>,
     /// 游戏 Locale/<lang>/Data.package 的字符串表缓存（语义预览卡 text 解析），
@@ -60,11 +61,31 @@ pub struct PackageManager {
 }
 
 impl PackageManager {
+    /// Read-only preview scope: reuse open handles and add local dependencies
+    /// without registering sidebar packages or consuming the global pool.
+    pub(crate) fn preview_scope(&self, dependencies: Vec<Package>) -> Result<Self, PackageError> {
+        let scope = Self::new();
+        {
+            let mut scoped = scope.packages.lock().map_err(|_| PackageError::StatePoisoned)?;
+            for (id, package) in self.all_packages_with_ids()? {
+                scoped.insert(id, package);
+            }
+            let mut next = scoped.keys().copied().max().unwrap_or(0) + 1;
+            for package in dependencies {
+                scoped.insert(next, Arc::new(package));
+                next += 1;
+            }
+            scope.next_package_id.store(next, Ordering::Relaxed);
+        }
+        Ok(scope)
+    }
+
     pub fn new() -> Self {
         Self {
             next_package_id: AtomicU64::new(1),
             next_job_id: AtomicU64::new(1),
             packages: Mutex::new(HashMap::new()),
+            editor_packages: Mutex::new(HashMap::new()),
             registries: Mutex::new(HashMap::new()),
             jobs: Mutex::new(HashMap::new()),
             locale_cache: Mutex::new(HashMap::new()),
@@ -72,10 +93,18 @@ impl PackageManager {
     }
 
     pub(crate) fn insert(&self, package: Package) -> Result<(u64, Arc<Package>), PackageError> {
+        let identity = fs::canonicalize(package.path()).unwrap_or_else(|_| package.path().to_path_buf());
         let mut packages = self
             .packages
             .lock()
             .map_err(|_| PackageError::StatePoisoned)?;
+        // Opening one file repeatedly must reuse its identity, including calls
+        // racing from model restoration and library loading.
+        if let Some((id, existing)) = packages.iter().find(|(_, existing)| {
+            fs::canonicalize(existing.path()).unwrap_or_else(|_| existing.path().to_path_buf()) == identity
+        }) {
+            return Ok((*id, Arc::clone(existing)));
+        }
         if packages.len() >= MAX_OPEN_PACKAGES {
             return Err(PackageError::PackageLimitExceeded(MAX_OPEN_PACKAGES));
         }
@@ -100,7 +129,16 @@ impl PackageManager {
     }
 
     pub(crate) fn get(&self, id: u64) -> Result<Arc<Package>, PackageError> {
-        self.packages
+        if let Some(package) = self
+            .packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?
+            .get(&id)
+            .cloned()
+        {
+            return Ok(package);
+        }
+        self.editor_packages
             .lock()
             .map_err(|_| PackageError::StatePoisoned)?
             .get(&id)
@@ -108,37 +146,101 @@ impl PackageManager {
             .ok_or(PackageError::PackageNotFound(id))
     }
 
+    /// Page-owned identity. Explorer deduplication never adopts these IDs.
+    pub(crate) fn acquire_editor_package(
+        &self,
+        path: &Path,
+    ) -> Result<(u64, Arc<Package>), PackageError> {
+        let canonical = fs::canonicalize(path)?;
+        let existing = self
+            .all_packages()?
+            .into_iter()
+            .find(|p| p.path() == canonical);
+        let package = match existing {
+            Some(p) => p,
+            None => Arc::new(Package::open(&canonical)?),
+        };
+        let mut entries = self
+            .editor_packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?;
+        if entries.len() >= MAX_OPEN_PACKAGES {
+            return Err(PackageError::PackageLimitExceeded(MAX_OPEN_PACKAGES));
+        }
+        let id = self.next_package_id.fetch_add(1, Ordering::Relaxed);
+        entries.insert(id, Arc::clone(&package));
+        Ok((id, package))
+    }
+
+    pub(crate) fn release_editor_package(&self, id: u64) -> Result<(), PackageError> {
+        self.editor_packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?
+            .remove(&id);
+        Ok(())
+    }
+
+    /// Internal preview dependencies share the existing canonical package handle.
+    pub(crate) fn open_reusable(&self, path: &Path) -> Result<u64, PackageError> {
+        let canonical = fs::canonicalize(path)?;
+        let mut packages = self
+            .packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?;
+        if let Some((&id, _)) = packages
+            .iter()
+            .find(|(_, package)| package.path() == canonical)
+        {
+            return Ok(id);
+        }
+        if packages.len() >= MAX_OPEN_PACKAGES {
+            return Err(PackageError::PackageLimitExceeded(MAX_OPEN_PACKAGES));
+        }
+        let package = Arc::new(Package::open(&canonical)?);
+        let id = self.next_package_id.fetch_add(1, Ordering::Relaxed);
+        if id == 0 {
+            return Err(PackageError::InvalidArgument(
+                "package id space exhausted".into(),
+            ));
+        }
+        packages.insert(id, package);
+        Ok(id)
+    }
+
     /// 所有已打开包的快照（跨包资源查找用，如 LotMask）。
     fn all_packages(&self) -> Result<Vec<Arc<Package>>, PackageError> {
         Ok(self
-            .packages
-            .lock()
-            .map_err(|_| PackageError::StatePoisoned)?
-            .values()
-            .cloned()
+            .all_packages_with_ids()?
+            .into_iter()
+            .map(|(_, package)| package)
             .collect())
     }
 
-    /// 路径去重（EcoGame 自注册跳过已打开者）。
     pub(crate) fn is_path_open(&self, path: &Path) -> bool {
-        let Ok(canon) = std::fs::canonicalize(path) else {
+        let Ok(canonical) = fs::canonicalize(path) else {
             return false;
         };
-        self.packages
-            .lock()
-            .map(|packages| packages.values().any(|pkg| pkg.path() == &canon))
+        self.all_packages()
+            .map(|entries| entries.iter().any(|p| p.path() == canonical))
             .unwrap_or(false)
     }
 
-    /// 所有已打开包的 (id, package) 快照（需要回报资源所在包 id 时使用）。
     pub(crate) fn all_packages_with_ids(&self) -> Result<Vec<(u64, Arc<Package>)>, PackageError> {
-        Ok(self
+        let mut result: Vec<_> = self
             .packages
             .lock()
             .map_err(|_| PackageError::StatePoisoned)?
             .iter()
             .map(|(id, package)| (*id, Arc::clone(package)))
-            .collect())
+            .collect();
+        result.extend(
+            self.editor_packages
+                .lock()
+                .map_err(|_| PackageError::StatePoisoned)?
+                .iter()
+                .map(|(id, package)| (*id, Arc::clone(package))),
+        );
+        Ok(result)
     }
 
     fn next_job_id(&self) -> Result<u64, PackageError> {
@@ -1522,6 +1624,7 @@ pub enum SemanticCardData {
         models: Vec<SemanticKeyRef>,
         light_count: Option<usize>,
         light_names: Vec<String>,
+        details: sc_properties::vignette::TransportDetails,
     },
     /// 道路/网络：标题 + 路宽 + 是否压平地形 + 外观/幽灵外观（Path 引用）。
     #[serde(rename_all = "camelCase")]
@@ -1553,6 +1656,7 @@ pub enum SemanticCardData {
     ResourceEntry {
         parent: Option<SemanticKeyRef>,
         slots: Vec<ResourceSlot>,
+        scene: sc_properties::vignette::Scene,
         float_a: Option<f32>,
         float_b: Option<f32>,
         enabled: Option<bool>,
@@ -1848,6 +1952,7 @@ fn extract_semantic_card(
                 sc_properties::Kind::Empty => 0,
             }),
             light_names: string8_list(file, AGENT_LIGHT_NAMES),
+            details: sc_properties::vignette::transport_details(file),
         },
         sc_properties::PropertySemantic::Network => SemanticCardData::Road {
             path_title: resolved_texts(file, ROAD_PATH_TITLE, locale),
@@ -1895,6 +2000,7 @@ fn extract_semantic_card(
                 })
                 .collect();
             SemanticCardData::ResourceEntry {
+                scene: sc_properties::vignette::parse(file),
                 parent: first_key_ref(file, KEY_PARENT),
                 slots,
                 float_a: scalar_of(file, RESENTRY_FLOAT_A, pick_float),
@@ -2426,22 +2532,11 @@ fn build_lot_editor_session(
     // Parent(0x00B2CCCB) 继承展平：78% 的 property 带继承链，lot 变体常把
     // LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
     // 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
-    let mut properties = flatten_lot_parents(raw_properties.clone(), package, manager);
-    // 派生 lot 的父级授权可能落在 SimCity_Game.package，而会话只打开了当前
-    // （如 Graphics）包——父链断裂时 manager 查不到，四通道回退黑/红/绿/蓝、
-    // 图集回退本地占位 tile（用户实证 0xDBF54200：黑色停车坪 + 蓝色车位线 +
-    // 占位草皮）。仅当授权 key 全缺时用源包句柄重试，正常 lot 不付这个代价。
-    if !lot_chain_resolved(&properties) {
-        let sources = locate_sim_source_packages(manager, store).unwrap_or_default();
-        if !sources.is_empty() {
-            properties =
-                flatten_lot_parents_with_sources(raw_properties, package, manager, &sources);
-        }
-    }
+    let properties = resolve_lot_properties(raw_properties, package, manager, store);
     // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
     // 附带 materialData 三元组存在性与 material/shader-def 引用
     // 诊断（P4-D1 证据链）。
-    let (decal_textures, decal_diag) = resolve_decal_textures(&properties, package, manager);
+    let (decal_textures, decal_diag) = crate::decal_dependencies::resolve(&properties, package, manager, store);
     // 破洞贴花假内景光参数（S1）：两个 scalar 即引擎 decalInteriorMap
     // 的光强/半径因子（实证 lot：0.5/2.0 → lightScale=9、invRadius=8）。
     // 须在 properties 被 from_property_file 消耗前读取。
@@ -3044,24 +3139,103 @@ pub(crate) fn flatten_lot_parents_with_sources(
     })
 }
 
-/// 父链是否已经提供地表授权。派生 lot 的 mask/size 在本级、颜色与图集在
-/// 父级——若一个授权 key 都没解析到，基本可判定父链没打通（值得用源包重试）。
-pub(crate) fn lot_chain_resolved(properties: &sc_properties::PropertyFile) -> bool {
-    const AUTHORIZATION_KEYS: [u32; 5] = [
-        0x0D02_D586,
-        0x0D02_D587,
-        0x0D02_D588,
-        0x0D02_D589,
-        0x0CCB_7FD4, // Lot Textures
-    ];
-    AUTHORIZATION_KEYS
+const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
+
+/// 派生 lot 可在本级声明图集或部分颜色，剩余地表属性由父级补齐。
+pub(crate) fn resolve_lot_properties(
+    root: sc_properties::PropertyFile,
+    current: &Package,
+    manager: &PackageManager,
+    store: &sc_store::Store,
+) -> sc_properties::PropertyFile {
+    if root.get(sc_properties::PARENT_HASH).is_none() {
+        return flatten_lot_parents(root, current, manager);
+    }
+    let properties = flatten_lot_parents(root.clone(), current, manager);
+    if lot_chain_resolved(&properties) {
+        return properties;
+    }
+    let sources = locate_sim_source_packages(manager, store).unwrap_or_default();
+    if sources.is_empty() {
+        return properties;
+    }
+    flatten_lot_parents_with_sources(root, current, manager, &sources)
+}
+
+fn lot_chain_resolved(properties: &sc_properties::PropertyFile) -> bool {
+    LOT_COLOR_HASHES
         .iter()
-        .any(|hash| properties.get(*hash).is_some())
+        .all(|hash| lot_color_value(properties, *hash).is_some())
+        && matches!(
+            properties.get(0x0CCB_7FD4).and_then(|property| property.scalar()),
+            Some(sc_properties::Value::Key(key)) if key.instance != 0
+        )
+}
+
+fn lot_color_value(
+    properties: &sc_properties::PropertyFile,
+    hash: u32,
+) -> Option<&sc_properties::Value> {
+    let property = properties.get(hash)?;
+    // 部分原版模板把 LotColor 编码为单元素数组。
+    match property
+        .scalar()
+        .or_else(|| property.array().and_then(|values| values.first()))
+    {
+        color @ Some(sc_properties::Value::ColorRgba { .. }) => color,
+        _ => None,
+    }
 }
 
 #[cfg(test)]
 mod derived_lot_parent_chain {
     use super::*;
+
+    #[test]
+    fn preview_resolves_parent_colors_when_leaf_already_has_atlas() {
+        let Ok(graphics) = std::env::var("SC_DERIVED_LOT_GRAPHICS") else {
+            eprintln!("skipping: SC_DERIVED_LOT_GRAPHICS unset");
+            return;
+        };
+        let manager = PackageManager::new();
+        let (package_id, package) = manager.insert(Package::open(&graphics).unwrap()).unwrap();
+        let id = ResourceId {
+            type_id: PROPERTY_RESOURCE_TYPE,
+            group: 0x43E1_C000,
+            instance: 0x5B5A_23D8,
+        };
+        let data = package
+            .read(package.entry(id).expect("derived lot property"))
+            .unwrap();
+        let leaf = sc_properties::PropertyFile::parse(&data).unwrap();
+        assert!(leaf.get(0x0CCB_7FD4).is_some(), "leaf supplies the atlas");
+        assert!(LOT_COLOR_HASHES.iter().all(|hash| leaf.get(*hash).is_none()));
+
+        let store = sc_store::Store::open(":memory:").unwrap();
+        let preview = build_lot_editor_session(
+            &data,
+            &package,
+            &manager,
+            &store,
+            LotEditorSessionRequest {
+                package_id,
+                tgi: TgiDto {
+                    type_id: id.type_id,
+                    group: id.group,
+                    instance: id.instance,
+                },
+            },
+            None,
+        )
+        .unwrap();
+        assert_eq!(preview.lot_colors_authored, [true; 4]);
+        assert_eq!(preview.lot_colors.map(|color| color[3]), [7, 1, 7, 7]);
+        assert_eq!(preview.lot_base_tile, 14);
+        assert_eq!(preview.lot_tile_period, Some([10.0, 10.0]));
+        assert!(preview.lot_mask_raw_rgba.is_some());
+        assert!(preview.lot_surface_png.is_some());
+        assert!(preview.lot_normal_atlas_png.is_some());
+    }
 
     /// 回归（2026-11-06 用户实证 0xDBF54200）：派生 lot 位于 Graphics，父级
     /// 授权（LotColor1-4 / Lot Textures）只在 Game。会话只打开 Graphics 时
@@ -3117,18 +3291,13 @@ mod derived_lot_parent_chain {
 
 /// LotColor1-4 提取（raster 工作台 read_lot_material 共用）。
 pub(crate) fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bool; 4]) {
-    const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
     const FALLBACKS: [[u8; 4]; 4] = [[0, 0, 0, 0], [255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0]];
     let mut colors = FALLBACKS;
     let mut authored = [false; 4];
     for (index, hash) in LOT_COLOR_HASHES.iter().enumerate() {
-        // LotColor 常以单元素数组编码（图书馆 0xA6B49A4B 实证 scalar() 取
-        // 不到），需回退 array 首元素。
-        let property = document.properties.get(*hash);
-        let value = property
-            .and_then(|p| p.scalar())
-            .or_else(|| property.and_then(|p| p.array()).and_then(|v| v.first()));
-        if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = value {
+        if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) =
+            lot_color_value(&document.properties, *hash)
+        {
             authored[index] = true;
             colors[index] = [
                 linear_to_srgb_byte(*r),
@@ -3657,6 +3826,14 @@ fn channel_gray_png(
 /// 时为 tint 查表键；无参数表时即 simple diffuse 漫反射色）/ slot2 = normal
 /// （标准切线空间 RGB，B=沿法线轴；A=spec→AO 代理）/ slot3 = shader map
 /// （B=spec → 反转成 roughness）/ slot4 = 256×8 tint palette。
+#[cfg(test)]
+#[path = "prop_preview_audit.rs"]
+mod prop_preview_audit;
+
+#[path = "prop_preview_uv.rs"]
+mod prop_preview_uv;
+use prop_preview_uv::prop_preview_uv_kind;
+
 fn resolve_material_resources(
     file: &rw4::Rw4File,
     data: &[u8],
@@ -4268,12 +4445,8 @@ pub async fn resolve_prop_models(
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
     let resolutions = tauri::async_runtime::spawn_blocking(move || {
-        // Prop resolution may be requested repeatedly while several property
-        // editors are opened.  EcoGame packages are session helpers; release
-        // the previous helper batch before reserving the two game source
-        // packages below, otherwise the 64-package pool can reject those
-        // inserts and later props silently fall back to marker cones.
-        let _ = crate::prop_models::release_registered(&manager);
+        // Keep existing helper handles alive while other views consume their
+        // returned model IDs. insert() now reuses an already-open source path.
         // 直挂模型 prop 的模型实体可能位于游戏源包（Graphics/Game），
         // ensure they are open so the direct-model fallback can find them
         //（脚本表链路原本只依赖 EcoGame 注册，不受影响）。
@@ -4383,7 +4556,10 @@ pub(crate) fn build_lot_model_payload_for_test(
             .bake
             .as_ref()
             .and_then(|bake| bake_vertex_colors(&mesh, bake));
-        let uv_kind = mesh_uv_kind(&mesh);
+        let uv_kind = prop_preview_uv_kind(
+            &mesh,
+            material_resources[material_index as usize].params_f32.is_some(),
+        );
         // 逐 mesh 选列/投影诊断（「对称窗只渲染一半/墙面花纹半缺失」取证，
         // 2026-09-26）：g 列 = 逐顶点 D3DCOLOR.G（tint 着色器参数表列号），
         // distinct>1 的 mesh 存在跨列三角形 → regionXform 逐顶点插值可能
@@ -4794,7 +4970,7 @@ fn collect_decal_atlases(packages: &[&Package]) -> Vec<sc_properties::DecalDicti
 }
 
 /// 解析 lot decal 单元的贴花纹理。查链路：ID（仅 instance）→ Decal Atlas
-fn resolve_decal_textures(
+pub(crate) fn resolve_decal_textures(
     properties: &sc_properties::PropertyFile,
     package: &Package,
     manager: &PackageManager,
@@ -5863,9 +6039,8 @@ pub async fn list_prop_bin_catalog(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::prop_models::PropBinCatalogEntry>, CommandError> {
     let manager = Arc::clone(&state.packages);
-    let bundled_registry = bundled_registry_path(&state.app);
     tauri::async_runtime::spawn_blocking(move || {
-        crate::prop_models::prop_bin_catalog(&manager, bundled_registry.as_deref())
+        crate::prop_models::supported_prop_catalog(&manager)
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?

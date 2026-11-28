@@ -5,8 +5,8 @@
  */
 
 export const spawnerPanelZh = {
-  title: "生成器锚点",
-  badge: "生成器",
+  title: "演出锚点",
+  badge: "演出",
   intro:
     "锚点 = 命名位置（名字 id + 局部变换）。引擎只用它给演出 / UI / 相机取点，不决定站着谁、有几个人。",
   anchorName: "锚点名字",
@@ -53,7 +53,29 @@ export const spawnerPanelZh = {
   listSearch: "搜索锚点名字 / id",
   stats: "{total} 个锚点 · {named} 个已命名 · {unnamed} 个未命名",
   statsDuplicate: " · {count} 个重名",
-  presetStandard: "通用锚点",
+  presetStandard: "锚点",
+  performanceSelect: "绑定演出（演出 ID → 定义 ID）",
+  performanceIndustrial3Unavailable: "工业 · 高密度（尚无已核实样本）",
+  performanceAutomatic: "自动（兼容旧配方）",
+  performanceAnchors:
+    "放置时补齐 {count} 个关联锚点；已有同名位置会复用，可在场景中分别调整。演出仍受原生触发条件限制。",
+  performanceNoAnchor:
+    "此演出不使用 Lot 命名锚点；位置由原生 sink 或演出规则决定，移动锚点不会改变它。",
+  performanceCategories: {
+    willis: "威利斯大厦",
+    elementary: "小学",
+    highSchool: "中学",
+    college: "社区大学",
+    residential1: "住宅 · 低密度",
+    residential2: "住宅 · 中密度",
+    residential3: "住宅 · 高密度",
+    commercial1: "商业 · 低密度",
+    commercial2: "商业 · 中密度",
+    commercial3: "商业 · 高密度",
+    industrial1: "工业 · 低密度",
+    industrial2: "工业 · 中密度",
+    industrial3: "工业 · 高密度",
+  },
   presetStandardHint: "拖入场景。所选配方会按放置顺序使用锚点。",
   presetUi: "UI 气泡锚点",
   presetUiHint: "预填 0x141EED53",
@@ -64,8 +86,8 @@ export const spawnerPanelZh = {
 } as const;
 
 export const spawnerPanelEn = {
-  title: "Spawner anchor",
-  badge: "Spawner",
+  title: "Performance anchor",
+  badge: "Performance",
   intro:
     "An anchor is a named location (name id + local transform). The engine only uses it to resolve points for vignettes, UI and the camera — never to decide who stands there or how many.",
   anchorName: "Anchor name",
@@ -91,8 +113,10 @@ export const spawnerPanelEn = {
   },
   anchorKindHint: {
     ui: "0x141EED53: the engine's hard-coded speech-balloon / UI effect anchor; camera zoom resolves it too.",
-    camera: "0x9901C8F9: the engine's second hard-coded location space, resolved through the same branch.",
-    custom: "Custom name: only vignette / UI assets referencing the same name will use it.",
+    camera:
+      "0x9901C8F9: the engine's second hard-coded location space, resolved through the same branch.",
+    custom:
+      "Custom name: only vignette / UI assets referencing the same name will use it.",
     unnamed: "Unnamed: no asset can reference it.",
   },
   issue: {
@@ -100,7 +124,8 @@ export const spawnerPanelEn = {
       "Unnamed anchor: the engine cannot resolve it by name, and the id column truncates here on write.",
     "anchor-duplicate":
       "Duplicate name: anchors with the same name overwrite each other (the engine keys them by name).",
-    "transform-missing": "Missing transform: the transform column truncates here.",
+    "transform-missing":
+      "Missing transform: the transform column truncates here.",
     "anchor-invalid": "Invalid name id (must be a non-zero 32-bit integer).",
   },
   duplicateOf: "Shares its name with {count} anchors",
@@ -111,13 +136,38 @@ export const spawnerPanelEn = {
   castHint:
     "Who stands here is decided by agents: appearance comes from the transport entry's appearance table (e.g. GI_Simm_politician_ma = outfit 92, the suit). Anchors carry no character data, so renaming one never changes the visible sims.",
   listTitle: "Anchors in this lot",
-  listEmpty: "No anchors yet. Drag a preset from the library into the viewport.",
+  listEmpty:
+    "No anchors yet. Drag a preset from the library into the viewport.",
   listSelected: "Selected",
   listSearch: "Search anchor name / id",
   stats: "{total} anchors · {named} named · {unnamed} unnamed",
   statsDuplicate: " · {count} duplicated",
-  presetStandard: "General anchor",
-  presetStandardHint: "Drag into the scene. Selected recipes use anchors in placement order.",
+  presetStandard: "Anchor",
+  performanceSelect: "Performance (ID → definition ID)",
+  performanceIndustrial3Unavailable:
+    "Industrial · High density (no verified sample yet)",
+  performanceAutomatic: "Automatic (legacy recipes)",
+  performanceAnchors:
+    "Placement supplies {count} required anchors and reuses existing names. Adjust each position in the scene. Native activation conditions still apply.",
+  performanceNoAnchor:
+    "This performance uses native sinks or rules rather than named Lot anchors. Moving this anchor does not relocate it.",
+  performanceCategories: {
+    willis: "Willis Tower",
+    elementary: "Elementary school",
+    highSchool: "High school",
+    college: "Community college",
+    residential1: "Residential · Low density",
+    residential2: "Residential · Medium density",
+    residential3: "Residential · High density",
+    commercial1: "Commercial · Low density",
+    commercial2: "Commercial · Medium density",
+    commercial3: "Commercial · High density",
+    industrial1: "Industrial · Low density",
+    industrial2: "Industrial · Medium density",
+    industrial3: "Industrial · High density",
+  },
+  presetStandardHint:
+    "Drag into the scene. Selected recipes use anchors in placement order.",
   presetUi: "UI balloon anchor",
   presetUiHint: "Prefilled with 0x141EED53",
   presetCamera: "Camera anchor",

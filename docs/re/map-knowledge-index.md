@@ -11,6 +11,8 @@
 | 主题 | 文档 | 当前状态 |
 |---|---|---|
 | 静态地图基线与全图校验 | [map-static-bootstrap.md](map-static-bootstrap.md) | 15 区域/130 城静态路网与六类资源接入；无需存档对齐 |
+| 全区域单城 | [全区域单城研究与实验顺序](full-region-city-research-20261115.md) | 已对拍 BOC 普通版/OverPlop、网格与存档约束、Gallia 煤矿油 bootstrap；单槽、扩域和实机开采分别验收 |
+| CityBox 加载链 | [嘉納谷存档与引擎坐标静态复盘](citybox-load-and-spatial-contract-20261115.md) | 区域/城市读档、地表与碰撞回路、地块索引容量和全区坐标 |
 | 道路网络、PathEntry 与桥梁外观 | [map-road-network-facts.md](map-road-network-facts.md) | 曲线、外观表、模型链已接入预览；挡土墙/隧道姿态仍待对拍 |
 | 资源图层、ED 与 brush | [map-resource-layer-facts.md](map-resource-layer-facts.md) | EP1 原始 typed map 已按城市 UID/environment 绑定，地下水包含区域 ED |
 | 新区域初始化与 EGB 生命周期 | [map-bootstrap-egb-facts.md](map-bootstrap-egb-facts.md) | 已找到零售静态 bootstrap；独立生成可被游戏接受的新 EGB 仍未完成 |

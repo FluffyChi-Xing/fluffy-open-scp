@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
     "build": "node scripts/build.mjs",
     "check": "vue-tsc -b --noEmit",
     "test": "vitest run",

@@ -151,6 +151,7 @@ fn office_room_sheet(source: &ImageF32) -> Result<ImageF32, String> {
 pub struct PackStore {
     root: PathBuf,
     cache: Rc<RefCell<HashMap<(String, u8), ImageF32>>>,
+    additional: HashMap<(String, u8), Vec<u8>>,
 }
 
 impl PackStore {
@@ -158,7 +159,13 @@ impl PackStore {
         Self {
             root: root.into(),
             cache: Rc::new(RefCell::new(HashMap::new())),
+            additional: HashMap::new(),
         }
+    }
+
+    pub(crate) fn with_additional_packs(mut self, packs: HashMap<(String, u8), Vec<u8>>) -> Self {
+        self.additional.extend(packs);
+        self
     }
 
     pub fn slot_is_srgb(slot: u8) -> bool {
@@ -178,9 +185,14 @@ impl PackStore {
             return Ok(image.clone());
         }
         let path = self.root.join(pack).join(format!("slot{slot}.png"));
-        let bytes = std::fs::read(&path)
-            .map_err(|error| format!("pack image {}: {error}", path.display()))?;
-        let image = decode_png(&bytes, Self::slot_is_srgb(slot))?;
+        let image = match self.additional.get(&key) {
+            Some(bytes) => decode_png(bytes, Self::slot_is_srgb(slot))?,
+            None => {
+                let bytes = std::fs::read(&path)
+                    .map_err(|error| format!("pack image {}: {error}", path.display()))?;
+                decode_png(&bytes, Self::slot_is_srgb(slot))?
+            }
+        };
         // `resources.image()` rebuilds the Office room sheet in memory so the
         // 4 variants × 4 day/night states land in the layout the native room
         // shader expects.  The plug-in keys this off a custom property on the

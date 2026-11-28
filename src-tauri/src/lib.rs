@@ -9,14 +9,23 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod editor_packages;
+mod actor_model_preview;
+mod actor_visuals;
 mod annotations;
 pub(crate) mod asset_build_m0;
 pub mod asset_build_m1;
 pub(crate) mod asset_build_samples;
 mod asset_dependencies;
 mod atomic_fs;
+mod building_animation_preview;
+mod building_animation_states;
+mod building_motion_timeline;
+mod building_vertex_motion;
 pub mod blend_native;
 mod blender_service;
+mod blend_scene;
+mod blend_scene_ground;
 mod build_queue;
 mod debug_tools;
 mod effect_annotations;
@@ -28,6 +37,7 @@ mod internal_dirs;
 mod locale_service;
 mod lot_model_blend;
 mod map_panel;
+mod map_resources;
 mod media_tools;
 mod mod_flow;
 pub mod road_asset;
@@ -42,13 +52,17 @@ mod prop_models;
 mod prop_models_section_dump;
 mod raster_catalog;
 mod decal_library;
+mod decal_dependencies;
+mod supported_prop_ids;
 mod raster_edit;
 mod render_telemetry;
 mod runtime_observer;
+mod devtool;
 mod settings;
 mod stats;
 #[cfg(test)]
 mod test_scratch;
+mod city_camera;
 mod workspace;
 mod wwise;
 
@@ -69,7 +83,7 @@ use media_tools::{MediaTools, application_dir, resolve_tools};
 use mod_project::{
     mod_group_create, mod_group_delete, mod_group_list, mod_group_rename, mod_project_create,
     mod_project_delete, mod_project_list, mod_project_stats, mod_project_update, setup_status,
-    studio_complete_onboarding, studio_legacy_status, studio_set_mod_root, studio_sync_legacy,
+    studio_complete_onboarding, studio_legacy_status, studio_sync_legacy,
 };
 use mod_project_repo::mod_project_repo_summary;
 use overrides::override_scan;
@@ -131,7 +145,26 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .on_page_load({
+            // The initial document contains the loading screen. Its Vue import
+            // runs independently, so a slow route cannot delay window reveal.
+            let reveal_main = std::sync::Once::new();
+            move |webview, payload| {
+                if webview.label() == "main"
+                    && payload.event() == tauri::webview::PageLoadEvent::Finished
+                    && payload.url().as_str() != "about:blank"
+                {
+                    reveal_main.call_once(|| {
+                        if let Err(error) = webview.window().show() {
+                            eprintln!("Failed to show the OpenSCP window: {error}");
+                        }
+                    });
+                }
+            }
+        })
         .setup(|app| {
+            app.manage(devtool::bridge::DevtoolState::default());
+            app.manage(devtool::runtime::CaptureState::default());
             let data_root = internal_dirs::persistent_root(app.handle())?;
             let database_path = data_root.join("openscp.db");
             migrate_legacy_database(app, &database_path)?;
@@ -162,8 +195,15 @@ pub fn run() {
             asset_build_m1::commands::asset_build_m1_build,
             asset_build_m1::commands::asset_build_m1_check_behavior_bins,
             asset_dependencies::sync_asset_dependencies,
-            build_queue::build_queue_enqueue,
+            asset_build_m1::panel::commands::panel_project_read,
+            asset_build_m1::panel::commands::panel_project_save,
+            asset_build_m1::panel::commands::panel_library,
+            asset_build_m1::panel::commands::panel_export_shared_runtime,
             build_queue::build_queue_enqueue_project,
+            asset_build_m1::vanilla_variant::selection::vanilla_variant_lookup,
+            asset_build_m1::vanilla_variant::workbench::vanilla_variant_register,
+            asset_build_m1::vanilla_variant::workbench::vanilla_variant_utility_fields,
+            asset_build_m1::vanilla_variant::workbench::vanilla_variant_power_fields,
             build_queue::build_queue_list,
             build_queue::build_queue_detail,
             map_panel::map_panel_list_regions,
@@ -193,6 +233,9 @@ pub fn run() {
             activity_list_events,
             activity_list_packages,
             activity_clear,
+            editor_packages::acquire_editor_packages,
+            editor_packages::acquire_editor_file,
+            editor_packages::release_editor_packages,
             render_telemetry_record,
             render_telemetry_summary,
             render_telemetry_clear,
@@ -202,6 +245,11 @@ pub fn run() {
             runtime_observer::observer_status,
             runtime_observer::observer_sync,
             runtime_observer::observer_frame,
+            devtool::devtool_elements,
+            devtool::runtime::devtool_import_capture,
+            devtool::bridge::devtool_connect,
+            devtool::bridge::devtool_control,
+            devtool::bridge::devtool_disconnect,
             game_launch::game_processes,
             game_launch::deploy_game_mod,
             game_launch::deploy_ui_overlay,
@@ -233,10 +281,14 @@ pub fn run() {
             list_path_sources,
             list_prop_bin_catalog,
             read_lot_model_meshes,
+            building_animation_preview::list_building_animations,
+            building_animation_preview::read_building_animation,
             export_lot_model_blend,
             read_sim_parts,
             release_prop_model_packages,
             resolve_prop_models,
+            actor_model_preview::resolve_actor_models,
+            actor_visuals::read_actor_visuals,
             read_raster_preview,
             read_image_preview,
             write_export_file,
@@ -289,12 +341,13 @@ pub fn run() {
             code_resource_preview,
             code_manifest,
             workspace::code_flow,
-            workspace::build_camera_package,
+            city_camera::read_city_camera,
+            city_camera::city_camera_preview_packages,
+            city_camera::export_city_camera,
             workspace_create_markdown,
             workspace_rename,
             workspace_move,
             setup_status,
-            studio_set_mod_root,
             studio_complete_onboarding,
             studio_legacy_status,
             studio_sync_legacy,

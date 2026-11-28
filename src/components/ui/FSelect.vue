@@ -9,6 +9,7 @@ export interface SelectOption {
 }
 interface Props {
   id?: string;
+  placeholder?: string;
   options: SelectOption[];
   disabled?: boolean;
   invalid?: boolean;
@@ -91,7 +92,7 @@ function choose(option: SelectOption) {
           @keydown.up.prevent="open = !props.disabled"
         >
           <span class="f-select-label" :class="{ placeholder: !selected }">{{
-            selected?.label ?? model ?? ""
+            selected?.label ?? (model || props.placeholder || "")
           }}</span
           ><FIcon
             name="ChevronDown"

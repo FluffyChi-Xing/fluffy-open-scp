@@ -125,12 +125,6 @@ pub struct SetupStatusResponse {
     onboarding_completed: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModRootRequest {
-    pub path: String,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StudioConfigStatus {
@@ -228,26 +222,6 @@ pub async fn setup_status(state: State<'_, AppState>) -> Result<SetupStatusRespo
             workspace: path_status(workspace),
             game: path_status(game),
             mod_root: path_status(config.mod_root),
-            onboarding_completed: config.onboarding_completed,
-        })
-    })
-    .await
-    .map_err(|error| CommandError::internal(error.to_string()))?
-}
-
-#[tauri::command]
-pub async fn studio_set_mod_root(
-    state: State<'_, AppState>,
-    request: ModRootRequest,
-) -> Result<StudioConfigStatus, CommandError> {
-    let store = Arc::clone(&state.store);
-    tauri::async_runtime::spawn_blocking(move || {
-        let canonical = validate_directory(&request.path)?;
-        let config = store
-            .set_studio_config(Some(&canonical.to_string_lossy()), false)
-            .map_err(ModProjectError::from)?;
-        Ok(StudioConfigStatus {
-            mod_root: config.mod_root,
             onboarding_completed: config.onboarding_completed,
         })
     })
@@ -408,6 +382,29 @@ fn clean_new_road_project(folder: &Path) {
     let _ = fs::remove_dir(folder);
 }
 
+fn clean_new_asset_project(folder: &Path, nodes: &[crate::mod_flow::Node]) {
+    for node in nodes {
+        let _ = fs::remove_file(folder.join(&node.schema));
+    }
+    for path in [
+        "schemas/assets", "schemas", "assets/audio", "assets/materials",
+        "assets/models", "assets/textures", "assets", "build",
+    ] {
+        let _ = fs::remove_dir(folder.join(path));
+    }
+    let _ = fs::remove_dir(folder);
+}
+
+fn clean_new_vanilla_variant_project(folder: &Path) {
+    let _ = fs::remove_file(folder.join(crate::asset_build_m1::vanilla_variant::PENDING_PROJECT));
+    let _ = fs::remove_file(folder.join("package.json"));
+    let _ = fs::remove_file(folder.join(crate::asset_build_m1::vanilla_variant::SCHEMA_PATH));
+    for path in ["schemas/vanilla_variant", "schemas", "assets/properties", "assets/textures", "assets", "build"] {
+        let _ = fs::remove_dir(folder.join(path));
+    }
+    let _ = fs::remove_dir(folder);
+}
+
 #[tauri::command]
 pub async fn mod_project_list(
     state: State<'_, AppState>,
@@ -454,8 +451,12 @@ pub async fn mod_project_create(
         }
         fs::create_dir(&folder)?;
         let mod_type=request.mod_type.as_deref().unwrap_or("assets");
-        if !["map","code","assets","gameplay","road"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
+        if !["map","code","assets","gameplay","road","vanilla_variant","map_resources"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
         let mut metadata=serde_json::json!({"format":"openscp.mod","manifest_version":2,"origin":"openscp","name":name,"version":"0.1.0","description":request.description.as_deref().unwrap_or(""),"author":request.author.as_deref().unwrap_or(""),"mod_type":mod_type,"created_at":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"engine":{"enabled":false,"version":1},"internal_dependencies":{},"outer_dependencies":[]});
+        if mod_type == "map_resources" {
+            metadata["engine"]["enabled"] = serde_json::json!(true);
+            metadata["build"] = serde_json::json!({"kind":mod_type,"schema":crate::map_resources::SCHEMA_PATH});
+        }
         if mod_type == "road" {
             let game_data = store.app_settings().ok().flatten().and_then(|settings| settings.game_data_path);
             if let Err(error) = crate::road_asset::initialize_project(
@@ -469,15 +470,35 @@ pub async fn mod_project_create(
             }
         }
         let manifest_bytes = serde_json::to_vec_pretty(&metadata).unwrap();
-        if let Err(error) = crate::atomic_fs::write_atomic(&folder.join("package.json"), &manifest_bytes, false) {
+        let metadata_path = if mod_type == "vanilla_variant" {
+            crate::asset_build_m1::vanilla_variant::PENDING_PROJECT
+        } else {
+            "package.json"
+        };
+        let asset_workflow = if mod_type == "assets" {
+            match crate::mod_flow::initialize_new_asset_project(
+                &folder,
+                &name,
+                request.author.as_deref().unwrap_or(""),
+                request.description.as_deref().unwrap_or(""),
+            ) {
+                Ok(state) => Some(state),
+                Err(error) => {
+                    clean_new_asset_project(&folder, &[]);
+                    return Err(ModProjectError::Io(io::Error::other(error)));
+                }
+            }
+        } else if let Err(error) = crate::atomic_fs::write_atomic(&folder.join(metadata_path), &manifest_bytes, false) {
             if mod_type == "road" {
                 clean_new_road_project(&folder);
             } else {
                 let _ = fs::remove_dir(&folder);
             }
             return Err(error.into());
-        }
-        if mod_type != "road" {
+        } else {
+            None
+        };
+        if mod_type != "road" && mod_type != "vanilla_variant" && asset_workflow.is_none() {
             crate::mod_flow::ensure_project_layout(&folder,mod_type)
                 .map_err(|e|ModProjectError::Io(io::Error::other(e)))?;
         }
@@ -495,6 +516,10 @@ pub async fn mod_project_create(
                 let _ = fs::remove_file(folder.join("package.json"));
                 if mod_type == "road" {
                     clean_new_road_project(&folder);
+                } else if mod_type == "vanilla_variant" {
+                    clean_new_vanilla_variant_project(&folder);
+                } else if let Some(state) = &asset_workflow {
+                    clean_new_asset_project(&folder, &state.nodes);
                 } else {
                     let _ = fs::remove_dir(&folder);
                 }

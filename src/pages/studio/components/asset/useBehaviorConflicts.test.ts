@@ -4,10 +4,33 @@ import { expect, it, vi } from "vitest";
 import { command } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { i18n } from "@/locales";
-import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec } from "./logicGraph";
+import { addLogicNode, connectLogic, emptyLogicGraph, ensureCoreNode, leafSpec, MAX_BEHAVIOR_LEAVES } from "./logicGraph";
 import { useBehaviorConflicts } from "./useBehaviorConflicts";
 
 vi.mock("@/api/tauri", () => ({ command: vi.fn() }));
+
+it("sends behavior leaves without private Unit scopes", async () => {
+  const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
+  const office = addLogicNode(core.graph, leafSpec("office"), [0, 0]);
+  const visits = addLogicNode(office.graph, leafSpec("tourism"), [0, 0]);
+  let graph = connectLogic(visits.graph, core.node.id, "asset", "behavior").graph;
+  graph = connectLogic(graph, office.node.id, core.node.id, "leaf").graph;
+  graph = connectLogic(graph, visits.node.id, core.node.id, "leaf").graph;
+  vi.mocked(command).mockResolvedValue({ conflicts: [], unknownBundles: [] });
+  let result: ReturnType<typeof useBehaviorConflicts> | undefined;
+  const wrapper = mount(defineComponent({ setup() { result = useBehaviorConflicts(); return () => null; } }),
+    { global: { plugins: [i18n] } });
+  try {
+    expect(result!.canAdd(graph)).toBe(true);
+    await result!.check(graph, visits.node.id);
+    expect(command).toHaveBeenLastCalledWith("asset_build_m1_check_behavior_bins", expect.objectContaining({
+      nodes: expect.arrayContaining([
+        expect.objectContaining({ id: office.node.id }),
+        expect.objectContaining({ id: visits.node.id }),
+      ]),
+    }));
+  } finally { wrapper.unmount(); useToast().clear(); }
+});
 
 it("warns through the toast when an added leaf shares a bin with another leaf", async () => {
   const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
@@ -53,11 +76,11 @@ it("warns through the toast when an added leaf shares a bin with another leaf", 
   }
 });
 
-it("rejects incompatible choices and the fifth behavior with a toast", () => {
+it("allows additional components up to the shared behavior limit", () => {
   const core = ensureCoreNode(emptyLogicGraph(), [0, 0]);
   const hotel = addLogicNode(core.graph, leafSpec("hotel"), [0, 0]);
-  const full = (["park", "tourism", "landvalue", "tree"] as const).reduce(
-    (graph, type) => addLogicNode(graph, leafSpec(type), [0, 0]).graph, core.graph,
+  const full = Array.from({ length: MAX_BEHAVIOR_LEAVES }).reduce<typeof core.graph>(
+    graph => addLogicNode(graph, leafSpec("park"), [0, 0]).graph, core.graph,
   );
   const toast = useToast();
   const previousLocale = i18n.global.locale.value;
@@ -65,17 +88,51 @@ it("rejects incompatible choices and the fifth behavior with a toast", () => {
   const wrapper = mount(defineComponent({
     setup() {
       const { canAdd } = useBehaviorConflicts();
-      expect(canAdd(hotel.graph, "tourism")).toBe(false);
-      expect(toast.toasts.value.at(-1)).toMatchObject({
-        title: "Potential behavior conflict",
-        message: expect.stringContaining("Tourism may conflict with Hotel"),
-      });
-      expect(canAdd(full, "residence")).toBe(false);
-      expect(toast.toasts.value.at(-1)?.message).toContain("up to 4");
+      expect(canAdd(hotel.graph)).toBe(true);
+      expect(canAdd(full)).toBe(false);
+      expect(toast.toasts.value.at(-1)?.message).toContain(`up to ${MAX_BEHAVIOR_LEAVES}`);
       return () => null;
     },
   }), { global: { plugins: [i18n] } });
   wrapper.unmount();
   toast.clear();
   i18n.global.locale.value = previousLocale;
+});
+
+it("blocks a duplicate leaf in every add handler without rejecting distinct component behaviors", () => {
+  const park = addLogicNode(emptyLogicGraph(), leafSpec("park"), [0, 0]).graph;
+  const toast = useToast();
+  const previousLocale = i18n.global.locale.value;
+  i18n.global.locale.value = "zh-CN";
+  const wrapper = mount(defineComponent({ setup() {
+    const checks = useBehaviorConflicts();
+    expect(checks.available(park, "park")).toBe(false);
+    expect(checks.canAdd(park, "park")).toBe(false);
+    expect(checks.addHint(park, "park")).toContain("编辑已有叶子");
+    i18n.global.locale.value = "en-US";
+    expect(checks.addHint(park, "park")).toContain("existing behavior");
+    for (const type of ["residence", "tourism", "office", "commercial", "landvalue"] as const) {
+      expect(checks.available(park, type)).toBe(true);
+    }
+    return () => null;
+  } }), { global: { plugins: [i18n] } });
+  wrapper.unmount(); toast.clear(); i18n.global.locale.value = previousLocale;
+});
+
+it("warns about commercial uncertainty in the active language without blocking addition", () => {
+  const toast = useToast();
+  const previous = i18n.global.locale.value;
+  const wrapper = mount(defineComponent({ setup() {
+    const checks = useBehaviorConflicts();
+    for (const locale of ["zh-CN", "en-US"] as const) {
+      i18n.global.locale.value = locale;
+      expect(checks.available(emptyLogicGraph(), "commercial")).toBe(true);
+      expect(checks.canAdd(emptyLogicGraph(), "commercial")).toBe(true);
+      expect(toast.toasts.value.at(-1)).toMatchObject({
+        tone: "warning", message: i18n.global.t("studio.assetWorkbench.logicNode.leafCommercialCaution"),
+      });
+    }
+    return () => null;
+  } }), { global: { plugins: [i18n] } });
+  wrapper.unmount(); toast.clear(); i18n.global.locale.value = previous;
 });

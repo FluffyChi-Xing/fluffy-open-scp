@@ -2,22 +2,49 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import {
+  availableComponents,
+  roadComponentDragType,
+  type RoadComponent,
+  type RoadComposition,
+} from "./roadComposition";
+import {
   crossSection,
   recipeIds,
   type RecipeId,
   type Streetlights,
 } from "./roadSchema";
 
-const props = defineProps<{ recipe: RecipeId; streetlights: Streetlights }>();
-const emit = defineEmits<{ select: [id: RecipeId] }>();
+const props = defineProps<{
+  recipe: RecipeId;
+  streetlights: Streetlights;
+  composition?: RoadComposition;
+}>();
+const emit = defineEmits<{
+  select: [id: RecipeId];
+  addComponent: [component: RoadComponent];
+  toggleComponent: [component: RoadComponent];
+}>();
 const { t } = useI18n();
 const parts = computed(() => crossSection(props.recipe));
+const slots = computed(() =>
+  (["leftTrees", "tram", "rightTrees"] as const).filter((component) =>
+    availableComponents(props.recipe).includes(component),
+  ),
+);
 
 function drop(event: DragEvent) {
   const id = event.dataTransfer?.getData(
     "application/x-openscp-road-recipe",
   ) as RecipeId;
   if (recipeIds.includes(id)) emit("select", id);
+}
+
+function dropComponent(event: DragEvent, component: RoadComponent) {
+  if (event.dataTransfer?.getData(roadComponentDragType) === component) {
+    emit("addComponent", component);
+  } else {
+    drop(event);
+  }
 }
 </script>
 
@@ -50,6 +77,19 @@ function drop(event: DragEvent) {
           t("roadAsset.metres", { width: Number(part.width.toFixed(2)) })
         }}</small>
       </div>
+    </div>
+    <div v-if="slots.length" class="slots">
+      <button
+        v-for="component in slots"
+        :key="component"
+        type="button"
+        :class="component"
+        :aria-pressed="composition?.[component] ?? false"
+        @click="emit('toggleComponent', component)"
+        @drop.stop.prevent="dropComponent($event, component)"
+      >
+        {{ t(`roadAsset.components.${component}`) }}
+      </button>
     </div>
   </section>
 </template>
@@ -109,5 +149,28 @@ p {
 }
 b {
   font-size: 16px;
+}
+.slots {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 4px;
+  margin-block-start: 6px;
+}
+.slots button {
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: var(--surface-elevated);
+  color: var(--foreground);
+  padding: 5px;
+  font-size: 11px;
+}
+.slots button[aria-pressed="true"] {
+  border: 1px solid var(--primary);
+}
+.tram {
+  grid-column: 2;
+}
+.rightTrees {
+  grid-column: 3;
 }
 </style>

@@ -313,6 +313,11 @@ watch(
   flex: none;
 }
 .content-frame {
+  background: radial-gradient(
+    ellipse at 85% 0%,
+    color-mix(in srgb, var(--brand) var(--glass-ambient), transparent),
+    transparent 68%
+  );
   margin-inline: auto;
   max-width: 100%;
   padding: 36px clamp(20px, 4vw, 56px) 0;
@@ -355,16 +360,16 @@ watch(
 }
 .page-enter-active {
   transition:
-    opacity 200ms cubic-bezier(0.2, 0, 0, 1),
-    transform 200ms cubic-bezier(0.2, 0, 0, 1);
+    opacity var(--motion-enter) var(--motion-ease-out),
+    transform var(--motion-enter) var(--motion-ease-out);
 }
 .page-leave-active {
   pointer-events: none;
-  transition: opacity 100ms ease-out;
+  transition: opacity var(--motion-fast) ease-out;
 }
 .page-enter-from {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(12px);
 }
 .page-leave-to {
   opacity: 0;

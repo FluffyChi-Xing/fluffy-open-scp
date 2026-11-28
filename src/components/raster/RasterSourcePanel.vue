@@ -4,7 +4,7 @@ const { t } = useI18n();
 import FSelect from "@/components/ui/FSelect.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useEditorPackageContext } from "@/composables/useEditorPackages";
 import { base64ToRgba } from "@/lib/raster-editor/encoders";
 import {
   parseRasterSchema,
@@ -37,7 +37,7 @@ const emit = defineEmits<{
   schema: [schema: RasterSchema];
   parameters: [value: ParameterTable];
 }>();
-const packages = useGamePackagesStore();
+const packages = useEditorPackageContext();
 const width = ref(64),
   height = ref(64),
   packageId = ref<number | null>(null);
