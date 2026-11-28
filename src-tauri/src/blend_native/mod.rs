@@ -27,6 +27,7 @@
 pub mod appearance;
 pub mod catalog;
 pub mod channels;
+mod cutout;
 pub mod decals;
 pub mod dump;
 pub mod export;
@@ -40,4 +41,5 @@ pub mod resources;
 pub mod settings;
 pub mod trace;
 mod window_signature;
+mod packed_windows;
 pub(crate) mod atlas_extension;

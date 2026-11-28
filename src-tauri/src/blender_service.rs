@@ -92,7 +92,11 @@ pub(crate) fn export_native_rust(
     );
     let output = run_script_with_startup(
         &script,
-        &[path_arg(source), path_arg(&bundle_path)],
+        &[
+            path_arg(source),
+            path_arg(&bundle_path),
+            path_arg(&atlas.join("catalog.json")),
+        ],
         &["--factory-startup", "--disable-autoexec", "--python-exit-code", "1"],
     )?;
     crate::blend_native::trace::emit(

@@ -336,7 +336,7 @@ fn no_pack(input: &RecipeInput<'_>, rect: [f64; 4]) -> Result<RecipeOutput, Stri
     })
 }
 
-fn params_table(pal_origin: [f64; 4], base_rect: [f64; 4], top_rect: [f64; 4]) -> [f32; 16] {
+pub(super) fn params_table(pal_origin: [f64; 4], base_rect: [f64; 4], top_rect: [f64; 4]) -> [f32; 16] {
     let mut out = [0.0f32; 16];
     for (index, value) in pal_origin.iter().enumerate() {
         out[index] = *value as f32;
@@ -403,7 +403,7 @@ fn flat_palette(color: [f32; 4]) -> Result<Vec<u8>, String> {
     encode_png(&ImageF32::new(512, 16, pixels), false)
 }
 
-fn solid_png(pixel: [u8; 4]) -> Result<Vec<u8>, String> {
+pub(super) fn solid_png(pixel: [u8; 4]) -> Result<Vec<u8>, String> {
     let value = [
         pixel[0] as f32 / 255.0,
         pixel[1] as f32 / 255.0,

@@ -164,7 +164,7 @@ impl PackStore {
     }
 
     pub(crate) fn with_additional_packs(mut self, packs: HashMap<(String, u8), Vec<u8>>) -> Self {
-        self.additional = packs;
+        self.additional.extend(packs);
         self
     }
 

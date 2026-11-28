@@ -23,6 +23,12 @@ pub(super) fn recover_window_entry(
     style: &str,
     signature: &str,
 ) -> Option<Entry> {
+    let entry = parse_window_entry(style, signature)?;
+    catalog.window_recipe(Some(&entry), &entry.pack)?;
+    Some(entry)
+}
+
+pub(super) fn parse_window_entry(style: &str, signature: &str) -> Option<Entry> {
     let mut fields = signature.splitn(3, ':');
     if fields.next()? != style {
         return None;
@@ -64,7 +70,7 @@ pub(super) fn recover_window_entry(
         return None;
     }
     let room_tile: Option<[f64; 2]> = serde_json::from_str(room_tile).ok()?;
-    let entry = Entry {
+    Some(Entry {
         id: style.to_string(),
         name: style.to_string(),
         pack: pack.to_string(),
@@ -75,9 +81,7 @@ pub(super) fn recover_window_entry(
         rotation: None,
         shade_mean: None,
         room_tile,
-    };
-    catalog.window_recipe(Some(&entry), pack)?;
-    Some(entry)
+    })
 }
 
 #[cfg(test)]

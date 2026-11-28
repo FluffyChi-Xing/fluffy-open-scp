@@ -6,7 +6,7 @@
 use super::catalog::{Catalog, CatalogIndex, Entry};
 use super::channels::StateResolver;
 use super::decals;
-use super::dump::{Bundle, BundleMaterial, BundleObject};
+use super::dump::{Bundle, BundleObject};
 use super::geometry;
 use super::glb::{self, GlbMesh};
 use super::layout::{LayoutValues, layout_values};
@@ -57,6 +57,26 @@ struct Group {
 }
 
 pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
+    if input.bundle.packed_windows.is_empty() {
+        return export_with_windows(input, &HashMap::new());
+    }
+    let mut catalog = input.catalog.clone();
+    let (windows, store) =
+        super::packed_windows::recover(input.bundle, &mut catalog, input.store.clone())?;
+    export_with_windows(
+        &ExportInput {
+            catalog: &catalog,
+            store: &store,
+            ..*input
+        },
+        &windows,
+    )
+}
+
+fn export_with_windows(
+    input: &ExportInput<'_>,
+    packed_windows: &HashMap<String, Entry>,
+) -> Result<ExportReport, String> {
     let origin = bounds_origin(input.bundle);
     let unit = input.bundle.unit;
     let mut groups: Vec<Group> = Vec::new();
@@ -85,6 +105,33 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                 .get(mesh.polygons[face_index].material as usize)
                 .and_then(|name| name.as_deref())
                 .and_then(|name| input.bundle.material(name));
+
+            if let Some(source) =
+                material.and_then(|mat| input.bundle.packed_cutouts.get(&mat.name))
+            {
+                let key = format!(
+                    "Cutout|{:?}|{:?}|{:?}|{:?}",
+                    source.color, source.normal, source.tint.map(f32::to_bits),
+                    source.normal_strength.to_bits(),
+                );
+                let group = if let Some(index) = by_key.get(&key) {
+                    *index
+                } else {
+                    let output = super::cutout::build(input.bundle, source)
+                        .map_err(|error| format!("{}: {error}", source.color))?;
+                    ensure_group(&mut groups, &mut by_key, key, "NY_Native", output)
+                };
+                add_cutout_face(&mut groups[group], object, face_index, &source.uv, origin, unit)?;
+                continue;
+            }
+            if let Some(material) = material
+                && material.prop_str("ny_cutout_schema") == Some("slot1-clip-v1")
+            {
+                return Err(format!(
+                    "{}: incomplete or unsupported slot1-clip-v1 material bindings",
+                    material.name
+                ));
+            }
 
             // native_asset re-renders every face whose material carries
             // `ny_kind` through material_state.recover, overriding the
@@ -404,6 +451,12 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
             let catalog_style = style_entry(input.index, &state.style);
             let recovered = catalog_style.is_none();
             let style_entry = catalog_style
+                .or_else(|| {
+                    packed_windows
+                        .get(&material.name)
+                        .filter(|entry| entry.id == state.style)
+                        .cloned()
+                })
                 .or_else(|| {
                     super::window_signature::recover_window_entry(
                         input.catalog,
@@ -761,6 +814,38 @@ fn ensure_group(
     });
     by_key.insert(key, index);
     index
+}
+
+fn add_cutout_face(
+    group: &mut Group,
+    object: &BundleObject,
+    face_index: usize,
+    uv_name: &str,
+    origin: [f64; 3],
+    unit: f64,
+) -> Result<(), String> {
+    let face = &object.mesh.as_ref().expect("building mesh").polygons[face_index];
+    let mut positions: Vec<_> = face.vertices.iter().map(|v| world_point(object, *v)).collect();
+    let mut uv = mapped_uv(object.mesh.as_ref().expect("building mesh"), face_index, uv_name)
+        .ok_or_else(|| format!("{}: cutout face {face_index} is missing UV {uv_name}", object.name))?;
+    for point in &mut uv {
+        point[1] = 1.0 - point[1];
+    }
+    if matrix_determinant(&object.matrix) < 0.0 {
+        positions.reverse();
+        uv.reverse();
+    }
+    let normal = world_normal(object, face.normal);
+    for triangle in geometry::tessellate(&positions, normal) {
+        let front = triangle.map(|i| positions[i]);
+        let front_uv = triangle.map(|i| uv[i]);
+        add_polygon(group, &front, normal, &front_uv, &front_uv, 0.75, 0, 0.0, origin, unit, false);
+        let [a, b, c] = front;
+        let [u, v, w] = front_uv;
+        add_polygon(group, &[c, b, a], normal.map(|v| -v), &[w, v, u], &[w, v, u],
+            0.75, 0, 0.001 / unit, origin, unit, false);
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
