@@ -121,6 +121,11 @@ fn fixture() -> Vec<u8> {
     build_file(1, &sections, &[])
 }
 
+/// Original synthetic model for portable package sweeps (no game assets).
+pub fn synthetic_fixture() -> Vec<u8> {
+    fixture()
+}
+
 fn verify(bytes: &[u8]) -> rw4::Result<()> {
     let file = Rw4File::parse(bytes)?;
     assert_eq!(file.sections().len(), 15);

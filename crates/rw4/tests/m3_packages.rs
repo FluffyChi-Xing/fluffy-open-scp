@@ -2,7 +2,8 @@
 //! （SimCity_DLC0.package、SimCityDataEP1.package）中的全部 RW4 资源做
 //! header + section index + mesh（顶点/三角形）全量解码 sweep。
 //!
-//! 数据不入库，缺失时跳过对应包。验收基线（与 C# oracle 行为对齐）：
+//! 始终检查原创合成模型包；游戏数据不入库，存在时追加真实包 sweep。
+//! 合成样本通过不代表真实游戏包 sweep 已执行。验收基线（与 C# oracle 行为对齐）：
 //! - `0xCAFED00D` 占位桩在头部即失败（C# 同样失败），显式归类；
 //! - mesh 解码失败需逐个给出 TGI 与错误类别，非占位类失败为零容忍。
 
@@ -13,6 +14,10 @@ use dbpf::Package;
 use rw4::{FileType, Rw4File};
 
 const RW4_WRAPPED: u32 = 0x2F4E_681B;
+
+#[allow(dead_code)]
+#[path = "../examples/two_mesh_material_fixture.rs"]
+mod synthetic;
 
 const PACKAGES: [(&str, &str); 3] = [
     (
@@ -40,14 +45,46 @@ const PACKAGES: [(&str, &str); 3] = [
 
 #[test]
 fn m3_packages_decode_all_meshes() {
-    let mut any_ran = false;
+    sweep_packages(&PACKAGES, "local");
+}
 
-    for (label, path) in PACKAGES {
+#[test]
+fn m3_synthetic_sweep_without_retail_packages() {
+    sweep_packages(&[], "portable");
+}
+
+fn sweep_packages(packages: &[(&str, &str)], suffix: &str) {
+    let mut any_ran = false;
+    let mut retail_packages = 0;
+    let fixture_dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(fixture_dir).expect("create synthetic sweep directory");
+    let fixture_path = fixture_dir.join(format!(
+        "m3-synthetic-{suffix}-{}.package",
+        std::process::id()
+    ));
+    let bytes = dbpf::write_uncompressed_overlay(&[dbpf::OverlayEntry::new(
+        dbpf::ResourceId {
+            type_id: RW4_WRAPPED,
+            group: 1,
+            instance: 1,
+        },
+        synthetic::synthetic_fixture(),
+    )])
+    .expect("build synthetic package");
+    std::fs::write(&fixture_path, bytes).expect("write synthetic package");
+
+    for (label, path) in std::iter::once(("synthetic", fixture_path.to_str().unwrap()))
+        .chain(packages.iter().copied())
+    {
         let Ok(package) = Package::open(path) else {
+            assert_ne!(label, "synthetic", "required synthetic package must open");
             eprintln!("skipping [{label}]: {path} not present");
             continue;
         };
         any_ran = true;
+        if label != "synthetic" {
+            retail_packages += 1;
+        }
 
         let entries: Vec<_> = package
             .entries()
@@ -252,12 +289,19 @@ fn m3_packages_decode_all_meshes() {
         );
         // 有模型的包必须解出至少一个 mesh
         assert!(stats.meshes > 0, "[{label}] expected decoded meshes");
+        if label == "synthetic" {
+            assert_eq!(stats.meshes, 2, "synthetic corpus must decode both meshes");
+            assert_eq!(stats.triangles, 3);
+            assert_eq!(stats.vertices, 7);
+            assert_eq!(stats.materials_decoded, 2);
+        }
     }
 
-    assert!(
-        any_ran,
-        "no real package present; differential sweep did not run"
+    assert!(any_ran, "no package present; sweep did not run");
+    eprintln!(
+        "M3 sweep coverage: synthetic=1, retail={retail_packages}; synthetic is not a retail differential result"
     );
+    std::fs::remove_file(fixture_path).expect("remove synthetic package after closing mappings");
 }
 
 /// ME0xx（严格 expect）/ME100/ME200 是 C# `RW4Mesh.Read` 的原生校验点，
