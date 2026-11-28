@@ -1,9 +1,10 @@
-(function (token) {
+(function (token, createDialog) {
     "use strict";
 
     var base = "http://127.0.0.1:47837/" + token + "/";
     var page = String(new Date().getTime()) + Math.random().toString(36).slice(2, 12);
     var sequence = 0;
+    var dialog = null;
     var current = null;
     var receipt = null;
     var sceneId = 0x18ab51f2;
@@ -16,10 +17,14 @@
     }
 
     function request() {
+        if (dialog) { dialog.language(); }
         var root = sceneElement();
         if (!root || !window.document.body.contains(root)) {
             window.setTimeout(request, 1000);
             return;
+        }
+        if (current && current.parentNode !== root) {
+            root.appendChild(current);
         }
         var ticket = page + "/" + (++sequence);
         var candidate = new Image();
@@ -31,7 +36,8 @@
         var timeout = window.setTimeout(next, 5000);
         candidate.onerror = next;
         candidate.onload = function () {
-            if (candidate.width > 1 && candidate.height > 1 && sceneElement() === root) {
+            if (candidate.width > 1 && candidate.height > 1 && sceneElement() === root &&
+                    window.document.body.contains(root)) {
                 candidate.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;";
                 root.appendChild(candidate);
                 if (current && current.parentNode) {
@@ -40,6 +46,7 @@
                 current = candidate;
                 receipt = new Image();
                 receipt.src = base + "applied/" + ticket;
+                if (dialog) { dialog.update(candidate); }
             }
             next();
         };
@@ -47,6 +54,7 @@
     }
 
     window.addEventListener("load", function () {
+        if (createDialog) { dialog = createDialog(); }
         window.setTimeout(request, 0);
     }, false);
 })

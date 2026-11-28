@@ -16,6 +16,8 @@ const PROBE: &str = include_str!("../../crates/sc-ui/src/updater_test_button.js"
 const BOOTSTRAP: &str = include_str!("updater_test_bootstrap.js");
 const LIVE_RELOAD: &str = include_str!("updater_live_reload.js");
 
+const RESOURCE_DIALOG: &str = include_str!("updater_resource_dialog.js");
+
 fn patch(stock: &str, token: Option<&str>) -> Result<String, &'static str> {
     if stock.matches("</body>").count() != 1
         || stock.matches("simcity.gUpdater.Initialize();").count() != 1
@@ -25,7 +27,7 @@ fn patch(stock: &str, token: Option<&str>) -> Result<String, &'static str> {
     {
         return Err("unexpected or already modified updater document");
     }
-    if [PROBE, BOOTSTRAP, LIVE_RELOAD]
+    if [PROBE, BOOTSTRAP, LIVE_RELOAD, RESOURCE_DIALOG]
         .iter()
         .any(|script| script.to_ascii_lowercase().contains("</script"))
     {
@@ -33,7 +35,7 @@ fn patch(stock: &str, token: Option<&str>) -> Result<String, &'static str> {
     }
     let live = match token {
         Some(value) if value.len() == 32 && value.bytes().all(|b| b.is_ascii_hexdigit()) => {
-            format!("\n{LIVE_RELOAD}(\"{value}\");")
+            format!("\n{LIVE_RELOAD}(\"{value}\", {RESOURCE_DIALOG});")
         }
         Some(_) => return Err("live preview token must be 32 hex digits"),
         None => String::new(),
