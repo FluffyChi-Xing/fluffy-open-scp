@@ -1,5 +1,10 @@
 # OpenSCP Cargo SDK 0.1.0 发布合同
 
+发布状态（2026-11-28）：用户授权正式上传后，SDK `0.1.0` 与四个底层库 `0.12.0`
+已发布到 crates.io，支持 `openscp-sdk = "0.1.0"`。
+registry 下载后的 Windows x64/i686 消费者各三项通过；校验和及源码记录见
+[发布回执](releases/native-sdk-0.1.0.json)。下文 Git 首发及 publish 保护为发布前方案记录。
+
 目标：让 Simoder 等 Rust 宿主通过一个 Cargo 入口读取、检查和生成资源字节，
 保持原格式类型身份与字节语义，脱离桌面应用构建。
 SDK 独立为 `0.1.0`，桌面应用及原四库仍为 `0.12.0`。
@@ -64,4 +69,4 @@ CI 使用 stable，发行记录必须包含实际 rustc/cargo 版本。
 代码提交 `1a939a101b5a54fdf0609cdb595a5932b38de7c0` 的 Windows/Linux CI 均已通过，
 含 Windows i686 独立消费者，见 [运行记录](https://github.com/FluffyChi-Xing/fluffy-open-scp/actions/runs/46117976186)。
 M3 sweep 始终检查原创合成模型包，本地有原版包时追加检查；CI 不宣称做过原版资源差分。
-后续尚需按依赖顺序完成 registry 发布预检和 registry 消费者验证；不创建 release/tag。
+registry 发布预检、上传与 registry 消费者验证现已完成；发布标签指向包内记录的源码提交。

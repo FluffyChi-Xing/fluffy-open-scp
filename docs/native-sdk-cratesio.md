@@ -1,5 +1,16 @@
 # crates.io 首次发布准备
 
+## 发布完成（2026-11-28）
+
+用户授权后，sc-format/dbpf/rw4/sc-properties `0.12.0` 与 openscp-sdk `0.1.0`
+已按顺序上传并可从 crates.io 解析。每个包都通过 dry-run 与打包编译验证。
+发布源码为 `8faa6b5d472b77a00e7b4ad75ad89f00b5bf121b`，标签 `sdk-v0.1.0`。
+纯 registry 消费者的 Windows x64/i686 各三项测试通过，五库各解析一次且无宿主依赖。
+本次上传文件、registry 及消费者锁文件的 SHA-256 已逐包核对一致，见
+[机器可读发布记录](releases/native-sdk-0.1.0.json)。
+
+使用：`openscp-sdk = "0.1.0"`。以下保留首次发布前的检查过程与顺序说明。
+
 2026-11-28：用户已使用 GitHub 账号注册 crates.io。当前仍为发布准备，未上传 crate。
 用户已确认邮箱验证和本机 `cargo login` 完成；未读取或记录令牌内容。
 

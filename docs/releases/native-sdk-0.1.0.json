@@ -1,0 +1,49 @@
+{
+  "source_commit": "8faa6b5d472b77a00e7b4ad75ad89f00b5bf121b",
+  "date": "2026-11-28",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "crates": [
+    {
+      "name": "sc-format",
+      "version": "0.12.0",
+      "sha256": "70531f02a7685f14b84f771675313c7cb4100f2fc976c5844aa29120fcbd79ad",
+      "url": "https://crates.io/crates/sc-format/0.12.0"
+    },
+    {
+      "name": "dbpf",
+      "version": "0.12.0",
+      "sha256": "a599577912ef4ac1be6cce9f2af9b267d9c40df70e4607686ffc7b7575c1b5b4",
+      "url": "https://crates.io/crates/dbpf/0.12.0"
+    },
+    {
+      "name": "rw4",
+      "version": "0.12.0",
+      "sha256": "f52feb897eae8c9fe2c0439937950cdf61b9896633d51eb5ef19e1a3df30a271",
+      "url": "https://crates.io/crates/rw4/0.12.0"
+    },
+    {
+      "name": "sc-properties",
+      "version": "0.12.0",
+      "sha256": "ccdeeb8d0f7923749f3574bd3dddf98a910f8906c463d73efacf5fe1c84406ac",
+      "url": "https://crates.io/crates/sc-properties/0.12.0"
+    },
+    {
+      "name": "openscp-sdk",
+      "version": "0.1.0",
+      "sha256": "b8b6aabcd5532574288736f52739c327701699aa00a387f08ed9c7ac0f68789d",
+      "url": "https://crates.io/crates/openscp-sdk/0.1.0"
+    }
+  ],
+  "registry_consumer": {
+    "windows_x64": {
+      "passed": 3
+    },
+    "windows_i686": {
+      "passed": 3
+    },
+    "normal_dependency_packages": 43,
+    "all_openscp_packages_resolve_once_from_registry": true,
+    "tauri_sqlite_store_dependencies": false
+  },
+  "source_ci": "https://github.com/FluffyChi-Xing/fluffy-open-scp/actions/runs/46117976186"
+}
