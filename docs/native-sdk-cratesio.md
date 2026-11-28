@@ -47,5 +47,10 @@ Cargo 明确因 dry-run 取消上传。五库补入根 MIT LICENSE 副本供独�
 真实 Simoder i686 测试使用隔离副本的显式 asInvoker manifest 修正 Windows
 安装程序检测，21 项全通过；没有更改上游源码或请求管理员权限。Linux CI 仍待执行。
 
+最新验收：`1a939a1` 的 Windows/Linux CI 全通过（含 Windows i686 独立消费者）。
+此前 m3_packages 在无游戏样本时末尾断言失败，已修为始终执行合成包 sweep，
+有本地 app/DLC0/EP1 时追加原严格检查。源码解析器未修改；本地合成及三包全通过。
+[CI 运行记录](https://github.com/FluffyChi-Xing/fluffy-open-scp/actions/runs/46117976186)。
+
 参考：[Cargo 发布指南](https://doc.rust-lang.org/cargo/reference/publishing.html)、
 [path 与 version 依赖](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html)。

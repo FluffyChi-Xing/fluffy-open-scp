@@ -61,4 +61,7 @@ CI 使用 stable，发行记录必须包含实际 rustc/cargo 版本。
 ## 当前状态
 
 已实现框架、错误、预算与身份边界、消费者测试与 CI；真实 i686 全套已通过。
-Linux 远端结果及最终干净发行验证尚待完成。本轮为 0.1.0 候选开发，不创建 release/tag。
+代码提交 `1a939a101b5a54fdf0609cdb595a5932b38de7c0` 的 Windows/Linux CI 均已通过，
+含 Windows i686 独立消费者，见 [运行记录](https://github.com/FluffyChi-Xing/fluffy-open-scp/actions/runs/46117976186)。
+M3 sweep 始终检查原创合成模型包，本地有原版包时追加检查；CI 不宣称做过原版资源差分。
+后续尚需按依赖顺序完成 registry 发布预检和 registry 消费者验证；不创建 release/tag。
