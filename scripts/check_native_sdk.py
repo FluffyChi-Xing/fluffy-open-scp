@@ -1,5 +1,6 @@
 """Exercise the SDK feature and downstream dependency contracts without the app."""
 import json
+import os
 import pathlib
 import subprocess
 
@@ -8,10 +9,20 @@ CONSUMER = ROOT / "crates/openscp-sdk/tests/consumer/Cargo.toml"
 
 
 def cargo(*args, capture=False):
-    return subprocess.run(
-        ["cargo", *args], cwd=ROOT, check=True, text=True,
-        stdout=subprocess.PIPE if capture else None,
-    ).stdout
+    result = subprocess.run(
+        ["cargo", *args], cwd=ROOT, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
+    if not capture or result.returncode:
+        print(result.stdout, end="", flush=True)
+    if result.returncode and os.environ.get("GITHUB_ACTIONS") == "true":
+        # Make the actual Cargo failure available in check annotations, even
+        # where downloading Actions logs requires a separate authentication.
+        detail = "\n".join(result.stdout.splitlines()[-80:])[-12000:]
+        detail = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::error title=SDK Cargo check failed::{detail}", flush=True)
+    result.check_returncode()
+    return result.stdout
 
 
 def main():
