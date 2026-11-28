@@ -543,11 +543,9 @@ pub async fn observer_sync(state: State<'_, AppState>) -> Result<usize, CommandE
 pub async fn observer_frame(pid: u32) -> Result<GameFrame, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         use base64::Engine;
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        let output = root.join("tmp").join(format!(
+        let root = std::env::temp_dir().join("openscp-window-frames");
+        fs::create_dir_all(&root).map_err(|e| CommandError::new("frame_capture_failed", e.to_string()))?;
+        let output = root.join(format!(
             "openscp-frame-{}-{}.png",
             pid,
             SystemTime::now()
@@ -555,7 +553,9 @@ pub async fn observer_frame(pid: u32) -> Result<GameFrame, CommandError> {
                 .unwrap()
                 .as_nanos()
         ));
-        let script = root.join("tools/runtime_capture/window_frame.py");
+        let script = root.join("window_frame.py");
+        fs::write(&script, include_str!("../../tools/runtime_capture/window_frame.py"))
+            .map_err(|e| CommandError::new("frame_capture_failed", e.to_string()))?;
         let result = observer_python_command()
             .args([
                 script.to_string_lossy().as_ref(),

@@ -1,3 +1,4 @@
+import { devtoolZh, devtoolEn } from "./devtool";
 import { editorPackagesZh, editorPackagesEn } from "./editor-packages";
 import { panelEditorZh, panelEditorEn } from "./panel-editor";
 import { panelRuntimeZh, panelRuntimeEn } from './panel-runtime';
@@ -17,6 +18,7 @@ import { spawnerPanelZh, spawnerPanelEn } from './spawner-panel';
 
 const messages = {
   "zh-CN": {
+    devtool: devtoolZh,
     panelEditor: panelEditorZh,
     panelRuntime: panelRuntimeZh,
     panelMetrics: panelMetrics['zh-CN'],
@@ -63,7 +65,7 @@ const messages = {
       projects: "项目",
       deployments: "部署",
       settings: "设置",
-      runtimeObserver: "运行时日志",
+      runtimeObserver: "devtool",
       components: "组件展示",
       charts: "统计图表",
       icons: "图标",
@@ -218,7 +220,7 @@ const messages = {
         saved: "已保存",
       },
       eyebrow: "游戏运行时",
-      title: "日志监控台",
+      title: "devtool",
       description: "扫描正在运行的游戏进程，按需捕获桥接命令、查询和事件。原始日志只保存在当前页面会话。",
       scan: "扫描进程",
       processes: "游戏进程",
@@ -2881,6 +2883,7 @@ const messages = {
     },
   },
   "en-US": {
+    devtool: devtoolEn,
     panelEditor: panelEditorEn,
     panelRuntime: panelRuntimeEn,
     panelMetrics: panelMetrics['en-US'],
@@ -2927,7 +2930,7 @@ const messages = {
       projects: "Projects",
       deployments: "Deployments",
       settings: "Settings",
-      runtimeObserver: "Runtime logs",
+      runtimeObserver: "devtool",
       components: "Components",
       charts: "Charts",
       icons: "Icons",
@@ -3082,7 +3085,7 @@ const messages = {
         saved: "Saved",
       },
       eyebrow: "Game runtime",
-      title: "Log console",
+      title: "devtool",
       description: "Scan a running game process and capture bridge commands, queries, and events on demand. Raw logs stay in this page session.",
       scan: "Scan processes",
       processes: "Game processes",

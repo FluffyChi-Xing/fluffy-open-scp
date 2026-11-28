@@ -57,6 +57,7 @@ mod supported_prop_ids;
 mod raster_edit;
 mod render_telemetry;
 mod runtime_observer;
+mod devtool;
 mod settings;
 mod stats;
 #[cfg(test)]
@@ -162,6 +163,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            app.manage(devtool::bridge::DevtoolState::default());
+            app.manage(devtool::runtime::CaptureState::default());
             let data_root = internal_dirs::persistent_root(app.handle())?;
             let database_path = data_root.join("openscp.db");
             migrate_legacy_database(app, &database_path)?;
@@ -242,6 +245,11 @@ pub fn run() {
             runtime_observer::observer_status,
             runtime_observer::observer_sync,
             runtime_observer::observer_frame,
+            devtool::devtool_elements,
+            devtool::runtime::devtool_import_capture,
+            devtool::bridge::devtool_connect,
+            devtool::bridge::devtool_control,
+            devtool::bridge::devtool_disconnect,
             game_launch::game_processes,
             game_launch::deploy_game_mod,
             game_launch::deploy_ui_overlay,

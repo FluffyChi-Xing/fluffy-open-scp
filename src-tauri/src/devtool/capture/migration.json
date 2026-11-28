@@ -1,0 +1,42 @@
+{
+  "files": {
+    "archive_store.py": {
+      "source": "tmp\\window-inspector\\dom-capture\\archive_store.py",
+      "sourceSha256": "2eae21307e0d1801d3bb7f9cd7258c76c64ee06fe94fd8e1296fb93ac79bb39f",
+      "migratedSha256": "2eae21307e0d1801d3bb7f9cd7258c76c64ee06fe94fd8e1296fb93ac79bb39f"
+    },
+    "auto_index.py": {
+      "source": "tmp\\window-inspector\\dom-capture\\auto_index.py",
+      "sourceSha256": "e28717dc1bee3898bf05a89f3dc72403e1484af90ec3393e8b2b85b3834bbfd3",
+      "migratedSha256": "e28717dc1bee3898bf05a89f3dc72403e1484af90ec3393e8b2b85b3834bbfd3"
+    },
+    "overlay_feed.py": {
+      "source": "tmp\\window-inspector\\dom-capture\\overlay_feed.py",
+      "sourceSha256": "a746f0879e8fd16970124227ce94f0da56477ff17d199bc4e11869fc553ae6c2",
+      "migratedSha256": "a746f0879e8fd16970124227ce94f0da56477ff17d199bc4e11869fc553ae6c2"
+    },
+    "partial_frame.py": {
+      "source": "tmp\\window-inspector\\dom-capture\\partial_frame.py",
+      "sourceSha256": "716e69e732d7764ebe094d7f2d1e028af09039a48871a163cea4919f33b053ca",
+      "migratedSha256": "716e69e732d7764ebe094d7f2d1e028af09039a48871a163cea4919f33b053ca"
+    },
+    "peer.py": {
+      "source": "tmp\\window-inspector\\dom-capture\\peer.py",
+      "sourceSha256": "a4b311922ea91487a21a459ed87a2f168acdb961f8160261e6b329a49908b74f",
+      "migratedSha256": "a4b311922ea91487a21a459ed87a2f168acdb961f8160261e6b329a49908b74f"
+    },
+    "receiver.py": {
+      "source": "tmp\\window-inspector\\dom-capture\\receiver.py",
+      "sourceSha256": "e6a874bfd860fdf69da3a5fe98ca6f3077fb2c92e3213cbb16af151f7bc2bc78",
+      "migratedSha256": "962221c7a000754f705c33c95bbe14d6a06747b47c306ea950ce615cb7fc8635"
+    },
+    "validate_bounds.py": {
+      "source": "tmp\\window-inspector\\dom-capture\\validate_bounds.py",
+      "sourceSha256": "80841255080cc9adc0989666c30ff57cc85e4d878095dfb8e79b9d259d844558",
+      "migratedSha256": "80841255080cc9adc0989666c30ff57cc85e4d878095dfb8e79b9d259d844558"
+    }
+  },
+  "changes": {
+    "receiver.py": "Optional exclusive bind for production entry; default legacy behavior retained. Regression: second receiver could bind same Windows port."
+  }
+}

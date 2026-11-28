@@ -139,6 +139,9 @@ describe("observer controls", () => {
       global: { plugins: [i18n] },
     });
     await flushPromises();
+    expect(w.find(".summary").isVisible()).toBe(false);
+    await w.find('.tool-tabs [data-state="inactive"]:not([disabled])').trigger("mousedown", { button: 0, ctrlKey: false });
+    await flushPromises();
     expect(w.find(".summary").isVisible()).toBe(true);
     expect(w.find(".diagnostic-controls").isVisible()).toBe(false);
     await w
@@ -151,8 +154,8 @@ describe("observer controls", () => {
     expect(w.find('input[type="file"]').attributes()).toHaveProperty("hidden");
     i18n.global.locale.value = "en-US";
     await flushPromises();
-    expect(w.find(".mode-tabs").text()).toContain("Live log capture");
-    expect(w.find(".mode-tabs").text()).toContain("Static log analysis");
+    expect(w.find(".mode-tabs").text()).toContain("Live capture");
+    expect(w.find(".mode-tabs").text()).toContain("Static analysis");
     expect(w.find(".file-picker").text()).toContain("Choose file");
     expect(w.find(".file-picker").text()).toContain("No file selected");
     expect(w.find(".file-picker").text()).not.toContain("选择文件");
