@@ -1,5 +1,11 @@
 # OpenSCP Rust SDK 与 Simoder 适配设计
 
+2026-11-28 实施：按用户要求在 `dev/native-sdk` 新增统一 `openscp-sdk` 门面，
+首版复用原四库并提供可选 feature、组合错误和独立消费者检查。
+使用与边界见 [SDK README](../crates/openscp-sdk/README.md)。这更新了下文
+“有消费者冒烟测试后再决定 umbrella crate”的实施顺序；仍采用 Git revision，
+不自动迁移 Simoder，也不包含 UI 编辑器移植。
+
 2026-11-24 决策：SDK 等下一次合并 master 后由 master 切出 SDK 分支。UI 编辑器移植不纳入当前计划。当前工作见 [package 热重载对比](re/package-hot-reload-simoder-comparison-20261124.md)。
 
 ## 现有接入

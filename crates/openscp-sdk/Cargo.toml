@@ -1,0 +1,25 @@
+[package]
+name = "openscp-sdk"
+description = "Host-independent Rust SDK for SimCity package and resource formats"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+readme = "README.md"
+publish = false
+
+[features]
+default = ["package", "properties", "rw4"]
+package = ["dep:dbpf"]
+properties = ["dep:sc-properties"]
+rw4 = ["dep:rw4"]
+
+[dependencies]
+sc-format = { path = "../sc-format" }
+dbpf = { path = "../dbpf", optional = true }
+sc-properties = { path = "../sc-properties", optional = true }
+rw4 = { path = "../rw4", optional = true }
+thiserror.workspace = true
+
+[[example]]
+name = "inspect_package"
+required-features = ["package"]

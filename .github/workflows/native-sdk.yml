@@ -1,0 +1,39 @@
+name: Native SDK
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'scripts/check_native_sdk.py'
+      - '.github/workflows/native-sdk.yml'
+  push:
+    branches: [master, dev/native-sdk]
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'scripts/check_native_sdk.py'
+      - '.github/workflows/native-sdk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: python scripts/check_native_sdk.py
+      - if: runner.os == 'Windows'
+        run: rustup target add i686-pc-windows-msvc
+      - if: runner.os == 'Windows'
+        run: cargo test --manifest-path crates/openscp-sdk/tests/consumer/Cargo.toml --target i686-pc-windows-msvc

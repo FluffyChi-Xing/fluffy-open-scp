@@ -1,0 +1,11 @@
+[package]
+name = "openscp-sdk-consumer-smoke"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Deliberately independent: resolves the SDK as a downstream project would.
+[workspace]
+
+[dependencies]
+openscp-sdk = { path = "../.." }

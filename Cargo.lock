@@ -2401,6 +2401,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "openscp-sdk"
+version = "0.12.0"
+dependencies = [
+ "dbpf",
+ "rw4",
+ "sc-format",
+ "sc-properties",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
