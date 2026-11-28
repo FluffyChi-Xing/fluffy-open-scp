@@ -81,8 +81,9 @@ locale 的既有 String 错误仍是底层合同，尚未伪装成统一有结�
 这属于真实消费者格式/模组测试，仍不覆盖 Base VM、D3D9 DLL、权限执行与游戏刷新。
 
 本轮结果：真实 Simoder x64 共 21 项测试通过；i686 编译完成且前 19 项通过，
-最后 `ui_patch_registry` 测试程序被 Windows `os error 740`（要求提升）阻止启动，
-其两项测试未执行，不能报告 i686 全套通过。未提升权限或修改运行环境策略。
+最初最后 `ui_patch_registry` 程序被 Windows `os error 740` 阻止启动。
+后续确认它缺少执行权限 manifest 且名称含 patch；隔离测试副本通过 build.rs 显式
+声明 asInvoker 后，全套重新运行 21 项通过，未提升权限或修改系统策略。
 独立 SDK 消费者的三项测试在 x64/i686 均通过；DBPF 内存读取两项测试通过，
 八种 feature 组合与原四库回归通过（保留一项既有 ignored）。
 没有修改 Simoder/Simoder-Base 工作树，也没有启动游戏或验收运行期启用。

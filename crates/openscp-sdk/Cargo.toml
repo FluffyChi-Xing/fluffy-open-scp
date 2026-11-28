@@ -15,10 +15,10 @@ properties = ["dep:sc-properties"]
 rw4 = ["dep:rw4"]
 
 [dependencies]
-sc-format = { path = "../sc-format" }
-dbpf = { path = "../dbpf", optional = true }
-sc-properties = { path = "../sc-properties", optional = true }
-rw4 = { path = "../rw4", optional = true }
+sc-format = { path = "../sc-format", version = "=0.12.0" }
+dbpf = { path = "../dbpf", version = "=0.12.0", optional = true }
+sc-properties = { path = "../sc-properties", version = "=0.12.0", optional = true }
+rw4 = { path = "../rw4", version = "=0.12.0", optional = true }
 thiserror.workspace = true
 
 [[example]]

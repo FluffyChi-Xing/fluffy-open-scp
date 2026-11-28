@@ -43,20 +43,22 @@ CI 使用 stable，发行记录必须包含实际 rustc/cargo 版本。
 2. `python scripts/check_native_sdk.py` 全通过；原四库 ignored 测试单列。
 3. Windows i686 独立消费者和 Linux CI 通过，仅编译成功不算测试通过。
 4. 正常依赖无 Tauri/SQLite/registry/store；不能同时出现不同来源的 DBPF 类型。
-5. 真实 Simoder x64/i686 formats/mods 测试通过。当前 i686 最后两项因 Windows
-   `error 740` 未启动，属于待验收，不把 19/21 改写为全部通过。
+5. 真实 Simoder x64/i686 formats/mods 测试通过。i686 的 `error 740` 已通过隔离
+   测试程序显式 asInvoker manifest 修正，整套 21 项已通过；不需要提升权限。
 6. 超限、损坏、截断、instance 溢出、重复 TGI、未知 payload、canonical 语义有测试。
 7. Rustfmt、SDK Rustdoc、样例及迁移文档通过。格式验收不冒充游戏运行验收。
 
 ## crates.io 后续门槛
 
+用户已注册账号；准备进度及顺序见 [crates.io 首次发布准备](native-sdk-cratesio.md)。
+
 `publish = false` 保持明确，本次不上传 registry。
 支持 `openscp-sdk = "0.1"` 之前，需要确认底层 crate 名称所有权、协调发布版本、
 许可/包内容审计，为所有 path 依赖提供可解析 registry 版本，并验证打包产物消费者。
-当前门面依赖原库的 path-only 依赖，不能单独上传；不能绑定同名无关 registry 包凑通。
+当前依赖已补 path+version，底层版本仍需先发布；不能绑定同名无关 registry 包凑通。
 这项工作不应通过修改桌面工作区版本实现。
 
 ## 当前状态
 
-已实现框架、错误、预算与身份边界、消费者测试与 CI。Linux 远端结果、真实 i686
-最后两项及最终干净发行验证尚待完成。本轮为 0.1.0 候选开发，不创建 release/tag。
+已实现框架、错误、预算与身份边界、消费者测试与 CI；真实 i686 全套已通过。
+Linux 远端结果及最终干净发行验证尚待完成。本轮为 0.1.0 候选开发，不创建 release/tag。

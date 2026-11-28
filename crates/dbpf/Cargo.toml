@@ -4,6 +4,7 @@ description = "DBPF (.package) container format: header, index, RefPack decompre
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository = "https://github.com/FluffyChi-Xing/fluffy-open-scp"
 
 [dependencies]
 thiserror.workspace = true
