@@ -12,6 +12,8 @@
 //! ```
 
 mod error;
+#[cfg(feature = "package")]
+pub mod resource;
 pub use error::{Error, Result};
 
 #[cfg(feature = "package")]

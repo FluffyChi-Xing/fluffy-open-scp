@@ -2,10 +2,11 @@
 name = "openscp-sdk"
 description = "Host-independent Rust SDK for SimCity package and resource formats"
 edition.workspace = true
-version.workspace = true
+version = "0.1.0"
 license.workspace = true
 readme = "README.md"
 publish = false
+repository = "https://github.com/FluffyChi-Xing/fluffy-open-scp"
 
 [features]
 default = ["package", "properties", "rw4"]

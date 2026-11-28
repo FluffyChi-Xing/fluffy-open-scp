@@ -53,6 +53,8 @@ fn inspect(bytes: &[u8], max_payload_bytes: usize) -> Result<()> {
 locale 的既有 String 错误仍是底层合同，尚未伪装成统一有结构诊断。
 
 该预算只限制单次 payload 输出分配，不限制输入字节、索引分配、总并发或 RW4/图片解码。
+0.1.0 候选新增 `parse_with_limits(bytes, MemoryParseLimits)`，可在索引分配前限制
+输入大小和条目数；上面的 `parse` 兼容入口仍不自动设置这些限制。
 调用者仍需对文件/网络输入和作业总量设限。重复 TGI 保留原索引顺序，`entry` 返回首条；
 这不是跨包加载优先级或冲突决策 API。包写入不自动删改 metadata，不隐式选择部署目录。
 

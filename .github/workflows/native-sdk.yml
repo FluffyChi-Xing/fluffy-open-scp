@@ -33,6 +33,10 @@ jobs:
         with:
           python-version: '3.x'
       - run: python scripts/check_native_sdk.py
+      - run: cargo fmt -p openscp-sdk --check
+      - run: cargo doc --locked -p openscp-sdk --no-deps
+        env:
+          RUSTDOCFLAGS: '-D warnings'
       - if: runner.os == 'Windows'
         run: rustup target add i686-pc-windows-msvc
       - if: runner.os == 'Windows'

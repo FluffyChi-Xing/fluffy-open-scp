@@ -45,7 +45,19 @@ fn scalar_patch_locale_overlay_and_memory_preflight() {
         package::OverlayEntry::new(locale_id, locale),
     ])
     .unwrap();
-    let package = package::MemoryPackage::parse(&overlay).unwrap();
+    let package = package::MemoryPackage::parse_with_limits(
+        &overlay,
+        package::MemoryParseLimits {
+            max_input_bytes: overlay.len(),
+            max_entries: 2,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        openscp_sdk::resource::checked_id(target.type_id, target.group, u64::from(target.instance))
+            .unwrap(),
+        target
+    );
     // The host, not the format writer, owns package-info admission policy.
     assert_eq!(
         package

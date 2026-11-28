@@ -13,6 +13,36 @@ fn fixture(data: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn admission_rejects_limits_before_index_allocation() {
+    use dbpf::{MemoryParseError, MemoryParseLimits};
+    let mut bytes = fixture(b"x");
+    let limits = MemoryParseLimits {
+        max_input_bytes: bytes.len(),
+        max_entries: 1,
+    };
+    assert!(MemoryPackage::parse_with_limits(&bytes, limits).is_ok());
+    assert!(matches!(
+        MemoryPackage::parse_with_limits(
+            &bytes,
+            MemoryParseLimits {
+                max_input_bytes: bytes.len() - 1,
+                ..limits
+            }
+        ),
+        Err(MemoryParseError::InputLimit { .. })
+    ));
+    // A tiny malicious container must not cause an enormous Vec allocation.
+    bytes[36..40].copy_from_slice(&i32::MAX.to_le_bytes());
+    assert!(matches!(
+        MemoryPackage::parse_with_limits(&bytes, limits),
+        Err(MemoryParseError::EntryLimit {
+            actual: 2147483647,
+            limit: 1
+        })
+    ));
+}
+
+#[test]
 fn borrowed_stored_bytes_and_budgeted_payload() {
     let bytes = fixture(b"opaque");
     let package = MemoryPackage::parse(&bytes).unwrap();

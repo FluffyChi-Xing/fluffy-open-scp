@@ -6,6 +6,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    #[cfg(feature = "package")]
+    #[error("manifest instance {instance:#018x} cannot fit the u32 DBPF identity")]
+    InstanceOutOfRange { instance: u64 },
+    #[cfg(feature = "package")]
+    #[error("DBPF admission: {0}")]
+    PackageAdmission(#[from] dbpf::MemoryParseError),
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
     #[cfg(feature = "package")]
@@ -32,6 +38,10 @@ impl Error {
     /// Machine-readable category; callers translate presentation text.
     pub fn code(&self) -> &'static str {
         match self {
+            #[cfg(feature = "package")]
+            Self::InstanceOutOfRange { .. } => "openscp.identity.instance_range",
+            #[cfg(feature = "package")]
+            Self::PackageAdmission(_) => "openscp.package.admission",
             Self::Io(_) => "openscp.io",
             #[cfg(feature = "package")]
             Self::PackageRead(_) => "openscp.package.read",

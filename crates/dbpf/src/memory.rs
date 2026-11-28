@@ -11,6 +11,29 @@ pub struct MemoryPackage<'a> {
     entries: Vec<IndexEntry>,
 }
 
+/// Admission limits checked before allocating the index or decoding payloads.
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryParseLimits {
+    /// Maximum size of the caller-owned container.
+    pub max_input_bytes: usize,
+    /// Maximum advertised resource count.
+    pub max_entries: u32,
+}
+
+/// Container admission failure; no payload is decoded during admission.
+#[derive(Debug, thiserror::Error)]
+pub enum MemoryParseError {
+    /// Input buffer exceeds the caller's limit.
+    #[error("package input has {actual} bytes, limit is {limit}")]
+    InputLimit { actual: usize, limit: usize },
+    /// Header advertises too many index records.
+    #[error("package index declares {actual} entries, limit is {limit}")]
+    EntryLimit { actual: u32, limit: u32 },
+    /// Original header/index error.
+    #[error(transparent)]
+    Decode(#[from] Error),
+}
+
 /// A decoding failure or caller-specified per-resource output budget violation.
 #[derive(Debug, thiserror::Error)]
 pub enum MemoryReadError {
@@ -27,6 +50,34 @@ pub enum MemoryReadError {
 }
 
 impl<'a> MemoryPackage<'a> {
+    /// Check explicit input and index limits before index allocation.
+    /// Caller ownership of input bytes is unchanged; this does not bound total
+    /// process memory, concurrent reads, or codec allocations outside DBPF.
+    pub fn parse_with_limits(
+        bytes: &'a [u8],
+        limits: MemoryParseLimits,
+    ) -> std::result::Result<Self, MemoryParseError> {
+        if bytes.len() > limits.max_input_bytes {
+            return Err(MemoryParseError::InputLimit {
+                actual: bytes.len(),
+                limit: limits.max_input_bytes,
+            });
+        }
+        let header = header::parse(bytes)?;
+        if header.index_count > limits.max_entries {
+            return Err(MemoryParseError::EntryLimit {
+                actual: header.index_count,
+                limit: limits.max_entries,
+            });
+        }
+        let entries = index::parse(bytes, &header)?;
+        Ok(Self {
+            bytes,
+            header,
+            entries,
+        })
+    }
+
     /// Parse the header and index; payloads remain borrowed and undecoded.
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
         let header = header::parse(bytes)?;

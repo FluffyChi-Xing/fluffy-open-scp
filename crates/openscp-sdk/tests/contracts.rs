@@ -7,6 +7,21 @@ fn probes_signatures_without_claiming_structural_validity() {
 
 #[cfg(feature = "package")]
 #[test]
+fn manifest_identity_conversion_is_checked() {
+    use openscp_sdk::resource::checked_id;
+    assert_eq!(
+        checked_id(1, 2, u32::MAX as u64).unwrap().instance,
+        u32::MAX
+    );
+    assert_eq!(checked_id(1, 2, 0).unwrap().instance, 0);
+    for instance in [u32::MAX as u64 + 1, u64::MAX] {
+        let error = checked_id(1, 2, instance).unwrap_err();
+        assert_eq!(error.code(), "openscp.identity.instance_range");
+    }
+}
+
+#[cfg(feature = "package")]
+#[test]
 fn retains_resource_identity_and_reports_duplicate_writes() {
     use openscp_sdk::{Error, ResourceId, package};
     let original: dbpf::ResourceId = ResourceId {

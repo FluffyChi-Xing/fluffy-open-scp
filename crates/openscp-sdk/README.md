@@ -1,9 +1,11 @@
 # OpenSCP Native Rust SDK
 
+[0.1.0 发布范围与闸门](../../docs/native-sdk-0.1.0-release.md) 定义首发交付与剩余验收。
+
 基于真实下游的 API 与职责划分见 [Simoder 负载合同](../../docs/native-sdk-simoder-workload.md)。
 
 `openscp-sdk` 为社区 Rust 工具提供统一格式入口，复用现有解析器。
-当前是 0.12 系列的初始门面，暂不发布 crates.io；消费者应固定经过验证的
+SDK 独立为 0.1.0，目前处于候选开发，暂不发布 crates.io；消费者应固定经过验证的
 Git revision 并提交自己的 Cargo.lock。现有四库的直接依赖继续可用。
 
 ```toml
@@ -53,7 +55,9 @@ SDK 正常依赖不包含 Tauri、SQLite、registry、编辑器或游戏进程�
 格式 signature probe 仅探测签名，其原生 `ProbeError` 暂不纳入组合错误。
 内存包可用 `package::MemoryPackage::parse(&bytes)` 无临时文件读取，
 `read(entry, max_decoded_bytes)` 要求显式单资源解码预算；`read_raw` 借用存储字节。
-PROP 可通过 `ParseLimits` 限制解析；DBPF 索引/RW4 尚无统一进程内存预算，尤其不能把
+`parse_with_limits(bytes, MemoryParseLimits)` 在索引分配前限制输入大小及条目数。
+`resource::checked_id` 显式拒绝超出 u32 的 manifest instance。
+PROP 可通过 `ParseLimits` 限制解析；RW4 尚无统一进程内存预算，尤其不能把
 x64 测试结果视为已通过 i686 支持验收。
 
 ## 验证
@@ -63,7 +67,7 @@ x64 测试结果视为已通过 i686 支持验收。
 `cargo run -p openscp-sdk --example inspect_package -- <file.package>` 可只读列出索引。
 
 初始验证（2026-11-28）：Windows x64 的全部八种 feature 组合和独立消费者测试，
-Windows i686 的独立消费者两项测试均通过。四库回归有一项已有 ignored 测试；
+Windows i686 的独立消费者三项测试均通过。四库回归有一项已有 ignored 测试；
 部分真实游戏数据测试在缺少本地数据时会提前返回，不作为可移植 fixture 验收。
 新增 CI 在 Windows/Linux 运行检查，Windows 额外运行 i686 消费者；Linux CI 尚待远端执行。
 

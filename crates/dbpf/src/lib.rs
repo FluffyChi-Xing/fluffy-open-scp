@@ -42,7 +42,7 @@ pub use erz::{
 };
 pub use header::{Header, PackageKind};
 pub use index::{IndexEntry, ResourceId};
-pub use memory::{MemoryPackage, MemoryReadError};
+pub use memory::{MemoryPackage, MemoryParseError, MemoryParseLimits, MemoryReadError};
 pub use package::{CachedPackage, Package};
 pub use refpack::{decompress as refpack_decompress, parse_stream_header as refpack_stream_header};
 pub use writer::{
