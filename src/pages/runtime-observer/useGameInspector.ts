@@ -57,6 +57,7 @@ export function useGameInspector(
         else if (e.kind === "cancelled" || e.kind === "cleared")
           picking.value = false;
         else if (e.kind === "snapshot") {
+          error.value = "";
           picking.value = false;
           void onSnapshot();
         } else if (

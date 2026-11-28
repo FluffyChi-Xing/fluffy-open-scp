@@ -1,5 +1,6 @@
 param([int]$GamePid,[string]$Feed,[string]$Requests,[int]$DesktopPid=0)
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing @"
 using System;
@@ -31,6 +32,8 @@ $form.BackColor=[Drawing.Color]::MidnightBlue;$form.Opacity=0.25;$form.KeyPrevie
 $script:frame=$null;$script:box=$null
 function Send($kind,$node=$null,$message=$null){[Console]::WriteLine((@{message=$message;hwnd=$form.Handle.ToInt64();kind=$kind;pid=$GamePid;node=$node;sequence=$script:frame.sequence;time=$script:frame.time}|ConvertTo-Json -Compress));[Console]::Out.Flush()}
 function Read-Frame {
+ # A new game process has no feed until its first M-key capture.
+ if(![IO.File]::Exists($Feed)){return}
  try {
   $s=[IO.File]::Open($Feed,'Open','Read',([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
   $r=[IO.StreamReader]::new($s)
@@ -38,7 +41,7 @@ function Read-Frame {
   if($next.pid -ne $GamePid -or $next.time -lt $started){return}
   if($script:frame -and $next.time -eq $script:frame.time -and $next.sequence -eq $script:frame.sequence){return}
   $script:frame=$next;$script:box=$null;$form.Hide();Send 'snapshot'
- } catch { Send 'read-error' }
+ } catch { Send 'read-error' $null $_.Exception.Message }
 }
 function Show-Overlay($pick) {
  $game.Refresh()

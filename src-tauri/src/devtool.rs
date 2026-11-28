@@ -9,7 +9,15 @@ fn live(app: &tauri::AppHandle) -> Result<PathBuf, CommandError> {
 }
 
 #[tauri::command]
-pub fn devtool_elements(app: tauri::AppHandle, pid: u32) -> Result<Option<Value>, CommandError> {
+pub async fn devtool_elements(app: tauri::AppHandle, pid: u32) -> Result<Option<Value>, CommandError> {
+    let capture_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri::Manager;
+        let state = capture_app.state::<runtime::CaptureState>();
+        runtime::start(&capture_app, &state)
+    })
+    .await
+    .map_err(|e| CommandError::new("devtool_capture", e.to_string()))??;
     let path = live(&app)?.join(format!("overlay-{pid}.json"));
     if !path.exists() {
         return Ok(None);

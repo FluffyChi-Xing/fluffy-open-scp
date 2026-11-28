@@ -5,6 +5,10 @@ $destinationPath=[IO.Path]::GetFullPath($Destination)
 if($destinationPath -ne 'D:\openscp\fluffy-open-scp.exe'){throw 'Unexpected deployment destination'}
 if((Get-Item -LiteralPath $source).Length -lt 1MB){throw 'Invalid desktop artifact'}
 $sourceHash=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+$receiptPath="$source.production.json"
+if(!(Test-Path -LiteralPath $receiptPath)){throw 'Production build receipt missing; run scripts/build_devtool_desktop.ps1 first'}
+$receipt=Get-Content -LiteralPath $receiptPath -Raw|ConvertFrom-Json
+if($receipt.customProtocol -ne $true -or $receipt.sha256 -ne $sourceHash){throw 'Production build receipt does not match artifact; rebuild with scripts/build_devtool_desktop.ps1'}
 $archive=Join-Path (Split-Path $destinationPath) ('devtool-releases/'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path $archive -Force|Out-Null
 Copy-Item -LiteralPath $source -Destination (Join-Path $archive 'new.exe')

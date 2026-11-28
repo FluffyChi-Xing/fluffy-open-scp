@@ -69,7 +69,10 @@ it("accepts only current-session and current-frame selections and releases its c
     time: 100,
   });
   expect(select).toHaveBeenCalledWith(8);
+  event({ kind: "read-error", pid: 42, session, message: "temporary read failure" });
+  expect(inspector.error.value).toBe("temporary read failure");
   event({ kind: "snapshot", pid: 42, session });
+  expect(inspector.error.value).toBe("");
   expect(snapshot).toHaveBeenCalledTimes(1);
   event({kind:"closed",pid:42,session});
   expect(inspector.connected.value).toBe(false);
