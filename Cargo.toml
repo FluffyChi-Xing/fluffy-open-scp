@@ -9,6 +9,7 @@ members = [
     "crates/sc-exporter",
     "crates/sc-shader",
     "crates/sc-format",
+    "crates/sc-argscript",
     "crates/sc-store",
     "crates/sc-ui",
     "crates/ui-inspect",

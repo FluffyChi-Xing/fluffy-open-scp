@@ -1,0 +1,8 @@
+#< comment #< nested
+#> #> define Inner(x)
+    em#< join #>it &{x}_A "#literal"
+enddef
+define Outer(x)
+    create Inner(&x)
+ENDDEF
+create Outer(Garage)
