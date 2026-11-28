@@ -1,17 +1,16 @@
 # OpenSCP Native Rust SDK
 
-[0.1.0 发布范围与闸门](../../docs/native-sdk-0.1.0-release.md) 定义首发交付与剩余验收。
+[0.1.0 发布范围与闸门](https://github.com/FluffyChi-Xing/fluffy-open-scp/blob/sdk-v0.1.0/docs/native-sdk-0.1.0-release.md) 定义首发交付与验收。
 
-基于真实下游的 API 与职责划分见 [Simoder 负载合同](../../docs/native-sdk-simoder-workload.md)。
+基于真实下游的 API 与职责划分见 [Simoder 负载合同](https://github.com/FluffyChi-Xing/fluffy-open-scp/blob/sdk-v0.1.0/docs/native-sdk-simoder-workload.md)。
 
 `openscp-sdk` 为社区 Rust 工具提供统一格式入口，复用现有解析器。
-SDK 独立为 0.1.0，目前处于候选开发，暂不发布 crates.io；消费者应固定经过验证的
-Git revision 并提交自己的 Cargo.lock。现有四库的直接依赖继续可用。
+SDK 独立为 0.1.0，通过 crates.io 提供；消费者应提交自己的 Cargo.lock。
+现有四库的直接依赖继续可用。也可通过发布标签或完整 Git revision 固定源码。
 
 ```toml
 [dependencies]
-# 将 <verified-commit> 替换为通过消费者检查的完整提交 SHA。
-openscp-sdk = { git = "https://github.com/FluffyChi-Xing/fluffy-open-scp", rev = "<verified-commit>" }
+openscp-sdk = "0.1.0"
 ```
 
 ```rust,no_run
@@ -69,7 +68,7 @@ x64 测试结果视为已通过 i686 支持验收。
 初始验证（2026-11-28）：Windows x64 的全部八种 feature 组合和独立消费者测试，
 Windows i686 的独立消费者三项测试均通过。四库回归有一项已有 ignored 测试；
 部分真实游戏数据测试在缺少本地数据时会提前返回，不作为可移植 fixture 验收。
-新增 CI 在 Windows/Linux 运行检查，Windows 额外运行 i686 消费者；Linux CI 尚待远端执行。
+Windows/Linux CI 均已通过，Windows 额外运行 i686 消费者。
 
 Simoder 可保留 `simoder-formats` 门面，逐步把 import 改为 SDK 模块；其宿主配置、
 激活状态与运行期语义仍由 Simoder 持有。本轮不改其固定 revision，也不宣称已完成

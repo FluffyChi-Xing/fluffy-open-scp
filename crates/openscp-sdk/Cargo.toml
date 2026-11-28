@@ -5,7 +5,7 @@ edition.workspace = true
 version = "0.1.0"
 license.workspace = true
 readme = "README.md"
-publish = false
+publish = ["crates-io"]
 repository = "https://github.com/FluffyChi-Xing/fluffy-open-scp"
 
 [features]

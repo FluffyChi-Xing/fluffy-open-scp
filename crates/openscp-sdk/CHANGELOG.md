@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — Unreleased
+## 0.1.0 — 2026-11-28
 
 - Unified format/package/properties/RW4 Cargo facade with optional features.
 - Shared ResourceId identity and checked conversion from u64 manifest instances.
@@ -10,5 +10,4 @@
 - Independent consumer, synthetic fixtures and real Simoder source adapter checks.
 - Separate SDK release version from the desktop workspace version.
 
-Release gates and exclusions: [0.1.0 contract](../../docs/native-sdk-0.1.0-release.md).
-No release tag or registry publication has been made by these changes.
+Release gates and exclusions: [0.1.0 contract](https://github.com/FluffyChi-Xing/fluffy-open-scp/blob/sdk-v0.1.0/docs/native-sdk-0.1.0-release.md).
