@@ -6,6 +6,9 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+mod dom_point;
+pub use dom_point::{DomElement, DomPointRequest, DomPointSnapshot, inspect_dom_point};
+
 mod highlight;
 mod updater_test_button;
 pub use highlight::{
